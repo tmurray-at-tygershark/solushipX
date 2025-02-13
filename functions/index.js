@@ -1,103 +1,171 @@
 const { onRequest } = require("firebase-functions/v2/https");
-const logger = require("firebase-functions/logger");
 const cors = require("cors");
 const axios = require("axios");
 const { parseStringPromise } = require("xml2js");
 
-// Import credentials from config.js
+// Import credentials from config
 const config = require("./config");
 
+// OpenAI API Key
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_API_KEY = config.openai.api_key; // Use OpenAI key from config
+
+const ESHIPPLUS_URL = "http://www.eshipplus.com/services/eShipPlusWSv4.asmx"; // Adjust endpoint if needed
+
 // Enable CORS for frontend
-const corsMiddleware = cors({ origin: "https://solushipx.web.app" });
+const corsMiddleware = cors({ origin: true });
 
-const ESHIPPLUS_URL = "http://www.eshipplus.com/services/eShipPlusWSv4.asmx"; // Replace if needed
+// Default shipment data
+const defaultShipmentData = {
+    origin: {
+        postalCode: "53151",
+        city: "New Berlin",
+        state: "WI",
+        country: "US"
+    },
+    destination: {
+        postalCode: "07072",
+        city: "Carlstadt",
+        state: "NJ",
+        country: "US"
+    },
+    items: [
+        {
+            weight: 100.00,
+            packagingQuantity: 1,
+            height: 10,
+            width: 10,
+            length: 10,
+            packagingKey: 242,
+            freightClass: 50
+        }
+    ]
+};
 
+// 🛠 Function to Build a SOAP Request Dynamically
+function buildSOAPRequest(shipmentData = defaultShipmentData) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+                   xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+                   xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Header>
+        <AuthenticationToken xmlns="http://www.eshipplus.com/">
+          <AccessCode>${config.eshipplus.access_code}</AccessCode>
+          <Username>${config.eshipplus.username}</Username>
+          <Password>${config.eshipplus.password}</Password>
+          <AccessKey>${config.eshipplus.access_key}</AccessKey>
+        </AuthenticationToken>
+      </soap:Header>
+      <soap:Body>
+        <Rate xmlns="http://www.eshipplus.com/">
+          <shipment>
+            <Origin>
+              <PostalCode>${shipmentData.origin.postalCode}</PostalCode>
+              <City>${shipmentData.origin.city}</City>
+              <State>${shipmentData.origin.state}</State>
+              <Country><Code>${shipmentData.origin.country}</Code></Country>
+            </Origin>
+            <Destination>
+              <PostalCode>${shipmentData.destination.postalCode}</PostalCode>
+              <City>${shipmentData.destination.city}</City>
+              <State>${shipmentData.destination.state}</State>
+              <Country><Code>${shipmentData.destination.country}</Code></Country>
+            </Destination>
+            <Items>
+              ${shipmentData.items.map(item => `
+              <WSItem2>
+                <Weight>${item.weight}</Weight>
+                <PackagingQuantity>${item.packagingQuantity}</PackagingQuantity>
+                <Height>${item.height}</Height>
+                <Width>${item.width}</Width>
+                <Length>${item.length}</Length>
+                <Packaging><Key>${item.packagingKey}</Key></Packaging>
+                <FreightClass><FreightClass>${item.freightClass}</FreightClass></FreightClass>
+              </WSItem2>`).join("\n")}
+            </Items>
+          </shipment>
+        </Rate>
+      </soap:Body>
+    </soap:Envelope>`;
+}
+
+// 🚀 Cloud Function to Get Shipping Rates
 exports.getShippingRates = onRequest(async (req, res) => {
     corsMiddleware(req, res, async () => {
-        logger.info("🚀 Sending rate lookup request to eShipPlus...");
+        console.log("🚀 Requesting shipping rates from eShipPlus...");
 
-        // Construct the SOAP request exactly as provided
-        const soapRequest = `<?xml version="1.0" encoding="utf-8"?>
-        <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-                       xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
-                       xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-          <soap:Header>
-            <AuthenticationToken xmlns="http://www.eshipplus.com/">
-              <AccessCode>${config.eshipplus.access_code}</AccessCode>
-              <Username>${config.eshipplus.username}</Username>
-              <Password>${config.eshipplus.password}</Password>
-              <AccessKey>${config.eshipplus.access_key}</AccessKey>
-            </AuthenticationToken>
-          </soap:Header>
-          <soap:Body>
-            <Rate xmlns="http://www.eshipplus.com/">
-              <shipment>
-                <Origin>
-                  <PostalCode>53151</PostalCode>
-                  <City>New Berlin</City>
-                  <State>WI</State>
-                  <Country>
-                    <Code>US</Code>
-                    <UsesPostalCode>true</UsesPostalCode>
-                  </Country>
-                </Origin>
-                <Destination>
-                  <Description>Unabridged Bookstore</Description>
-                  <Street></Street>
-                  <PostalCode>L4W 1N7</PostalCode>
-                  <City>Mississauga</City>
-                  <State>ON</State>
-                  <Country>
-                    <Code>CA</Code>
-                    <UsesPostalCode>true</UsesPostalCode>
-                  </Country>
-                  <Contact>Harikrishnan</Contact>
-                  <Phone>9789891402</Phone>
-                </Destination>
-                <EarliestPickup><Time>05:00</Time></EarliestPickup>
-                <LatestPickup><Time>17:00</Time></LatestPickup>
-                <EarliestDelivery><Time>09:30</Time></EarliestDelivery>
-                <LatestDelivery><Time>17:30</Time></LatestDelivery>
-                <Items>
-                  <WSItem2>
-                    <Weight>386.00</Weight>
-                    <PackagingQuantity>1</PackagingQuantity>
-                    <Height>10</Height>
-                    <Width>10</Width>
-                    <Length>10</Length>
-                    <Packaging><Key>242</Key></Packaging>
-                    <FreightClass><FreightClass>50</FreightClass></FreightClass>
-                  </WSItem2>
-                </Items>
-                <DeclineAdditionalInsuranceIfApplicable>false</DeclineAdditionalInsuranceIfApplicable>
-                <HazardousMaterialShipment>false</HazardousMaterialShipment>
-              </shipment>
-            </Rate>
-          </soap:Body>
-        </soap:Envelope>`;
+        // Allow custom shipment data from frontend request or fallback to default
+        const shipmentData = req.body?.shipmentData || defaultShipmentData;
 
-        const headers = {
-            "Content-Type": "text/xml",
-            "SOAPAction": "http://www.eshipplus.com/Rate", // This might be required based on WSDL
-        };
+        // Generate SOAP Request Dynamically
+        const soapRequest = buildSOAPRequest(shipmentData);
+        
+        const headers = { "Content-Type": "text/xml", "SOAPAction": "http://www.eshipplus.com/Rate" };
 
         try {
-            logger.info("📡 Sending SOAP request...");
+            console.log("📡 Sending SOAP request...");
             const response = await axios.post(ESHIPPLUS_URL, soapRequest, { headers });
-
-            // Convert XML response to JSON
             const jsonResponse = await parseStringPromise(response.data);
 
-            logger.info("✅ Received rates from eShipPlus", jsonResponse);
+            console.log("🛠 SOAP Response Structure:", JSON.stringify(jsonResponse, null, 2));
 
-            // Extract relevant rate details
-            res.json({
-                success: true,
-                rates: jsonResponse
-            });
+            // Analyze rates using AI
+            const aiAnalysis = await analyzeRatesWithAI(jsonResponse);
+
+            res.json({ success: true, rates: jsonResponse, aiAnalysis });
         } catch (error) {
-            logger.error("❌ Error fetching rates:", error.message);
+            console.error("❌ Error fetching rates:", error.message);
             res.status(500).json({ success: false, message: error.message });
         }
     });
 });
+
+// 🚀 Get AI Logic
+async function analyzeRatesWithAI(ratesData) {
+    try {
+        console.log("🤖 Sending rates to AI for dynamic analysis...");
+
+        const payload = {
+            model: "gpt-4o-mini",
+            temperature: 0.1, 
+            top_p: 1, 
+            messages: [
+                { 
+                    role: "system", 
+                    content: `You are an expert logistics AI assistant. Your goal is to analyze the provided shipping rate response **without any fixed structure**. Extract all carrier data** options while ensuring clarity and completeness. Prioritize the best combo of PRICE + SPEED as best available option. If transit time is 0 it is an error and you can eliminate this carrier data from your output.
+
+                    **Example Output:**
+                    - 📦 **Package Details**: [Auto-Extracted]
+                    - 📍 **Origin & Destination**: [Auto-Extracted]
+                    - 🚚 **Carrier Options**: [Auto-Extracted]
+                    - 🏆 **Best Recommendation**: [Auto-Extracted]`
+                },
+                { 
+                    role: "user", 
+                    content: `Analyze the following shipping rate response and extract only the most relevant details:
+
+\n\n**Raw Data:**\n${JSON.stringify(ratesData, null, 2)}`
+                }
+            ]
+        };
+
+        const response = await axios.post(OPENAI_API_URL, payload, {
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OPENAI_API_KEY}`
+            }
+        });
+
+        if (response.data && response.data.choices && response.data.choices.length > 0) {
+            return response.data.choices[0].message.content;
+        } else {
+            return "AI analysis failed: No valid response.";
+        }
+    } catch (error) {
+        console.error("❌ AI Processing Error:", error.message);
+        return "AI processing failed.";
+    }
+}
+
+
+

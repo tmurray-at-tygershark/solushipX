@@ -13,11 +13,13 @@
   },
   "main": "index.js",
   "dependencies": {
+    "@genkit-ai/googleai": "^1.0.4",
     "axios": "^1.7.9",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "firebase-admin": "^11.11.1",
     "firebase-functions": "^4.9.0",
+    "genkit": "^1.0.4",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
