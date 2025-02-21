@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Advanced Shipment Form</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .form-section {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 class="mb-3">Create Shipment</h2>
+
+    <div class="row">
+        <div class="col-md-8">
+            
+            <!-- Ship From Section -->
+            <div class="form-section">
+                <h4>Ship From</h4>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Company Name</label>
+                        <input type="text" class="form-control" id="fromCompany" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Attention Name</label>
+                        <input type="text" class="form-control" id="fromAttention" required>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Address</label>
+                        <input type="text" class="form-control" id="fromAddress" placeholder="Start typing address..." required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">City</label>
+                        <input type="text" class="form-control" id="fromCity" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">State/Province</label>
+                        <select class="form-select hidden" id="fromStateSelect"></select>
+                        <input type="text" class="form-control hidden" id="fromStateText">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Postal Code</label>
+                        <input type="text" class="form-control" id="fromPostal" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Country</label>
+                        <select class="form-select" id="fromCountry" required>
+                            <option value="United States">United States</option>
+                            <option value="Canada">Canada</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ship To Section -->
+            <div class="form-section">
+                <h4>Ship To</h4>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Company Name</label>
+                        <input type="text" class="form-control" id="toCompany" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Attention Name</label>
+                        <input type="text" class="form-control" id="toAttention" required>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Address</label>
+                        <input type="text" class="form-control" id="toAddress" placeholder="Start typing address..." required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">City</label>
+                        <input type="text" class="form-control" id="toCity" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">State/Province</label>
+                        <select class="form-select hidden" id="toStateSelect"></select>
+                        <input type="text" class="form-control hidden" id="toStateText">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Postal Code</label>
+                        <input type="text" class="form-control" id="toPostal" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Country</label>
+                        <select class="form-select" id="toCountry" required>
+                            <option value="United States">United States</option>
+                            <option value="Canada">Canada</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Google Places API -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw&libraries=places"></script>
+
+<script>
+    function setupAutocomplete(inputId, prefix) {
+        let autocomplete = new google.maps.places.Autocomplete(document.getElementById(inputId), {
+            types: ["geocode"]
+        });
+
+        autocomplete.addListener("place_changed", function () {
+            fillAddressFields(autocomplete, prefix);
+        });
+    }
+
+    function initAutocomplete() {
+        setupAutocomplete("fromAddress", "from");
+        setupAutocomplete("toAddress", "to");
+
+        document.getElementById("fromCountry").addEventListener("change", function () {
+            updateStateDropdown("from");
+        });
+
+        document.getElementById("toCountry").addEventListener("change", function () {
+            updateStateDropdown("to");
+        });
+
+        updateStateDropdown("from");
+        updateStateDropdown("to");
+    }
+
+    function fillAddressFields(autocomplete, prefix) {
+        let place = autocomplete.getPlace();
+        let addressComponents = place.address_components;
+
+        let city = "", state = "", postalCode = "", country = "";
+
+        addressComponents.forEach(component => {
+            let type = component.types[0];
+
+            switch (type) {
+                case "locality":
+                    city = component.long_name;
+                    break;
+                case "administrative_area_level_1":
+                    state = component.short_name;
+                    break;
+                case "postal_code":
+                    postalCode = component.long_name;
+                    break;
+                case "country":
+                    country = component.long_name;
+                    break;
+            }
+        });
+
+        document.getElementById(`${prefix}City`).value = city;
+        document.getElementById(`${prefix}Postal`).value = postalCode;
+        document.getElementById(`${prefix}Country`).value = country;
+        
+        // Set state if in US or Canada
+        document.getElementById(`${prefix}StateSelect`).value = state;
+    }
+
+    function updateStateDropdown(prefix) {
+        const country = document.getElementById(`${prefix}Country`).value;
+        const stateSelect = document.getElementById(`${prefix}StateSelect`);
+        const stateText = document.getElementById(`${prefix}StateText`);
+        stateSelect.innerHTML = "";
+
+        const states = country === "United States" ? usStates : country === "Canada" ? canadaProvinces : null;
+        if (states) {
+            for (let code in states) stateSelect.innerHTML += `<option value="${code}">${states[code]}</option>`;
+            stateSelect.classList.remove("hidden");
+            stateText.classList.add("hidden");
+        } else {
+            stateText.classList.remove("hidden");
+            stateSelect.classList.add("hidden");
+        }
+    }
+
+    const usStates = { "AL": "Alabama", "AK": "Alaska", /* Add all states... */ "WY": "Wyoming", "DC": "District of Columbia" };
+    const canadaProvinces = { "AB": "Alberta", "BC": "British Columbia", /* Add all provinces... */ "YT": "Yukon" };
+
+    window.onload = initAutocomplete;
+</script>
+
+</body>
+</html>

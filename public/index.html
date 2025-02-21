@@ -2,51 +2,45 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI-Powered Shipping Rate Lookup</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <link rel="stylesheet" href="css/main.css">
 </head>
 <body>
-    <h2>eShipPlus Rate Lookup</h2>
-    <button id="getRatesButton">Get Shipping Rates & AI Analysis</button>
 
-    <h3>AI Analysis:</h3>
-    <pre id="aiOutput">Waiting for AI response...</pre>
+    <div class="container">
+        <h2 class="mb-3">eShipPlus Rate Lookup</h2>
+        
+        <button id="getRatesButton" class="btn btn-primary">Get Shipping Rates & AI Analysis</button>
 
-    <h3>Raw SOAP Response:</h3>
-    <pre id="ratesOutput">Click the button to fetch shipping rates...</pre>
+        <!-- Loading Spinner -->
+        <div class="spinner" id="loadingSpinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>Fetching shipping rates...</p>
+        </div>
 
-    <script>
-        document.getElementById("getRatesButton").addEventListener("click", async function() {
-            document.getElementById("ratesOutput").innerText = "Fetching shipping rates...";
-            document.getElementById("aiOutput").innerText = "Waiting for AI response...";
+        <h3 class="mt-4">Carrier Rates:</h3>
+        <div id="carrierRates" class="row"></div>
 
-            try {
-                const response = await fetch("https://us-central1-solushipx.cloudfunctions.net/getShippingRates"); 
+        <h3 class="mt-4">AI Analysis:</h3>
+        <div id="aiOutput" class="result-box">Waiting for AI response...</div>
 
-                if (!response.ok) {
-                    throw new Error(`HTTP Error: ${response.status} - ${response.statusText}`);
-                }
+        <h3 class="mt-4">Raw Rates Response:</h3>
+        <div id="ratesOutput" class="result-box">Click the button to fetch shipping rates...</div>
 
-                const data = await response.json();
+    </div>
 
-                if (data.success && data.rates) {
-                    // Display raw SOAP response
-                    document.getElementById("ratesOutput").innerText = JSON.stringify(data.rates, null, 2);
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/index.js"></script>
 
-                    // Display AI response
-                    document.getElementById("aiOutput").innerText = data.aiAnalysis 
-                        ? data.aiAnalysis 
-                        : "AI analysis unavailable.";
-                } else {
-                    document.getElementById("ratesOutput").innerText = "⚠️ Error: No valid rates received.";
-                    document.getElementById("aiOutput").innerText = "AI analysis unavailable.";
-                }
-            } catch (error) {
-                document.getElementById("ratesOutput").innerText = `🚨 Fetch Error: ${error.message}`;
-                document.getElementById("aiOutput").innerText = "Error contacting AI.";
-                console.error("❌ Debugging Fetch Error:", error);
-            }
-        });
-    </script>
+   
+
 </body>
 </html>
