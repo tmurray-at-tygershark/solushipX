@@ -1,206 +1,299 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Advanced Shipment Form</title>
-
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  
-    <style>
-        body {
-            padding: 20px;
-            background-color: #f8f9fa;
-        }
-        .form-section {
-            background: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-        .hidden {
-            display: none;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Advanced Shipment Form</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      padding: 20px;
+      background-color: #f8f9fa;
+    }
+    .form-section {
+      background: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .hidden {
+      display: none;
+    }
+    input[type="date"],
+    input[type="time"] {
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
-
-<div class="container">
+  <div class="container">
     <h2 class="mb-3">Create Shipment</h2>
 
-    <div class="row">
-        <div class="col-md-8">
-            
-            <!-- Ship From Section -->
-            <div class="form-section">
-                <h4>Ship From</h4>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Company Name</label>
-                        <input type="text" class="form-control" id="fromCompany" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Attention Name</label>
-                        <input type="text" class="form-control" id="fromAttention" required>
-                    </div>
-                    <div class="col-md-12">
-                        <label class="form-label">Address</label>
-                        <input type="text" class="form-control" id="fromAddress" placeholder="Start typing address..." required>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">City</label>
-                        <input type="text" class="form-control" id="fromCity" required>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">State/Province</label>
-                        <select class="form-select hidden" id="fromStateSelect"></select>
-                        <input type="text" class="form-control hidden" id="fromStateText">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Postal Code</label>
-                        <input type="text" class="form-control" id="fromPostal" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Country</label>
-                        <select class="form-select" id="fromCountry" required>
-                            <option value="United States">United States</option>
-                            <option value="Canada">Canada</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Ship To Section -->
-            <div class="form-section">
-                <h4>Ship To</h4>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Company Name</label>
-                        <input type="text" class="form-control" id="toCompany" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Attention Name</label>
-                        <input type="text" class="form-control" id="toAttention" required>
-                    </div>
-                    <div class="col-md-12">
-                        <label class="form-label">Address</label>
-                        <input type="text" class="form-control" id="toAddress" placeholder="Start typing address..." required>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">City</label>
-                        <input type="text" class="form-control" id="toCity" required>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">State/Province</label>
-                        <select class="form-select hidden" id="toStateSelect"></select>
-                        <input type="text" class="form-control hidden" id="toStateText">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Postal Code</label>
-                        <input type="text" class="form-control" id="toPostal" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Country</label>
-                        <select class="form-select" id="toCountry" required>
-                            <option value="United States">United States</option>
-                            <option value="Canada">Canada</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+    <!-- Shipment Information Section -->
+    <div class="form-section">
+      <h4>Shipment Information</h4>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Shipment Type</label>
+          <select class="form-select" id="shipmentType">
+            <option value="courier" selected>Courier</option>
+            <option value="freight">Freight</option>
+            <option value="ltl">LTL (Less-Than-Truckload)</option>
+            <option value="ftl">FTL (Full-Truckload)</option>
+            <option value="rail">Rail</option>
+            <option value="air">Air</option>
+            <option value="ocean">Ocean</option>
+          </select>
         </div>
+        <div class="col-md-4">
+          <label class="form-label">Booking Reference Number</label>
+          <input type="text" class="form-control" id="bookingReference" placeholder="e.g., TFM-0228" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Shipment Date</label>
+          <input type="date" class="form-control" id="shipmentDate" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Earliest Pickup Time</label>
+          <input type="time" class="form-control" id="earliestPickup" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Latest Pickup Time</label>
+          <input type="time" class="form-control" id="latestPickup" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Earliest Delivery Time</label>
+          <input type="time" class="form-control" id="earliestDelivery" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Latest Delivery Time</label>
+          <input type="time" class="form-control" id="latestDelivery" required>
+        </div>
+      </div>
     </div>
-</div>
 
-<!-- Google Places API -->
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw&libraries=places"></script>
+    <!-- Ship From Section -->
+    <div class="form-section">
+      <h4>Ship From</h4>
+      <div class="row g-3">
+        <!-- Autocomplete Address -->
+        <div class="col-md-12">
+          <label class="form-label">Address (Autocomplete)</label>
+          <input type="text" class="form-control" id="fromAddress" placeholder="Start typing address..." required>
+        </div>
+        <!-- Split Address into Lines -->
+        <div class="col-md-6">
+          <label class="form-label">Address Line 1 (Street)</label>
+          <input type="text" class="form-control" id="fromAddressLine1" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Address Line 2</label>
+          <input type="text" class="form-control" id="fromAddressLine2">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">City</label>
+          <input type="text" class="form-control" id="fromCity" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">State/Province</label>
+          <select class="form-select" id="fromStateSelect"></select>
+          <input type="text" class="form-control hidden" id="fromStateText">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Postal Code</label>
+          <input type="text" class="form-control" id="fromPostal" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Country</label>
+          <select class="form-select" id="fromCountry" required>
+            <option value="Canada" selected>Canada</option>
+            <option value="United States">United States</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
-<script>
-    function setupAutocomplete(inputId, prefix) {
-        let autocomplete = new google.maps.places.Autocomplete(document.getElementById(inputId), {
-            types: ["geocode"]
-        });
+    <!-- Ship To Section -->
+    <div class="form-section">
+      <h4>Ship To</h4>
+      <div class="row g-3">
+        <!-- Autocomplete Address -->
+        <div class="col-md-12">
+          <label class="form-label">Address (Autocomplete)</label>
+          <input type="text" class="form-control" id="toAddress" placeholder="Start typing address..." required>
+        </div>
+        <!-- Split Address into Lines -->
+        <div class="col-md-6">
+          <label class="form-label">Address Line 1 (Street)</label>
+          <input type="text" class="form-control" id="toAddressLine1" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Address Line 2</label>
+          <input type="text" class="form-control" id="toAddressLine2">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">City</label>
+          <input type="text" class="form-control" id="toCity" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">State/Province</label>
+          <select class="form-select" id="toStateSelect"></select>
+          <input type="text" class="form-control hidden" id="toStateText">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Postal Code</label>
+          <input type="text" class="form-control" id="toPostal" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Country</label>
+          <select class="form-select" id="toCountry" required>
+            <option value="Canada" selected>Canada</option>
+            <option value="United States">United States</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        autocomplete.addListener("place_changed", function () {
-            fillAddressFields(autocomplete, prefix);
-        });
-    }
+  <!-- Google Places API -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw&libraries=places"></script>
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // Full list of U.S. states and Canadian provinces/territories
+    const usStates = {
+      "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+      "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
+      "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+      "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+      "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+      "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+      "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+      "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+      "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+      "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+      "DC": "District of Columbia"
+    };
+
+    const canadaProvinces = {
+      "AB": "Alberta", "BC": "British Columbia", "MB": "Manitoba", "NB": "New Brunswick",
+      "NL": "Newfoundland and Labrador", "NS": "Nova Scotia", "NT": "Northwest Territories",
+      "NU": "Nunavut", "ON": "Ontario", "PE": "Prince Edward Island", "QC": "Quebec",
+      "SK": "Saskatchewan", "YT": "Yukon"
+    };
 
     function initAutocomplete() {
-        setupAutocomplete("fromAddress", "from");
-        setupAutocomplete("toAddress", "to");
+      setupAutocomplete("fromAddress", "from");
+      setupAutocomplete("toAddress", "to");
 
-        document.getElementById("fromCountry").addEventListener("change", function () {
-            updateStateDropdown("from");
-        });
+      // Prepopulate defaults for Country and State/Province
+      document.getElementById("fromCountry").value = "Canada";
+      document.getElementById("toCountry").value = "Canada";
+      updateStateField("from", "Ontario", "ON", "CA");
+      updateStateField("to", "Ontario", "ON", "CA");
 
-        document.getElementById("toCountry").addEventListener("change", function () {
-            updateStateDropdown("to");
-        });
-
-        updateStateDropdown("from");
-        updateStateDropdown("to");
-    }
-
-    function fillAddressFields(autocomplete, prefix) {
-        let place = autocomplete.getPlace();
-        let addressComponents = place.address_components;
-
-        let city = "", state = "", postalCode = "", country = "";
-
-        addressComponents.forEach(component => {
-            let type = component.types[0];
-
-            switch (type) {
-                case "locality":
-                    city = component.long_name;
-                    break;
-                case "administrative_area_level_1":
-                    state = component.short_name;
-                    break;
-                case "postal_code":
-                    postalCode = component.long_name;
-                    break;
-                case "country":
-                    country = component.long_name;
-                    break;
-            }
-        });
-
-        document.getElementById(`${prefix}City`).value = city;
-        document.getElementById(`${prefix}Postal`).value = postalCode;
-        document.getElementById(`${prefix}Country`).value = country;
-        
-        // Set state if in US or Canada
-        document.getElementById(`${prefix}StateSelect`).value = state;
-    }
-
-    function updateStateDropdown(prefix) {
-        const country = document.getElementById(`${prefix}Country`).value;
-        const stateSelect = document.getElementById(`${prefix}StateSelect`);
-        const stateText = document.getElementById(`${prefix}StateText`);
-        stateSelect.innerHTML = "";
-
-        const states = country === "United States" ? usStates : country === "Canada" ? canadaProvinces : null;
-        if (states) {
-            for (let code in states) stateSelect.innerHTML += `<option value="${code}">${states[code]}</option>`;
-            stateSelect.classList.remove("hidden");
-            stateText.classList.add("hidden");
+      // Listen for manual country changes
+      document.getElementById("fromCountry").addEventListener("change", function () {
+        if (this.value === "Canada") {
+          updateStateField("from", "Ontario", "ON", "CA");
+        } else if (this.value === "United States") {
+          updateStateField("from", "", "", "US");
         } else {
-            stateText.classList.remove("hidden");
-            stateSelect.classList.add("hidden");
+          updateStateField("from", "", "", "");
         }
+      });
+      document.getElementById("toCountry").addEventListener("change", function () {
+        if (this.value === "Canada") {
+          updateStateField("to", "Ontario", "ON", "CA");
+        } else if (this.value === "United States") {
+          updateStateField("to", "", "", "US");
+        } else {
+          updateStateField("to", "", "", "");
+        }
+      });
     }
 
-    const usStates = { "AL": "Alabama", "AK": "Alaska", /* Add all states... */ "WY": "Wyoming", "DC": "District of Columbia" };
-    const canadaProvinces = { "AB": "Alberta", "BC": "British Columbia", /* Add all provinces... */ "YT": "Yukon" };
+    // Initialize Google Places Autocomplete for an input field
+    function setupAutocomplete(inputId, prefix) {
+      let autocomplete = new google.maps.places.Autocomplete(document.getElementById(inputId), {
+        types: ["geocode"]
+      });
+      autocomplete.addListener("place_changed", function () {
+        fillAddressFields(autocomplete, prefix);
+      });
+    }
+
+    // Extract address components and fill in the respective fields
+    function fillAddressFields(autocomplete, prefix) {
+      let place = autocomplete.getPlace();
+      let components = place.address_components || [];
+      let streetNumber = "", route = "", subpremise = "";
+      let city = "", state = "", stateCode = "", postalCode = "", country = "", countryCode = "";
+
+      components.forEach(component => {
+        let type = component.types[0];
+        switch (type) {
+          case "street_number":
+            streetNumber = component.long_name;
+            break;
+          case "route":
+            route = component.long_name;
+            break;
+          case "subpremise":
+            subpremise = component.long_name;
+            break;
+          case "locality":
+            city = component.long_name;
+            break;
+          case "administrative_area_level_1":
+            state = component.long_name;
+            stateCode = component.short_name;
+            break;
+          case "postal_code":
+            postalCode = component.long_name;
+            break;
+          case "country":
+            country = component.long_name;
+            countryCode = component.short_name;
+            break;
+        }
+      });
+
+      // Combine street number and route for Address Line 1
+      const addressLine1 = (streetNumber + " " + route).trim();
+      document.getElementById(`${prefix}AddressLine1`).value = addressLine1;
+      document.getElementById(`${prefix}AddressLine2`).value = subpremise;
+      document.getElementById(`${prefix}City`).value = city;
+      document.getElementById(`${prefix}Postal`).value = postalCode;
+      document.getElementById(`${prefix}Country`).value = country;
+
+      updateStateField(prefix, state, stateCode, countryCode);
+    }
+
+    // Update state/province field based on the country code and extracted data
+    function updateStateField(prefix, state, stateCode, countryCode) {
+      const stateSelect = document.getElementById(`${prefix}StateSelect`);
+      stateSelect.innerHTML = "";
+      const statesList = countryCode === "US" ? usStates : countryCode === "CA" ? canadaProvinces : null;
+      
+      if (statesList) {
+        for (let code in statesList) {
+          let selected = code === stateCode ? "selected" : "";
+          stateSelect.innerHTML += `<option value="${code}" ${selected}>${statesList[code]}</option>`;
+        }
+        stateSelect.classList.remove("hidden");
+      } else {
+        // If no list available, nothing to show in dropdown.
+        // (Alternatively, you could show an input for manual entry.)
+      }
+    }
 
     window.onload = initAutocomplete;
-</script>
-
+  </script>
 </body>
 </html>
