@@ -64,3 +64,33 @@ node_modules/
 
 # dotenv environment variables file
 .env
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production
+build/
+dist/
+out/
+
+# Environment Variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+config.js
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+.idea/
+.vscode/
