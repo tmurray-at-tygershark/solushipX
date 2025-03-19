@@ -1,5 +1,6 @@
 // Package management functionality
 let packages = [];
+let packageCounter = 0;
 
 const PACKAGE_TYPES = [
     'Box',
@@ -8,6 +9,11 @@ const PACKAGE_TYPES = [
     'Envelope',
     'Tube',
     'Custom'
+];
+
+const freightClasses = [
+    "50", "55", "60", "65", "70", "77.5", "85", "92.5", 
+    "100", "110", "125", "150", "175", "200", "250", "300", "400", "500"
 ];
 
 function createPackageCard(index) {
@@ -81,28 +87,97 @@ function createPackageCard(index) {
 }
 
 function addPackage() {
-    const index = packages.length;
+    const packagesList = document.getElementById('packagesList');
+    const packageId = ++packageCounter;
+    
+    const packageCard = document.createElement('div');
+    packageCard.className = 'package-card mb-4';
+    packageCard.id = `package_${packageId}`;
+    
+    packageCard.innerHTML = `
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Package #${packageId}</h5>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="removePackage(${packageId})">
+                    <i class="bi bi-trash"></i> Remove
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Description</label>
+                        <input type="text" class="form-control" id="packageDescription_${packageId}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="packageQuantity_${packageId}" value="1" min="1" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Weight (lbs)</label>
+                        <input type="number" class="form-control" id="packageWeight_${packageId}" step="0.01" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Length (in)</label>
+                        <input type="number" class="form-control" id="packageLength_${packageId}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Width (in)</label>
+                        <input type="number" class="form-control" id="packageWidth_${packageId}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Height (in)</label>
+                        <input type="number" class="form-control" id="packageHeight_${packageId}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Freight Class</label>
+                        <select class="form-select" id="packageFreightClass_${packageId}" required>
+                            ${freightClasses.map(fc => `<option value="${fc}">${fc}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Declared Value ($)</label>
+                        <input type="number" class="form-control" id="packageValue_${packageId}" step="0.01" value="0.00">
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check mt-4">
+                            <input class="form-check-input" type="checkbox" id="packageStackable_${packageId}" checked>
+                            <label class="form-check-label" for="packageStackable_${packageId}">
+                                Stackable
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    packagesList.appendChild(packageCard);
+    
+    // Add to packages array
     packages.push({
-        type: 'Box',
+        id: packageId,
+        description: '',
+        quantity: 1,
         weight: 0,
-        weightUnit: 'kg',
         length: 0,
         width: 0,
         height: 0,
-        dimensionUnit: 'cm',
-        declaredValue: 0,
-        stackable: false
+        freightClass: '77.5',
+        value: 0,
+        stackable: true
     });
-
-    const packagesList = document.getElementById('packagesList');
-    packagesList.insertAdjacentHTML('beforeend', createPackageCard(index));
+    
     updatePackageCount();
+    return packageId;
 }
 
-function removePackage(index) {
-    packages.splice(index, 1);
-    refreshPackagesList();
-    updatePackageCount();
+function removePackage(packageId) {
+    const packageCard = document.getElementById(`package_${packageId}`);
+    if (packageCard) {
+        packageCard.remove();
+        packages = packages.filter(pkg => pkg.id !== packageId);
+        updatePackageCount();
+    }
 }
 
 function updatePackage(index, field, value) {
@@ -136,19 +211,73 @@ function refreshPackagesList() {
 }
 
 function updatePackageCount() {
-    const count = packages.length;
+    const count = document.querySelectorAll('.package-card').length;
     const badge = document.getElementById('packageCount');
-    badge.textContent = `${count} package${count !== 1 ? 's' : ''}`;
+    if (badge) {
+        badge.textContent = `${count} package${count !== 1 ? 's' : ''}`;
+    }
+    
+    // Show/hide the "Calculate Rates" button based on package count
+    const calculateBtn = document.querySelector('button[type="submit"]');
+    if (calculateBtn) {
+        calculateBtn.disabled = count === 0;
+    }
 }
 
 function getPackagesData() {
-    return packages.map((pkg, index) => ({
-        ...pkg,
-        isValid: validatePackage(index)
-    }));
+    const packages = [];
+    const packageElements = document.querySelectorAll('.package-card');
+    
+    packageElements.forEach((element) => {
+        const packageId = element.id.split('_')[1];
+        const description = document.getElementById(`packageDescription_${packageId}`).value;
+        const quantity = parseFloat(document.getElementById(`packageQuantity_${packageId}`).value);
+        const weight = parseFloat(document.getElementById(`packageWeight_${packageId}`).value);
+        const length = parseFloat(document.getElementById(`packageLength_${packageId}`).value);
+        const width = parseFloat(document.getElementById(`packageWidth_${packageId}`).value);
+        const height = parseFloat(document.getElementById(`packageHeight_${packageId}`).value);
+        const freightClass = document.getElementById(`packageFreightClass_${packageId}`).value;
+        const value = parseFloat(document.getElementById(`packageValue_${packageId}`).value);
+        const isStackable = document.getElementById(`packageStackable_${packageId}`).checked;
+
+        const isValid = description && 
+                       quantity > 0 && 
+                       weight > 0 && 
+                       length > 0 && 
+                       width > 0 && 
+                       height > 0 && 
+                       freightClass && 
+                       value > 0;
+
+        packages.push({
+            description,
+            quantity,
+            weight,
+            length,
+            width,
+            height,
+            freightClass,
+            value,
+            isStackable,
+            isValid
+        });
+    });
+
+    return packages;
 }
 
-// Initialize with one package
+// Reset packages state
+function resetPackages() {
+    packages = [];
+    packageCounter = 0;
+    const packagesList = document.getElementById('packagesList');
+    if (packagesList) {
+        packagesList.innerHTML = '';
+    }
+    updatePackageCount();
+}
+
+// Add initial package on page load
 document.addEventListener('DOMContentLoaded', () => {
-    addPackage();
+    resetPackages();
 }); 
