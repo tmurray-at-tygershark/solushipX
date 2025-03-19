@@ -436,128 +436,156 @@ class FormHandler {
         document.querySelector('.container').insertAdjacentElement('afterbegin', alert);
     }
 
-    async loadDraft() {
+    loadDraft() {
         try {
-            // Hardcoded draft data for testing
+            // Test data for development
             const draftData = {
                 shipmentType: 'FTL',
                 bookingReferenceNumber: 'REF123456',
                 shipmentDate: '2025-03-20',
-                fromAddress: {
-                    companyName: 'Sender Company',
-                    addressLine1: '123 Sender Street',
-                    addressLine2: 'Suite 100',
-                    city: 'Toronto',
-                    state: 'ON',
-                    postalCode: 'M5V 2L7',
-                    country: 'CA',
-                    contactName: 'John Sender',
-                    email: 'john.sender@example.com',
-                    phone: '647-262-1493',
-                    fax: '647-262-1494',
-                    specialInstructions: 'Please call before pickup'
+                from: {
+                    company: "Tyger Shark Inc.",
+                    attentionName: "Tyler Murray",
+                    street: "123 Main Street",
+                    street2: "Unit A",
+                    postalCode: "53151",
+                    city: "New Berlin",
+                    state: "WI",
+                    country: "US",
+                    contactName: "Tyler Murray",
+                    contactPhone: "647-262-1493",
+                    contactEmail: "tyler@tygershark.com",
+                    contactFax: "647-262-1493",
+                    specialInstructions: "Pickup at Bay 1"
                 },
-                toAddress: {
-                    companyName: 'Receiver Company',
-                    addressLine1: '456 Receiver Avenue',
-                    addressLine2: 'Unit 200',
-                    city: 'Vancouver',
-                    state: 'BC',
-                    postalCode: 'V6B 2Y9',
-                    country: 'CA',
-                    contactName: 'Jane Receiver',
-                    email: 'jane.receiver@example.com',
-                    phone: '604-555-0123',
-                    fax: '604-555-0124',
-                    specialInstructions: 'Loading dock available 9AM-5PM'
+                to: {
+                    company: "Fantom Inc.",
+                    attentionName: "Tyler Murray",
+                    street: "321 King Street",
+                    street2: "Unit B",
+                    postalCode: "L4W 1N7",
+                    city: "Mississauga",
+                    state: "ON",
+                    country: "CA",
+                    contactName: "Tyler Murray",
+                    contactPhone: "647-262-1493",
+                    contactEmail: "tyler@tygershark.com",
+                    contactFax: "647-262-1493",
+                    specialInstructions: "Deliver to Bay 3"
                 },
                 earliestPickup: '05:00',
                 latestPickup: '17:00',
                 earliestDelivery: '09:00',
                 latestDelivery: '22:00',
-                packages: [
-                    {
-                        description: 'Pallet',
-                        quantity: 1,
-                        weight: 500,
-                        length: 48,
-                        width: 40,
-                        height: 48,
-                        freightClass: '400',
-                        declaredValue: 1000,
-                        isStackable: true
-                    }
-                ]
+                packages: [{
+                    description: 'Test Package',
+                    quantity: 1,
+                    weight: 100,
+                    weightUnit: 'lb',
+                    length: 48,
+                    width: 48,
+                    height: 48,
+                    dimensionUnit: 'in',
+                    freightClass: '50',
+                    nmfcCode: '123456',
+                    packageType: 'PLT',
+                    stackable: true,
+                    hazmat: false,
+                    declaredValue: 1000
+                }]
             };
 
-            // Populate form fields
-            document.getElementById('shipmentType').value = draftData.shipmentType;
-            document.getElementById('bookingReference').value = draftData.bookingReferenceNumber;
-            document.getElementById('shipmentDate').value = draftData.shipmentDate;
-            document.getElementById('earliestPickup').value = draftData.earliestPickup;
-            document.getElementById('latestPickup').value = draftData.latestPickup;
-            document.getElementById('earliestDelivery').value = draftData.earliestDelivery;
-            document.getElementById('latestDelivery').value = draftData.latestDelivery;
+            // Set shipment type and reference
+            const elements = {
+                shipmentType: document.getElementById('shipmentType'),
+                bookingReference: document.getElementById('bookingReference'),
+                shipmentDate: document.getElementById('shipmentDate'),
+                earliestPickup: document.getElementById('earliestPickup'),
+                latestPickup: document.getElementById('latestPickup'),
+                earliestDelivery: document.getElementById('earliestDelivery'),
+                latestDelivery: document.getElementById('latestDelivery')
+            };
 
-            // Populate Ship From section
-            document.getElementById('fromCompany').value = draftData.fromAddress.companyName;
-            document.getElementById('fromAddressLine1').value = draftData.fromAddress.addressLine1;
-            document.getElementById('fromAddressLine2').value = draftData.fromAddress.addressLine2;
-            document.getElementById('fromCity').value = draftData.fromAddress.city;
-            document.getElementById('fromPostal').value = draftData.fromAddress.postalCode;
-            document.getElementById('fromCountry').value = draftData.fromAddress.country;
-            document.getElementById('fromContactName').value = draftData.fromAddress.contactName;
-            document.getElementById('fromPhone').value = draftData.fromAddress.phone;
-            document.getElementById('fromEmail').value = draftData.fromAddress.email;
-            document.getElementById('fromFax').value = draftData.fromAddress.fax;
-            document.getElementById('fromInstructions').value = draftData.fromAddress.specialInstructions;
+            // Check if all elements exist before proceeding
+            for (const [key, element] of Object.entries(elements)) {
+                if (!element) {
+                    throw new Error(`Element with ID '${key}' not found`);
+                }
+            }
 
-            // Populate Ship To section
-            document.getElementById('toCompany').value = draftData.toAddress.companyName;
-            document.getElementById('toAddressLine1').value = draftData.toAddress.addressLine1;
-            document.getElementById('toAddressLine2').value = draftData.toAddress.addressLine2;
-            document.getElementById('toCity').value = draftData.toAddress.city;
-            document.getElementById('toPostal').value = draftData.toAddress.postalCode;
-            document.getElementById('toCountry').value = draftData.toAddress.country;
-            document.getElementById('toContactName').value = draftData.toAddress.contactName;
-            document.getElementById('toPhone').value = draftData.toAddress.phone;
-            document.getElementById('toEmail').value = draftData.toAddress.email;
-            document.getElementById('toFax').value = draftData.toAddress.fax;
-            document.getElementById('toInstructions').value = draftData.toAddress.specialInstructions;
+            // Set values
+            elements.shipmentType.value = draftData.shipmentType;
+            elements.bookingReference.value = draftData.bookingReferenceNumber;
+            elements.shipmentDate.value = draftData.shipmentDate;
+            elements.earliestPickup.value = draftData.earliestPickup;
+            elements.latestPickup.value = draftData.latestPickup;
+            elements.earliestDelivery.value = draftData.earliestDelivery;
+            elements.latestDelivery.value = draftData.latestDelivery;
 
-            // Update state/province fields based on country
-            this.updateStateField('from', draftData.fromAddress.state, draftData.fromAddress.country);
-            this.updateStateField('to', draftData.toAddress.state, draftData.toAddress.country);
+            // Populate addresses with error handling
+            this.populateAddressSection('from', draftData.from);
 
-            // Clear existing packages
-            const packagesList = document.getElementById('packagesList');
-            packagesList.innerHTML = '';
+            // Wait for the from country/state to be set before populating to address
+            setTimeout(() => {
+                this.populateAddressSection('to', draftData.to);
+            }, 100);
 
-            // Add packages
-            draftData.packages.forEach(pkg => {
-                const packageId = addPackage();
-                document.getElementById(`packageDescription_${packageId}`).value = pkg.description;
-                document.getElementById(`packageQuantity_${packageId}`).value = pkg.quantity;
-                document.getElementById(`packageWeight_${packageId}`).value = pkg.weight;
-                document.getElementById(`packageLength_${packageId}`).value = pkg.length;
-                document.getElementById(`packageWidth_${packageId}`).value = pkg.width;
-                document.getElementById(`packageHeight_${packageId}`).value = pkg.height;
-                document.getElementById(`packageFreightClass_${packageId}`).value = pkg.freightClass;
-                document.getElementById(`packageValue_${packageId}`).value = pkg.declaredValue;
-                document.getElementById(`packageStackable_${packageId}`).checked = pkg.isStackable;
-            });
+            // Load packages
+            if (draftData.packages && draftData.packages.length > 0) {
+                if (typeof this.packageManager === 'undefined') {
+                    console.warn('PackageManager not initialized, attempting to use global functions');
+                    // Clear existing packages
+                    if (typeof resetPackages === 'function') {
+                        resetPackages();
+                    }
+                    // Add new packages
+                    draftData.packages.forEach(pkg => {
+                        if (typeof addPackage === 'function') {
+                            const packageId = addPackage();
+                            const packageFields = {
+                                description: document.getElementById(`packageDescription_${packageId}`),
+                                quantity: document.getElementById(`packageQuantity_${packageId}`),
+                                weight: document.getElementById(`packageWeight_${packageId}`),
+                                length: document.getElementById(`packageLength_${packageId}`),
+                                width: document.getElementById(`packageWidth_${packageId}`),
+                                height: document.getElementById(`packageHeight_${packageId}`),
+                                freightClass: document.getElementById(`packageFreightClass_${packageId}`),
+                                value: document.getElementById(`packageValue_${packageId}`),
+                                stackable: document.getElementById(`packageStackable_${packageId}`)
+                            };
 
-            // Update package count
-            updatePackageCount();
+                            if (packageFields.description) packageFields.description.value = pkg.description;
+                            if (packageFields.quantity) packageFields.quantity.value = pkg.quantity;
+                            if (packageFields.weight) packageFields.weight.value = pkg.weight;
+                            if (packageFields.length) packageFields.length.value = pkg.length;
+                            if (packageFields.width) packageFields.width.value = pkg.width;
+                            if (packageFields.height) packageFields.height.value = pkg.height;
+                            if (packageFields.freightClass) packageFields.freightClass.value = pkg.freightClass;
+                            if (packageFields.value) packageFields.value.value = pkg.declaredValue;
+                            if (packageFields.stackable) packageFields.stackable.checked = pkg.stackable;
+                        }
+                    });
+                    // Update package count if function exists
+                    if (typeof updatePackageCount === 'function') {
+                        updatePackageCount();
+                    }
+                } else {
+                    this.packageManager.clearPackages();
+                    draftData.packages.forEach(pkg => {
+                        this.packageManager.addPackage(pkg);
+                    });
+                }
+            }
 
-            // Trigger form validation
-            this.validateForm();
+            // Validate form after loading
+            setTimeout(() => {
+                this.validateForm();
+                this.showFormSuccess('Draft loaded successfully');
+            }, 200);
 
-            // Show success message
-            this.showSuccess('Draft loaded successfully');
         } catch (error) {
             console.error('Error loading draft:', error);
-            this.showFormError('Failed to load draft: ' + error.message);
+            this.showFormError('Error loading draft: ' + error.message);
         }
     }
 
@@ -603,41 +631,90 @@ class FormHandler {
     }
 
     populateAddressSection(prefix, addressData) {
-        // Set the country first to trigger the state/province list update
-        const countrySelect = document.getElementById(`${prefix}Country`);
-        countrySelect.value = addressData.country;
-        // Trigger the change event to update state/province list
-        countrySelect.dispatchEvent(new Event('change'));
+        try {
+            // Define all field mappings
+            const fields = {
+                company: `${prefix}Company`,
+                attention: `${prefix}AttentionName`,
+                contact: `${prefix}ContactName`,
+                phone: `${prefix}Phone`,
+                email: `${prefix}Email`,
+                fax: `${prefix}Fax`,
+                address1: `${prefix}AddressLine1`,
+                address2: `${prefix}AddressLine2`,
+                city: `${prefix}City`,
+                postal: `${prefix}Postal`,
+                country: `${prefix}Country`,
+                state: `${prefix}State`,
+                instructions: `${prefix}Instructions`
+            };
 
-        // Company and contact info
-        document.getElementById(`${prefix}Company`).value = addressData.company;
-        document.getElementById(`${prefix}ContactName`).value = addressData.contactName;
-        document.getElementById(`${prefix}Phone`).value = addressData.contactPhone;
-        document.getElementById(`${prefix}Email`).value = addressData.contactEmail;
-        document.getElementById(`${prefix}Fax`).value = addressData.contactFax;
+            // Log the field IDs we're looking for
+            console.log(`Attempting to populate ${prefix} address fields:`, fields);
 
-        // Address fields
-        document.getElementById(`${prefix}AddressLine1`).value = addressData.addressLine1;
-        document.getElementById(`${prefix}AddressLine2`).value = addressData.addressLine2;
-        document.getElementById(`${prefix}City`).value = addressData.city;
-        document.getElementById(`${prefix}Postal`).value = addressData.postalCode;
-        document.getElementById(`${prefix}Instructions`).value = addressData.specialInstructions;
+            // Check if elements exist before setting values
+            for (const [key, id] of Object.entries(fields)) {
+                const element = document.getElementById(id);
+                if (!element) {
+                    console.warn(`Element with ID '${id}' not found`);
+                    continue;
+                }
 
-        // Set state/province after a short delay to ensure the dropdown has been populated
-        setTimeout(() => {
-            const stateSelect = document.getElementById(`${prefix}StateSelect`);
-            const stateText = document.getElementById(`${prefix}StateText`);
-            
-            if (addressData.country === 'US' || addressData.country === 'CA') {
-                stateSelect.value = addressData.state;
-                stateSelect.classList.remove('hidden');
-                stateText.classList.add('hidden');
-            } else {
-                stateText.value = addressData.state;
-                stateText.classList.remove('hidden');
-                stateSelect.classList.add('hidden');
+                // Map the field to the corresponding address data
+                switch (key) {
+                    case 'company':
+                        element.value = addressData.company || '';
+                        break;
+                    case 'attention':
+                        element.value = addressData.attentionName || '';
+                        break;
+                    case 'contact':
+                        element.value = addressData.contactName || '';
+                        break;
+                    case 'phone':
+                        element.value = addressData.contactPhone || '';
+                        break;
+                    case 'email':
+                        element.value = addressData.contactEmail || '';
+                        break;
+                    case 'fax':
+                        element.value = addressData.contactFax || '';
+                        break;
+                    case 'address1':
+                        element.value = addressData.street || '';
+                        break;
+                    case 'address2':
+                        element.value = addressData.street2 || '';
+                        break;
+                    case 'city':
+                        element.value = addressData.city || '';
+                        break;
+                    case 'postal':
+                        element.value = addressData.postalCode || '';
+                        break;
+                    case 'country':
+                        element.value = addressData.country || '';
+                        // Trigger change event to update state/province list
+                        element.dispatchEvent(new Event('change'));
+                        break;
+                    case 'state':
+                        // Wait for country change to complete
+                        setTimeout(() => {
+                            if (element) {
+                                element.value = addressData.state || '';
+                                element.dispatchEvent(new Event('change'));
+                            }
+                        }, 100);
+                        break;
+                    case 'instructions':
+                        element.value = addressData.specialInstructions || '';
+                        break;
+                }
             }
-        }, 100);
+        } catch (error) {
+            console.error(`Error populating ${prefix} address:`, error);
+            throw new Error(`Failed to populate ${prefix} address: ${error.message}`);
+        }
     }
 
     updateStateField(prefix, stateValue, countryValue) {
@@ -671,6 +748,8 @@ class FormHandler {
 
         try {
             const requestData = this.gatherFormData();
+            console.log('Request Data:', requestData);
+
             const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
                 method: 'POST',
                 headers: {
@@ -679,11 +758,33 @@ class FormHandler {
                 body: JSON.stringify(requestData)
             });
 
-            const result = await response.json();
-            if (result.success && Array.isArray(result.data)) {
-                this.displayRates(result.data);
+            const responseData = await response.json();
+            console.log('Server Response:', responseData);
+
+            if (responseData.success && responseData.data.availableRates) {
+                const rates = responseData.data.availableRates.map(rate => ({
+                    id: rate.quoteId,
+                    carrier: rate.carrierName,
+                    serviceLevel: rate.serviceMode,
+                    transitDays: rate.transitTime,
+                    estimatedDelivery: rate.estimatedDeliveryDate,
+                    baseRate: rate.freightCharges,
+                    fuelSurcharge: rate.fuelCharges,
+                    accessorials: rate.billingDetails
+                        .filter(detail => detail.category === 'Service')
+                        .map(detail => ({
+                            description: detail.description,
+                            amount: detail.amountDue
+                        })),
+                    totalCharges: rate.totalCharges,
+                    guaranteedService: rate.guarOptions && rate.guarOptions.length > 0,
+                    guaranteeCharge: rate.guarOptions && rate.guarOptions.length > 0 ? 
+                        rate.guarOptions[0].amountDue : 0
+                }));
+                console.log('Parsed Rates:', rates);
+                this.displayRates(rates);
             } else {
-                throw new Error(result.error?.message || 'Invalid response format from rates API');
+                throw new Error('No rates found in the response');
             }
         } catch (error) {
             console.error('Error:', error);
@@ -694,7 +795,7 @@ class FormHandler {
         }
     }
 
-    displayRates(ratesData) {
+    displayRates(rates) {
         const ratesSection = document.getElementById('ratesSection');
         const ratesContainer = document.getElementById('ratesContainer');
         
@@ -705,11 +806,24 @@ class FormHandler {
         ratesSection.style.display = 'block';
         
         // Sort rates by total charge
-        const rates = ratesData.sort((a, b) => parseFloat(a.totalCharges) - parseFloat(b.totalCharges));
+        rates.sort((a, b) => a.totalCharges - b.totalCharges);
         
         rates.forEach(rate => {
             const rateCard = document.createElement('div');
             rateCard.className = 'col-md-4 mb-4';
+            
+            // Format estimated delivery date
+            const estimatedDelivery = new Date(rate.estimatedDelivery);
+            const deliveryDateStr = estimatedDelivery.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+
+            // Calculate total accessorial charges
+            const accessorialTotal = rate.accessorials.reduce((sum, acc) => sum + acc.amount, 0);
+
             rateCard.innerHTML = `
                 <div class="card h-100">
                     <div class="card-header bg-primary text-white">
@@ -719,6 +833,7 @@ class FormHandler {
                         <div class="mb-3">
                             <h6 class="text-muted">Transit Time</h6>
                             <p class="mb-0">${rate.transitDays} Days</p>
+                            <small class="text-muted">Est. Delivery: ${deliveryDateStr}</small>
                         </div>
                         <div class="mb-3">
                             <h6 class="text-muted">Service Level</h6>
@@ -727,23 +842,23 @@ class FormHandler {
                         <div class="mb-3">
                             <h6 class="text-muted">Charges Breakdown</h6>
                             <ul class="list-unstyled">
-                                <li>Base Rate: $${parseFloat(rate.baseRate).toFixed(2)}</li>
-                                <li>Fuel Surcharge: $${parseFloat(rate.fuelSurcharge).toFixed(2)}</li>
-                                ${rate.accessorials ? rate.accessorials.map(acc => 
-                                    `<li>${acc.description}: $${parseFloat(acc.amount).toFixed(2)}</li>`
-                                ).join('') : ''}
+                                <li>Base Rate: $${rate.baseRate.toFixed(2)}</li>
+                                <li>Fuel Surcharge: $${rate.fuelSurcharge.toFixed(2)}</li>
+                                ${rate.accessorials.map(acc => 
+                                    `<li>${acc.description}: $${acc.amount.toFixed(2)}</li>`
+                                ).join('')}
                             </ul>
                         </div>
                         <div class="mb-3">
                             <h6 class="text-muted">Total Charges</h6>
-                            <h4 class="text-primary mb-0">$${parseFloat(rate.totalCharges).toFixed(2)}</h4>
+                            <h4 class="text-primary mb-0">$${rate.totalCharges.toFixed(2)}</h4>
                         </div>
                         ${rate.guaranteedService ? `
                             <div class="mb-3">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="guarantee_${rate.id}">
                                     <label class="form-check-label" for="guarantee_${rate.id}">
-                                        Add Guarantee (+$${parseFloat(rate.guaranteeCharge).toFixed(2)})
+                                        Add Guarantee (+$${rate.guaranteeCharge.toFixed(2)})
                                     </label>
                                 </div>
                             </div>
