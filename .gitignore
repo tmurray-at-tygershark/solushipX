@@ -1,21 +1,52 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+.firebase/
+.firebaserc
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Cache directories
+.cache/
+.npm/
+.eslintcache
+
+# Test coverage
+coverage/
+
+# Firebase
 firebase-debug.log*
-firebase-debug.*.log*
+ui-debug.log*
+.runtimeconfig.json
 
-# Firebase cache
-.firebase/
-
-# Firebase config
-
-# Uncomment this if you'd like others to create their own Firebase project.
-# For a team working on the same Firebase project(s), it is recommended to leave
-# it commented so all members can deploy to the same project(s) in .firebaserc.
-# .firebaserc
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
 
 # Runtime data
 pids
@@ -44,14 +75,8 @@ bower_components
 # Compiled binary addons (http://nodejs.org/api/addons.html)
 build/Release
 
-# Dependency directories
-node_modules/
-
 # Optional npm cache directory
 .npm
-
-# Optional eslint cache
-.eslintcache
 
 # Optional REPL history
 .node_repl_history
@@ -65,32 +90,16 @@ node_modules/
 # dotenv environment variables file
 .env
 
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
-
 # Testing
 coverage/
 
 # Production
-build/
-dist/
 out/
 
-# Environment Variables
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-config.js
-
 # Misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 *.pem
-.idea/
-.vscode/
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+config.js
