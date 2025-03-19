@@ -796,8 +796,14 @@ class FormHandler {
     }
 
     displayRates(rates) {
-        const ratesSection = document.getElementById('ratesSection');
+        // Store rates globally for filtering/sorting
+        this.currentRates = rates;
+        this.displayFilteredRates(rates);
+    }
+
+    displayFilteredRates(rates, sortBy = 'price', guaranteedOnly = false) {
         const ratesContainer = document.getElementById('ratesContainer');
+        const ratesSection = document.getElementById('ratesSection');
         
         // Clear existing rates
         ratesContainer.innerHTML = '';
@@ -805,10 +811,25 @@ class FormHandler {
         // Show the rates section
         ratesSection.style.display = 'block';
         
-        // Sort rates by total charge
-        rates.sort((a, b) => a.totalCharges - b.totalCharges);
+        // Filter rates if guaranteedOnly is true
+        let filteredRates = guaranteedOnly ? 
+            rates.filter(rate => rate.guaranteedService) : 
+            rates;
+
+        // Sort rates based on selected criteria
+        switch(sortBy) {
+            case 'price':
+                filteredRates.sort((a, b) => a.totalCharges - b.totalCharges);
+                break;
+            case 'transit':
+                filteredRates.sort((a, b) => a.transitDays - b.transitDays);
+                break;
+            case 'carrier':
+                filteredRates.sort((a, b) => a.carrier.localeCompare(b.carrier));
+                break;
+        }
         
-        rates.forEach(rate => {
+        filteredRates.forEach(rate => {
             const rateCard = document.createElement('div');
             rateCard.className = 'col-md-4 mb-4';
             
@@ -823,6 +844,9 @@ class FormHandler {
 
             // Calculate total accessorial charges
             const accessorialTotal = rate.accessorials.reduce((sum, acc) => sum + acc.amount, 0);
+            
+            // Calculate initial total without guarantee
+            let currentTotal = rate.totalCharges;
 
             rateCard.innerHTML = `
                 <div class="card h-100">
@@ -851,12 +875,14 @@ class FormHandler {
                         </div>
                         <div class="mb-3">
                             <h6 class="text-muted">Total Charges</h6>
-                            <h4 class="text-primary mb-0">$${rate.totalCharges.toFixed(2)}</h4>
+                            <h4 class="text-primary mb-0" id="total_${rate.id}">$${currentTotal.toFixed(2)}</h4>
                         </div>
                         ${rate.guaranteedService ? `
                             <div class="mb-3">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="guarantee_${rate.id}">
+                                    <input class="form-check-input" type="checkbox" 
+                                        id="guarantee_${rate.id}" 
+                                        onchange="formHandler.updateRateTotal('${rate.id}', ${rate.totalCharges}, ${rate.guaranteeCharge}, this.checked)">
                                     <label class="form-check-label" for="guarantee_${rate.id}">
                                         Add Guarantee (+$${rate.guaranteeCharge.toFixed(2)})
                                     </label>
@@ -865,7 +891,7 @@ class FormHandler {
                         ` : ''}
                     </div>
                     <div class="card-footer">
-                        <button type="button" class="btn btn-primary w-100" onclick="selectRate('${rate.id}')">
+                        <button type="button" class="btn btn-primary w-100" onclick="formHandler.selectRate('${rate.id}')">
                             Select Rate
                         </button>
                     </div>
@@ -874,8 +900,8 @@ class FormHandler {
             ratesContainer.appendChild(rateCard);
         });
 
-        // Add sorting controls
-        const sortingControls = document.getElementById('rateSortingControls');
+        // Add sorting controls if they don't exist
+        let sortingControls = document.getElementById('rateSortingControls');
         if (!sortingControls) {
             const controls = document.createElement('div');
             controls.id = 'rateSortingControls';
@@ -883,15 +909,17 @@ class FormHandler {
             controls.innerHTML = `
                 <div class="row align-items-center">
                     <div class="col-md-6">
-                        <select class="form-select" onchange="sortRates(this.value)">
-                            <option value="price">Sort by Price</option>
-                            <option value="transit">Sort by Transit Time</option>
-                            <option value="carrier">Sort by Carrier</option>
+                        <select class="form-select" onchange="formHandler.sortRates(this.value)">
+                            <option value="price" ${sortBy === 'price' ? 'selected' : ''}>Sort by Price</option>
+                            <option value="transit" ${sortBy === 'transit' ? 'selected' : ''}>Sort by Transit Time</option>
+                            <option value="carrier" ${sortBy === 'carrier' ? 'selected' : ''}>Sort by Carrier</option>
                         </select>
                     </div>
                     <div class="col-md-6">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="guaranteedOnly" onchange="filterGuaranteed(this.checked)">
+                            <input class="form-check-input" type="checkbox" id="guaranteedOnly" 
+                                ${guaranteedOnly ? 'checked' : ''} 
+                                onchange="formHandler.filterGuaranteed(this.checked)">
                             <label class="form-check-label" for="guaranteedOnly">
                                 Show Guaranteed Services Only
                             </label>
@@ -900,7 +928,58 @@ class FormHandler {
                 </div>
             `;
             ratesSection.insertBefore(controls, ratesContainer);
+        } else {
+            // Update existing controls state
+            const sortSelect = sortingControls.querySelector('select');
+            const guaranteedCheckbox = sortingControls.querySelector('#guaranteedOnly');
+            if (sortSelect) sortSelect.value = sortBy;
+            if (guaranteedCheckbox) guaranteedCheckbox.checked = guaranteedOnly;
         }
+    }
+
+    updateRateTotal(rateId, baseTotal, guaranteeCharge, isChecked) {
+        const totalElement = document.getElementById(`total_${rateId}`);
+        if (totalElement) {
+            const newTotal = isChecked ? baseTotal + guaranteeCharge : baseTotal;
+            totalElement.textContent = `$${newTotal.toFixed(2)}`;
+        }
+    }
+
+    sortRates(sortBy) {
+        const guaranteedOnly = document.getElementById('guaranteedOnly')?.checked || false;
+        this.displayFilteredRates(this.currentRates, sortBy, guaranteedOnly);
+    }
+
+    filterGuaranteed(showGuaranteedOnly) {
+        const sortSelect = document.querySelector('#rateSortingControls select');
+        const sortBy = sortSelect ? sortSelect.value : 'price';
+        this.displayFilteredRates(this.currentRates, sortBy, showGuaranteedOnly);
+    }
+
+    selectRate(rateId) {
+        // Find the selected rate
+        const rate = this.currentRates.find(r => r.id === rateId);
+        if (!rate) return;
+
+        // Check if guarantee was selected
+        const guaranteeCheckbox = document.getElementById(`guarantee_${rateId}`);
+        const includeGuarantee = guaranteeCheckbox?.checked || false;
+
+        // Calculate final total
+        const finalTotal = includeGuarantee ? 
+            rate.totalCharges + rate.guaranteeCharge : 
+            rate.totalCharges;
+
+        // Store selected rate details (you can expand this based on your needs)
+        const selectedRate = {
+            ...rate,
+            includeGuarantee,
+            finalTotal
+        };
+
+        // You can add your logic here for what happens when a rate is selected
+        console.log('Selected Rate:', selectedRate);
+        alert(`Selected ${rate.carrier} rate with total $${finalTotal.toFixed(2)}`);
     }
 }
 
