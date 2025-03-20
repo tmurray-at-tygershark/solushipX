@@ -3,6 +3,7 @@ const cors = require("cors")({ origin: true });
 const express = require("express");
 const axios = require("axios");
 const { parseStringPromise } = require("xml2js");
+const functions = require('firebase-functions');
 
 // Create Express app
 const app = express();
@@ -107,7 +108,7 @@ function validateTimeWindow(window, type) {
 function validateAddress(address, type) {
     const requiredFields = [
         'company', 'street', 'postalCode', 'city', 'state', 'country',
-        'contactName', 'contactPhone', 'contactEmail', 'contactFax', 'specialInstructions'
+        'contactName', 'contactPhone', 'contactEmail', 'specialInstructions'
     ];
 
     for (const field of requiredFields) {
@@ -175,7 +176,6 @@ function buildRateRequest(shipmentData) {
           <Contact>${shipmentData.fromAddress.contactName}</Contact>
           <Phone>${shipmentData.fromAddress.contactPhone}</Phone>
           <Email>${shipmentData.fromAddress.contactEmail}</Email>
-          <Fax>${shipmentData.fromAddress.contactFax}</Fax>
           <SpecialInstructions>${shipmentData.fromAddress.specialInstructions}</SpecialInstructions>
         </Origin>
 
@@ -193,7 +193,6 @@ function buildRateRequest(shipmentData) {
           <Contact>${shipmentData.toAddress.contactName}</Contact>
           <Phone>${shipmentData.toAddress.contactPhone}</Phone>
           <Email>${shipmentData.toAddress.contactEmail}</Email>
-          <Fax>${shipmentData.toAddress.contactFax}</Fax>
           <SpecialInstructions>${shipmentData.toAddress.specialInstructions}</SpecialInstructions>
         </Destination>
 
@@ -295,7 +294,6 @@ app.post("/rates", async (req, res) => {
                 contact: getValue(rateResult, 'Origin.Contact'),
                 phone: getValue(rateResult, 'Origin.Phone'),
                 email: getValue(rateResult, 'Origin.Email'),
-                fax: getValue(rateResult, 'Origin.Fax'),
                 specialInstructions: getValue(rateResult, 'Origin.SpecialInstructions')
             },
             destination: {
@@ -309,7 +307,6 @@ app.post("/rates", async (req, res) => {
                 contact: getValue(rateResult, 'Destination.Contact'),
                 phone: getValue(rateResult, 'Destination.Phone'),
                 email: getValue(rateResult, 'Destination.Email'),
-                fax: getValue(rateResult, 'Destination.Fax'),
                 specialInstructions: getValue(rateResult, 'Destination.SpecialInstructions')
             },
             items: (rateResult.Items?.[0]?.WSItem2 || []).map(item => ({
@@ -380,6 +377,22 @@ app.post("/rates", async (req, res) => {
 // Health check endpoint
 app.get("/health", (req, res) => {
     res.json({ status: "healthy" });
+});
+
+// Endpoint to get Google Maps API key
+app.get('/api/config/maps-key', (req, res) => {
+  try {
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    if (!apiKey) {
+      console.error('Google Maps API key not found in environment variables');
+      return res.status(500).json({ error: 'Google Maps API key not configured' });
+    }
+    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+    res.json({ key: apiKey });
+  } catch (error) {
+    console.error('Error serving Google Maps API key:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Export the function

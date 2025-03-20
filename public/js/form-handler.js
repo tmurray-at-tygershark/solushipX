@@ -1,82 +1,435 @@
-// Form validation and submission handler
+// State and province constants
+const usStates = {
+    'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+    'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+    'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+    'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+    'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+    'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+    'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+    'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+    'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+    'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+};
+
+const canadianProvinces = {
+    'AB': 'Alberta', 'BC': 'British Columbia', 'MB': 'Manitoba', 'NB': 'New Brunswick',
+    'NL': 'Newfoundland and Labrador', 'NS': 'Nova Scotia', 'NT': 'Northwest Territories',
+    'NU': 'Nunavut', 'ON': 'Ontario', 'PE': 'Prince Edward Island', 'QC': 'Quebec',
+    'SK': 'Saskatchewan', 'YT': 'Yukon'
+};
+
+// Form handling functionality
 class FormHandler {
-    constructor() {
-        this.form = document.getElementById('shipmentForm');
-        this.setupEventListeners();
-        this.testData = {
-            shipmentInfo: {
-                type: 'ltl',
-                bookingReference: 'TEST-' + new Date().toISOString().slice(0,10),
-                shipmentDate: new Date(Date.now() + 86400000).toISOString().slice(0,10), // Tomorrow
-                pickupWindow: {
-                    earliest: '09:00',
-                    latest: '17:00'
-                },
-                deliveryWindow: {
-                    earliest: '09:00',
-                    latest: '17:00'
-                }
-            },
-            fromAddress: {
-                company: 'Tech Solutions Inc.',
-                contactName: 'John Smith',
-                contactPhone: '416-555-0123',
-                contactEmail: 'john.smith@techsolutions.com',
-                contactFax: '416-555-0124',
-                addressLine1: '123 Technology Drive',
-                addressLine2: 'Suite 400',
-                city: 'Toronto',
-                state: 'ON',
-                postalCode: 'M5V 2H1',
-                country: 'CA',
-                specialInstructions: 'Please call before pickup'
-            },
-            toAddress: {
-                company: 'Digital Dynamics LLC',
-                contactName: 'Sarah Johnson',
-                contactPhone: '212-555-0456',
-                contactEmail: 'sarah.j@digitaldynamics.com',
-                contactFax: '212-555-0457',
-                addressLine1: '456 Innovation Avenue',
-                addressLine2: 'Floor 12',
-                city: 'New York',
-                state: 'NY',
-                postalCode: '10001',
-                country: 'US',
-                specialInstructions: 'Loading dock available 9AM-5PM'
-            },
-            packages: [{
-                description: 'Server Equipment',
-                quantity: 2,
-                weight: 150,
-                length: 48,
-                width: 40,
-                height: 36,
-                freightClass: '92.5',
-                value: 5000.00,
-                stackable: false
-            },
-            {
-                description: 'Network Switches',
-                quantity: 1,
-                weight: 75,
-                length: 24,
-                width: 20,
-                height: 12,
-                freightClass: '77.5',
-                value: 2500.00,
-                stackable: true
-            }]
+    constructor(options = {}) {
+        this.currentStep = 0;
+        this.formData = {
+            shipmentInfo: {},
+            shipFrom: {},
+            shipTo: {},
+            packages: []
         };
-        this.formData = null;
+        this.skipMapsInit = options.skipMapsInit || false;
+        this.setupStepValidation();
+        this.initializeForm();
+    }
+
+    initializeForm() {
+        try {
+            // Initialize form elements
+            this.form = document.getElementById('shipmentForm');
+            this.stepItems = document.querySelectorAll('.step-item');
+            this.formSections = document.querySelectorAll('.form-section');
+            
+            // Validate required elements exist
+            if (!this.form) {
+                throw new Error('Shipment form not found');
+            }
+            
+            // Setup step validation first
+            this.setupStepValidation();
+            
+            // Initialize event listeners
+            this.setupEventListeners();
+            
+            // Setup step navigation
+            this.setupStepNavigation();
+            
+            // Load saved data if exists
+            this.loadSavedData();
+            
+            // Show initial step only if we have step items
+            if (this.stepItems.length > 0) {
+                this.showStep(0);
+            } else {
+                console.warn('No step items found');
+            }
+        } catch (error) {
+            console.error('Error initializing form:', error);
+            // Try to show error in the container if it exists
+            const container = document.querySelector('.container');
+            if (container) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-danger';
+                errorDiv.textContent = 'Error initializing form: ' + error.message;
+                container.insertAdjacentElement('afterbegin', errorDiv);
+            } else {
+                // Fallback to console if container doesn't exist
+                console.error('Could not display error message:', error);
+            }
+        }
     }
 
     setupEventListeners() {
-        // Add real-time validation
-        const inputs = document.querySelectorAll('input, select');
-        inputs.forEach(input => {
-            input.addEventListener('change', () => this.validateField(input));
+        try {
+            // Add input event listeners for real-time validation
+            document.querySelectorAll('input, select, textarea').forEach(input => {
+                input.addEventListener('input', () => this.validateField(input));
+            });
+
+            // Setup country change handlers
+            this.setupCountryChangeHandler('from');
+            this.setupCountryChangeHandler('to');
+
+            // Setup package management
+            this.setupPackageManagement();
+
+            // Add form submit handler
+            this.form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitShipment();
+            });
+
+            // Add navigation buttons handlers
+            const nextButton = document.getElementById('nextStep');
+            const prevButton = document.getElementById('prevStep');
+            
+            if (nextButton) {
+                nextButton.addEventListener('click', () => this.nextStep());
+            }
+            
+            if (prevButton) {
+                prevButton.addEventListener('click', () => this.prevStep());
+            }
+        } catch (error) {
+            console.error('Error setting up event listeners:', error);
+            this.showFormError('Error setting up form: ' + error.message);
+        }
+    }
+
+    setupCountryChangeHandler(prefix) {
+        const countrySelect = document.getElementById(`${prefix}Country`);
+        if (!countrySelect) return;
+
+        countrySelect.addEventListener('change', () => {
+            this.handleCountryChange(prefix);
         });
+    }
+
+    setupStepValidation() {
+        this.stepValidation = {
+            0: () => this.validateShipmentInfo(),
+            1: () => this.validateAddress('from'),
+            2: () => this.validateAddress('to'),
+            3: () => this.validatePackages(),
+            4: () => true // Rates step doesn't need validation
+        };
+    }
+
+    setupStepNavigation() {
+        const stepItems = document.querySelectorAll('.step-item');
+        stepItems.forEach((item, index) => {
+            item.addEventListener('click', () => {
+                // Only allow navigation to previous steps
+                if (index < this.currentStep) {
+                    this.currentStep = index;
+                    this.showStep(index);
+                }
+            });
+        });
+    }
+
+    loadSavedData() {
+        const savedData = localStorage.getItem('shipmentFormData');
+        if (savedData) {
+            try {
+                this.formData = JSON.parse(savedData);
+                this.populateFormWithData();
+            } catch (error) {
+                console.error('Error loading saved data:', error);
+            }
+        }
+    }
+
+    saveFormData() {
+        localStorage.setItem('shipmentFormData', JSON.stringify(this.formData));
+    }
+
+    populateFormWithData() {
+        // Populate Shipment Info
+        if (this.formData.shipmentInfo) {
+            const { shipmentType, specialInstructions } = this.formData.shipmentInfo;
+            if (shipmentType) {
+                const shipmentTypeSelect = document.getElementById('shipmentType');
+                if (shipmentTypeSelect) {
+                    const matchingOption = Array.from(shipmentTypeSelect.options).find(option => 
+                        option.value === shipmentType
+                    );
+                    if (matchingOption) {
+                        matchingOption.selected = true;
+                    }
+                }
+            }
+            if (specialInstructions) {
+                const specialInstructionsInput = document.getElementById('specialInstructions');
+                if (specialInstructionsInput) {
+                    specialInstructionsInput.value = specialInstructions;
+                }
+            }
+        }
+
+        // Populate Ship From
+        if (this.formData.shipFrom) {
+            Object.entries(this.formData.shipFrom).forEach(([key, value]) => {
+                const input = document.getElementById(`from${key.charAt(0).toUpperCase() + key.slice(1)}`);
+                if (input) {
+                    input.value = value;
+                    input.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+
+        // Populate Ship To
+        if (this.formData.shipTo) {
+            Object.entries(this.formData.shipTo).forEach(([key, value]) => {
+                const input = document.getElementById(`to${key.charAt(0).toUpperCase() + key.slice(1)}`);
+                if (input) {
+                    input.value = value;
+                    input.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+
+        // Populate Packages
+        if (this.formData.packages && this.formData.packages.length > 0) {
+            const packagesList = document.getElementById('packagesList');
+            if (packagesList) {
+                packagesList.innerHTML = '';
+                this.formData.packages.forEach(pkg => {
+                    const packageCard = this.createPackageCard(pkg);
+                    packagesList.appendChild(packageCard);
+                });
+                this.updatePackageCount();
+            }
+        }
+    }
+
+    createPackageCard(pkg = {}) {
+        const card = document.createElement('div');
+        card.className = 'package-card';
+        card.innerHTML = `
+            <div class="package-header">
+                <h5>Package ${document.querySelectorAll('.package-card').length + 1}</h5>
+                <button type="button" class="btn btn-sm btn-danger remove-package">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+            <div class="package-content">
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <input type="text" class="form-control package-description" 
+                           value="${pkg.description || ''}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Quantity</label>
+                    <input type="number" class="form-control package-quantity" 
+                           value="${pkg.quantity || 1}" min="1" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Package Type</label>
+                    <select class="form-select package-type">
+                        ${window.PACKAGE_TYPES.map(type => 
+                            `<option value="${type}" ${pkg.type === type ? 'selected' : ''}>${type}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Weight (lbs)</label>
+                    <input type="number" class="form-control package-weight" 
+                           value="${pkg.weight || ''}" min="0" step="0.1">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Dimensions</label>
+                    <div class="row g-2">
+                        <div class="col">
+                            <input type="number" class="form-control package-length" 
+                                   placeholder="Length" value="${pkg.length || ''}" min="0" step="0.1">
+                        </div>
+                        <div class="col">
+                            <input type="number" class="form-control package-width" 
+                                   placeholder="Width" value="${pkg.width || ''}" min="0" step="0.1">
+                        </div>
+                        <div class="col">
+                            <input type="number" class="form-control package-height" 
+                                   placeholder="Height" value="${pkg.height || ''}" min="0" step="0.1">
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Declared Value ($)</label>
+                    <input type="number" class="form-control package-value" 
+                           value="${pkg.declaredValue || ''}" min="0" step="0.01">
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input package-stackable" 
+                               ${pkg.stackable ? 'checked' : ''}>
+                        <label class="form-check-label">Stackable</label>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add event listeners
+        card.querySelector('.remove-package').addEventListener('click', () => {
+            card.remove();
+            this.updatePackageCount();
+            this.saveFormData();
+        });
+
+        const inputs = card.querySelectorAll('input, select');
+        inputs.forEach(input => {
+            input.addEventListener('change', () => {
+                this.saveFormData();
+            });
+        });
+
+        return card;
+    }
+
+    goToStep(step) {
+        if (step >= 0 && step < 5) {
+            this.currentStep = step;
+            this.showStep(step);
+            this.updateStepper();
+            this.saveFormData();
+        }
+    }
+
+    updateStepper() {
+        const stepItems = document.querySelectorAll('.step-item');
+        const progress = document.querySelector('.progress');
+        
+        stepItems.forEach((item, index) => {
+            if (index < this.currentStep) {
+                item.classList.add('completed');
+                item.classList.remove('active');
+            } else if (index === this.currentStep) {
+                item.classList.add('active');
+                item.classList.remove('completed');
+            } else {
+                item.classList.remove('active', 'completed');
+            }
+        });
+
+        // Update progress bar
+        const progressWidth = (this.currentStep / 4) * 100;
+        progress.style.width = `${progressWidth}%`;
+    }
+
+    nextStep() {
+        if (this.validateCurrentStep()) {
+            const nextStepIndex = this.currentStep + 1;
+            if (nextStepIndex < 5) { // We have 5 steps (0-4)
+                this.showStep(nextStepIndex);
+            }
+        }
+    }
+
+    prevStep() {
+        if (this.currentStep > 0) {
+            this.showStep(this.currentStep - 1);
+        }
+    }
+
+    showStep(step) {
+        try {
+            // Update current step
+            this.currentStep = step;
+
+            // Get all required elements
+            const stepItems = document.querySelectorAll('.step-item');
+            const progressBar = document.querySelector('.progress');
+            const sections = document.querySelectorAll('.form-section');
+
+            if (!stepItems.length) {
+                console.warn('Step items not found');
+                return;
+            }
+
+            // Update stepper UI
+            stepItems.forEach((item, index) => {
+                if (index < step) {
+                    item.classList.add('completed');
+                    item.classList.remove('active');
+                } else if (index === step) {
+                    item.classList.add('active');
+                    item.classList.remove('completed');
+                } else {
+                    item.classList.remove('active', 'completed');
+                }
+            });
+
+            // Update progress bar if it exists
+            if (progressBar) {
+                const progress = (step / (stepItems.length - 1)) * 100;
+                progressBar.style.width = `${progress}%`;
+            }
+
+            // Show/hide form sections with animation
+            if (sections.length) {
+                sections.forEach(section => {
+                    const sectionStep = parseInt(section.dataset.step);
+                    if (sectionStep === step) {
+                        section.style.display = 'block';
+                        setTimeout(() => section.classList.add('active'), 50);
+                        
+                        // Special handling for packages section (step 3)
+                        if (step === 3) {
+                            // Ensure packages list is initialized
+                            const packagesList = document.getElementById('packagesList');
+                            if (packagesList && (!this.packages || this.packages.length === 0)) {
+                                // Add an initial empty package if none exist
+                                this.packages = [{
+                                    description: "Standard Wooden Pallet",
+                                    quantity: 2,
+                                    type: 'PLT',
+                                    weight: 100,
+                                    length: 48,
+                                    width: 48,
+                                    height: 48,
+                                    declaredValue: 1000,
+                                    stackable: true
+                                }];
+                                this.updatePackagesList();
+                            }
+                        }
+                    } else {
+                        section.classList.remove('active');
+                        setTimeout(() => {
+                            section.style.display = 'none';
+                        }, 300);
+                    }
+                });
+            }
+
+            // Special handling for rates step
+            if (step === 4) {
+                this.calculateRates();
+            }
+        } catch (error) {
+            console.error('Error showing step:', error);
+        }
     }
 
     validateField(field) {
@@ -93,9 +446,14 @@ class FormHandler {
         }
 
         // Date validation
-        if (field.type === 'date') {
+        if (field.id === 'shipmentDate') {
             const date = new Date(value);
             const today = new Date();
+            
+            // Reset time components for comparison
+            date.setHours(0, 0, 0, 0);
+            today.setHours(0, 0, 0, 0);
+            
             if (date < today) {
                 this.showError(field, 'Date cannot be in the past');
                 isValid = false;
@@ -176,8 +534,12 @@ class FormHandler {
 
         requiredFields.forEach(fieldId => {
             const field = document.getElementById(fieldId);
-            if (!this.validateField(field)) {
-                isValid = false;
+            if (field) {
+                if (!this.validateField(field)) {
+                    isValid = false;
+                }
+            } else {
+                console.warn(`Field with ID '${fieldId}' not found`);
             }
         });
 
@@ -185,7 +547,7 @@ class FormHandler {
     }
 
     validatePackages() {
-        const packagesData = getPackagesData();
+        const packagesData = this.getPackagesData();
         let isValid = true;
         let errorMessages = [];
 
@@ -200,13 +562,13 @@ class FormHandler {
                     
                     // Check each field
                     if (!pkg.description) packageErrors.push('Description');
-                    if (!pkg.quantity || pkg.quantity <= 0) packageErrors.push('Quantity');
+                    if (!pkg.quantity || pkg.quantity < 1) packageErrors.push('Quantity');
+                    if (!pkg.type) packageErrors.push('Type');
                     if (!pkg.weight || pkg.weight <= 0) packageErrors.push('Weight');
                     if (!pkg.length || pkg.length <= 0) packageErrors.push('Length');
                     if (!pkg.width || pkg.width <= 0) packageErrors.push('Width');
                     if (!pkg.height || pkg.height <= 0) packageErrors.push('Height');
-                    if (!pkg.freightClass) packageErrors.push('Freight Class');
-                    if (!pkg.value || pkg.value <= 0) packageErrors.push('Declared Value');
+                    if (!pkg.declaredValue || pkg.declaredValue <= 0) packageErrors.push('Declared Value');
 
                     // Add error message with specific fields
                     errorMessages.push(`Package ${index + 1} has invalid fields: ${packageErrors.join(', ')}`);
@@ -262,11 +624,11 @@ class FormHandler {
 
         shipmentFields.forEach(field => {
             const element = document.getElementById(field.id);
-            if (!element.value.trim()) {
+            if (element && !element.value.trim()) {
                 isValid = false;
                 errorMessages.push(`${field.label} is required`);
                 this.showError(element, `${field.label} is required`);
-            } else {
+            } else if (element) {
                 this.removeErrorMessage(element);
             }
         });
@@ -279,7 +641,7 @@ class FormHandler {
 
         addressFields.forEach(addr => {
             const requiredFields = [
-                { id: `${addr.prefix}Company`, label: 'Company Name' },
+                { id: `${addr.prefix}CompanyName`, label: 'Company Name' },
                 { id: `${addr.prefix}AddressLine1`, label: 'Address Line 1' },
                 { id: `${addr.prefix}City`, label: 'City' },
                 { id: `${addr.prefix}Postal`, label: 'Postal Code' },
@@ -291,64 +653,57 @@ class FormHandler {
 
             requiredFields.forEach(field => {
                 const element = document.getElementById(field.id);
-                if (!element.value.trim()) {
+                if (element && !element.value.trim()) {
                     isValid = false;
                     errorMessages.push(`${addr.label} - ${field.label} is required`);
                     this.showError(element, `${field.label} is required`);
-                } else {
+                } else if (element) {
                     this.removeErrorMessage(element);
                 }
             });
 
             // Validate state/province based on country
-            const country = document.getElementById(`${addr.prefix}Country`).value;
-            const stateSelect = document.getElementById(`${addr.prefix}StateSelect`);
-            const stateText = document.getElementById(`${addr.prefix}StateText`);
+            const country = document.getElementById(`${addr.prefix}Country`);
+            const stateSelect = document.getElementById(`${addr.prefix}State`);
             
-            if (country === 'US' || country === 'CA') {
-                if (!stateSelect.value) {
+            if (country && stateSelect) {
+                if ((country.value === 'US' || country.value === 'CA') && !stateSelect.value) {
                     isValid = false;
                     errorMessages.push(`${addr.label} - State/Province is required`);
                     this.showError(stateSelect, 'State/Province is required');
                 } else {
                     this.removeErrorMessage(stateSelect);
                 }
-            } else {
-                if (!stateText.value.trim()) {
-                    isValid = false;
-                    errorMessages.push(`${addr.label} - State/Province is required`);
-                    this.showError(stateText, 'State/Province is required');
-                } else {
-                    this.removeErrorMessage(stateText);
-                }
             }
         });
 
-        // Validate Packages
-        const packagesData = getPackagesData();
-        if (packagesData.length === 0) {
-            isValid = false;
-            errorMessages.push('At least one package is required');
-        } else {
-            packagesData.forEach((pkg, index) => {
-                if (!pkg.isValid) {
-                    isValid = false;
-                    const packageErrors = [];
-                    
-                    // Check each field
-                    if (!pkg.description) packageErrors.push('Description');
-                    if (!pkg.quantity || pkg.quantity <= 0) packageErrors.push('Quantity');
-                    if (!pkg.weight || pkg.weight <= 0) packageErrors.push('Weight');
-                    if (!pkg.length || pkg.length <= 0) packageErrors.push('Length');
-                    if (!pkg.width || pkg.width <= 0) packageErrors.push('Width');
-                    if (!pkg.height || pkg.height <= 0) packageErrors.push('Height');
-                    if (!pkg.freightClass) packageErrors.push('Freight Class');
-                    if (!pkg.value || pkg.value <= 0) packageErrors.push('Declared Value');
+        // Only validate packages if we're on the packages step or later
+        if (this.currentStep >= 3) {
+            const packagesData = this.getPackagesData();
+            if (packagesData.length === 0) {
+                isValid = false;
+                errorMessages.push('At least one package is required');
+            } else {
+                packagesData.forEach((pkg, index) => {
+                    if (!pkg.isValid) {
+                        isValid = false;
+                        const packageErrors = [];
+                        
+                        // Check each field
+                        if (!pkg.description) packageErrors.push('Description');
+                        if (!pkg.quantity || pkg.quantity < 1) packageErrors.push('Quantity');
+                        if (!pkg.type) packageErrors.push('Type');
+                        if (!pkg.weight || pkg.weight <= 0) packageErrors.push('Weight');
+                        if (!pkg.length || pkg.length <= 0) packageErrors.push('Length');
+                        if (!pkg.width || pkg.width <= 0) packageErrors.push('Width');
+                        if (!pkg.height || pkg.height <= 0) packageErrors.push('Height');
+                        if (!pkg.declaredValue || pkg.declaredValue <= 0) packageErrors.push('Declared Value');
 
-                    // Add error message with specific fields
-                    errorMessages.push(`Package ${index + 1} has invalid fields: ${packageErrors.join(', ')}`);
-                }
-            });
+                        // Add error message with specific fields
+                        errorMessages.push(`Package ${index + 1} has invalid fields: ${packageErrors.join(', ')}`);
+                    }
+                });
+            }
         }
 
         // Show comprehensive error message if there are validation errors
@@ -361,6 +716,21 @@ class FormHandler {
     }
 
     gatherFormData() {
+        const packages = this.getPackagesData();
+        const items = packages.map(pkg => ({
+            name: pkg.description,
+            packageType: pkg.type,
+            weight: pkg.weight,
+            length: pkg.length,
+            width: pkg.width,
+            height: pkg.height,
+            declaredValue: pkg.declaredValue,
+            value: pkg.declaredValue,
+            quantity: pkg.quantity,
+            stackable: pkg.stackable ? true : false,
+            freightClass: pkg.type === 'PLT' ? '400' : '500'
+        }));
+
         return {
             bookingReferenceNumber: document.getElementById('bookingReference').value,
             bookingReferenceNumberType: "Shipment",
@@ -374,26 +744,33 @@ class FormHandler {
                 earliest: document.getElementById('earliestDelivery').value,
                 latest: document.getElementById('latestDelivery').value
             },
-            fromAddress: this.gatherAddressData('from'),
-            toAddress: this.gatherAddressData('to'),
-            items: getPackageItems()
-        };
-    }
-
-    gatherAddressData(prefix) {
-        return {
-            company: document.getElementById(`${prefix}Company`).value,
-            street: document.getElementById(`${prefix}AddressLine1`).value,
-            street2: document.getElementById(`${prefix}AddressLine2`).value || '',
-            postalCode: document.getElementById(`${prefix}Postal`).value,
-            city: document.getElementById(`${prefix}City`).value,
-            state: document.getElementById(`${prefix}StateSelect`).value || document.getElementById(`${prefix}StateText`).value,
-            country: document.getElementById(`${prefix}Country`).value,
-            contactName: document.getElementById(`${prefix}ContactName`).value,
-            contactPhone: document.getElementById(`${prefix}Phone`).value,
-            contactEmail: document.getElementById(`${prefix}Email`).value,
-            contactFax: document.getElementById(`${prefix}Fax`).value || '',
-            specialInstructions: document.getElementById(`${prefix}Instructions`).value || ''
+            fromAddress: {
+                company: document.getElementById('fromCompanyName').value,
+                street: document.getElementById('fromAddressLine1').value,
+                street2: document.getElementById('fromAddressLine2')?.value || '',
+                postalCode: document.getElementById('fromPostal').value,
+                city: document.getElementById('fromCity').value,
+                state: document.getElementById('fromState').value,
+                country: document.getElementById('fromCountry').value,
+                contactName: document.getElementById('fromContactName').value,
+                contactPhone: document.getElementById('fromPhone').value,
+                contactEmail: document.getElementById('fromEmail').value,
+                specialInstructions: document.getElementById('fromSpecialInstructions')?.value || ''
+            },
+            toAddress: {
+                company: document.getElementById('toCompanyName').value,
+                street: document.getElementById('toAddressLine1').value,
+                street2: document.getElementById('toAddressLine2')?.value || '',
+                postalCode: document.getElementById('toPostal').value,
+                city: document.getElementById('toCity').value,
+                state: document.getElementById('toState').value,
+                country: document.getElementById('toCountry').value,
+                contactName: document.getElementById('toContactName').value,
+                contactPhone: document.getElementById('toPhone').value,
+                contactEmail: document.getElementById('toEmail').value,
+                specialInstructions: document.getElementById('toSpecialInstructions')?.value || ''
+            },
+            items: items
         };
     }
 
@@ -438,283 +815,218 @@ class FormHandler {
 
     loadDraft() {
         try {
+            // Get tomorrow's date
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowFormatted = tomorrow.toISOString().split('T')[0];
+
             // Test data for development
             const draftData = {
-                shipmentType: 'FTL',
-                bookingReferenceNumber: 'REF123456',
-                shipmentDate: '2025-03-20',
-                from: {
+                shipmentInfo: {
+                    shipmentType: 'FTL',
+                    bookingReference: 'REF123456',
+                    shipmentDate: tomorrowFormatted,
+                    earliestPickup: '05:00',
+                    latestPickup: '17:00',
+                    earliestDelivery: '09:00',
+                    latestDelivery: '22:00'
+                },
+                shipFrom: {
                     company: "Tyger Shark Inc.",
-                    attentionName: "Tyler Murray",
-                    street: "123 Main Street",
-                    street2: "Unit A",
-                    postalCode: "53151",
+                    contact: "Tyler Murray",
+                    phone: "647-262-1493",
+                    email: "tyler@tygershark.com",
+                    address1: "123 Main Street",
+                    address2: "Unit A",
                     city: "New Berlin",
                     state: "WI",
+                    postal: "53151",
                     country: "US",
-                    contactName: "Tyler Murray",
-                    contactPhone: "647-262-1493",
-                    contactEmail: "tyler@tygershark.com",
-                    contactFax: "647-262-1493",
                     specialInstructions: "Pickup at Bay 1"
                 },
-                to: {
+                shipTo: {
                     company: "Fantom Inc.",
-                    attentionName: "Tyler Murray",
-                    street: "321 King Street",
-                    street2: "Unit B",
-                    postalCode: "L4W 1N7",
+                    contact: "Tyler Murray",
+                    phone: "647-262-1493",
+                    email: "tyler@tygershark.com",
+                    address1: "321 King Street",
+                    address2: "Unit B",
                     city: "Mississauga",
                     state: "ON",
+                    postal: "L4W 1N7",
                     country: "CA",
-                    contactName: "Tyler Murray",
-                    contactPhone: "647-262-1493",
-                    contactEmail: "tyler@tygershark.com",
-                    contactFax: "647-262-1493",
                     specialInstructions: "Deliver to Bay 3"
                 },
-                earliestPickup: '05:00',
-                latestPickup: '17:00',
-                earliestDelivery: '09:00',
-                latestDelivery: '22:00',
                 packages: [{
-                    description: 'Test Package',
-                    quantity: 1,
+                    description: "Standard Wooden Pallet",
+                    quantity: 2,
+                    type: 'PLT',
                     weight: 100,
-                    weightUnit: 'lb',
                     length: 48,
                     width: 48,
                     height: 48,
-                    dimensionUnit: 'in',
-                    freightClass: '50',
-                    nmfcCode: '123456',
-                    packageType: 'PLT',
-                    stackable: true,
-                    hazmat: false,
-                    declaredValue: 1000
+                    declaredValue: 1000,
+                    stackable: true
                 }]
             };
 
-            // Set shipment type and reference
-            const elements = {
-                shipmentType: document.getElementById('shipmentType'),
-                bookingReference: document.getElementById('bookingReference'),
-                shipmentDate: document.getElementById('shipmentDate'),
-                earliestPickup: document.getElementById('earliestPickup'),
-                latestPickup: document.getElementById('latestPickup'),
-                earliestDelivery: document.getElementById('earliestDelivery'),
-                latestDelivery: document.getElementById('latestDelivery')
-            };
+            // First, populate shipment info
+            this.populateShipmentInfo(draftData.shipmentInfo);
 
-            // Check if all elements exist before proceeding
-            for (const [key, element] of Object.entries(elements)) {
-                if (!element) {
-                    throw new Error(`Element with ID '${key}' not found`);
-                }
+            // Then populate address sections
+            if (draftData.shipFrom) {
+                this.populateAddressSection('from', draftData.shipFrom);
+            }
+            if (draftData.shipTo) {
+                this.populateAddressSection('to', draftData.shipTo);
             }
 
-            // Set values
-            elements.shipmentType.value = draftData.shipmentType;
-            elements.bookingReference.value = draftData.bookingReferenceNumber;
-            elements.shipmentDate.value = draftData.shipmentDate;
-            elements.earliestPickup.value = draftData.earliestPickup;
-            elements.latestPickup.value = draftData.latestPickup;
-            elements.earliestDelivery.value = draftData.earliestDelivery;
-            elements.latestDelivery.value = draftData.latestDelivery;
-
-            // Populate addresses with error handling
-            this.populateAddressSection('from', draftData.from);
-
-            // Wait for the from country/state to be set before populating to address
-            setTimeout(() => {
-                this.populateAddressSection('to', draftData.to);
-            }, 100);
-
-            // Load packages
+            // Finally, populate packages if they exist
             if (draftData.packages && draftData.packages.length > 0) {
-                if (typeof this.packageManager === 'undefined') {
-                    console.warn('PackageManager not initialized, attempting to use global functions');
-                    // Clear existing packages
-                    if (typeof resetPackages === 'function') {
-                        resetPackages();
-                    }
-                    // Add new packages
-                    draftData.packages.forEach(pkg => {
-                        if (typeof addPackage === 'function') {
-                            const packageId = addPackage();
-                            const packageFields = {
-                                description: document.getElementById(`packageDescription_${packageId}`),
-                                quantity: document.getElementById(`packageQuantity_${packageId}`),
-                                weight: document.getElementById(`packageWeight_${packageId}`),
-                                length: document.getElementById(`packageLength_${packageId}`),
-                                width: document.getElementById(`packageWidth_${packageId}`),
-                                height: document.getElementById(`packageHeight_${packageId}`),
-                                freightClass: document.getElementById(`packageFreightClass_${packageId}`),
-                                value: document.getElementById(`packageValue_${packageId}`),
-                                stackable: document.getElementById(`packageStackable_${packageId}`)
-                            };
-
-                            if (packageFields.description) packageFields.description.value = pkg.description;
-                            if (packageFields.quantity) packageFields.quantity.value = pkg.quantity;
-                            if (packageFields.weight) packageFields.weight.value = pkg.weight;
-                            if (packageFields.length) packageFields.length.value = pkg.length;
-                            if (packageFields.width) packageFields.width.value = pkg.width;
-                            if (packageFields.height) packageFields.height.value = pkg.height;
-                            if (packageFields.freightClass) packageFields.freightClass.value = pkg.freightClass;
-                            if (packageFields.value) packageFields.value.value = pkg.declaredValue;
-                            if (packageFields.stackable) packageFields.stackable.checked = pkg.stackable;
-                        }
-                    });
-                    // Update package count if function exists
-                    if (typeof updatePackageCount === 'function') {
-                        updatePackageCount();
-                    }
-                } else {
-                    this.packageManager.clearPackages();
-                    draftData.packages.forEach(pkg => {
-                        this.packageManager.addPackage(pkg);
-                    });
-                }
+                this.packages = draftData.packages;
+                this.updatePackagesList();
             }
 
-            // Validate form after loading
-            setTimeout(() => {
-                this.validateForm();
-                this.showFormSuccess('Draft loaded successfully');
-            }, 200);
+            // Always show the first section
+            this.showSection(0);
 
+            // Store the draft data for later use
+            this.formData = draftData;
+
+            // Update the stepper UI
+            this.updateStepper();
+            
+            // Update navigation buttons
+            this.updateNavigationButtons();
+
+            // Disable the Load Draft button
+            const loadDraftButton = document.querySelector('button[onclick="formHandler.loadDraft()"]');
+            if (loadDraftButton) {
+                loadDraftButton.disabled = true;
+                loadDraftButton.innerHTML = '<i class="bi bi-folder-symlink"></i> Draft Loaded';
+            }
+
+            // Show success message
+            this.showFormSuccess('Draft loaded successfully');
         } catch (error) {
             console.error('Error loading draft:', error);
             this.showFormError('Error loading draft: ' + error.message);
         }
     }
 
-    populateForm(formData) {
-        // Shipment Info
-        document.getElementById('shipmentType').value = formData.shipmentInfo.type;
-        document.getElementById('bookingReference').value = formData.shipmentInfo.bookingReference;
-        document.getElementById('shipmentDate').value = formData.shipmentInfo.shipmentDate;
-        document.getElementById('earliestPickup').value = formData.shipmentInfo.earliestPickup;
-        document.getElementById('latestPickup').value = formData.shipmentInfo.latestPickup;
-        document.getElementById('earliestDelivery').value = formData.shipmentInfo.earliestDelivery;
-        document.getElementById('latestDelivery').value = formData.shipmentInfo.latestDelivery;
+    populateShipmentInfo(info) {
+        if (!info) return;
 
-        // From Address
-        this.populateAddressSection('from', formData.fromAddress);
+        // Map of field IDs to their corresponding data keys
+        const fieldMappings = {
+            'shipmentType': 'shipmentType',
+            'bookingReference': 'bookingReference',
+            'shipmentDate': 'shipmentDate',
+            'earliestPickup': 'earliestPickup',
+            'latestPickup': 'latestPickup',
+            'earliestDelivery': 'earliestDelivery',
+            'latestDelivery': 'latestDelivery'
+        };
 
-        // To Address
-        this.populateAddressSection('to', formData.toAddress);
+        // Log the field mappings for debugging
+        console.log('Populating shipment info with mappings:', fieldMappings);
 
-        // Reset packages state
-        resetPackages();
-
-        // Add and populate packages
-        if (formData.packages && formData.packages.length > 0) {
-            formData.packages.forEach(pkg => {
-                const packageId = addPackage();
-                document.getElementById(`packageDescription_${packageId}`).value = pkg.description;
-                document.getElementById(`packageQuantity_${packageId}`).value = pkg.quantity;
-                document.getElementById(`packageWeight_${packageId}`).value = pkg.weight;
-                document.getElementById(`packageLength_${packageId}`).value = pkg.length;
-                document.getElementById(`packageWidth_${packageId}`).value = pkg.width;
-                document.getElementById(`packageHeight_${packageId}`).value = pkg.height;
-                document.getElementById(`packageFreightClass_${packageId}`).value = pkg.freightClass;
-                document.getElementById(`packageValue_${packageId}`).value = pkg.value;
-                document.getElementById(`packageStackable_${packageId}`).checked = pkg.stackable;
-            });
+        // Populate each field
+        for (const [fieldId, dataKey] of Object.entries(fieldMappings)) {
+            const element = document.getElementById(fieldId);
+            if (element) {
+                element.value = info[dataKey] || '';
+                // Trigger change event to ensure any dependent fields are updated
+                element.dispatchEvent(new Event('change'));
+            } else {
+                console.warn(`Element with ID '${fieldId}' not found`);
+            }
         }
-
-        updatePackageCount();
-        
-        // Validate the form after populating
-        this.validateForm();
     }
 
     populateAddressSection(prefix, addressData) {
-        try {
-            // Define all field mappings
-            const fields = {
-                company: `${prefix}Company`,
-                attention: `${prefix}AttentionName`,
-                contact: `${prefix}ContactName`,
-                phone: `${prefix}Phone`,
-                email: `${prefix}Email`,
-                fax: `${prefix}Fax`,
-                address1: `${prefix}AddressLine1`,
-                address2: `${prefix}AddressLine2`,
-                city: `${prefix}City`,
-                postal: `${prefix}Postal`,
-                country: `${prefix}Country`,
-                state: `${prefix}State`,
-                instructions: `${prefix}Instructions`
-            };
+        if (!addressData) return;
 
-            // Log the field IDs we're looking for
-            console.log(`Attempting to populate ${prefix} address fields:`, fields);
+        // Map of field IDs to their corresponding data keys
+        const fieldMappings = {
+            'CompanyName': 'company',
+            'ContactName': 'contact',
+            'Phone': 'phone',
+            'Email': 'email',
+            'AddressLine1': 'address1',
+            'AddressLine2': 'address2',
+            'City': 'city',
+            'Postal': 'postal',
+            'Country': 'country',
+            'State': 'state',
+            'SpecialInstructions': 'specialInstructions'
+        };
 
-            // Check if elements exist before setting values
-            for (const [key, id] of Object.entries(fields)) {
-                const element = document.getElementById(id);
-                if (!element) {
-                    console.warn(`Element with ID '${id}' not found`);
-                    continue;
+        // Log the field mappings for debugging
+        console.log(`Populating ${prefix} address fields with mappings:`, fieldMappings);
+
+        // Populate each field
+        for (const [fieldSuffix, dataKey] of Object.entries(fieldMappings)) {
+            const fieldId = `${prefix}${fieldSuffix}`;
+            const element = document.getElementById(fieldId);
+            
+            if (element) {
+                element.value = addressData[dataKey] || '';
+                
+                // Special handling for country and state
+                if (fieldSuffix === 'Country') {
+                    element.dispatchEvent(new Event('change'));
+                    // Wait for state options to load
+                    setTimeout(() => {
+                        const stateElement = document.getElementById(`${prefix}State`);
+                        if (stateElement && addressData.state) {
+                            stateElement.value = addressData.state;
+                            stateElement.dispatchEvent(new Event('change'));
+                        }
+                    }, 100);
+                } else if (fieldSuffix === 'State') {
+                    element.dispatchEvent(new Event('change'));
                 }
-
-                // Map the field to the corresponding address data
-                switch (key) {
-                    case 'company':
-                        element.value = addressData.company || '';
-                        break;
-                    case 'attention':
-                        element.value = addressData.attentionName || '';
-                        break;
-                    case 'contact':
-                        element.value = addressData.contactName || '';
-                        break;
-                    case 'phone':
-                        element.value = addressData.contactPhone || '';
-                        break;
-                    case 'email':
-                        element.value = addressData.contactEmail || '';
-                        break;
-                    case 'fax':
-                        element.value = addressData.contactFax || '';
-                        break;
-                    case 'address1':
-                        element.value = addressData.street || '';
-                        break;
-                    case 'address2':
-                        element.value = addressData.street2 || '';
-                        break;
-                    case 'city':
-                        element.value = addressData.city || '';
-                        break;
-                    case 'postal':
-                        element.value = addressData.postalCode || '';
-                        break;
-                    case 'country':
-                        element.value = addressData.country || '';
-                        // Trigger change event to update state/province list
-                        element.dispatchEvent(new Event('change'));
-                        break;
-                    case 'state':
-                        // Wait for country change to complete
-                        setTimeout(() => {
-                            if (element) {
-                                element.value = addressData.state || '';
-                                element.dispatchEvent(new Event('change'));
-                            }
-                        }, 100);
-                        break;
-                    case 'instructions':
-                        element.value = addressData.specialInstructions || '';
-                        break;
-                }
+            } else {
+                console.warn(`Element with ID '${fieldId}' not found`);
             }
-        } catch (error) {
-            console.error(`Error populating ${prefix} address:`, error);
-            throw new Error(`Failed to populate ${prefix} address: ${error.message}`);
         }
+    }
+
+    showSection(step) {
+        // Hide all sections first
+        document.querySelectorAll('.form-section').forEach(section => {
+            section.style.display = 'none';
+            section.classList.remove('active');
+        });
+
+        // Show the requested section
+        const section = document.querySelector(`.form-section[data-step="${step}"]`);
+        if (section) {
+            section.style.display = 'block';
+            section.classList.add('active');
+            
+            // Update the current step
+            this.currentStep = step;
+            
+            // Update the stepper UI
+            this.updateStepper();
+            
+            // Update navigation buttons
+            this.updateNavigationButtons();
+        } else {
+            console.warn(`Section for step ${step} not found`);
+        }
+    }
+
+    showFormSuccess(message) {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.querySelector('.container').insertAdjacentElement('afterbegin', alert);
     }
 
     updateStateField(prefix, stateValue, countryValue) {
@@ -732,23 +1044,36 @@ class FormHandler {
         }
     }
 
-    async calculateRates(event) {
-        event.preventDefault();
-        
-        if (!this.validateForm()) {
-            this.showFormError('Please fix the errors before calculating rates');
+    async calculateRates() {
+        // Show loading overlay
+        const loadingOverlay = document.querySelector('.loading-overlay');
+        if (!loadingOverlay) {
+            console.error('Loading overlay not found');
             return;
         }
-
-        // Show loading state
-        const submitBtn = event.target;
-        const originalText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Calculating...';
-        submitBtn.disabled = true;
-
+        
+        loadingOverlay.classList.add('show');
+        
         try {
+            // Validate form before calculating rates
+            if (!this.validateForm()) {
+                throw new Error('Please fix form errors before calculating rates');
+            }
+
             const requestData = this.gatherFormData();
-            console.log('Request Data:', requestData);
+            
+            // Show loading message
+            const ratesContainer = document.getElementById('ratesContainer');
+            if (ratesContainer) {
+                ratesContainer.innerHTML = `
+                    <div class="col-12 text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3">Calculating shipping rates...</p>
+                    </div>
+                `;
+            }
 
             const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
                 method: 'POST',
@@ -758,8 +1083,11 @@ class FormHandler {
                 body: JSON.stringify(requestData)
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const responseData = await response.json();
-            console.log('Server Response:', responseData);
 
             if (responseData.success && responseData.data.availableRates) {
                 const rates = responseData.data.availableRates.map(rate => ({
@@ -781,59 +1109,48 @@ class FormHandler {
                     guaranteeCharge: rate.guarOptions && rate.guarOptions.length > 0 ? 
                         rate.guarOptions[0].amountDue : 0
                 }));
-                console.log('Parsed Rates:', rates);
+
+                // Show rate filters with animation
+                const rateFilters = document.querySelector('.rate-filters');
+                if (rateFilters) {
+                    rateFilters.classList.add('show');
+                }
+
+                // Display rates with staggered animation
                 this.displayRates(rates);
             } else {
-                throw new Error('No rates found in the response');
+                throw new Error(responseData.message || 'No rates found in the response');
             }
         } catch (error) {
-            console.error('Error:', error);
-            this.showFormError('Error calculating rates: ' + error.message);
+            console.error('Error calculating rates:', error);
+            const ratesContainer = document.getElementById('ratesContainer');
+            if (ratesContainer) {
+                ratesContainer.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <h5>Error Calculating Rates</h5>
+                            <p>${error.message}</p>
+                            <button class="btn btn-primary" onclick="formHandler.calculateRates()">
+                                Try Again
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
         } finally {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
+            loadingOverlay.classList.remove('show');
         }
     }
 
     displayRates(rates) {
-        // Store rates globally for filtering/sorting
         this.currentRates = rates;
-        this.displayFilteredRates(rates);
-    }
-
-    displayFilteredRates(rates, sortBy = 'price', guaranteedOnly = false) {
         const ratesContainer = document.getElementById('ratesContainer');
-        const ratesSection = document.getElementById('ratesSection');
-        
-        // Clear existing rates
         ratesContainer.innerHTML = '';
-        
-        // Show the rates section
-        ratesSection.style.display = 'block';
-        
-        // Filter rates if guaranteedOnly is true
-        let filteredRates = guaranteedOnly ? 
-            rates.filter(rate => rate.guaranteedService) : 
-            rates;
 
-        // Sort rates based on selected criteria
-        switch(sortBy) {
-            case 'price':
-                filteredRates.sort((a, b) => a.totalCharges - b.totalCharges);
-                break;
-            case 'transit':
-                filteredRates.sort((a, b) => a.transitDays - b.transitDays);
-                break;
-            case 'carrier':
-                filteredRates.sort((a, b) => a.carrier.localeCompare(b.carrier));
-                break;
-        }
-        
-        filteredRates.forEach(rate => {
+        rates.forEach((rate, index) => {
             const rateCard = document.createElement('div');
             rateCard.className = 'col-md-4 mb-4';
             
-            // Format estimated delivery date
             const estimatedDelivery = new Date(rate.estimatedDelivery);
             const deliveryDateStr = estimatedDelivery.toLocaleDateString('en-US', {
                 weekday: 'short',
@@ -842,14 +1159,11 @@ class FormHandler {
                 year: 'numeric'
             });
 
-            // Calculate total accessorial charges
             const accessorialTotal = rate.accessorials.reduce((sum, acc) => sum + acc.amount, 0);
-            
-            // Calculate initial total without guarantee
             let currentTotal = rate.totalCharges;
 
             rateCard.innerHTML = `
-                <div class="card h-100">
+                <div class="card h-100 rate-card">
                     <div class="card-header bg-primary text-white">
                         <h5 class="card-title mb-0">${rate.carrier}</h5>
                     </div>
@@ -898,43 +1212,12 @@ class FormHandler {
                 </div>
             `;
             ratesContainer.appendChild(rateCard);
-        });
 
-        // Add sorting controls if they don't exist
-        let sortingControls = document.getElementById('rateSortingControls');
-        if (!sortingControls) {
-            const controls = document.createElement('div');
-            controls.id = 'rateSortingControls';
-            controls.className = 'mb-4';
-            controls.innerHTML = `
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <select class="form-select" onchange="formHandler.sortRates(this.value)">
-                            <option value="price" ${sortBy === 'price' ? 'selected' : ''}>Sort by Price</option>
-                            <option value="transit" ${sortBy === 'transit' ? 'selected' : ''}>Sort by Transit Time</option>
-                            <option value="carrier" ${sortBy === 'carrier' ? 'selected' : ''}>Sort by Carrier</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="guaranteedOnly" 
-                                ${guaranteedOnly ? 'checked' : ''} 
-                                onchange="formHandler.filterGuaranteed(this.checked)">
-                            <label class="form-check-label" for="guaranteedOnly">
-                                Show Guaranteed Services Only
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            `;
-            ratesSection.insertBefore(controls, ratesContainer);
-        } else {
-            // Update existing controls state
-            const sortSelect = sortingControls.querySelector('select');
-            const guaranteedCheckbox = sortingControls.querySelector('#guaranteedOnly');
-            if (sortSelect) sortSelect.value = sortBy;
-            if (guaranteedCheckbox) guaranteedCheckbox.checked = guaranteedOnly;
-        }
+            // Add staggered animation
+            setTimeout(() => {
+                rateCard.querySelector('.rate-card').classList.add('show');
+            }, index * 100);
+        });
     }
 
     updateRateTotal(rateId, baseTotal, guaranteeCharge, isChecked) {
@@ -943,17 +1226,6 @@ class FormHandler {
             const newTotal = isChecked ? baseTotal + guaranteeCharge : baseTotal;
             totalElement.textContent = `$${newTotal.toFixed(2)}`;
         }
-    }
-
-    sortRates(sortBy) {
-        const guaranteedOnly = document.getElementById('guaranteedOnly')?.checked || false;
-        this.displayFilteredRates(this.currentRates, sortBy, guaranteedOnly);
-    }
-
-    filterGuaranteed(showGuaranteedOnly) {
-        const sortSelect = document.querySelector('#rateSortingControls select');
-        const sortBy = sortSelect ? sortSelect.value : 'price';
-        this.displayFilteredRates(this.currentRates, sortBy, showGuaranteedOnly);
     }
 
     selectRate(rateId) {
@@ -981,7 +1253,317 @@ class FormHandler {
         console.log('Selected Rate:', selectedRate);
         alert(`Selected ${rate.carrier} rate with total $${finalTotal.toFixed(2)}`);
     }
+
+    setupAddressAutocomplete(prefix) {
+        const addressInput = document.getElementById(`${prefix}Address`);
+        if (!addressInput) return;
+
+        if (typeof google === 'undefined' || this.skipMapsInit) {
+            console.log(`Skipping Google Maps autocomplete initialization for ${prefix}`);
+            return;
+        }
+
+        try {
+            const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+                types: ['address'],
+                componentRestrictions: { country: ['us', 'ca'] }
+            });
+
+            // Add place_changed event listener
+            autocomplete.addListener('place_changed', () => {
+                const place = autocomplete.getPlace();
+                if (place.address_components) {
+                    this.fillAddressFields(place, prefix);
+                }
+            });
+        } catch (error) {
+            console.warn(`Error setting up Google Maps autocomplete for ${prefix}:`, error);
+        }
+    }
+
+    fillAddressFields(place, prefix) {
+        let streetNumber = '';
+        let streetName = '';
+        let city = '';
+        let state = '';
+        let postalCode = '';
+        let country = '';
+
+        // Extract address components
+        place.address_components.forEach(component => {
+            const type = component.types[0];
+            switch (type) {
+                case 'street_number':
+                    streetNumber = component.long_name;
+                    break;
+                case 'route':
+                    streetName = component.long_name;
+                    break;
+                case 'locality':
+                    city = component.long_name;
+                    break;
+                case 'administrative_area_level_1':
+                    state = component.short_name;
+                    break;
+                case 'postal_code':
+                    postalCode = component.long_name;
+                    break;
+                case 'country':
+                    country = component.short_name;
+                    break;
+            }
+        });
+
+        // Fill form fields
+        document.getElementById(`${prefix}Address1`).value = `${streetNumber} ${streetName}`.trim();
+        document.getElementById(`${prefix}City`).value = city;
+        document.getElementById(`${prefix}Zip`).value = postalCode;
+        
+        const countrySelect = document.getElementById(`${prefix}Country`);
+        countrySelect.value = country;
+        countrySelect.dispatchEvent(new Event('change'));
+
+        // Wait for state options to load
+        setTimeout(() => {
+            const stateElement = document.getElementById(`${prefix}State`);
+            if (stateElement && state) {
+                stateElement.value = state;
+                stateElement.dispatchEvent(new Event('change'));
+            }
+        }, 100);
+    }
+
+    handleCountryChange(prefix) {
+        const country = document.getElementById(`${prefix}Country`).value;
+        const stateSelect = document.getElementById(`${prefix}State`);
+        
+        if (country === 'US' || country === 'CA') {
+            // Clear and populate state select options
+            stateSelect.innerHTML = '';
+            const states = country === 'US' ? usStates : canadianProvinces;
+            
+            Object.entries(states).forEach(([code, name]) => {
+                const option = document.createElement('option');
+                option.value = code;
+                option.textContent = name;
+                stateSelect.appendChild(option);
+            });
+        }
+    }
+
+    validateAddress(prefix) {
+        const requiredFields = [
+            `${prefix}CompanyName`,
+            `${prefix}ContactName`,
+            `${prefix}Phone`,
+            `${prefix}Email`,
+            `${prefix}AddressLine1`,
+            `${prefix}City`,
+            `${prefix}Postal`,
+            `${prefix}Country`
+        ];
+
+        let isValid = true;
+
+        requiredFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                if (!this.validateField(field)) {
+                    isValid = false;
+                }
+            } else {
+                console.warn(`Field with ID '${fieldId}' not found`);
+            }
+        });
+
+        // Validate state/province based on country
+        const country = document.getElementById(`${prefix}Country`);
+        const state = document.getElementById(`${prefix}State`);
+
+        if (country && state) {
+            if (country.value === 'US' || country.value === 'CA') {
+                if (!state.value) {
+                    this.showError(state, 'State/Province is required');
+                    isValid = false;
+                }
+            }
+        }
+
+        return isValid;
+    }
+
+    validateCurrentStep() {
+        if (this.stepValidation[this.currentStep]()) {
+            return true;
+        } else {
+            this.showFormError('Please fix the errors before proceeding');
+            return false;
+        }
+    }
+
+    setupPackageManagement() {
+        try {
+            const addPackageButton = document.querySelector('.btn-add-package');
+            const packagesList = document.getElementById('packagesList');
+            
+            if (!addPackageButton || !packagesList) {
+                console.warn('Package management elements not found');
+                return;
+            }
+        } catch (error) {
+            console.error('Error setting up package management:', error);
+            this.showFormError('Error setting up package management: ' + error.message);
+        }
+    }
+
+    addPackage() {
+        try {
+            const packagesList = document.getElementById('packagesList');
+            if (!packagesList) {
+                console.warn('Packages list element not found');
+                return;
+            }
+
+            const packageCard = this.createPackageCard();
+            packagesList.appendChild(packageCard);
+            this.updatePackageCount();
+            this.saveFormData();
+        } catch (error) {
+            console.error('Error adding package:', error);
+            this.showFormError('Error adding package: ' + error.message);
+        }
+    }
+
+    loadFormData() {
+        try {
+            const savedData = localStorage.getItem('shipmentFormData');
+            if (savedData) {
+                const formData = JSON.parse(savedData);
+                this.populateForm(formData);
+            }
+        } catch (error) {
+            console.error('Error loading form data:', error);
+            this.showFormError('Error loading saved data: ' + error.message);
+        }
+    }
+
+    getPackagesData() {
+        const packages = [];
+        const packageCards = document.querySelectorAll('.package-card');
+        
+        packageCards.forEach(card => {
+            const pkg = {
+                description: card.querySelector('.package-description').value,
+                quantity: parseInt(card.querySelector('.package-quantity').value) || 1,
+                type: card.querySelector('.package-type').value,
+                weight: parseFloat(card.querySelector('.package-weight').value) || 0,
+                length: parseFloat(card.querySelector('.package-length').value) || 0,
+                width: parseFloat(card.querySelector('.package-width').value) || 0,
+                height: parseFloat(card.querySelector('.package-height').value) || 0,
+                declaredValue: parseFloat(card.querySelector('.package-value').value) || 0,
+                stackable: card.querySelector('.package-stackable').checked,
+                isValid: true
+            };
+
+            // Validate package data
+            if (!pkg.description || !pkg.quantity || !pkg.type || 
+                pkg.weight <= 0 || pkg.length <= 0 || 
+                pkg.width <= 0 || pkg.height <= 0 || pkg.declaredValue <= 0) {
+                pkg.isValid = false;
+            }
+
+            packages.push(pkg);
+        });
+
+        return packages;
+    }
+
+    initializeAutocomplete() {
+        if (typeof google === 'undefined') {
+            console.warn('Google Maps API not loaded');
+            return;
+        }
+        
+        try {
+            this.setupAddressAutocomplete('from');
+            this.setupAddressAutocomplete('to');
+            this.skipMapsInit = false;
+        } catch (error) {
+            console.error('Error initializing Google Maps autocomplete:', error);
+        }
+    }
+
+    updatePackageCount() {
+        const packageCount = document.querySelectorAll('.package-card').length;
+        const packageCountElement = document.getElementById('packageCount');
+        if (packageCountElement) {
+            packageCountElement.textContent = packageCount;
+        }
+    }
+
+    updateNavigationButtons() {
+        const prevButton = document.getElementById('prevStep');
+        const nextButton = document.getElementById('nextStep');
+        const submitButton = document.getElementById('submitShipment');
+
+        if (prevButton) {
+            prevButton.style.display = this.currentStep === 0 ? 'none' : 'block';
+        }
+
+        if (nextButton) {
+            nextButton.style.display = this.currentStep === 4 ? 'none' : 'block';
+        }
+
+        if (submitButton) {
+            submitButton.style.display = this.currentStep === 4 ? 'block' : 'none';
+        }
+    }
+
+    updatePackagesList() {
+        const packagesList = document.getElementById('packagesList');
+        if (!packagesList) {
+            console.warn('Packages list element not found');
+            return;
+        }
+
+        // Clear existing packages
+        packagesList.innerHTML = '';
+
+        // Add each package from the packages array
+        if (this.packages && this.packages.length > 0) {
+            this.packages.forEach(pkg => {
+                const packageCard = this.createPackageCard(pkg);
+                packagesList.appendChild(packageCard);
+            });
+        }
+
+        // Update package count
+        this.updatePackageCount();
+    }
 }
 
-// Initialize form handler
-const formHandler = new FormHandler(); 
+// Make FormHandler available globally
+window.FormHandler = FormHandler;
+
+// Initialize form handler when DOM is loaded and all dependencies are available
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait for constants to be available
+    const checkDependencies = () => {
+        if (window.PACKAGE_TYPES && window.US_STATES && window.CANADIAN_PROVINCES) {
+            window.formHandler = new FormHandler();
+        } else {
+            setTimeout(checkDependencies, 100);
+        }
+    };
+    checkDependencies();
+});
+
+// Add theme toggle functionality
+function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-bs-theme') === 'dark';
+    html.setAttribute('data-bs-theme', isDark ? 'light' : 'dark');
+    
+    const icon = document.querySelector('.theme-toggle i');
+    icon.className = isDark ? 'bi bi-moon-stars' : 'bi bi-sun';
+}
