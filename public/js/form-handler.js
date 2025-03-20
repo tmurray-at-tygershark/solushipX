@@ -1208,10 +1208,10 @@ class FormHandler {
 
             rateCard.innerHTML = `
                 <div class="card h-100 rate-card" data-rate-id="${rate.id}">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="card-title mb-0">${rate.carrier}</h5>
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="card-title mb-0 fw-bold">${rate.carrier}</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body pb-2">
                         <div class="mb-4">
                             <div class="d-flex align-items-center mb-2">
                                 <i class="bi bi-truck text-primary me-2"></i>
@@ -1254,8 +1254,8 @@ class FormHandler {
                         </div>
                     </div>
                     <div class="card-footer">
-                        <button type="button" class="btn btn-primary w-100" onclick="formHandler.selectRate('${rate.id}')">
-                            Select Rate
+                        <button type="button" class="btn btn-outline-dark w-100" onclick="formHandler.selectRate('${rate.id}')">
+                            <i class="bi bi-check-circle me-1"></i>Select
                         </button>
                     </div>
                 </div>
