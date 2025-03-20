@@ -935,7 +935,18 @@ class FormHandler {
         for (const [fieldId, dataKey] of Object.entries(fieldMappings)) {
             const element = document.getElementById(fieldId);
             if (element) {
-                element.value = info[dataKey] || '';
+                if (fieldId === 'shipmentType') {
+                    // Special handling for shipmentType select
+                    const value = info[dataKey] || '';
+                    const matchingOption = Array.from(element.options).find(option => 
+                        option.value === value
+                    );
+                    if (matchingOption) {
+                        matchingOption.selected = true;
+                    }
+                } else {
+                    element.value = info[dataKey] || '';
+                }
                 // Trigger change event to ensure any dependent fields are updated
                 element.dispatchEvent(new Event('change'));
             } else {
@@ -1147,6 +1158,39 @@ class FormHandler {
         const ratesContainer = document.getElementById('ratesContainer');
         ratesContainer.innerHTML = '';
 
+        // Sort rates by price (lowest first) by default
+        rates.sort((a, b) => a.totalCharges - b.totalCharges);
+
+        // Add the global rate details toggle button
+        const rateFilters = document.querySelector('.rate-filters');
+        if (rateFilters) {
+            // Check if toggle button already exists
+            let toggleButton = document.querySelector('.rate-details-toggle');
+            if (!toggleButton) {
+                toggleButton = document.createElement('button');
+                toggleButton.type = 'button'; // Prevent form submission
+                toggleButton.className = 'btn btn-outline-primary rate-details-toggle';
+                toggleButton.setAttribute('data-expanded', 'false');
+                toggleButton.innerHTML = '<i class="bi bi-list-ul"></i> Rate Details';
+                toggleButton.onclick = (e) => {
+                    e.preventDefault(); // Prevent form submission
+                    this.toggleAllRateDetails();
+                };
+
+                // Find the row containing the filters
+                const filterRow = rateFilters.querySelector('.row');
+                if (filterRow) {
+                    // Create a new column for the toggle button with right alignment
+                    const toggleCol = document.createElement('div');
+                    toggleCol.className = 'col-md-4 text-end';
+                    toggleCol.appendChild(toggleButton);
+                    filterRow.appendChild(toggleCol);
+                } else {
+                    rateFilters.appendChild(toggleButton);
+                }
+            }
+        }
+
         rates.forEach((rate, index) => {
             const rateCard = document.createElement('div');
             rateCard.className = 'col-md-4 mb-4';
@@ -1163,29 +1207,18 @@ class FormHandler {
             let currentTotal = rate.totalCharges;
 
             rateCard.innerHTML = `
-                <div class="card h-100 rate-card">
+                <div class="card h-100 rate-card" data-rate-id="${rate.id}">
                     <div class="card-header bg-primary text-white">
                         <h5 class="card-title mb-0">${rate.carrier}</h5>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3">
-                            <h6 class="text-muted">Transit Time</h6>
-                            <p class="mb-0">${rate.transitDays} Days</p>
+                        <div class="mb-4">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-truck text-primary me-2"></i>
+                                <span class="h2 mb-0">${rate.transitDays}</span>
+                                <span class="ms-2 text-muted">days</span>
+                            </div>
                             <small class="text-muted">Est. Delivery: ${deliveryDateStr}</small>
-                        </div>
-                        <div class="mb-3">
-                            <h6 class="text-muted">Service Level</h6>
-                            <p class="mb-0">${rate.serviceLevel}</p>
-                        </div>
-                        <div class="mb-3">
-                            <h6 class="text-muted">Charges Breakdown</h6>
-                            <ul class="list-unstyled">
-                                <li>Base Rate: $${rate.baseRate.toFixed(2)}</li>
-                                <li>Fuel Surcharge: $${rate.fuelSurcharge.toFixed(2)}</li>
-                                ${rate.accessorials.map(acc => 
-                                    `<li>${acc.description}: $${acc.amount.toFixed(2)}</li>`
-                                ).join('')}
-                            </ul>
                         </div>
                         <div class="mb-3">
                             <h6 class="text-muted">Total Charges</h6>
@@ -1203,6 +1236,22 @@ class FormHandler {
                                 </div>
                             </div>
                         ` : ''}
+                        <div class="rate-details" id="details_${rate.id}" style="display: none;">
+                            <div class="mb-3">
+                                <h6 class="text-muted fw-bold">Service Level</h6>
+                                <p class="mb-0">${rate.serviceLevel}</p>
+                            </div>
+                            <div class="mb-3">
+                                <h6 class="text-muted fw-bold">Charges Breakdown</h6>
+                                <ul class="list-unstyled">
+                                    <li>Base Rate: $${rate.baseRate.toFixed(2)}</li>
+                                    <li>Fuel Surcharge: $${rate.fuelSurcharge.toFixed(2)}</li>
+                                    ${rate.accessorials.map(acc => 
+                                        `<li>${acc.description}: $${acc.amount.toFixed(2)}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-footer">
                         <button type="button" class="btn btn-primary w-100" onclick="formHandler.selectRate('${rate.id}')">
@@ -1218,6 +1267,22 @@ class FormHandler {
                 rateCard.querySelector('.rate-card').classList.add('show');
             }, index * 100);
         });
+    }
+
+    toggleAllRateDetails() {
+        const toggleButton = document.querySelector('.rate-details-toggle');
+        const detailsDivs = document.querySelectorAll('.rate-details');
+        const isExpanded = toggleButton.getAttribute('data-expanded') === 'true';
+        
+        detailsDivs.forEach(div => {
+            div.style.display = isExpanded ? 'none' : 'block';
+        });
+        
+        // Update button icon and state
+        toggleButton.innerHTML = isExpanded ? 
+            '<i class="bi bi-list-ul"></i> Rate Details' : 
+            '<i class="bi bi-list-check"></i> Hide Details';
+        toggleButton.setAttribute('data-expanded', !isExpanded);
     }
 
     updateRateTotal(rateId, baseTotal, guaranteeCharge, isChecked) {
@@ -1539,6 +1604,63 @@ class FormHandler {
 
         // Update package count
         this.updatePackageCount();
+    }
+
+    filterService(serviceType) {
+        if (!this.currentRates) return;
+        
+        const ratesContainer = document.getElementById('ratesContainer');
+        const rateCards = ratesContainer.querySelectorAll('.col-md-4');
+        
+        rateCards.forEach(card => {
+            const rateCard = card.querySelector('.rate-card');
+            if (!rateCard) return;
+            
+            const serviceLevel = rateCard.querySelector('.card-body p').textContent.toLowerCase();
+            let shouldShow = true;
+            
+            switch(serviceType) {
+                case 'guaranteed':
+                    shouldShow = rateCard.querySelector('.form-check') !== null;
+                    break;
+                case 'economy':
+                    shouldShow = serviceLevel.includes('economy');
+                    break;
+                case 'express':
+                    shouldShow = serviceLevel.includes('express');
+                    break;
+                default: // 'all'
+                    shouldShow = true;
+            }
+            
+            card.style.display = shouldShow ? 'block' : 'none';
+        });
+    }
+
+    sortRates(sortBy) {
+        if (!this.currentRates) return;
+        
+        const ratesContainer = document.getElementById('ratesContainer');
+        const rateCards = Array.from(ratesContainer.querySelectorAll('.col-md-4'));
+        
+        rateCards.sort((a, b) => {
+            const rateA = this.currentRates.find(r => r.id === a.querySelector('.rate-card').dataset.rateId);
+            const rateB = this.currentRates.find(r => r.id === b.querySelector('.rate-card').dataset.rateId);
+            
+            switch(sortBy) {
+                case 'price':
+                    return rateA.totalCharges - rateB.totalCharges; // Lowest price first
+                case 'transit':
+                    return rateA.transitDays - rateB.transitDays; // Fastest transit first
+                case 'carrier':
+                    return rateA.carrier.localeCompare(rateB.carrier); // Alphabetical order
+                default:
+                    return rateA.totalCharges - rateB.totalCharges; // Default to lowest price first
+            }
+        });
+        
+        // Clear and re-append sorted cards
+        rateCards.forEach(card => ratesContainer.appendChild(card));
     }
 }
 
