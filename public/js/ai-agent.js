@@ -2,17 +2,25 @@
 const AIAgent = {
     // Initialize the AI agent
     init() {
+        // Bind events
         this.bindEvents();
+        
+        // Initialize HeyGen session in the background
+        this.initializeHeyGen();
+        
+        // Log initialization
+        console.log('AI Agent initialized');
     },
 
     // Bind event listeners
     bindEvents() {
+        // Bind AI Analysis button
         const aiButton = document.getElementById('aiAnalysisBtn');
         if (aiButton) {
-            aiButton.addEventListener('click', (e) => {
-                e.preventDefault(); // Prevent form submission
-                e.stopPropagation(); // Stop event bubbling
-                this.analyzeRates();
+            aiButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await this.analyzeRates();
             });
         }
     },
@@ -27,6 +35,17 @@ const AIAgent = {
         }
         if (analysisContainer) {
             analysisContainer.style.display = 'block';
+            analysisContainer.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-center align-items-center" style="min-height: 200px;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
     },
 
@@ -62,40 +81,212 @@ const AIAgent = {
         }
     },
 
-    // Show analysis results
-    showAnalysis(analysis) {
-        const analysisContainer = document.getElementById('aiAnalysisResult');
-        if (analysisContainer) {
-            // Format the analysis text
-            const formattedAnalysis = analysis
-                .split('\n')
-                .map(line => {
-                    // Convert numbered lists to bullet points
-                    if (line.match(/^\d+\./)) {
-                        return `<li>${line.replace(/^\d+\.\s*/, '')}</li>`;
-                    }
-                    // Convert sub-bullets
-                    if (line.match(/^\s*-\s /)) {
-                        return `<li class="ms-4">${line.replace(/^\s*-\s*/, '')}</li>`;
-                    }
-                    return line;
-                })
-                .join('\n');
+    // Initialize HeyGen session
+    async initializeHeyGen() {
+        try {
+            // Get session token first
+            console.log('Getting HeyGen session token...');
+            const tokenResponse = await fetch('https://api.heygen.com/v1/streaming.create_token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Api-Key': 'Yjk5MmZjYjQ4Y2IwNGExMTlhNDlkNmRmZTBmMGViMTItMTc0MjU4MDc4MQ=='
+                }
+            });
 
-            analysisContainer.innerHTML = `
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title mb-3">AI Rate Analysis</h5>
-                        <div class="analysis-content">
-                            <div class="analysis-section">
-                                <div class="analysis-text">
-                                    ${formattedAnalysis}
+            if (!tokenResponse.ok) {
+                throw new Error(`Failed to get session token: ${tokenResponse.status}`);
+            }
+
+            const tokenData = await tokenResponse.json();
+            this.sessionToken = tokenData.data.token;
+            console.log('Session token obtained');
+
+            // Initialize HeyGen session
+            console.log('Initializing HeyGen session...');
+            const sessionResponse = await fetch('https://api.heygen.com/v1/streaming.new', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.sessionToken}`
+                },
+                body: JSON.stringify({
+                    quality: "high",
+                    avatar_name: "June_HR_public",
+                    voice: {
+                        rate: 1.0
+                    },
+                    version: "v2",
+                    video_encoding: "H264",
+                    background: {
+                        type: "color",
+                        value: "#000000"
+                    },
+                    avatar_style: "normal",
+                    avatar_angle: "front",
+                    avatar_scale: 1.0,
+                    avatar_position: {
+                        x: 0,
+                        y: 0
+                    }
+                })
+            });
+
+            if (!sessionResponse.ok) {
+                const errorData = await sessionResponse.json();
+                throw new Error(`Failed to create HeyGen session: ${sessionResponse.status} - ${JSON.stringify(errorData)}`);
+            }
+
+            this.sessionData = await sessionResponse.json();
+            console.log('HeyGen session created:', this.sessionData);
+
+            // Start the streaming session
+            const startResponse = await fetch('https://api.heygen.com/v1/streaming.start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.sessionToken}`
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionData.data.session_id
+                })
+            });
+
+            if (!startResponse.ok) {
+                const errorData = await startResponse.json();
+                throw new Error(`Failed to start streaming: ${startResponse.status} - ${JSON.stringify(errorData)}`);
+            }
+
+            console.log('Streaming session started');
+
+            // Initialize LiveKit room
+            this.room = new LivekitClient.Room({
+                adaptiveStream: true,
+                dynacast: true,
+                videoCaptureDefaults: {
+                    resolution: LivekitClient.VideoPresets.h720.resolution,
+                },
+            });
+
+            // Handle media streams
+            this.mediaStream = new MediaStream();
+            this.room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+                if (track.kind === "video" || track.kind === "audio") {
+                    this.mediaStream.addTrack(track.mediaStreamTrack);
+                    if (this.mediaStream.getVideoTracks().length > 0 && this.mediaStream.getAudioTracks().length > 0) {
+                        if (this.mediaElement) {
+                            this.mediaElement.srcObject = this.mediaStream;
+                            console.log('Media stream ready');
+                        }
+                    }
+                }
+            });
+
+            // Connect to LiveKit room
+            await this.room.connect(this.sessionData.data.url, this.sessionData.data.access_token);
+            console.log('Connected to room');
+
+            // Send welcome message
+            await this.sendTextToAvatar("I'm here to help, let me take a look at the rates for a moment and give you my thoughts...");
+            
+            console.log('HeyGen initialization complete');
+        } catch (error) {
+            console.error('Error initializing HeyGen:', error);
+        }
+    },
+
+    // Send text to avatar
+    async sendTextToAvatar(text) {
+        if (!this.sessionToken || !this.sessionData) {
+            throw new Error('HeyGen session not initialized');
+        }
+
+        const textResponse = await fetch('https://api.heygen.com/v1/streaming.task', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.sessionToken}`
+            },
+            body: JSON.stringify({
+                session_id: this.sessionData.data.session_id,
+                text: text,
+                task_type: "repeat"
+            })
+        });
+
+        if (!textResponse.ok) {
+            throw new Error(`Failed to send text: ${textResponse.status}`);
+        }
+
+        console.log('Text sent to avatar:', text);
+    },
+
+    // Show analysis results
+    async showAnalysis(analysis) {
+        const analysisContainer = document.getElementById('aiAnalysisResult');
+        
+        if (!analysisContainer) {
+            console.error('Analysis container not found');
+            return;
+        }
+
+        console.log('Showing analysis...');
+        
+        // Set up the container structure with video element
+        analysisContainer.innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <div class="analysis-content">
+                        <div class="analysis-section">
+                            <div class="avatar-container mb-4">
+                                <video id="mediaElement" autoplay playsinline controls class="w-100 h-100 rounded" style="background: #000; min-height: 300px; object-fit: cover;"></video>
+                                <div class="audio-controls mt-2 text-center">
+                                    <button id="toggleAudio" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-volume-up"></i> Enable Audio
+                                    </button>
                                 </div>
                             </div>
+                            <div id="analysisText" class="mt-4"></div>
                         </div>
                     </div>
                 </div>
-            `;
+            </div>
+        `;
+
+        // Show the container
+        analysisContainer.style.display = 'block';
+        
+        try {
+            // Get the video and text elements
+            this.mediaElement = document.getElementById('mediaElement');
+            const analysisTextContainer = document.getElementById('analysisText');
+            const toggleAudioBtn = document.getElementById('toggleAudio');
+            
+            if (!this.mediaElement || !analysisTextContainer) {
+                throw new Error('Failed to initialize UI elements');
+            }
+
+            // If media stream is ready, set it to the video element
+            if (this.mediaStream) {
+                this.mediaElement.srcObject = this.mediaStream;
+            }
+
+            // Handle audio toggle
+            if (toggleAudioBtn) {
+                toggleAudioBtn.addEventListener('click', () => {
+                    this.mediaElement.muted = !this.mediaElement.muted;
+                    toggleAudioBtn.innerHTML = this.mediaElement.muted ? 
+                        '<i class="fas fa-volume-mute"></i> Enable Audio' : 
+                        '<i class="fas fa-volume-up"></i> Disable Audio';
+                });
+            }
+
+            // Format and display the analysis text
+            const formattedAnalysis = this.formatAnalysisText(analysis);
+            analysisTextContainer.innerHTML = formattedAnalysis;
+
+            // Send the analysis text to the avatar
+            await this.sendTextToAvatar(analysis);
 
             // Add some CSS to style the analysis
             const style = document.createElement('style');
@@ -110,31 +301,75 @@ const AIAgent = {
                     border-radius: 8px;
                     padding: 1.5rem;
                 }
-                .analysis-text {
-                    margin-bottom: 1rem;
-                }
-                .analysis-text ul {
-                    list-style-type: none;
-                    padding-left: 0;
-                    margin-bottom: 1rem;
-                }
-                .analysis-text li {
-                    margin-bottom: 0.5rem;
+                .avatar-container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                    background: #000;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    aspect-ratio: 16/9;
                     position: relative;
-                    padding-left: 1.5rem;
                 }
-                .analysis-text li:before {
-                    content: "•";
+                .avatar-container video {
                     position: absolute;
+                    top: 0;
                     left: 0;
-                    color: #0d6efd;
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
                 }
-                .analysis-text li.ms-4:before {
-                    content: "◦";
+                .audio-controls {
+                    position: absolute;
+                    bottom: 10px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    z-index: 10;
+                }
+                .audio-controls .btn {
+                    background: rgba(255, 255, 255, 0.9);
+                    border: none;
+                    padding: 5px 15px;
+                    border-radius: 20px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                }
+                .audio-controls .btn:hover {
+                    background: rgba(255, 255, 255, 1);
                 }
             `;
             document.head.appendChild(style);
+        } catch (error) {
+            console.error('Error in showAnalysis:', error);
+            this.showError(`Failed to display analysis: ${error.message}`);
+        } finally {
+            // Ensure loading state is cleared
+            this.hideLoading();
         }
+    },
+
+    // Format the analysis text
+    formatAnalysisText(text) {
+        // Split the text into lines
+        const lines = text.split('\n');
+        
+        // Process each line
+        return lines.map(line => {
+            // Handle headings
+            if (line.match(/^\d+\./)) {
+                return `<h5>${line.replace(/^\d+\.\s*/, '')}</h5>`;
+            }
+            
+            // Handle sub-bullets
+            if (line.trim().startsWith('-')) {
+                return `<li class="ms-4">${line.replace(/^-\s*/, '')}</li>`;
+            }
+            
+            // Handle regular paragraphs
+            if (line.trim()) {
+                return `<p>${line}</p>`;
+            }
+            
+            return '';
+        }).join('');
     },
 
     // Analyze rates using AI
@@ -185,7 +420,8 @@ const AIAgent = {
             }
             
             if (result.success) {
-                this.showAnalysis(result.analysis);
+                console.log('AI analysis successful, showing results...');
+                await this.showAnalysis(result.analysis);
             } else {
                 throw new Error(result.message || 'Analysis failed');
             }
@@ -198,62 +434,8 @@ const AIAgent = {
     }
 };
 
-// Test function to simulate rate data
-function testAIAnalysis() {
-    const testRates = {
-        availableRates: [
-            {
-                carrierName: "Fast Shipping Co",
-                transitTime: 2,
-                estimatedDeliveryDate: "2025-03-23",
-                serviceMode: "Express",
-                freightCharges: 150.00,
-                fuelCharges: 25.00,
-                accessorialCharges: 10.00,
-                serviceCharges: 20.00,
-                totalCharges: 205.00
-            },
-            {
-                carrierName: "Economy Shipping Co",
-                transitTime: 5,
-                estimatedDeliveryDate: "2025-03-26",
-                serviceMode: "Standard",
-                freightCharges: 100.00,
-                fuelCharges: 15.00,
-                accessorialCharges: 5.00,
-                serviceCharges: 10.00,
-                totalCharges: 130.00
-            },
-            {
-                carrierName: "Premium Shipping Co",
-                transitTime: 3,
-                estimatedDeliveryDate: "2025-03-24",
-                serviceMode: "Priority",
-                freightCharges: 180.00,
-                fuelCharges: 30.00,
-                accessorialCharges: 15.00,
-                serviceCharges: 25.00,
-                totalCharges: 250.00
-            }
-        ]
-    };
-
-    // Call the AI analysis function with test data
-    AIAgent.analyzeRates(testRates);
-}
-
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing AI Agent...');
     AIAgent.init();
-    
-    // Add test button to the page
-    const testButton = document.createElement('button');
-    testButton.className = 'btn btn-secondary ms-2';
-    testButton.innerHTML = '<i class="fas fa-vial"></i> Test AI Analysis';
-    testButton.onclick = testAIAnalysis;
-    
-    const header = document.querySelector('.d-flex.align-items-center');
-    if (header) {
-        header.appendChild(testButton);
-    }
 }); 

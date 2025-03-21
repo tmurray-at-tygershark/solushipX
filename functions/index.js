@@ -489,6 +489,29 @@ exports.analyzeRatesWithAI = functions.https.onRequest(async (req, res) => {
     }
 });
 
+// LiveKit configuration endpoint
+app.get('/config', (req, res) => {
+    try {
+        // Get the HeyGen token from environment
+        const token = functions.config().livekit.token;
+        if (!token) {
+            throw new Error('HeyGen token not configured');
+        }
+
+        // Return the configuration with the full token
+        res.json({
+            livekitUrl: 'https://api.heygen.com',
+            livekitToken: token
+        });
+    } catch (error) {
+        console.error('Error serving LiveKit config:', error);
+        res.status(500).json({
+            error: 'Failed to get LiveKit configuration',
+            details: error.message
+        });
+    }
+});
+
 // Export the function
 exports.getShippingRates = onRequest({
     region: "us-central1",
