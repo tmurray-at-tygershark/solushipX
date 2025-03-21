@@ -1073,17 +1073,56 @@ class FormHandler {
 
             const requestData = this.gatherFormData();
             
-            // Show loading message
+            // Hide section header and show loading message with Lottie animation
             const ratesContainer = document.getElementById('ratesContainer');
+            const sectionHeader = ratesContainer.closest('.form-section').querySelector('.section-header');
+            if (sectionHeader) {
+                sectionHeader.style.display = 'none';
+            }
+            
             if (ratesContainer) {
                 ratesContainer.innerHTML = `
-                    <div class="col-12 text-center">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="mt-3">Calculating shipping rates...</p>
+                    <div class="col-12 text-center mt-2">
+                        <div id="rateLottieContainer" style="width: 300px; height: 300px; margin: -20px auto 0;"></div>
+                        <p class="mt-2">
+                            <span class="spinner-border spinner-border-sm me-2" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </span>
+                            Searching All Carrier Rates
+                        </p>
                     </div>
                 `;
+
+                // Initialize Lottie animation
+                const animation = lottie.loadAnimation({
+                    container: document.getElementById('rateLottieContainer'),
+                    renderer: 'svg',
+                    loop: true,
+                    autoplay: true,
+                    path: '/animations/truck.json'
+                });
+
+                // Scale up the animation
+                const animContainer = document.getElementById('rateLottieContainer');
+                if (animContainer) {
+                    const svg = animContainer.querySelector('svg');
+                    if (svg) {
+                        svg.style.transform = 'scale(1.5)';
+                        svg.style.transformOrigin = 'center center';
+                    }
+                }
+
+                // Handle animation error
+                animation.addEventListener('error', () => {
+                    const container = document.getElementById('rateLottieContainer');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        `;
+                    }
+                });
             }
 
             const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
@@ -1101,6 +1140,11 @@ class FormHandler {
             const responseData = await response.json();
 
             if (responseData.success && responseData.data.availableRates) {
+                // Show section header again
+                if (sectionHeader) {
+                    sectionHeader.style.display = 'flex';
+                }
+                
                 const rates = responseData.data.availableRates.map(rate => ({
                     id: rate.quoteId,
                     carrier: rate.carrierName,
@@ -1135,6 +1179,12 @@ class FormHandler {
         } catch (error) {
             console.error('Error calculating rates:', error);
             const ratesContainer = document.getElementById('ratesContainer');
+            // Show section header again in case of error
+            const sectionHeader = ratesContainer?.closest('.form-section')?.querySelector('.section-header');
+            if (sectionHeader) {
+                sectionHeader.style.display = 'flex';
+            }
+            
             if (ratesContainer) {
                 ratesContainer.innerHTML = `
                     <div class="col-12">
@@ -1149,6 +1199,11 @@ class FormHandler {
                 `;
             }
         } finally {
+            // Cleanup animation
+            const animation = document.getElementById('rateLottieContainer')?._lottie;
+            if (animation) {
+                animation.destroy();
+            }
             loadingOverlay.classList.remove('show');
         }
     }

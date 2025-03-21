@@ -17,6 +17,8 @@
   <!-- Custom Scripts -->
   <script src="js/constants.js"></script>
   <script src="js/form-handler.js"></script>
+  <!-- Lottie Animation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
   <script>
     // Initialize theme preference
     const savedTheme = localStorage.getItem('theme') || 'light';
@@ -101,15 +103,13 @@
 <body>
   <div class="container">
     <div class="section-header">
-      <h2 class="mb-0">Create Shipment</h2>
-      <div class="d-flex gap-2">
-        <button class="btn btn-outline-primary" onclick="formHandler.loadDraft()">
-          <i class="bi bi-folder-symlink"></i> Load Draft
-        </button>
-        <button class="theme-toggle" onclick="toggleTheme()">
-          <i class="bi bi-sun"></i>
-        </button>
+      <div class="d-flex align-items-center">
+        <h2 class="mb-0">Create Shipment</h2>
+        <span class="badge bg-secondary ms-2 version-badge">v1.3.9</span>
       </div>
+      <button class="btn btn-outline-primary" onclick="formHandler.loadDraft()">
+        <i class="bi bi-folder-symlink"></i> Load Draft
+      </button>
     </div>
 
     <!-- Stepper -->
