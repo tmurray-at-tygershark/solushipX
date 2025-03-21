@@ -1056,46 +1056,83 @@ class FormHandler {
     }
 
     async calculateRates() {
-        // Show loading overlay
-        const loadingOverlay = document.querySelector('.loading-overlay');
-        if (!loadingOverlay) {
-            console.error('Loading overlay not found');
-            return;
-        }
-        
-        loadingOverlay.classList.add('show');
-        
         try {
+            // Get required elements
+            const ratesContainer = document.getElementById('ratesContainer');
+            const rateFilters = document.querySelector('.rate-filters');
+            
+            // Create elements if they don't exist
+            if (!ratesContainer) {
+                const ratesDiv = document.createElement('div');
+                ratesDiv.id = 'ratesContainer';
+                ratesDiv.className = 'row';
+                document.querySelector('.form-section[data-step="4"]').appendChild(ratesDiv);
+            }
+            
+            if (!rateFilters) {
+                const filtersDiv = document.createElement('div');
+                filtersDiv.className = 'rate-filters';
+                filtersDiv.innerHTML = `
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <label class="form-label">Sort By</label>
+                            <select class="form-select" onchange="formHandler.sortRates(this.value)">
+                                <option value="price">Price (Lowest First)</option>
+                                <option value="transit">Transit Time (Fastest First)</option>
+                                <option value="carrier">Carrier (A-Z)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Service Type</label>
+                            <select class="form-select" onchange="formHandler.filterService(this.value)">
+                                <option value="all">All Services</option>
+                                <option value="guaranteed">Guaranteed Only</option>
+                                <option value="economy">Economy</option>
+                                <option value="express">Express</option>
+                            </select>
+                        </div>
+                    </div>
+                `;
+                document.querySelector('.form-section[data-step="4"]').insertBefore(
+                    filtersDiv,
+                    document.getElementById('ratesContainer')
+                );
+            }
+            
+            // Hide rate filters and show loading state
+            if (rateFilters) {
+                rateFilters.style.display = 'none';
+            }
+            if (ratesContainer) {
+                ratesContainer.innerHTML = `
+                    <div class="col-12">
+                        <div class="loading-overlay">
+                            <div class="text-center">
+                                <div id="rateLottieContainer" style="width: 300px; height: 300px; margin: -20px auto 0;"></div>
+                                <p class="mt-2">
+                                    <span class="spinner-border spinner-border-sm me-2" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </span>
+                                    Searching All Carrier Rates
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
             // Validate form before calculating rates
             if (!this.validateForm()) {
                 throw new Error('Please fix form errors before calculating rates');
             }
 
             const requestData = this.gatherFormData();
-            
-            // Hide section header and show loading message with Lottie animation
-            const ratesContainer = document.getElementById('ratesContainer');
-            const sectionHeader = ratesContainer.closest('.form-section').querySelector('.section-header');
-            if (sectionHeader) {
-                sectionHeader.style.display = 'none';
-            }
-            
-            if (ratesContainer) {
-                ratesContainer.innerHTML = `
-                    <div class="col-12 text-center mt-2">
-                        <div id="rateLottieContainer" style="width: 300px; height: 300px; margin: -20px auto 0;"></div>
-                        <p class="mt-2">
-                            <span class="spinner-border spinner-border-sm me-2" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </span>
-                            Searching All Carrier Rates
-                        </p>
-                    </div>
-                `;
 
-                // Initialize Lottie animation
+            // Initialize Lottie animation
+            const lottieContainer = document.getElementById('rateLottieContainer');
+            if (lottieContainer) {
                 const animation = lottie.loadAnimation({
-                    container: document.getElementById('rateLottieContainer'),
+                    container: lottieContainer,
                     renderer: 'svg',
                     loop: true,
                     autoplay: true,
@@ -1103,20 +1140,16 @@ class FormHandler {
                 });
 
                 // Scale up the animation
-                const animContainer = document.getElementById('rateLottieContainer');
-                if (animContainer) {
-                    const svg = animContainer.querySelector('svg');
-                    if (svg) {
-                        svg.style.transform = 'scale(1.5)';
-                        svg.style.transformOrigin = 'center center';
-                    }
+                const svg = lottieContainer.querySelector('svg');
+                if (svg) {
+                    svg.style.transform = 'scale(1.5)';
+                    svg.style.transformOrigin = 'center center';
                 }
 
                 // Handle animation error
                 animation.addEventListener('error', () => {
-                    const container = document.getElementById('rateLottieContainer');
-                    if (container) {
-                        container.innerHTML = `
+                    if (lottieContainer) {
+                        lottieContainer.innerHTML = `
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
@@ -1140,11 +1173,6 @@ class FormHandler {
             const responseData = await response.json();
 
             if (responseData.success && responseData.data.availableRates) {
-                // Show section header again
-                if (sectionHeader) {
-                    sectionHeader.style.display = 'flex';
-                }
-                
                 const rates = responseData.data.availableRates.map(rate => ({
                     id: rate.quoteId,
                     carrier: rate.carrierName,
@@ -1165,13 +1193,10 @@ class FormHandler {
                         rate.guarOptions[0].amountDue : 0
                 }));
 
-                // Show rate filters with animation
-                const rateFilters = document.querySelector('.rate-filters');
+                // Show rate filters and display rates
                 if (rateFilters) {
-                    rateFilters.classList.add('show');
+                    rateFilters.style.display = 'block';
                 }
-
-                // Display rates with staggered animation
                 this.displayRates(rates);
             } else {
                 throw new Error(responseData.message || 'No rates found in the response');
@@ -1179,32 +1204,20 @@ class FormHandler {
         } catch (error) {
             console.error('Error calculating rates:', error);
             const ratesContainer = document.getElementById('ratesContainer');
-            // Show section header again in case of error
-            const sectionHeader = ratesContainer?.closest('.form-section')?.querySelector('.section-header');
-            if (sectionHeader) {
-                sectionHeader.style.display = 'flex';
-            }
+            const rateFilters = document.querySelector('.rate-filters');
             
             if (ratesContainer) {
                 ratesContainer.innerHTML = `
-                    <div class="col-12">
-                        <div class="alert alert-danger">
-                            <h5>Error Calculating Rates</h5>
-                            <p>${error.message}</p>
-                            <button class="btn btn-primary" onclick="formHandler.calculateRates()">
-                                Try Again
-                            </button>
-                        </div>
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Error calculating rates. Please try again.
                     </div>
                 `;
             }
-        } finally {
-            // Cleanup animation
-            const animation = document.getElementById('rateLottieContainer')?._lottie;
-            if (animation) {
-                animation.destroy();
+            
+            if (rateFilters) {
+                rateFilters.style.display = 'block';
             }
-            loadingOverlay.classList.remove('show');
         }
     }
 
