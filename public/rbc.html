@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Bootstrap Layout</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+   
+</head>
+
+<body>
+
+    <div id="header">
+        <!-- This is where the dynamic content will be inserted -->
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            // Get the header element to insert after
+            var referenceElement = document.getElementById('header');
+            console.log(referenceElement);
+        
+            // Create Div Element 1 - Split Column inside a Container
+            var divElement1 = document.createElement('div');
+            divElement1.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            divElement1.setAttribute('data-gp-collection', '67c7433a0147fc3149ad246d');
+            divElement1.setAttribute('data-gp-type', 'carousel');
+            divElement1.style.display = 'flex';
+            divElement1.style.justifyContent = 'center';
+            divElement1.style.marginTop = '50px';
+            divElement1.style.paddingLeft = '0px';
+        
+            var divElement1LeftCol = document.createElement('div');
+            divElement1LeftCol.classList.add('col-md-9');
+            divElement1LeftCol.appendChild(divElement1);
+        
+            var divElement1RightCol = document.createElement('div');
+            divElement1RightCol.classList.add('col-md-3');
+            divElement1RightCol.style.marginTop = '80px';
+            divElement1RightCol.innerHTML = `<h6>Featured Video</h6><h2>Meet Emmanuel Athanassakos</h2><p>Get to know Emmanuel, Investment and Wealth Advisor at RBC Dominion Securities.</p><p><a href="https://ca.rbcwealthmanagement.com/emmanuel.athanassakos/contact">Schedule A Meeting</a></p>`;
+        
+            var divElement1Row = document.createElement('div');
+            divElement1Row.classList.add('row');
+            divElement1Row.appendChild(divElement1LeftCol);
+            divElement1Row.appendChild(divElement1RightCol);
+        
+            var divElement1Container = document.createElement('div');
+            divElement1Container.classList.add('container');
+            divElement1Container.appendChild(divElement1Row);
+            referenceElement.insertAdjacentElement('afterend', divElement1Container);
+        
+            // Client Experience Section
+            var experienceContainer = document.createElement('div');
+            experienceContainer.classList.add('container');
+            experienceContainer.style.marginTop = '50px';
+        
+            var experienceRow = document.createElement('div');
+            experienceRow.classList.add('row');
+        
+            var experienceCol = document.createElement('div');
+            experienceCol.classList.add('col-12');
+            experienceCol.innerHTML = `<h2>The Client Experience</h2>`;
+        
+            experienceRow.appendChild(experienceCol);
+            experienceContainer.appendChild(experienceRow);
+            divElement1Container.insertAdjacentElement('afterend', experienceContainer);
+        
+            // Full-width Section 1
+            var divElement2 = document.createElement('div');
+            divElement2.style.width = '100%';
+            divElement2.style.marginTop = '50px';
+            divElement2.style.paddingLeft = '20px';
+            divElement2.style.paddingRight = '0';
+        
+            var innerDiv1 = document.createElement('div');
+            innerDiv1.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            innerDiv1.setAttribute('data-gp-collection', '67a77821bdb5e76057511db6');
+            innerDiv1.setAttribute('data-gp-type', 'carousel');
+        
+            divElement2.appendChild(innerDiv1);
+            experienceContainer.insertAdjacentElement('afterend', divElement2);
+        
+            // Split Content Reversed Section
+            var divElement3 = document.createElement('div');
+            divElement3.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            divElement3.setAttribute('data-gp-collection', '67c743640147fc3149ad2804');
+            divElement3.setAttribute('data-gp-type', 'carousel');
+            divElement3.style.display = 'flex';
+            divElement3.style.justifyContent = 'center';
+            divElement3.style.marginTop = '80px';
+        
+            var divElement3RightCol = document.createElement('div');
+            divElement3RightCol.classList.add('col-md-9');
+            divElement3RightCol.appendChild(divElement3);
+        
+            var divElement3LeftCol = document.createElement('div');
+            divElement3LeftCol.classList.add('col-md-3');
+            divElement3LeftCol.style.marginTop = '80px';
+            divElement3LeftCol.innerHTML = `<h6>Featured Video</h6><h2>How We Help Business Owners</h2><p>Emmanuel offers comprehensive wealth management for business owners, aligning investments, taxes, and family goals for a seamless strategy.</p><p><a href="https://ca.rbcwealthmanagement.com/emmanuel.athanassakos/contact">Learn More</a></p>`;
+        
+            var divElement3Row = document.createElement('div');
+            divElement3Row.classList.add('row');
+            divElement3Row.appendChild(divElement3LeftCol);
+            divElement3Row.appendChild(divElement3RightCol);
+        
+            var divElement3Container = document.createElement('div');
+            divElement3Container.classList.add('container');
+            divElement3Container.appendChild(divElement3Row);
+        
+            divElement2.insertAdjacentElement('afterend', divElement3Container);
+        
+            // Investment Philosophy
+            var philosophyTitleContainer = document.createElement('div');
+            philosophyTitleContainer.classList.add('container');
+            philosophyTitleContainer.style.marginTop = '50px';
+        
+            var philosophyTitleRow = document.createElement('div');
+            philosophyTitleRow.classList.add('row');
+        
+            var philosophyTitleCol = document.createElement('div');
+            philosophyTitleCol.classList.add('col-12');
+            philosophyTitleCol.innerHTML = `<h2>Our Investment Philosophy</h2>`;
+            philosophyTitleCol.style.marginBottom = '30px';
+        
+            philosophyTitleRow.appendChild(philosophyTitleCol);
+            philosophyTitleContainer.appendChild(philosophyTitleRow);
+        
+            var philosophyContent = document.createElement('div');
+            philosophyContent.style.width = '100%';
+            philosophyContent.style.paddingLeft = '20px';
+            philosophyContent.style.paddingRight = '0';
+        
+            var philosophyDiv = document.createElement('div');
+            philosophyDiv.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            philosophyDiv.setAttribute('data-gp-collection', '67a77862bdb5e760575132c3');
+            philosophyDiv.setAttribute('data-gp-type', 'carousel');
+            philosophyDiv.style.marginBottom = '50px';
+        
+            philosophyContent.appendChild(philosophyDiv);
+            divElement3Container.insertAdjacentElement('afterend', philosophyTitleContainer);
+            philosophyTitleContainer.insertAdjacentElement('afterend', philosophyContent);
+        
+            // For Retirees
+            var forRetireesTitleContainer = document.createElement('div');
+            forRetireesTitleContainer.classList.add('container');
+            forRetireesTitleContainer.style.marginTop = '50px';
+        
+            var forRetireesTitleRow = document.createElement('div');
+            forRetireesTitleRow.classList.add('row');
+        
+            var forRetireesTitleCol = document.createElement('div');
+            forRetireesTitleCol.classList.add('col-12');
+            forRetireesTitleCol.innerHTML = `<h2>For Retirees</h2>`;
+            forRetireesTitleCol.style.marginBottom = '30px';
+        
+            forRetireesTitleRow.appendChild(forRetireesTitleCol);
+            forRetireesTitleContainer.appendChild(forRetireesTitleRow);
+        
+            var forRetireesContent = document.createElement('div');
+            forRetireesContent.style.width = '100%';
+            forRetireesContent.style.paddingLeft = '20px';
+            forRetireesContent.style.paddingRight = '0';
+        
+            var forRetireesDiv = document.createElement('div');
+            forRetireesDiv.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            forRetireesDiv.setAttribute('data-gp-collection', '67a7789ebdb5e76057515ba6');
+            forRetireesDiv.setAttribute('data-gp-type', 'carousel');
+            forRetireesDiv.style.marginBottom = '50px';
+        
+            forRetireesContent.appendChild(forRetireesDiv);
+            philosophyContent.insertAdjacentElement('afterend', forRetireesTitleContainer);
+            forRetireesTitleContainer.insertAdjacentElement('afterend', forRetireesContent);
+        
+            // For Business Owners
+            var forBusinessTitleContainer = document.createElement('div');
+            forBusinessTitleContainer.classList.add('container');
+            forBusinessTitleContainer.style.marginTop = '50px';
+        
+            var forBusinessTitleRow = document.createElement('div');
+            forBusinessTitleRow.classList.add('row');
+        
+            var forBusinessTitleCol = document.createElement('div');
+            forBusinessTitleCol.classList.add('col-12');
+            forBusinessTitleCol.innerHTML = `<h2>For Business Owners</h2>`;
+            forBusinessTitleCol.style.marginBottom = '30px';
+        
+            forBusinessTitleRow.appendChild(forBusinessTitleCol);
+            forBusinessTitleContainer.appendChild(forBusinessTitleRow);
+        
+            var forBusinessContent = document.createElement('div');
+            forBusinessContent.style.width = '100%';
+            forBusinessContent.style.paddingLeft = '20px';
+            forBusinessContent.style.paddingRight = '0';
+        
+            var forBusinessDiv = document.createElement('div');
+            forBusinessDiv.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            forBusinessDiv.setAttribute('data-gp-collection', '67a7790dbdb5e76057518a17');
+            forBusinessDiv.setAttribute('data-gp-type', 'carousel');
+            forBusinessDiv.style.marginBottom = '50px';
+        
+            forBusinessContent.appendChild(forBusinessDiv);
+            forRetireesContent.insertAdjacentElement('afterend', forBusinessTitleContainer);
+            forBusinessTitleContainer.insertAdjacentElement('afterend', forBusinessContent);
+        
+            // Estate Planning
+            var estateTitleContainer = document.createElement('div');
+            estateTitleContainer.classList.add('container');
+            estateTitleContainer.style.marginTop = '50px';
+        
+            var estateTitleRow = document.createElement('div');
+            estateTitleRow.classList.add('row');
+        
+            var estateTitleCol = document.createElement('div');
+            estateTitleCol.classList.add('col-12');
+            estateTitleCol.innerHTML = `<h2>Estate Planning</h2>`;
+            estateTitleCol.style.marginBottom = '30px';
+        
+            estateTitleRow.appendChild(estateTitleCol);
+            estateTitleContainer.appendChild(estateTitleRow);
+        
+            var estateContent = document.createElement('div');
+            estateContent.style.width = '100%';
+            estateContent.style.paddingLeft = '20px';
+            estateContent.style.paddingRight = '0';
+        
+            var estateDiv = document.createElement('div');
+            estateDiv.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            estateDiv.setAttribute('data-gp-collection', '67a77937bdb5e7605751980d');
+            estateDiv.setAttribute('data-gp-type', 'carousel');
+            estateDiv.style.marginBottom = '50px';
+        
+            estateContent.appendChild(estateDiv);
+            forBusinessContent.insertAdjacentElement('afterend', estateTitleContainer);
+            estateTitleContainer.insertAdjacentElement('afterend', estateContent);
+        
+            // Tax Planning
+            var taxPlanningTitleContainer = document.createElement('div');
+            taxPlanningTitleContainer.classList.add('container');
+            taxPlanningTitleContainer.style.marginTop = '50px';
+        
+            var taxPlanningTitleRow = document.createElement('div');
+            taxPlanningTitleRow.classList.add('row');
+        
+            var taxPlanningTitleCol = document.createElement('div');
+            taxPlanningTitleCol.classList.add('col-12');
+            taxPlanningTitleCol.innerHTML = `<h2>Tax Planning</h2>`;
+            taxPlanningTitleCol.style.marginBottom = '30px';
+        
+            taxPlanningTitleRow.appendChild(taxPlanningTitleCol);
+            taxPlanningTitleContainer.appendChild(taxPlanningTitleRow);
+        
+            var taxPlanningContent = document.createElement('div');
+            taxPlanningContent.style.width = '100%';
+            taxPlanningContent.style.paddingLeft = '20px';
+            taxPlanningContent.style.paddingRight = '0';
+        
+            var taxPlanningDiv = document.createElement('div');
+            taxPlanningDiv.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            taxPlanningDiv.setAttribute('data-gp-collection', '67a77960bdb5e76057519ed2');
+            taxPlanningDiv.setAttribute('data-gp-type', 'carousel');
+            taxPlanningDiv.style.marginBottom = '50px';
+        
+            taxPlanningContent.appendChild(taxPlanningDiv);
+            estateContent.insertAdjacentElement('afterend', taxPlanningTitleContainer);
+            taxPlanningTitleContainer.insertAdjacentElement('afterend', taxPlanningContent);
+        
+            // Education Planning
+            var educationTitleContainer = document.createElement('div');
+            educationTitleContainer.classList.add('container');
+            educationTitleContainer.style.marginTop = '50px';
+        
+            var educationTitleRow = document.createElement('div');
+            educationTitleRow.classList.add('row');
+        
+            var educationTitleCol = document.createElement('div');
+            educationTitleCol.classList.add('col-12');
+            educationTitleCol.innerHTML = `<h2>Education Planning</h2>`;
+            educationTitleCol.style.marginBottom = '30px';
+        
+            educationTitleRow.appendChild(educationTitleCol);
+            educationTitleContainer.appendChild(educationTitleRow);
+        
+            var educationContent = document.createElement('div');
+            educationContent.style.width = '100%';
+            educationContent.style.paddingLeft = '20px';
+            educationContent.style.paddingRight = '0';
+        
+            var educationDiv = document.createElement('div');
+            educationDiv.setAttribute('data-gp-account', '672d031a0b5fe0fc7b9b1ba7');
+            educationDiv.setAttribute('data-gp-collection', '67d98e44d93e260db92d7854');
+            educationDiv.setAttribute('data-gp-type', 'carousel');
+            educationDiv.style.marginBottom = '50px';
+        
+            educationContent.appendChild(educationDiv);
+            taxPlanningContent.insertAdjacentElement('afterend', educationTitleContainer);
+            educationTitleContainer.insertAdjacentElement('afterend', educationContent);
+        });
+        </script>
+        
+     <script src="https://shopper.ghostretail.com/gp-shopper.js" defer></script>
+    
+</body>
+
+</html>

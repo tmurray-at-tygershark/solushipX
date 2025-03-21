@@ -4,12 +4,15 @@ const express = require("express");
 const axios = require("axios");
 const { parseStringPromise } = require("xml2js");
 const functions = require('firebase-functions');
+require('dotenv').config();
 
 // Create Express app
 const app = express();
 
 // Constants
 const ESHIPPLUS_API_URL = "http://www.eshipplus.com/services/eShipPlusWSv4.asmx";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // Middleware
 app.use(cors);
@@ -393,6 +396,97 @@ app.get('/api/config/maps-key', (req, res) => {
     console.error('Error serving Google Maps API key:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// 🚀 AI Analysis Route
+exports.analyzeRatesWithAI = functions.https.onRequest(async (req, res) => {
+    // Set CORS headers for all responses
+    res.set('Access-Control-Allow-Origin', 'https://solushipx.web.app');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    res.set('Access-Control-Max-Age', '3600');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    console.log("Received request body:", JSON.stringify(req.body, null, 2));
+
+    const ratesData = req.body.rates;
+
+    if (!ratesData) {
+        console.log("No rates data provided");
+        return res.status(400).json({ success: false, message: "No rates data provided for AI analysis." });
+    }
+
+    try {
+        console.log("🤖 Sending rates to AI...");
+        
+        // Debug API key loading
+        const apiKey = functions.config().openai?.api_key;
+        console.log("API Key loaded:", apiKey ? "Yes" : "No");
+        console.log("API Key length:", apiKey?.length || 0);
+        console.log("API Key prefix:", apiKey ? apiKey.substring(0, 10) + "..." : "None");
+        console.log("API Key suffix:", apiKey ? "..." + apiKey.substring(apiKey.length - 10) : "None");
+        
+        if (!apiKey) {
+            throw new Error("OpenAI API key not found in environment variables");
+        }
+
+        const payload = {
+            model: "gpt-4",
+            temperature: 0.1,
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a shipping rate analysis expert. Analyze the provided shipping rates and provide a clear, concise explanation of the options, highlighting the best value and fastest options."
+                },
+                {
+                    role: "user",
+                    content: `Analyze these shipping rates and provide a clear explanation of the options, including:
+                    1. Best value option
+                    2. Fastest delivery option
+                    3. Any special considerations or notes
+                    
+                    Rates data: ${JSON.stringify(ratesData, null, 2)}`
+                }
+            ]
+        };
+
+        console.log("Request payload:", JSON.stringify(payload, null, 2));
+
+        const response = await axios.post(OPENAI_API_URL, payload, {
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            }
+        });
+
+        console.log("OpenAI API Response:", JSON.stringify(response.data, null, 2));
+
+        res.json({
+            success: true,
+            analysis: response.data.choices[0]?.message?.content || "AI analysis failed."
+        });
+
+    } catch (error) {
+        console.error("❌ AI Processing Error:", error.message);
+        console.error("Error details:", {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            headers: error.response?.headers
+        });
+
+        res.status(500).json({
+            success: false,
+            message: "AI processing failed.",
+            error: error.message,
+            details: error.response?.data || "No additional details available"
+        });
+    }
 });
 
 // Export the function

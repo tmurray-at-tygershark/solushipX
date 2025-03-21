@@ -105,7 +105,7 @@
     <div class="section-header">
       <div class="d-flex align-items-center">
         <h1 class="h3 mb-0">Create Shipment</h1>
-        <span class="badge bg-secondary ms-2 version-badge">v1.3.13</span>
+        <span class="badge bg-secondary ms-2 version-badge">v1.3.21</span>
       </div>
       <button class="btn btn-outline-primary" onclick="formHandler.loadDraft()">
         <i class="bi bi-folder-symlink"></i> Load Draft
@@ -462,13 +462,11 @@
       <!-- Step 5: Rates -->
       <div class="form-section" data-step="4">
         <div class="section-header">
-          <h4 class="mb-0">Available Rates</h4>
+          <h2 class="mb-0">Available Rates</h2>
         </div>
-        
-        <!-- Rate Filters -->
-        <div class="rate-filters">
+        <div class="rate-filters mb-3">
           <div class="row align-items-center">
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Sort By</label>
               <select class="form-select" onchange="formHandler.sortRates(this.value)">
                 <option value="price">Price (Lowest First)</option>
@@ -476,7 +474,7 @@
                 <option value="carrier">Carrier (A-Z)</option>
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Service Type</label>
               <select class="form-select" onchange="formHandler.filterService(this.value)">
                 <option value="all">All Services</option>
@@ -485,12 +483,31 @@
                 <option value="express">Express</option>
               </select>
             </div>
+            <div class="col-md-6 text-end">
+              <button type="button" class="btn btn-outline-primary rate-details-toggle me-2" data-expanded="false">
+                <i class="bi bi-list-ul"></i> Rate Details
+              </button>
+              <button id="aiAnalysisBtn" class="btn btn-primary">
+                <i class="fas fa-robot"></i> AI Analysis
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Rates Container -->
-        <div id="ratesContainer" class="row"></div>
+        <!-- AI Analysis Section -->
+        <div id="aiAnalysisResult" class="mb-4" style="display: none;">
+          <div class="card">
+            <div class="card-body">
+              <div class="d-flex justify-content-center align-items-center" style="min-height: 100px;">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
+        <div id="ratesContainer" class="row"></div>
         <div class="navigation-buttons">
           <button type="button" class="btn btn-outline-primary btn-navigation" onclick="formHandler.prevStep()">
             <i class="bi bi-arrow-left"></i> Previous
@@ -507,5 +524,8 @@
   <div id="loadingOverlay" class="loading-overlay" style="display: none;">
     <div class="spinner"></div>
   </div>
+
+  <!-- Add this before the closing </body> tag -->
+  <script src="/js/ai-agent.js"></script>
 </body>
 </html>

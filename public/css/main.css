@@ -405,6 +405,7 @@ body {
 
 .rate-filters .row {
   margin: 0;
+  align-items: flex-end;
 }
 
 .rate-filters .form-label {
@@ -422,6 +423,23 @@ body {
   background-color: var(--bs-body-bg);
   border-color: var(--bs-primary);
   color: var(--bs-body-color);
+}
+
+.rate-filters .btn {
+  margin-top: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.rate-filters .btn:hover {
+  transform: translateY(-2px);
+}
+
+.rate-filters .btn i {
+  transition: transform 0.3s ease;
+}
+
+.rate-filters .btn:hover i {
+  transform: scale(1.1);
 }
 
 /* Dark mode adjustments for rate filters */
@@ -719,4 +737,42 @@ body {
     background-color: #0d6efd !important;
     border-color: #0d6efd !important;
     color: #fff !important;
+}
+
+/* AI Analysis Styles */
+.ai-analysis-content {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.analysis-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.analysis-header h5 {
+    color: var(--bs-primary);
+    font-weight: 600;
+}
+
+.analysis-body {
+    margin-top: 1rem;
+    line-height: 1.6;
+}
+
+/* Dark mode adjustments for AI analysis */
+[data-bs-theme="dark"] .ai-analysis-content {
+    background-color: rgba(33, 37, 41, 0.95);
+    border-color: var(--bs-border-color);
+}
+
+[data-bs-theme="dark"] .analysis-header {
+    border-color: var(--bs-border-color);
 }
