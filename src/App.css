@@ -46,4 +46,13 @@
         padding: 0.6rem 1.2rem;
         font-size: 1rem;
     }
+}
+
+/* Footer styles */
+footer {
+    margin-top: auto;
+    width: 100%;
+    background-color: #000000;
+    color: #ffffff;
+    z-index: 1;
 } 

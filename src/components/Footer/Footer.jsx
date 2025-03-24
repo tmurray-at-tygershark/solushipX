@@ -1,146 +1,191 @@
 import React from 'react';
-import { Box, Container, Grid, Typography, Link, IconButton } from '@mui/material';
-import {
-    Facebook as FacebookIcon,
-    Twitter as TwitterIcon,
-    LinkedIn as LinkedInIcon,
-    Instagram as InstagramIcon,
-    Phone as PhoneIcon,
-    Email as EmailIcon,
-    LocationOn as LocationIcon
-} from '@mui/icons-material';
+import { Box, Container, Grid, Typography, Link as MuiLink, IconButton } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import FacebookIcon from '@mui/icons-material/Facebook';
+import TwitterIcon from '@mui/icons-material/Twitter';
+import LinkedInIcon from '@mui/icons-material/LinkedIn';
+import InstagramIcon from '@mui/icons-material/Instagram';
 
 const Footer = () => {
     return (
         <Box
             component="footer"
             sx={{
-                bgcolor: '#000000',
-                color: '#ffffff',
+                bgcolor: '#000',
+                color: '#fff',
                 py: 6,
-                mt: 'auto'
+                mt: 'auto',
+                width: '100%'
             }}
         >
             <Container maxWidth="lg">
                 <Grid container spacing={4}>
-                    {/* Company Info & Logo */}
-                    <Grid item xs={12} md={4}>
-                        <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-                            SolushipX
+                    {/* Features Section */}
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Typography variant="h6" gutterBottom>
+                            Features
                         </Typography>
-                        <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
-                            Revolutionizing global shipping with cutting-edge technology and exceptional service.
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <IconButton sx={{ color: '#ffffff', '&:hover': { color: '#2C6ECB' } }}>
-                                <FacebookIcon />
-                            </IconButton>
-                            <IconButton sx={{ color: '#ffffff', '&:hover': { color: '#2C6ECB' } }}>
-                                <TwitterIcon />
-                            </IconButton>
-                            <IconButton sx={{ color: '#ffffff', '&:hover': { color: '#2C6ECB' } }}>
-                                <LinkedInIcon />
-                            </IconButton>
-                            <IconButton sx={{ color: '#ffffff', '&:hover': { color: '#2C6ECB' } }}>
-                                <InstagramIcon />
-                            </IconButton>
+                        <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }}>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/features/shipping"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Shipping Management
+                                </MuiLink>
+                            </Box>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/features/ai"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    AI Intelligence
+                                </MuiLink>
+                            </Box>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/features/engagement"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Customer Engagement
+                                </MuiLink>
+                            </Box>
                         </Box>
                     </Grid>
 
-                    {/* Quick Links */}
-                    <Grid item xs={12} sm={6} md={2}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                            Quick Links
+                    {/* Integrations Section */}
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Typography variant="h6" gutterBottom>
+                            Integrations
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            <Link href="/" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Home
-                            </Link>
-                            <Link href="/shipments" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Shipments
-                            </Link>
-                            <Link href="/create-shipment" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Create Shipment
-                            </Link>
-                            <Link href="/tracking" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Track Shipment
-                            </Link>
+                        <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }}>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/integrations/carriers"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Carriers
+                                </MuiLink>
+                            </Box>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/integrations/ecommerce"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Ecommerce Platforms
+                                </MuiLink>
+                            </Box>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/integrations/marketplaces"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Marketplaces
+                                </MuiLink>
+                            </Box>
                         </Box>
                     </Grid>
 
-                    {/* Customer Service */}
-                    <Grid item xs={12} sm={6} md={2}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                            Customer Service
+                    {/* Resources Section */}
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Typography variant="h6" gutterBottom>
+                            Resources
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            <Link href="/support" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Support Center
-                            </Link>
-                            <Link href="/faq" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                FAQ
-                            </Link>
-                            <Link href="/shipping-guide" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Shipping Guide
-                            </Link>
-                            <Link href="/terms" sx={{ color: '#ffffff', textDecoration: 'none', '&:hover': { color: '#2C6ECB' } }}>
-                                Terms & Conditions
-                            </Link>
+                        <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }}>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/pricing"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Pricing
+                                </MuiLink>
+                            </Box>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/learning"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Learning Center
+                                </MuiLink>
+                            </Box>
+                            <Box component="li" sx={{ mb: 1 }}>
+                                <MuiLink
+                                    component={RouterLink}
+                                    to="/support"
+                                    sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                                >
+                                    Support
+                                </MuiLink>
+                            </Box>
                         </Box>
                     </Grid>
 
-                    {/* Contact Information */}
-                    <Grid item xs={12} md={4}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                    {/* Contact Section */}
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Typography variant="h6" gutterBottom>
                             Contact Us
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <PhoneIcon sx={{ color: '#2C6ECB' }} />
-                                <Typography variant="body2">
-                                    +1 (555) 123-4567
-                                </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <EmailIcon sx={{ color: '#2C6ECB' }} />
-                                <Typography variant="body2">
-                                    support@solushipx.com
-                                </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                                <LocationIcon sx={{ color: '#2C6ECB', mt: 0.5 }} />
-                                <Typography variant="body2">
-                                    123 Shipping Lane<br />
-                                    New York, NY 10001<br />
-                                    United States
-                                </Typography>
-                            </Box>
+                        <Box sx={{ mb: 2 }}>
+                            <Typography variant="body2">
+                                123 Shipping Street
+                            </Typography>
+                            <Typography variant="body2">
+                                New York, NY 10001
+                            </Typography>
+                            <Typography variant="body2">
+                                United States
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <IconButton sx={{ color: '#fff', '&:hover': { color: '#ccc' } }}>
+                                <FacebookIcon />
+                            </IconButton>
+                            <IconButton sx={{ color: '#fff', '&:hover': { color: '#ccc' } }}>
+                                <TwitterIcon />
+                            </IconButton>
+                            <IconButton sx={{ color: '#fff', '&:hover': { color: '#ccc' } }}>
+                                <LinkedInIcon />
+                            </IconButton>
+                            <IconButton sx={{ color: '#fff', '&:hover': { color: '#ccc' } }}>
+                                <InstagramIcon />
+                            </IconButton>
                         </Box>
                     </Grid>
                 </Grid>
 
                 {/* Bottom Bar */}
-                <Box sx={{
-                    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                    mt: 4,
-                    pt: 3,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 2
-                }}>
-                    <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                        © 2024 SolushipX. All rights reserved.
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 3 }}>
-                        <Link href="/privacy" sx={{ color: '#ffffff', textDecoration: 'none', opacity: 0.8, '&:hover': { color: '#2C6ECB' } }}>
-                            Privacy Policy
-                        </Link>
-                        <Link href="/cookies" sx={{ color: '#ffffff', textDecoration: 'none', opacity: 0.8, '&:hover': { color: '#2C6ECB' } }}>
-                            Cookie Policy
-                        </Link>
-                    </Box>
+                <Box sx={{ mt: 4, pt: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} sm={6}>
+                            <Typography variant="body2" sx={{ color: '#fff' }}>
+                                © 2024 SolushipX. All rights reserved.
+                            </Typography>
+                        </Grid>
+                        <Grid item xs={12} sm={6} sx={{ textAlign: { sm: 'right' } }}>
+                            <MuiLink
+                                component={RouterLink}
+                                to="/privacy"
+                                sx={{ color: '#fff', textDecoration: 'none', mr: 2, '&:hover': { color: '#ccc' } }}
+                            >
+                                Privacy Policy
+                            </MuiLink>
+                            <MuiLink
+                                component={RouterLink}
+                                to="/cookies"
+                                sx={{ color: '#fff', textDecoration: 'none', '&:hover': { color: '#ccc' } }}
+                            >
+                                Cookie Policy
+                            </MuiLink>
+                        </Grid>
+                    </Grid>
                 </Box>
             </Container>
         </Box>

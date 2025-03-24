@@ -4,23 +4,21 @@ import Navigation from './components/Navigation';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import './App.css';
-import Dashboard from './components/Dashboard/Dashboard';
-import CreateShipment from './components/CreateShipment';
-import ShipmentDetail from './components/ShipmentDetail/ShipmentDetail';
 import Shipments from './components/Shipments/Shipments';
 import TrackingResults from './components/Tracking/TrackingResults';
-import Footer from './components/Footer/Footer';
-import NotificationBar from './components/NotificationBar/NotificationBar';
-import { Box, CssBaseline } from '@mui/material';
 import Customers from './components/Customers/Customers';
 import CustomerDetail from './components/Customers/CustomerDetail';
-import Pricing from './components/Pricing/Pricing';
 import Homepage from './components/Homepage/Homepage';
+import Login from './components/Auth/Login';
+import Signup from './components/Auth/Signup';
+import CreateShipment from './components/CreateShipment';
+import Dashboard from './components/Dashboard/Dashboard';
+import NotificationBar from './components/NotificationBar/NotificationBar';
+import { Box } from '@mui/material';
 
 function App() {
     return (
         <Router>
-            <CssBaseline />
             <Box sx={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -28,27 +26,25 @@ function App() {
             }}>
                 <NotificationBar />
                 <Navigation />
-                <Box
-                    component="main"
-                    sx={{
-                        flexGrow: 1,
-                        display: 'flex',
-                        flexDirection: 'column'
-                    }}
-                >
+                <Box component="main" sx={{ flexGrow: 1 }}>
                     <Routes>
+                        {/* Public Routes */}
                         <Route path="/" element={<Homepage />} />
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/signup" element={<Signup />} />
+
+                        {/* Protected Routes */}
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/shipments" element={<Shipments />} />
                         <Route path="/create-shipment" element={<CreateShipment />} />
-                        <Route path="/shipment/:id" element={<ShipmentDetail />} />
                         <Route path="/tracking/:trackingNumber" element={<TrackingResults />} />
                         <Route path="/customers" element={<Customers />} />
                         <Route path="/customers/:accountNumber" element={<CustomerDetail />} />
-                        <Route path="/pricing" element={<Pricing />} />
+
+                        {/* Fallback Route */}
+                        <Route path="*" element={<Dashboard />} />
                     </Routes>
                 </Box>
-                <Footer />
             </Box>
         </Router>
     );

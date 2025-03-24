@@ -333,38 +333,62 @@ const Shipments = () => {
                             <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="awaiting" />
                         </Tabs>
                         <Box sx={{ flexGrow: 1 }} />
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Paper sx={{ p: '2px 4px', display: 'flex', alignItems: 'center', width: 400 }}>
+                        {/* Search and Filter Section */}
+                        <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
+                            <Paper
+                                component="div"
+                                sx={{
+                                    p: '2px 4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    width: '300px',
+                                    boxShadow: 'none',
+                                    border: '1px solid #dfe3e8'
+                                }}
+                            >
                                 <SearchIcon sx={{ p: 1, color: 'action.active' }} />
                                 <InputBase
                                     sx={{ ml: 1, flex: 1 }}
-                                    placeholder="Search shipments"
+                                    placeholder="Search shipments..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
-                                {searchTerm && (
-                                    <IconButton size="small" onClick={() => setSearchTerm('')}>
-                                        <ClearIcon />
-                                    </IconButton>
-                                )}
                             </Paper>
-                            <Button
-                                variant="outlined"
-                                startIcon={<CalendarIcon />}
-                                onClick={() => setIsDatePickerOpen(true)}
-                                sx={{ color: 'text.primary', borderColor: 'divider', minWidth: 'auto' }}
-                            >
-                                {dateRange[0] && dateRange[1]
-                                    ? `${dateRange[0].toLocaleDateString()} - ${dateRange[1].toLocaleDateString()}`
-                                    : 'Date Range'
-                                }
-                            </Button>
-                            <IconButton onClick={(e) => setFilterAnchorEl(e.currentTarget)}>
-                                <FilterIcon />
-                            </IconButton>
-                            <IconButton onClick={(e) => setSortAnchorEl(e.currentTarget)}>
-                                <SortIcon />
-                            </IconButton>
+
+                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<CalendarIcon />}
+                                    onClick={() => setIsDatePickerOpen(true)}
+                                    sx={{
+                                        color: 'text.primary',
+                                        borderColor: 'divider',
+                                        minWidth: 'auto',
+                                        height: '40px'
+                                    }}
+                                >
+                                    {dateRange[0] && dateRange[1]
+                                        ? `${dateRange[0].toLocaleDateString()} - ${dateRange[1].toLocaleDateString()}`
+                                        : 'Date Range'
+                                    }
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => setFilterAnchorEl(true)}
+                                    startIcon={<FilterIcon />}
+                                    sx={{
+                                        borderColor: '#000',
+                                        color: '#000',
+                                        '&:hover': {
+                                            borderColor: '#000',
+                                            bgcolor: 'rgba(0, 0, 0, 0.04)'
+                                        },
+                                        height: '40px'
+                                    }}
+                                >
+                                    Filters
+                                </Button>
+                            </Box>
                         </Box>
                     </Toolbar>
 
@@ -472,46 +496,6 @@ const Shipments = () => {
                     </Box>
                 </Menu>
 
-                {/* Sort Menu */}
-                <Menu
-                    anchorEl={sortAnchorEl}
-                    open={Boolean(sortAnchorEl)}
-                    onClose={() => setSortAnchorEl(null)}
-                >
-                    <MenuItem
-                        onClick={() => {
-                            setSortBy({ field: 'date', direction: 'desc' });
-                            setSortAnchorEl(null);
-                        }}
-                    >
-                        Date (Newest First)
-                    </MenuItem>
-                    <MenuItem
-                        onClick={() => {
-                            setSortBy({ field: 'date', direction: 'asc' });
-                            setSortAnchorEl(null);
-                        }}
-                    >
-                        Date (Oldest First)
-                    </MenuItem>
-                    <MenuItem
-                        onClick={() => {
-                            setSortBy({ field: 'cost', direction: 'desc' });
-                            setSortAnchorEl(null);
-                        }}
-                    >
-                        Cost (Highest First)
-                    </MenuItem>
-                    <MenuItem
-                        onClick={() => {
-                            setSortBy({ field: 'cost', direction: 'asc' });
-                            setSortAnchorEl(null);
-                        }}
-                    >
-                        Cost (Lowest First)
-                    </MenuItem>
-                </Menu>
-
                 {/* Export Dialog */}
                 <Dialog
                     open={isExportDialogOpen}
@@ -543,13 +527,13 @@ const Shipments = () => {
                     open={isDatePickerOpen}
                     onClose={() => setIsDatePickerOpen(false)}
                     PaperProps={{
-                        sx: { width: '400px', p: 2 }
+                        sx: { width: '600px', p: 2 }
                     }}
                 >
                     <DialogTitle sx={{ px: 0, pt: 0 }}>Select Date Range</DialogTitle>
                     <DialogContent sx={{ px: 0 }}>
                         <LocalizationProvider dateAdapter={AdapterDateFns}>
-                            <Stack spacing={2}>
+                            <Box sx={{ display: 'flex', gap: 2 }}>
                                 <DatePicker
                                     label="Start Date"
                                     value={dateRange[0]}
@@ -563,7 +547,7 @@ const Shipments = () => {
                                     renderInput={(params) => <TextField {...params} />}
                                     minDate={dateRange[0]}
                                 />
-                            </Stack>
+                            </Box>
                         </LocalizationProvider>
                     </DialogContent>
                     <DialogActions>
