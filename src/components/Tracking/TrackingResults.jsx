@@ -4,7 +4,8 @@ import {
     Box,
     Paper,
     Typography,
-    Chip
+    Chip,
+    Container
 } from '@mui/material';
 import Timeline from '@mui/lab/Timeline';
 import TimelineItem from '@mui/lab/TimelineItem';
@@ -80,91 +81,93 @@ const TrackingResults = () => {
     };
 
     return (
-        <Box sx={{ maxWidth: '1200px', margin: '0 auto', p: 3 }}>
-            {/* Header */}
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, color: '#000000' }}>
-                    Tracking Details
-                </Typography>
-                <Typography variant="subtitle1" color="text.secondary" gutterBottom sx={{ fontSize: '1.1rem' }}>
-                    Tracking Number: <span style={{ fontWeight: 500, color: '#2C6ECB' }}>{trackingData.trackingNumber}</span>
-                </Typography>
-                <Chip
-                    label={trackingData.status}
-                    color={getStatusColor(trackingData.status)}
-                    sx={{
-                        mt: 1,
-                        fontWeight: 500,
-                        '& .MuiChip-label': {
-                            fontSize: '0.9rem'
-                        }
-                    }}
-                />
-            </Box>
-
-            {/* Overview */}
-            <Paper sx={{ p: 3, mb: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 3 }}>
-                    <Box>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                            Estimated Delivery
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                            {new Date(trackingData.estimatedDelivery).toLocaleDateString()}
-                        </Typography>
-                    </Box>
-                    <Box>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                            Origin
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>{trackingData.origin}</Typography>
-                    </Box>
-                    <Box>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                            Destination
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>{trackingData.destination}</Typography>
-                    </Box>
-                    <Box>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                            Service
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>{trackingData.carrier} {trackingData.service}</Typography>
-                    </Box>
+        <Box sx={{ minHeight: '100vh', bgcolor: '#f8f9fa', py: 8 }}>
+            <Container maxWidth="lg">
+                {/* Header */}
+                <Box sx={{ mb: 4 }}>
+                    <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, color: '#000000' }}>
+                        Tracking Details
+                    </Typography>
+                    <Typography variant="subtitle1" color="text.secondary" gutterBottom sx={{ fontSize: '1.1rem' }}>
+                        Tracking Number: <span style={{ fontWeight: 500, color: '#2C6ECB' }}>{trackingData.trackingNumber}</span>
+                    </Typography>
+                    <Chip
+                        label={trackingData.status}
+                        color={getStatusColor(trackingData.status)}
+                        sx={{
+                            mt: 1,
+                            fontWeight: 500,
+                            '& .MuiChip-label': {
+                                fontSize: '0.9rem'
+                            }
+                        }}
+                    />
                 </Box>
-            </Paper>
 
-            {/* Timeline */}
-            <Paper sx={{ p: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 700, color: '#000000' }}>
-                    Tracking History
-                </Typography>
-                <Timeline>
-                    {trackingData.events.map((event, index) => (
-                        <TimelineItem key={index}>
-                            <TimelineSeparator>
-                                <TimelineDot color={index === 0 ? 'primary' : 'grey'}>
-                                    {getStatusIcon(event.status)}
-                                </TimelineDot>
-                                {index < trackingData.events.length - 1 && <TimelineConnector />}
-                            </TimelineSeparator>
-                            <TimelineContent>
-                                <Box sx={{ mb: 2 }}>
-                                    <Typography variant="subtitle2" component="span" sx={{ fontWeight: 500, color: '#2C6ECB' }}>
-                                        {new Date(event.timestamp).toLocaleString()}
-                                    </Typography>
-                                    <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 500 }}>
-                                        {event.description}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
-                                        {event.location}
-                                    </Typography>
-                                </Box>
-                            </TimelineContent>
-                        </TimelineItem>
-                    ))}
-                </Timeline>
-            </Paper>
+                {/* Overview */}
+                <Paper sx={{ p: 3, mb: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 3 }}>
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
+                                Estimated Delivery
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                {new Date(trackingData.estimatedDelivery).toLocaleDateString()}
+                            </Typography>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
+                                Origin
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>{trackingData.origin}</Typography>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
+                                Destination
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>{trackingData.destination}</Typography>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
+                                Service
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>{trackingData.carrier} {trackingData.service}</Typography>
+                        </Box>
+                    </Box>
+                </Paper>
+
+                {/* Timeline */}
+                <Paper sx={{ p: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 700, color: '#000000' }}>
+                        Tracking History
+                    </Typography>
+                    <Timeline>
+                        {trackingData.events.map((event, index) => (
+                            <TimelineItem key={index}>
+                                <TimelineSeparator>
+                                    <TimelineDot color={index === 0 ? 'primary' : 'grey'}>
+                                        {getStatusIcon(event.status)}
+                                    </TimelineDot>
+                                    {index < trackingData.events.length - 1 && <TimelineConnector />}
+                                </TimelineSeparator>
+                                <TimelineContent>
+                                    <Box sx={{ mb: 2 }}>
+                                        <Typography variant="subtitle2" component="span" sx={{ fontWeight: 500, color: '#2C6ECB' }}>
+                                            {new Date(event.timestamp).toLocaleString()}
+                                        </Typography>
+                                        <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 500 }}>
+                                            {event.description}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
+                                            {event.location}
+                                        </Typography>
+                                    </Box>
+                                </TimelineContent>
+                            </TimelineItem>
+                        ))}
+                    </Timeline>
+                </Paper>
+            </Container>
         </Box>
     );
 };

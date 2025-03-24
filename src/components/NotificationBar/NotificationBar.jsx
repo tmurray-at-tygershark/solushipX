@@ -7,9 +7,9 @@ const NotificationBar = () => {
 
     // Example notification content - in a real app, this could come from props or an API
     const notification = {
-        text: "Free shipping on orders over $500! Use code FREESHIP at checkout.",
-        link: "/promotions",
-        linkText: "Learn More"
+        text: "Join SolushipX today and get 30 days free shipping + 20% off your first 3 months!",
+        link: "/signup",
+        linkText: "Sign Up Now"
     };
 
     const handleClose = () => {

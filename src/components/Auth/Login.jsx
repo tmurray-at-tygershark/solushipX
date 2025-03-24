@@ -40,7 +40,7 @@ const Login = () => {
         try {
             // TODO: Implement actual login logic here
             await new Promise(resolve => setTimeout(resolve, 1000)); // Simulated delay
-            navigate('/shipments');
+            navigate('/dashboard');
         } catch (err) {
             setError('Invalid email or password');
         } finally {

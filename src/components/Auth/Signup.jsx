@@ -23,8 +23,9 @@ import {
 } from '@mui/material';
 import { Google as GoogleIcon } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
+import CreditCardInput from './CreditCardInput';
 
-const steps = ['Account Details', 'Business Information', 'Shipping Profile'];
+const steps = ['Account Details', 'Business Information', 'Shipping Profile', 'Payment Information'];
 
 const monthlyShipmentOptions = [
     { value: '1-50', label: '1-50 shipments per month' },
@@ -37,40 +38,28 @@ const monthlyShipmentOptions = [
 const Signup = () => {
     const navigate = useNavigate();
     const [activeStep, setActiveStep] = useState(0);
-    const [isLoading, setIsLoading] = useState(false);
+    const [formData, setFormData] = useState({
+        email: '',
+        password: '',
+        confirmPassword: '',
+        companyName: '',
+        monthlyShipments: '',
+        integrationsNeeded: [],
+        shippingProfile: {
+            address: '',
+            city: '',
+            state: '',
+            postalCode: '',
+            country: ''
+        },
+        cardDetails: null
+    });
     const [error, setError] = useState('');
-
-    // Account Details
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
-    const [phone, setPhone] = useState('');
-
-    // Business Information
-    const [companyName, setCompanyName] = useState('');
-    const [website, setWebsite] = useState('');
-    const [monthlyShipments, setMonthlyShipments] = useState('');
-    const [street, setStreet] = useState('');
-    const [street2, setStreet2] = useState('');
-    const [city, setCity] = useState('');
-    const [state, setState] = useState('');
-    const [postalCode, setPostalCode] = useState('');
-    const [country, setCountry] = useState('US');
-
-    // Shipping Profile
-    const [preferredCarriers, setPreferredCarriers] = useState([]);
-    const [integrationsNeeded, setIntegrationsNeeded] = useState([]);
-    const [marketplaces, setMarketplaces] = useState([]);
-
-    // Terms and Marketing
-    const [acceptTerms, setAcceptTerms] = useState(false);
-    const [acceptMarketing, setAcceptMarketing] = useState(false);
+    const [cardError, setCardError] = useState('');
 
     const handleNext = () => {
         if (activeStep === steps.length - 1) {
-            handleSignup();
+            handleSubmit();
         } else {
             setActiveStep((prevStep) => prevStep + 1);
         }
@@ -80,9 +69,88 @@ const Signup = () => {
         setActiveStep((prevStep) => prevStep - 1);
     };
 
-    const handleSignup = async () => {
-        setIsLoading(true);
+    const handleInputChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    const handleShippingProfileChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            shippingProfile: {
+                ...prev.shippingProfile,
+                [field]: value
+            }
+        }));
+    };
+
+    const handleCardChange = (cardDetails) => {
+        setFormData(prev => ({
+            ...prev,
+            cardDetails
+        }));
+    };
+
+    const validateStep = () => {
+        switch (activeStep) {
+            case 0:
+                if (!formData.email || !formData.password || !formData.confirmPassword) {
+                    setError('Please fill in all fields');
+                    return false;
+                }
+                if (formData.password !== formData.confirmPassword) {
+                    setError('Passwords do not match');
+                    return false;
+                }
+                break;
+            case 1:
+                if (!formData.companyName || !formData.monthlyShipments) {
+                    setError('Please fill in all fields');
+                    return false;
+                }
+                break;
+            case 2:
+                const { shippingProfile } = formData;
+                if (!shippingProfile.address || !shippingProfile.city ||
+                    !shippingProfile.state || !shippingProfile.postalCode ||
+                    !shippingProfile.country) {
+                    setError('Please fill in all shipping profile fields');
+                    return false;
+                }
+                break;
+            case 3:
+                if (!formData.cardDetails) {
+                    setCardError('Please enter your payment information');
+                    return false;
+                }
+                const { cardNumber, expiry, cvv, cardHolder } = formData.cardDetails;
+                if (!cardNumber || !expiry || !cvv || !cardHolder) {
+                    setCardError('Please fill in all card details');
+                    return false;
+                }
+                if (cardNumber.replace(/\s/g, '').length !== 16) {
+                    setCardError('Invalid card number');
+                    return false;
+                }
+                if (!/^(0[1-9]|1[0-2])\/([0-9]{2})$/.test(expiry)) {
+                    setCardError('Invalid expiry date');
+                    return false;
+                }
+                if (cvv.length < 3) {
+                    setCardError('Invalid CVV');
+                    return false;
+                }
+                break;
+        }
         setError('');
+        setCardError('');
+        return true;
+    };
+
+    const handleSubmit = async () => {
+        if (!validateStep()) return;
 
         try {
             // TODO: Implement actual signup logic here
@@ -90,8 +158,6 @@ const Signup = () => {
             navigate('/dashboard');
         } catch (err) {
             setError('Failed to create account. Please try again.');
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -99,238 +165,118 @@ const Signup = () => {
         switch (step) {
             case 0:
                 return (
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="First Name"
-                                value={firstName}
-                                onChange={(e) => setFirstName(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="Last Name"
-                                value={lastName}
-                                onChange={(e) => setLastName(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Email Address"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Phone Number"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                helperText="Must be at least 8 characters long"
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Confirm Password"
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                    </Grid>
+                    <Box sx={{ display: 'grid', gap: 2 }}>
+                        <TextField
+                            fullWidth
+                            label="Email"
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) => handleInputChange('email', e.target.value)}
+                            required
+                        />
+                        <TextField
+                            fullWidth
+                            label="Password"
+                            type="password"
+                            value={formData.password}
+                            onChange={(e) => handleInputChange('password', e.target.value)}
+                            required
+                        />
+                        <TextField
+                            fullWidth
+                            label="Confirm Password"
+                            type="password"
+                            value={formData.confirmPassword}
+                            onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                            required
+                        />
+                    </Box>
                 );
-
             case 1:
                 return (
-                    <Grid container spacing={2}>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Company Name"
-                                value={companyName}
-                                onChange={(e) => setCompanyName(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Website"
-                                value={website}
-                                onChange={(e) => setWebsite(e.target.value)}
-                                placeholder="https://"
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <FormControl fullWidth required>
-                                <InputLabel>Monthly Shipments</InputLabel>
-                                <Select
-                                    value={monthlyShipments}
-                                    label="Monthly Shipments"
-                                    onChange={(e) => setMonthlyShipments(e.target.value)}
-                                >
-                                    {monthlyShipmentOptions.map((option) => (
-                                        <MenuItem key={option.value} value={option.value}>
-                                            {option.label}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Street Address"
-                                value={street}
-                                onChange={(e) => setStreet(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Suite, Floor, etc. (optional)"
-                                value={street2}
-                                onChange={(e) => setStreet2(e.target.value)}
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="City"
-                                value={city}
-                                onChange={(e) => setCity(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="State/Province"
-                                value={state}
-                                onChange={(e) => setState(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                label="Postal Code"
-                                value={postalCode}
-                                onChange={(e) => setPostalCode(e.target.value)}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth required>
-                                <InputLabel>Country</InputLabel>
-                                <Select
-                                    value={country}
-                                    label="Country"
-                                    onChange={(e) => setCountry(e.target.value)}
-                                >
-                                    <MenuItem value="US">United States</MenuItem>
-                                    <MenuItem value="CA">Canada</MenuItem>
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                    </Grid>
+                    <Box sx={{ display: 'grid', gap: 2 }}>
+                        <TextField
+                            fullWidth
+                            label="Company Name"
+                            value={formData.companyName}
+                            onChange={(e) => handleInputChange('companyName', e.target.value)}
+                            required
+                        />
+                        <FormControl fullWidth required>
+                            <InputLabel>Monthly Shipments</InputLabel>
+                            <Select
+                                value={formData.monthlyShipments}
+                                onChange={(e) => handleInputChange('monthlyShipments', e.target.value)}
+                                label="Monthly Shipments"
+                            >
+                                {monthlyShipmentOptions.map((option) => (
+                                    <MenuItem key={option.value} value={option.value}>
+                                        {option.label}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Box>
                 );
-
             case 2:
                 return (
-                    <Grid container spacing={2}>
-                        <Grid item xs={12}>
-                            <FormControl fullWidth>
-                                <InputLabel>Preferred Carriers</InputLabel>
-                                <Select
-                                    multiple
-                                    value={preferredCarriers}
-                                    onChange={(e) => setPreferredCarriers(e.target.value)}
-                                    label="Preferred Carriers"
-                                >
-                                    <MenuItem value="ups">UPS</MenuItem>
-                                    <MenuItem value="fedex">FedEx</MenuItem>
-                                    <MenuItem value="usps">USPS</MenuItem>
-                                    <MenuItem value="dhl">DHL</MenuItem>
-                                </Select>
-                            </FormControl>
+                    <Box sx={{ display: 'grid', gap: 2 }}>
+                        <TextField
+                            fullWidth
+                            label="Address"
+                            value={formData.shippingProfile.address}
+                            onChange={(e) => handleShippingProfileChange('address', e.target.value)}
+                            required
+                        />
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="City"
+                                    value={formData.shippingProfile.city}
+                                    onChange={(e) => handleShippingProfileChange('city', e.target.value)}
+                                    required
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="State/Province"
+                                    value={formData.shippingProfile.state}
+                                    onChange={(e) => handleShippingProfileChange('state', e.target.value)}
+                                    required
+                                />
+                            </Grid>
                         </Grid>
-                        <Grid item xs={12}>
-                            <FormControl fullWidth>
-                                <InputLabel>Marketplaces</InputLabel>
-                                <Select
-                                    multiple
-                                    value={marketplaces}
-                                    onChange={(e) => setMarketplaces(e.target.value)}
-                                    label="Marketplaces"
-                                >
-                                    <MenuItem value="amazon">Amazon</MenuItem>
-                                    <MenuItem value="ebay">eBay</MenuItem>
-                                    <MenuItem value="shopify">Shopify</MenuItem>
-                                    <MenuItem value="walmart">Walmart</MenuItem>
-                                    <MenuItem value="etsy">Etsy</MenuItem>
-                                </Select>
-                            </FormControl>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Postal Code"
+                                    value={formData.shippingProfile.postalCode}
+                                    onChange={(e) => handleShippingProfileChange('postalCode', e.target.value)}
+                                    required
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Country"
+                                    value={formData.shippingProfile.country}
+                                    onChange={(e) => handleShippingProfileChange('country', e.target.value)}
+                                    required
+                                />
+                            </Grid>
                         </Grid>
-                        <Grid item xs={12}>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={acceptTerms}
-                                        onChange={(e) => setAcceptTerms(e.target.checked)}
-                                        required
-                                    />
-                                }
-                                label={
-                                    <Typography variant="body2">
-                                        I agree to the{' '}
-                                        <MuiLink href="#" target="_blank">
-                                            Terms of Service
-                                        </MuiLink>
-                                        {' '}and{' '}
-                                        <MuiLink href="#" target="_blank">
-                                            Privacy Policy
-                                        </MuiLink>
-                                    </Typography>
-                                }
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={acceptMarketing}
-                                        onChange={(e) => setAcceptMarketing(e.target.checked)}
-                                    />
-                                }
-                                label="I'd like to receive shipping tips, product updates and industry news"
-                            />
-                        </Grid>
-                    </Grid>
+                    </Box>
                 );
-
+            case 3:
+                return (
+                    <CreditCardInput
+                        onCardChange={handleCardChange}
+                        error={cardError}
+                    />
+                );
             default:
                 return null;
         }
@@ -367,12 +313,6 @@ const Signup = () => {
                             borderRadius: 2
                         }}
                     >
-                        {error && (
-                            <Alert severity="error" sx={{ mb: 3 }}>
-                                {error}
-                            </Alert>
-                        )}
-
                         <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
                             {steps.map((label) => (
                                 <Step key={label}>
@@ -381,62 +321,55 @@ const Signup = () => {
                             ))}
                         </Stepper>
 
-                        <Box sx={{ mb: 4 }}>
-                            {renderStepContent(activeStep)}
-                        </Box>
+                        {error && (
+                            <Alert severity="error" sx={{ mb: 2 }}>
+                                {error}
+                            </Alert>
+                        )}
 
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        {renderStepContent(activeStep)}
+
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
                             <Button
                                 onClick={handleBack}
                                 disabled={activeStep === 0}
-                                sx={{ visibility: activeStep === 0 ? 'hidden' : 'visible' }}
+                                sx={{ color: 'text.primary' }}
                             >
                                 Back
                             </Button>
                             <Button
                                 variant="contained"
                                 onClick={handleNext}
-                                disabled={isLoading}
+                                disabled={activeStep === steps.length - 1}
                                 sx={{
                                     bgcolor: '#000',
                                     '&:hover': { bgcolor: '#333' }
                                 }}
                             >
-                                {isLoading
-                                    ? 'Creating Account...'
-                                    : activeStep === steps.length - 1
-                                        ? 'Create Account'
-                                        : 'Next'}
+                                {activeStep === steps.length - 1 ? 'Create Account' : 'Next'}
                             </Button>
                         </Box>
 
-                        {activeStep === 0 && (
-                            <>
-                                <Divider sx={{ my: 3 }}>or</Divider>
-                                <Button
-                                    fullWidth
-                                    variant="outlined"
-                                    startIcon={<GoogleIcon />}
-                                    sx={{ py: 1.5 }}
-                                >
-                                    Continue with Google
-                                </Button>
-                            </>
-                        )}
-                    </Paper>
+                        <Divider sx={{ my: 4 }} />
 
-                    <Box sx={{ textAlign: 'center', mt: 3 }}>
-                        <Typography variant="body2" color="text.secondary">
-                            Already have an account?{' '}
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                Already have an account?
+                            </Typography>
                             <MuiLink
                                 component={Link}
                                 to="/login"
-                                sx={{ textDecoration: 'none', fontWeight: 500 }}
+                                sx={{
+                                    color: '#000',
+                                    textDecoration: 'none',
+                                    fontWeight: 500,
+                                    '&:hover': { textDecoration: 'underline' }
+                                }}
                             >
                                 Sign in
                             </MuiLink>
-                        </Typography>
-                    </Box>
+                        </Box>
+                    </Paper>
                 </motion.div>
             </Container>
         </Box>

@@ -74,7 +74,7 @@ const Homepage = () => {
                 overflow: 'hidden',
                 width: '100%'
             }}>
-                <Container maxWidth="xl">
+                <Container maxWidth="xl" sx={{ px: { xs: 2, sm: 4, md: 6, lg: 8 } }}>
                     <Grid container spacing={6} alignItems="center">
                         <Grid item xs={12} md={5}>
                             <motion.div

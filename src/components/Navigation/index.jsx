@@ -146,33 +146,12 @@ const Navigation = () => {
                 { label: 'Contact Support', icon: 'fas fa-envelope' },
                 { label: 'Status Page', icon: 'fas fa-info-circle' }
             ]
-        },
-        {
-            title: 'Company',
-            description: 'Learn more about us',
-            icon: 'fas fa-building',
-            items: [
-                { label: 'About Us', icon: 'fas fa-info-circle' },
-                { label: 'Blog', icon: 'fas fa-blog' },
-                { label: 'Careers', icon: 'fas fa-briefcase' },
-                { label: 'Press', icon: 'fas fa-newspaper' }
-            ]
-        },
-        {
-            title: 'Pricing',
-            description: 'Find the right plan for your business',
-            icon: 'fas fa-tag',
-            items: [
-                { label: 'View Plans', icon: 'fas fa-list' },
-                { label: 'Compare Plans', icon: 'fas fa-chart-bar' },
-                { label: 'Enterprise', icon: 'fas fa-building' },
-                { label: 'Contact Sales', icon: 'fas fa-phone' }
-            ]
         }
     ];
 
     const profileMenuItems = isAuthenticated ? [
         { label: 'Profile', icon: 'fas fa-user' },
+        { label: 'Billing', icon: 'fas fa-credit-card' },
         { label: 'Settings', icon: 'fas fa-cog' },
         { label: 'Logout', icon: 'fas fa-sign-out-alt' }
     ] : [];
@@ -229,6 +208,26 @@ const Navigation = () => {
         setResourcesAnchorEl(null);
     };
 
+    const handleProfileMenuItemClick = (label) => {
+        handleProfileClose();
+        switch (label) {
+            case 'Profile':
+                navigate('/profile');
+                break;
+            case 'Billing':
+                navigate('/billing');
+                break;
+            case 'Settings':
+                navigate('/settings');
+                break;
+            case 'Logout':
+                handleLogout();
+                break;
+            default:
+                break;
+        }
+    };
+
     const renderMenuItems = (items) => {
         return items.map((item, index) => (
             <ListItem
@@ -283,6 +282,15 @@ const Navigation = () => {
                                         </Button>
                                     </li>
                                     <li className="nav-item">
+                                        <Link
+                                            className={`nav-link ${location.pathname === '/pricing' ? 'active' : ''}`}
+                                            to="/pricing"
+                                            onClick={() => setIsOpen(false)}
+                                        >
+                                            Pricing
+                                        </Link>
+                                    </li>
+                                    <li className="nav-item">
                                         <Button
                                             className="nav-link"
                                             onClick={handleIntegrationsClick}
@@ -291,15 +299,6 @@ const Navigation = () => {
                                         >
                                             Integrations
                                         </Button>
-                                    </li>
-                                    <li className="nav-item">
-                                        <Link
-                                            className="nav-link"
-                                            to="/pricing"
-                                            onClick={() => setIsOpen(false)}
-                                        >
-                                            Pricing
-                                        </Link>
                                     </li>
                                     <li className="nav-item">
                                         <Button
@@ -600,73 +599,27 @@ const Navigation = () => {
                         anchorEl={profileAnchorEl}
                         open={Boolean(profileAnchorEl)}
                         onClose={handleProfileClose}
-                        onClick={handleProfileClose}
                         PaperProps={{
-                            elevation: 0,
                             sx: {
-                                overflow: 'visible',
-                                filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
                                 mt: 1.5,
-                                minWidth: 280,
-                                '& .MuiAvatar-root': {
-                                    width: 32,
-                                    height: 32,
-                                    ml: -0.5,
-                                    mr: 1,
-                                },
-                                '&:before': {
-                                    content: '""',
-                                    display: 'block',
-                                    position: 'absolute',
-                                    top: 0,
-                                    right: 14,
-                                    width: 10,
-                                    height: 10,
-                                    bgcolor: 'background.paper',
-                                    transform: 'translateY(-50%) rotate(45deg)',
-                                    zIndex: 0,
-                                },
-                            },
+                                minWidth: 180,
+                                boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+                            }
                         }}
-                        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-                        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
                     >
-                        {/* Profile Header */}
-                        <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                <Avatar
-                                    sx={{
-                                        width: 48,
-                                        height: 48,
-                                        bgcolor: '#2C6ECB',
-                                        fontSize: '1.25rem',
-                                        fontWeight: 500
-                                    }}
-                                >
-                                    TM
-                                </Avatar>
-                                <Box sx={{ ml: 2 }}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                        Thomas Moore
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        thomas.moore@solushipx.com
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        </Box>
-
-                        {/* Menu Items */}
-                        {profileMenuItems.map((item) => (
+                        {profileMenuItems.map((item, index) => (
                             <MenuItem
-                                onClick={item.label === 'Logout' ? handleLogout : handleProfileClose}
-                                key={item.label}
-                                sx={{ py: 1.5 }}
+                                key={index}
+                                onClick={() => handleProfileMenuItemClick(item.label)}
+                                sx={{
+                                    py: 1,
+                                    '&:hover': { bgcolor: 'rgba(0,0,0,0.04)' }
+                                }}
                             >
                                 <ListItemIcon>
-                                    <i className={item.icon} style={{ marginRight: 8, fontSize: '1.1rem' }}></i>
+                                    <i className={item.icon} style={{ fontSize: '1rem', color: '#666' }}></i>
                                 </ListItemIcon>
-                                <Typography variant="body2">{item.label}</Typography>
+                                <ListItemText primary={item.label} />
                             </MenuItem>
                         ))}
                     </Menu>

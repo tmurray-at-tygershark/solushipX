@@ -1,0 +1,280 @@
+/* Reports Component Styles */
+
+/* Paper Components */
+.MuiPaper-root {
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease-in-out;
+}
+
+.MuiPaper-root:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* Tabs */
+.MuiTabs-root {
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.MuiTab-root {
+    text-transform: none;
+    font-weight: 500;
+    color: #64748b;
+    min-width: 120px;
+}
+
+.MuiTab-root.Mui-selected {
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+.MuiTabs-indicator {
+    background-color: #3b82f6;
+    height: 3px;
+}
+
+/* Buttons */
+.MuiButton-root {
+    text-transform: none;
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 8px 16px;
+}
+
+.MuiButton-contained {
+    background-color: #0f172a;
+    color: white;
+}
+
+.MuiButton-contained:hover {
+    background-color: #1e293b;
+}
+
+.MuiButton-outlined {
+    border-color: #e2e8f0;
+    color: #64748b;
+}
+
+.MuiButton-outlined:hover {
+    border-color: #cbd5e1;
+    background-color: #f8fafc;
+}
+
+/* Form Controls */
+.MuiTextField-root,
+.MuiFormControl-root {
+    margin-bottom: 16px;
+}
+
+.MuiInputLabel-root {
+    color: #64748b;
+}
+
+.MuiOutlinedInput-root {
+    border-radius: 8px;
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+    border-color: #cbd5e1;
+}
+
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: #3b82f6;
+}
+
+/* Select */
+.MuiSelect-select {
+    padding: 12px;
+}
+
+/* Checkbox */
+.MuiCheckbox-root {
+    color: #64748b;
+}
+
+.MuiCheckbox-root.Mui-checked {
+    color: #3b82f6;
+}
+
+/* Table */
+.MuiTableContainer-root {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.MuiTable-root {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.MuiTableHead-root .MuiTableCell-root {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-weight: 600;
+    padding: 16px;
+}
+
+.MuiTableBody-root .MuiTableCell-root {
+    color: #1e293b;
+    padding: 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.MuiTableRow-root:hover {
+    background-color: #f8fafc;
+}
+
+/* Chips */
+.MuiChip-root {
+    border-radius: 6px;
+    font-weight: 500;
+    height: 24px;
+}
+
+/* Charts */
+.MuiChartsAxis-line {
+    stroke: #e2e8f0;
+}
+
+.MuiChartsAxis-tick {
+    stroke: #e2e8f0;
+}
+
+.MuiChartsAxis-label {
+    fill: #64748b;
+}
+
+/* Dialog */
+.MuiDialog-paper {
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.MuiDialogTitle-root {
+    color: #1e293b;
+    font-weight: 600;
+    padding: 0;
+    margin-bottom: 24px;
+}
+
+.MuiDialogContent-root {
+    padding: 0;
+}
+
+.MuiDialogActions-root {
+    padding: 24px 0 0 0;
+}
+
+/* Typography */
+.MuiTypography-h5 {
+    color: #1e293b;
+    font-weight: 600;
+}
+
+.MuiTypography-h6 {
+    color: #1e293b;
+    font-weight: 600;
+}
+
+.MuiTypography-subtitle2 {
+    color: #64748b;
+}
+
+.MuiTypography-body1 {
+    color: #1e293b;
+}
+
+.MuiTypography-body2 {
+    color: #64748b;
+}
+
+/* Grid */
+.MuiGrid-container {
+    margin-top: 0;
+}
+
+/* Stack */
+.MuiStack-root {
+    gap: 16px;
+}
+
+/* Avatar */
+.MuiAvatar-root {
+    background-color: #3b82f6;
+    width: 40px;
+    height: 40px;
+}
+
+/* List */
+.MuiList-root {
+    padding: 0;
+}
+
+.MuiListItem-root {
+    padding: 12px 0;
+}
+
+.MuiListItemText-primary {
+    color: #1e293b;
+    font-weight: 500;
+}
+
+.MuiListItemText-secondary {
+    color: #64748b;
+}
+
+/* Divider */
+.MuiDivider-root {
+    border-color: #e2e8f0;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .MuiGrid-container {
+        margin-top: 16px;
+    }
+
+    .MuiPaper-root {
+        margin-bottom: 16px;
+    }
+
+    .MuiTableContainer-root {
+        overflow-x: auto;
+    }
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.MuiPaper-root {
+    animation: fadeIn 0.3s ease-out;
+} 
