@@ -97,8 +97,7 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
     const [toMarkerPosition, setToMarkerPosition] = useState(null);
     const [expandedSections, setExpandedSections] = useState({
         shipment: true,
-        from: true,
-        to: true,
+        locations: true,
         packages: true,
         rate: true
     });
@@ -684,7 +683,7 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                         </Collapse>
                     </Paper>
 
-                    {/* Ship From Section */}
+                    {/* Shipping Locations Section */}
                     <Paper
                         elevation={0}
                         sx={{
@@ -707,36 +706,43 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                             }}
                         >
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <i className="fas fa-map-marker-alt" style={{ fontSize: '1.2rem' }}></i>
-                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Ship From</Typography>
+                                <i className="fas fa-map-marked-alt" style={{ fontSize: '1.2rem' }}></i>
+                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Shipping Locations</Typography>
                             </Box>
                             <IconButton
-                                onClick={() => toggleSection('from')}
+                                onClick={() => toggleSection('locations')}
                                 sx={{ color: 'white' }}
                             >
                                 <ExpandMoreIcon
                                     sx={{
-                                        transform: expandedSections.from ? 'rotate(180deg)' : 'none',
+                                        transform: expandedSections.locations ? 'rotate(180deg)' : 'none',
                                         transition: 'transform 0.3s'
                                     }}
                                 />
                             </IconButton>
                         </Box>
-                        <Collapse in={expandedSections.from}>
+                        <Collapse in={expandedSections.locations}>
                             <Box sx={{ p: 3 }}>
                                 <Box sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: { xs: '1fr', md: '400px 1fr' },
+                                    gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
                                     gap: 3
                                 }}>
-                                    {/* Map Column */}
+                                    {/* Ship From Side */}
                                     <Box>
-                                        <SimpleMap address={formData.shipFrom} />
-                                    </Box>
-
-                                    {/* Information Column */}
-                                    <Box>
-                                        <Box sx={{ display: 'grid', gap: 3 }}>
+                                        <Typography variant="h6" gutterBottom sx={{
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1
+                                        }}>
+                                            <i className="fas fa-arrow-right" style={{ fontSize: '1rem', color: '#666' }}></i>
+                                            Ship From
+                                        </Typography>
+                                        <Box sx={{ mb: 2 }}>
+                                            <SimpleMap address={formData.shipFrom} />
+                                        </Box>
+                                        <Box sx={{ display: 'grid', gap: 2 }}>
                                             <Box>
                                                 <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Company Details</Typography>
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -758,77 +764,43 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                                             </Box>
                                         </Box>
                                     </Box>
-                                </Box>
-                            </Box>
-                        </Collapse>
-                    </Paper>
 
-                    {/* Ship To Section */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            mb: 3,
-                            borderRadius: 0,
-                            border: '1px solid #e0e0e0',
-                            borderLeft: 0,
-                            borderRight: 0,
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                p: 2,
-                                bgcolor: '#000',
-                                color: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between'
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <i className="fas fa-map-marker-alt" style={{ fontSize: '1.2rem' }}></i>
-                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Ship To</Typography>
-                            </Box>
-                            <IconButton
-                                onClick={() => toggleSection('to')}
-                                sx={{ color: 'white' }}
-                            >
-                                <ExpandMoreIcon
-                                    sx={{
-                                        transform: expandedSections.to ? 'rotate(180deg)' : 'none',
-                                        transition: 'transform 0.3s'
-                                    }}
-                                />
-                            </IconButton>
-                        </Box>
-                        <Collapse in={expandedSections.to}>
-                            <Box sx={{ p: 3 }}>
-                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 3 }}>
+                                    {/* Ship To Side */}
                                     <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Company Details</Typography>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                            <i className="fas fa-building" style={{ color: '#000' }}></i>
-                                            <Typography variant="body1">{formData.shipTo.company}</Typography>
+                                        <Typography variant="h6" gutterBottom sx={{
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1
+                                        }}>
+                                            <i className="fas fa-arrow-left" style={{ fontSize: '1rem', color: '#666' }}></i>
+                                            Ship To
+                                        </Typography>
+                                        <Box sx={{ mb: 2 }}>
+                                            <SimpleMap address={formData.shipTo} />
                                         </Box>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                            <i className="fas fa-phone" style={{ color: '#000' }}></i>
-                                            <Typography variant="body1">{formatPhone(formData.shipTo.contactPhone)}</Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <i className="fas fa-envelope" style={{ color: '#000' }}></i>
-                                            <Typography variant="body1">{formData.shipTo.contactEmail}</Typography>
+                                        <Box sx={{ display: 'grid', gap: 2 }}>
+                                            <Box>
+                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Company Details</Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                    <i className="fas fa-building" style={{ color: '#000' }}></i>
+                                                    <Typography variant="body1">{formData.shipTo.company}</Typography>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                    <i className="fas fa-phone" style={{ color: '#000' }}></i>
+                                                    <Typography variant="body1">{formatPhone(formData.shipTo.contactPhone)}</Typography>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <i className="fas fa-envelope" style={{ color: '#000' }}></i>
+                                                    <Typography variant="body1">{formData.shipTo.contactEmail}</Typography>
+                                                </Box>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Address</Typography>
+                                                <Typography variant="body1">{formatAddress(formData.shipTo)}</Typography>
+                                            </Box>
                                         </Box>
                                     </Box>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Address</Typography>
-                                        <Typography variant="body1">{formatAddress(formData.shipTo)}</Typography>
-                                    </Box>
-                                </Box>
-                                <Box sx={{ mt: 2 }}>
-                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Location Map</Typography>
-                                    {toMarkerPosition && (
-                                        <SimpleMap address={formData.shipTo} />
-                                    )}
                                 </Box>
                             </Box>
                         </Collapse>
@@ -890,7 +862,11 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                                             <Box sx={{ display: 'grid', gap: 1 }}>
                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Description</Typography>
-                                                    <Typography variant="body1">{pkg.description}</Typography>
+                                                    <Typography variant="body1">{pkg.itemDescription || 'No description'}</Typography>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Quantity</Typography>
+                                                    <Typography variant="body1">{pkg.quantity || 1} {parseInt(pkg.quantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
                                                 </Box>
                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Weight</Typography>
@@ -900,10 +876,18 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Dimensions</Typography>
                                                     <Typography variant="body1">{pkg.length}" × {pkg.width}" × {pkg.height}"</Typography>
                                                 </Box>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Quantity</Typography>
-                                                    <Typography variant="body1">{pkg.quantity}</Typography>
-                                                </Box>
+                                                {pkg.freightClass && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Freight Class</Typography>
+                                                        <Typography variant="body1">{pkg.freightClass}</Typography>
+                                                    </Box>
+                                                )}
+                                                {pkg.value > 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Declared Value</Typography>
+                                                        <Typography variant="body1">${pkg.value.toFixed(2)}</Typography>
+                                                    </Box>
+                                                )}
                                             </Box>
                                         </Paper>
                                     ))}

@@ -769,14 +769,16 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                     >
                         <i className="bi bi-arrow-left"></i> Previous
                     </button>
-                    <button
-                        type="button"
-                        className="btn btn-success btn-navigation"
-                        onClick={handleSubmit}
-                        disabled={!selectedRate || isLoading}
-                    >
-                        <i className="bi bi-check-circle"></i> Continue to Review
-                    </button>
+                    {ratesLoaded && (
+                        <button
+                            type="button"
+                            className="btn btn-success btn-navigation"
+                            onClick={handleSubmit}
+                            disabled={!selectedRate}
+                        >
+                            <i className="bi bi-check-circle"></i> Continue to Review
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

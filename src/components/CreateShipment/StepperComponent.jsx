@@ -16,13 +16,15 @@ const StepperComponent = ({ currentStep, onStepClick }) => {
         }
     };
 
+    const progressPercentage = ((currentStep - 1) / (steps.length - 1)) * 100;
+
     return (
         <div className="stepper-wrapper">
             <div className="stepper">
                 {steps.map((step) => (
                     <div
                         key={step.number}
-                        className={`step-item ${currentStep >= step.number ? 'active' : ''} ${currentStep > step.number ? 'completed' : ''}`}
+                        className={`step-item ${currentStep >= step.number ? 'active' : ''}`}
                         data-step={step.number}
                     >
                         <div
@@ -37,10 +39,7 @@ const StepperComponent = ({ currentStep, onStepClick }) => {
                 ))}
             </div>
             <div className="progress-bar">
-                <div
-                    className="progress"
-                    style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
-                ></div>
+                <div className="progress" style={{ width: `${progressPercentage}%` }}></div>
             </div>
         </div>
     );

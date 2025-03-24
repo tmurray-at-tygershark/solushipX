@@ -190,19 +190,24 @@ const CreateShipment = () => {
                         <div className="section-header">
                             <h2>Create New Shipment</h2>
                             <div className="d-flex">
-                                <div>
-                                    <button
-                                        type="button"
-                                        className="btn btn-outline-primary"
-                                        onClick={loadDraft}
-                                    >
-                                        <i className="bi bi-file-earmark-text me-2"></i> LOAD DRAFT
-                                    </button>
-                                </div>
+                                {currentStep === 1 && (
+                                    <div>
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline-primary"
+                                            onClick={loadDraft}
+                                        >
+                                            <i className="bi bi-file-earmark-text me-2"></i> LOAD DRAFT
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <StepperComponent currentStep={currentStep} />
+                        <StepperComponent
+                            currentStep={currentStep}
+                            onStepClick={(step) => setCurrentStep(step)}
+                        />
 
                         <form id="shipmentForm" className="needs-validation" noValidate onSubmit={handleSubmit}>
                             {renderStep()}

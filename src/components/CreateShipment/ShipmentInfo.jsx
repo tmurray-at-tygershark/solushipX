@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
     const [formData, setFormData] = useState({
-        shipmentType: data?.shipmentType || 'domestic',
+        shipmentType: data?.shipmentType || 'courier',
         internationalShipment: data?.internationalShipment || false,
         shipperReferenceNumber: data?.shipperReferenceNumber || '',
         bookingReferenceNumber: data?.bookingReferenceNumber || '',
@@ -28,7 +28,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
     useEffect(() => {
         if (data) {
             setFormData({
-                shipmentType: data.shipmentType || 'domestic',
+                shipmentType: data.shipmentType || 'courier',
                 internationalShipment: data.internationalShipment || false,
                 shipperReferenceNumber: data.shipperReferenceNumber || '',
                 bookingReferenceNumber: data.bookingReferenceNumber || '',
@@ -71,153 +71,180 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
     };
 
     return (
-        <div className="form-section active" data-step="0">
-            <div className="section-header">
-                <h4 className="mb-0">Shipment Information</h4>
-            </div>
-            <div className="row g-3">
-                <div className="col-md-4">
-                    <label className="form-label">Shipment Type</label>
-                    <select
-                        className="form-select"
-                        id="shipmentType"
-                        value={formData.shipmentType}
-                        onChange={handleInputChange}
-                    >
-                        <option value="courier">Courier</option>
-                        <option value="FTL">FTL (Full-Truckload)</option>
-                        <option value="LTL">LTL (Less-Than-Truckload)</option>
-                        <option value="freight">Freight</option>
-                        <option value="rail">Rail</option>
-                        <option value="air">Air</option>
-                        <option value="ocean">Ocean</option>
-                    </select>
+        <div className="form-section">
+            <h3 className="form-section-title">Shipment Details</h3>
+
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Basic Information</h4>
                 </div>
-                <div className="col-md-4">
-                    <label className="form-label">Shipper Reference Number</label>
-                    <input
-                        type="text"
-                        className="form-control"
-                        id="shipperReferenceNumber"
-                        placeholder="e.g., TFM0228"
-                        required
-                        value={formData.shipperReferenceNumber}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-4">
-                    <label className="form-label">Booking Reference Number</label>
-                    <input
-                        type="text"
-                        className="form-control"
-                        id="bookingReferenceNumber"
-                        placeholder="e.g., TFM-0228"
-                        required
-                        value={formData.bookingReferenceNumber}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-4">
-                    <label className="form-label">Shipment Date</label>
-                    <input
-                        type="date"
-                        className="form-control"
-                        id="shipmentDate"
-                        required
-                        value={formData.shipmentDate}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-3">
-                    <label className="form-label">Earliest Pickup Time</label>
-                    <input
-                        type="time"
-                        className="form-control"
-                        id="earliestPickupTime"
-                        required
-                        step="3600"
-                        value={formData.earliestPickupTime}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-3">
-                    <label className="form-label">Latest Pickup Time</label>
-                    <input
-                        type="time"
-                        className="form-control"
-                        id="latestPickupTime"
-                        required
-                        step="3600"
-                        value={formData.latestPickupTime}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-3">
-                    <label className="form-label">Earliest Delivery Time</label>
-                    <input
-                        type="time"
-                        className="form-control"
-                        id="earliestDeliveryTime"
-                        required
-                        step="3600"
-                        value={formData.earliestDeliveryTime}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-3">
-                    <label className="form-label">Latest Delivery Time</label>
-                    <input
-                        type="time"
-                        className="form-control"
-                        id="latestDeliveryTime"
-                        required
-                        step="3600"
-                        value={formData.latestDeliveryTime}
-                        onChange={handleInputChange}
-                    />
-                </div>
-                <div className="col-md-3">
-                    <div className="form-check">
-                        <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id="internationalShipment"
-                            checked={formData.internationalShipment}
-                            onChange={handleInputChange}
-                        />
-                        <label className="form-check-label">International Shipment</label>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="shipmentType">Shipment Type</label>
+                        <select
+                            id="shipmentType"
+                            className="form-control"
+                            value={formData.shipmentType}
+                            onChange={(e) => handleInputChange('shipmentType', e.target.value)}
+                            required
+                        >
+                            <option value="courier">Courier</option>
+                            <option value="freight">Freight</option>
+                        </select>
                     </div>
-                </div>
-                <div className="col-md-3">
-                    <div className="form-check">
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="shipperReferenceNumber">Reference Number</label>
                         <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id="holdForPickup"
-                            checked={formData.holdForPickup}
-                            onChange={handleInputChange}
+                            type="text"
+                            id="shipperReferenceNumber"
+                            className="form-control"
+                            value={formData.shipperReferenceNumber}
+                            onChange={(e) => handleInputChange('shipperReferenceNumber', e.target.value)}
+                            placeholder="Enter reference number"
                         />
-                        <label className="form-check-label">Hold for Pickup</label>
                     </div>
-                </div>
-                <div className="col-md-3">
-                    <div className="form-check">
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="bookingReferenceNumber">Booking Reference</label>
                         <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id="saturdayDelivery"
-                            checked={formData.saturdayDelivery}
-                            onChange={handleInputChange}
+                            type="text"
+                            id="bookingReferenceNumber"
+                            className="form-control"
+                            value={formData.bookingReferenceNumber}
+                            onChange={(e) => handleInputChange('bookingReferenceNumber', e.target.value)}
+                            placeholder="Enter booking reference"
                         />
-                        <label className="form-check-label">Saturday Delivery</label>
                     </div>
                 </div>
             </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Schedule</h4>
+                </div>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="shipmentDate">Shipment Date</label>
+                        <input
+                            type="date"
+                            id="shipmentDate"
+                            className="form-control"
+                            value={formData.shipmentDate}
+                            onChange={(e) => handleInputChange('shipmentDate', e.target.value)}
+                            required
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Pickup Window</label>
+                        <div className="d-flex gap-2">
+                            <input
+                                type="time"
+                                className="form-control"
+                                value={formData.earliestPickupTime}
+                                onChange={(e) => handleInputChange('earliestPickupTime', e.target.value)}
+                                required
+                            />
+                            <input
+                                type="time"
+                                className="form-control"
+                                value={formData.latestPickupTime}
+                                onChange={(e) => handleInputChange('latestPickupTime', e.target.value)}
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Delivery Window</label>
+                        <div className="d-flex gap-2">
+                            <input
+                                type="time"
+                                className="form-control"
+                                value={formData.earliestDeliveryTime}
+                                onChange={(e) => handleInputChange('earliestDeliveryTime', e.target.value)}
+                                required
+                            />
+                            <input
+                                type="time"
+                                className="form-control"
+                                value={formData.latestDeliveryTime}
+                                onChange={(e) => handleInputChange('latestDeliveryTime', e.target.value)}
+                                required
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Additional Services</h4>
+                </div>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="dangerousGoodsType">Dangerous Goods</label>
+                        <select
+                            id="dangerousGoodsType"
+                            className="form-control"
+                            value={formData.dangerousGoodsType}
+                            onChange={(e) => handleInputChange('dangerousGoodsType', e.target.value)}
+                        >
+                            <option value="none">None</option>
+                            <option value="limited">Limited Quantity</option>
+                            <option value="fully-regulated">Fully Regulated</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="signatureServiceType">Signature Service</label>
+                        <select
+                            id="signatureServiceType"
+                            className="form-control"
+                            value={formData.signatureServiceType}
+                            onChange={(e) => handleInputChange('signatureServiceType', e.target.value)}
+                        >
+                            <option value="none">None</option>
+                            <option value="direct">Direct Signature</option>
+                            <option value="adult">Adult Signature</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
+                        <div className="form-check">
+                            <input
+                                type="checkbox"
+                                id="holdForPickup"
+                                className="form-check-input"
+                                checked={formData.holdForPickup}
+                                onChange={(e) => handleInputChange('holdForPickup', e.target.checked)}
+                            />
+                            <label className="form-check-label" htmlFor="holdForPickup">
+                                Hold for Pickup
+                            </label>
+                        </div>
+                        <div className="form-check">
+                            <input
+                                type="checkbox"
+                                id="saturdayDelivery"
+                                className="form-check-input"
+                                checked={formData.saturdayDelivery}
+                                onChange={(e) => handleInputChange('saturdayDelivery', e.target.checked)}
+                            />
+                            <label className="form-check-label" htmlFor="saturdayDelivery">
+                                Saturday Delivery
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div className="navigation-buttons">
                 <div></div>
                 <button
                     type="button"
-                    className="btn btn-primary btn-navigation"
+                    className="btn btn-primary"
                     onClick={handleSubmit}
                 >
                     Next <i className="bi bi-arrow-right"></i>

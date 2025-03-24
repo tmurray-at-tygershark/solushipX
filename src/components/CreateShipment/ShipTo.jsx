@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getStateOptions, getStateLabel } from '../../constants/address';
 
 const ShipTo = ({ data, onDataChange, onNext, onPrevious }) => {
     const [formData, setFormData] = useState({
@@ -26,11 +27,33 @@ const ShipTo = ({ data, onDataChange, onNext, onPrevious }) => {
         }
     }, [data]);
 
-    const handleInputChange = (e) => {
-        const { id, value } = e.target;
+    const handleInputChange = (fieldOrEvent, directValue) => {
+        let field, value;
+
+        if (typeof fieldOrEvent === 'string') {
+            // Handle direct calls with (field, value)
+            field = fieldOrEvent;
+            value = directValue;
+        } else {
+            // Handle event object
+            field = fieldOrEvent.target.id;
+            value = fieldOrEvent.target.value;
+        }
+
         const newFormData = {
             ...formData,
-            [id]: value
+            [field]: value
+        };
+        setFormData(newFormData);
+        onDataChange(newFormData);
+    };
+
+    const handleCountryChange = (e) => {
+        const newCountry = e.target.value;
+        const newFormData = {
+            ...formData,
+            country: newCountry,
+            state: '' // Reset state/province when country changes
         };
         setFormData(newFormData);
         onDataChange(newFormData);
@@ -46,206 +69,212 @@ const ShipTo = ({ data, onDataChange, onNext, onPrevious }) => {
     };
 
     return (
-        <div className="form-section active" data-step="3">
-            <form className="needs-validation" noValidate>
-                <div className="section-header">
-                    <h3>Ship To</h3>
+        <div className="form-section">
+            <h3 className="form-section-title">Recipient Information</h3>
+
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Company Details</h4>
                 </div>
-
-                <div className="section-content">
-                    <div className="subsection">
-                        <h4 className="subsection-title">Contact Info</h4>
-                        <div className="row g-3">
-                            <div className="col-md-6">
-                                <div className="form-group">
-                                    <label htmlFor="company">Company Name</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="company"
-                                        value={formData.company}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a company name.</div>
-                                </div>
-                            </div>
-                            <div className="col-md-6">
-                                <div className="form-group">
-                                    <label htmlFor="contactName">Contact Name</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="contactName"
-                                        value={formData.contactName}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a contact name.</div>
-                                </div>
-                            </div>
-                            <div className="col-md-6">
-                                <div className="form-group">
-                                    <label htmlFor="contactPhone">Phone</label>
-                                    <input
-                                        type="tel"
-                                        className="form-control"
-                                        id="contactPhone"
-                                        value={formData.contactPhone}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a phone number.</div>
-                                </div>
-                            </div>
-                            <div className="col-md-6">
-                                <div className="form-group">
-                                    <label htmlFor="contactEmail">Email</label>
-                                    <input
-                                        type="email"
-                                        className="form-control"
-                                        id="contactEmail"
-                                        value={formData.contactEmail}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a valid email address.</div>
-                                </div>
-                            </div>
-                        </div>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="company">Company Name</label>
+                        <input
+                            type="text"
+                            id="company"
+                            className="form-control"
+                            value={formData.company}
+                            onChange={handleInputChange}
+                            placeholder="Enter company name"
+                            required
+                        />
                     </div>
 
-                    <div className="subsection">
-                        <h4 className="subsection-title">Address</h4>
-                        <div className="row g-3">
-                            <div className="col-12">
-                                <div className="form-group">
-                                    <label htmlFor="street">Street Address</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="street"
-                                        value={formData.street}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a street address.</div>
-                                </div>
-                            </div>
-                            <div className="col-12">
-                                <div className="form-group">
-                                    <label htmlFor="street2">Address Line 2</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="street2"
-                                        value={formData.street2}
-                                        onChange={handleInputChange}
-                                    />
-                                </div>
-                            </div>
-                            <div className="col-md-6">
-                                <div className="form-group">
-                                    <label htmlFor="city">City</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="city"
-                                        value={formData.city}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a city.</div>
-                                </div>
-                            </div>
-                            <div className="col-md-4">
-                                <div className="form-group">
-                                    <label htmlFor="state">State/Province</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="state"
-                                        value={formData.state}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a state.</div>
-                                </div>
-                            </div>
-                            <div className="col-md-2">
-                                <div className="form-group">
-                                    <label htmlFor="postalCode">Postal Code</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="postalCode"
-                                        value={formData.postalCode}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <div className="invalid-feedback">Please enter a postal code.</div>
-                                </div>
-                            </div>
-                            <div className="col-md-4">
-                                <div className="form-group">
-                                    <label htmlFor="country">Country</label>
-                                    <select
-                                        className="form-select"
-                                        id="country"
-                                        value={formData.country}
-                                        onChange={handleInputChange}
-                                        required
-                                    >
-                                        <option value="US">United States</option>
-                                        <option value="CA">Canada</option>
-                                    </select>
-                                    <div className="invalid-feedback">Please select a country.</div>
-                                </div>
-                            </div>
-                        </div>
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="attentionName">Attention Name</label>
+                        <input
+                            type="text"
+                            id="attentionName"
+                            className="form-control"
+                            value={formData.attentionName}
+                            onChange={handleInputChange}
+                            placeholder="Enter attention name"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Address</h4>
+                </div>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="street">Street Address</label>
+                        <input
+                            type="text"
+                            id="street"
+                            className="form-control"
+                            value={formData.street}
+                            onChange={handleInputChange}
+                            placeholder="Enter street address"
+                            required
+                        />
                     </div>
 
-                    <div className="subsection">
-                        <button
-                            type="button"
-                            className="btn btn-link p-0 text-decoration-none d-flex align-items-center"
-                            onClick={() => setShowSpecialInstructions(!showSpecialInstructions)}
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="street2">Suite/Unit (Optional)</label>
+                        <input
+                            type="text"
+                            id="street2"
+                            className="form-control"
+                            value={formData.street2}
+                            onChange={handleInputChange}
+                            placeholder="Enter suite or unit number"
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="city">City</label>
+                        <input
+                            type="text"
+                            id="city"
+                            className="form-control"
+                            value={formData.city}
+                            onChange={handleInputChange}
+                            placeholder="Enter city"
+                            required
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="state">{getStateLabel(formData.country)}</label>
+                        <select
+                            id="state"
+                            className="form-control"
+                            value={formData.state}
+                            onChange={handleInputChange}
+                            required
                         >
-                            <i className={`bi bi-chevron-${showSpecialInstructions ? 'down' : 'right'} me-2`}></i>
-                            <h4 className="subsection-title mb-0">Special Instructions</h4>
-                        </button>
-                        {showSpecialInstructions && (
-                            <div className="mt-3">
-                                <textarea
-                                    className="form-control"
-                                    id="specialInstructions"
-                                    value={formData.specialInstructions}
-                                    onChange={handleInputChange}
-                                    rows="3"
-                                    placeholder="Enter any special delivery instructions..."
-                                />
-                            </div>
-                        )}
+                            <option value="">Select {getStateLabel(formData.country)}</option>
+                            {getStateOptions(formData.country).map(({ value, label }) => (
+                                <option key={value} value={value}>{label}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="form-row">
+                        <div className="form-group col-md-6">
+                            <label htmlFor="postalCode">Zip/Postal</label>
+                            <input
+                                type="text"
+                                className="form-control"
+                                id="postalCode"
+                                name="postalCode"
+                                value={formData.postalCode}
+                                onChange={handleInputChange}
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="country">Country</label>
+                        <select
+                            id="country"
+                            className="form-control"
+                            value={formData.country}
+                            onChange={handleCountryChange}
+                            required
+                        >
+                            <option value="US">United States</option>
+                            <option value="CA">Canada</option>
+                        </select>
                     </div>
                 </div>
+            </div>
 
-                <div className="navigation-buttons">
-                    <button
-                        type="button"
-                        className="btn btn-outline-primary btn-navigation"
-                        onClick={onPrevious}
-                    >
-                        <i className="bi bi-arrow-left"></i> Previous
-                    </button>
-                    <button
-                        type="submit"
-                        className="btn btn-primary btn-navigation"
-                        onClick={handleSubmit}
-                    >
-                        Next <i className="bi bi-arrow-right"></i>
-                    </button>
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Contact Information</h4>
                 </div>
-            </form>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="contactName">Contact Name</label>
+                        <input
+                            type="text"
+                            id="contactName"
+                            className="form-control"
+                            value={formData.contactName}
+                            onChange={handleInputChange}
+                            placeholder="Enter contact name"
+                            required
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="contactPhone">Phone</label>
+                        <input
+                            type="tel"
+                            id="contactPhone"
+                            className="form-control"
+                            value={formData.contactPhone}
+                            onChange={handleInputChange}
+                            placeholder="Enter phone number"
+                            required
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="contactEmail">Email</label>
+                        <input
+                            type="email"
+                            id="contactEmail"
+                            className="form-control"
+                            value={formData.contactEmail}
+                            onChange={handleInputChange}
+                            placeholder="Enter email address"
+                            required
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <h4 className="card-title">Additional Information</h4>
+                </div>
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="specialInstructions">Special Instructions</label>
+                        <textarea
+                            id="specialInstructions"
+                            className="form-control"
+                            value={formData.specialInstructions}
+                            onChange={handleInputChange}
+                            placeholder="Enter any special instructions"
+                            rows="3"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="navigation-buttons">
+                <button
+                    type="button"
+                    className="btn btn-outline-primary"
+                    onClick={onPrevious}
+                >
+                    <i className="bi bi-arrow-left"></i> Previous
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleSubmit}
+                >
+                    Next <i className="bi bi-arrow-right"></i>
+                </button>
+            </div>
         </div>
     );
 };
