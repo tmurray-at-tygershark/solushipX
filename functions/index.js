@@ -1,9 +1,8 @@
-const { onRequest } = require("firebase-functions/v2/https");
-const cors = require("cors")({ origin: true });
-const express = require("express");
-const axios = require("axios");
+const functions = require('firebase-functions/v2');
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
 const { parseStringPromise } = require("xml2js");
-const functions = require('firebase-functions');
 require('dotenv').config();
 
 // Create Express app
@@ -12,10 +11,13 @@ const app = express();
 // Constants
 const ESHIPPLUS_API_URL = "http://www.eshipplus.com/services/eShipPlusWSv4.asmx";
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // Middleware
-app.use(cors);
+app.use(cors({
+    origin: ['https://solushipx.web.app', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Input validation
@@ -239,8 +241,12 @@ app.post("/rates", async (req, res) => {
         // Call eShipPlus API
         const response = await axios.post(ESHIPPLUS_API_URL, soapRequest, {
             headers: {
-                'Content-Type': 'text/xml',
-                'SOAPAction': 'http://www.eshipplus.com/Rate'
+                'Content-Type': 'text/xml; charset=utf-8',
+                'SOAPAction': 'http://www.eshipplus.com/Rate',
+                'Accept': 'text/xml'
+            },
+            validateStatus: function (status) {
+                return status >= 200 && status < 500; // Accept any status less than 500
             }
         });
 
@@ -248,10 +254,12 @@ app.post("/rates", async (req, res) => {
 
         // Parse XML response
         const result = await parseStringPromise(response.data);
+        console.log('Parsed Response:', JSON.stringify(result, null, 2));
 
         // Check for SOAP fault
         if (result['soap:Envelope']['soap:Body'][0]['soap:Fault']) {
-            throw new Error('SOAP Fault: ' + JSON.stringify(result['soap:Envelope']['soap:Body'][0]['soap:Fault'][0]));
+            const fault = result['soap:Envelope']['soap:Body'][0]['soap:Fault'][0];
+            throw new Error(`SOAP Fault: ${fault.faultstring[0]}`);
         }
 
         // Helper function to safely get array values
@@ -398,14 +406,38 @@ app.get('/api/config/maps-key', (req, res) => {
   }
 });
 
-// 🚀 AI Analysis Route
-exports.analyzeRatesWithAI = functions.https.onRequest(async (req, res) => {
-    // Set CORS headers for all responses
-    res.set('Access-Control-Allow-Origin', 'https://solushipx.web.app');
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
-    res.set('Access-Control-Max-Age', '3600');
+// Endpoint to calculate route
+app.post('/route', async (req, res) => {
+    try {
+        const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+        if (!apiKey) {
+            console.error('Google Maps API key not found in environment variables');
+            return res.status(500).json({ error: 'Google Maps API key not configured' });
+        }
 
+        const response = await axios.post(`https://routes.googleapis.com/maps/v2/computeRoutes?key=${apiKey}`, req.body, {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error calculating route:', error);
+        res.status(500).json({ error: 'Failed to calculate route' });
+    }
+});
+
+// 🚀 AI Analysis Route
+exports.analyzeRatesWithAI = functions.https.onRequest({
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    minInstances: 0,
+    maxInstances: 5,
+    cors: ['https://solushipx.web.app', 'http://localhost:3000']
+}, async (req, res) => {
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
@@ -424,13 +456,7 @@ exports.analyzeRatesWithAI = functions.https.onRequest(async (req, res) => {
     try {
         console.log("🤖 Sending rates to AI...");
         
-        // Debug API key loading
-        const apiKey = functions.config().openai?.api_key;
-        console.log("API Key loaded:", apiKey ? "Yes" : "No");
-        console.log("API Key length:", apiKey?.length || 0);
-        console.log("API Key prefix:", apiKey ? apiKey.substring(0, 10) + "..." : "None");
-        console.log("API Key suffix:", apiKey ? "..." + apiKey.substring(apiKey.length - 10) : "None");
-        
+        const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) {
             throw new Error("OpenAI API key not found in environment variables");
         }
@@ -489,35 +515,34 @@ exports.analyzeRatesWithAI = functions.https.onRequest(async (req, res) => {
     }
 });
 
-// LiveKit configuration endpoint
-app.get('/config', (req, res) => {
-    try {
-        // Get the HeyGen token from environment
-        const token = functions.config().livekit.token;
-        if (!token) {
-            throw new Error('HeyGen token not configured');
-        }
-
-        // Return the configuration with the full token
-        res.json({
-            livekitUrl: 'https://api.heygen.com',
-            livekitToken: token
-        });
-    } catch (error) {
-        console.error('Error serving LiveKit config:', error);
-        res.status(500).json({
-            error: 'Failed to get LiveKit configuration',
-            details: error.message
-        });
-    }
-});
-
-// Export the function
-exports.getShippingRates = onRequest({
-    region: "us-central1",
-    memory: "256MiB",
+// Export the functions with v2 configuration
+exports.getShippingRates = functions.https.onRequest({
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 60,
     minInstances: 0,
     maxInstances: 10,
-    timeoutSeconds: 60,
-    cors: true
+    cors: ['https://solushipx.web.app', 'http://localhost:3000']
 }, app);
+
+exports.getMapsApiKey = functions.https.onRequest({
+    region: 'us-central1',
+    memory: '128MiB',
+    timeoutSeconds: 10,
+    minInstances: 0,
+    maxInstances: 5,
+    cors: ['https://solushipx.web.app', 'http://localhost:3000']
+}, async (req, res) => {
+    try {
+        const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+        if (!apiKey) {
+            console.error('Google Maps API key not found in environment variables');
+            return res.status(500).json({ error: 'Google Maps API key not configured' });
+        }
+        res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+        res.json({ key: apiKey });
+    } catch (error) {
+        console.error('Error serving Google Maps API key:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});

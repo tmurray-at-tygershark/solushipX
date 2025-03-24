@@ -1,46 +1,18 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI-Powered Shipping Rate Lookup</title>
-
-    <!-- Bootstrap CSS -->
+    <title>SolushipX - Shipping Solutions</title>
+    <meta name="description" content="AI-powered shipping rate lookup and analysis">
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  
-    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://kit.fontawesome.com/5b8216a71c.js" crossorigin="anonymous"></script>
 </head>
 <body>
-
-    <div class="container">
-        <h2 class="mb-3">eShipPlus Rate Lookup</h2>
-        
-        <button id="getRatesButton" class="btn btn-primary">Get Shipping Rates & AI Analysis</button>
-
-        <!-- Loading Spinner -->
-        <div class="spinner" id="loadingSpinner">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p>Fetching shipping rates...</p>
-        </div>
-
-        <h3 class="mt-4">Carrier Rates:</h3>
-        <div id="carrierRates" class="row"></div>
-
-        <h3 class="mt-4">AI Analysis:</h3>
-        <div id="aiOutput" class="result-box">Waiting for AI response...</div>
-
-        <h3 class="mt-4">Raw Rates Response:</h3>
-        <div id="ratesOutput" class="result-box">Click the button to fetch shipping rates...</div>
-       
-    </div>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="js/index.js"></script>
-
-   
-
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
 </body>
 </html>
