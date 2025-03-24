@@ -96,10 +96,14 @@ const CreateShipment = () => {
 
     const handleNext = () => {
         setCurrentStep(prev => Math.min(prev + 1, 6));
+        // Scroll to the top of the form container
+        document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const handlePrevious = () => {
         setCurrentStep(prev => Math.max(prev - 1, 1));
+        // Scroll to the top of the form container
+        document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const handleFormDataChange = (section, data) => {
@@ -206,7 +210,10 @@ const CreateShipment = () => {
 
                         <StepperComponent
                             currentStep={currentStep}
-                            onStepClick={(step) => setCurrentStep(step)}
+                            onStepClick={(step) => {
+                                setCurrentStep(step);
+                                document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
                         />
 
                         <form id="shipmentForm" className="needs-validation" noValidate onSubmit={handleSubmit}>

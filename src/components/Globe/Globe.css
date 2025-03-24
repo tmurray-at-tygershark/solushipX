@@ -1,0 +1,41 @@
+.globe-container {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.05) 100%);
+}
+
+.globe-container canvas {
+    outline: none;
+}
+
+.globe-tooltip {
+    position: absolute;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.globe-label {
+    position: absolute;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.globe-point {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+} 
