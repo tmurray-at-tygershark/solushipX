@@ -379,8 +379,8 @@ const AIAgent = {
             
             // Get current rates data from the form handler
             const ratesData = window.formHandler?.currentRates;
-            if (!ratesData) {
-                throw new Error('No rates data available for analysis');
+            if (!ratesData || !Array.isArray(ratesData) || ratesData.length === 0) {
+                throw new Error('No valid rates data available for analysis. Please calculate rates first.');
             }
 
             // Format the rates data for AI analysis
@@ -426,7 +426,7 @@ const AIAgent = {
                 throw new Error(result.message || 'Analysis failed');
             }
         } catch (error) {
-            console.error('Full error:', error);
+            console.error('AI Analysis Error:', error);
             this.showError(error.message);
         } finally {
             this.hideLoading();

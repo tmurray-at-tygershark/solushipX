@@ -955,10 +955,10 @@ const Dashboard = () => {
                                     dataset={monthlyData.map((_, index) => {
                                         const date = new Date();
                                         date.setDate(index + 1);
+                                        // Generate random number between 10 and 100
+                                        const randomShipments = Math.floor(Math.random() * 91) + 10;
                                         return {
-                                            value: shipments.filter(s =>
-                                                new Date(s.date).getDate() === index + 1
-                                            ).length,
+                                            value: randomShipments,
                                             day: date.toLocaleDateString('en-US', {
                                                 month: 'short',
                                                 day: 'numeric'
@@ -975,7 +975,8 @@ const Dashboard = () => {
                                                 highlighted: 'item',
                                                 faded: 'global'
                                             },
-                                            borderRadius: 6
+                                            borderRadius: 4,
+                                            barSize: 12
                                         }
                                     ]}
                                     xAxis={[{
@@ -992,7 +993,9 @@ const Dashboard = () => {
                                         axisLine: { stroke: '#e2e8f0' }
                                     }]}
                                     yAxis={[{
-                                        tickMinStep: 1,
+                                        min: 0,
+                                        max: 100,
+                                        tickMinStep: 20,
                                         tickLabelStyle: {
                                             fontSize: 12,
                                             fill: '#64748b'

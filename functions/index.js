@@ -448,9 +448,12 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
 
     const ratesData = req.body.rates;
 
-    if (!ratesData) {
-        console.log("No rates data provided");
-        return res.status(400).json({ success: false, message: "No rates data provided for AI analysis." });
+    if (!ratesData || !Array.isArray(ratesData) || ratesData.length === 0) {
+        console.log("Invalid or empty rates data provided");
+        return res.status(400).json({ 
+            success: false, 
+            message: "Invalid or empty rates data provided for AI analysis." 
+        });
     }
 
     try {
@@ -458,7 +461,8 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
         
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) {
-            throw new Error("OpenAI API key not found in environment variables");
+            console.error("OpenAI API key not found in environment variables");
+            throw new Error("OpenAI API key not configured");
         }
 
         const payload = {
@@ -492,9 +496,13 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
 
         console.log("OpenAI API Response:", JSON.stringify(response.data, null, 2));
 
+        if (!response.data.choices || !response.data.choices[0]?.message?.content) {
+            throw new Error("Invalid response format from OpenAI API");
+        }
+
         res.json({
             success: true,
-            analysis: response.data.choices[0]?.message?.content || "AI analysis failed."
+            analysis: response.data.choices[0].message.content
         });
 
     } catch (error) {

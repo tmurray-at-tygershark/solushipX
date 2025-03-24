@@ -1193,6 +1193,9 @@ class FormHandler {
                         rate.guarOptions[0].amountDue : 0
                 }));
 
+                // Store rates data for AI analysis
+                this.currentRates = rates;
+
                 // Show rate filters and display rates
                 if (rateFilters) {
                     rateFilters.style.display = 'block';
