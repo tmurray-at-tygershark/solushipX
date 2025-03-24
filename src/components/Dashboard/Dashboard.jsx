@@ -276,9 +276,8 @@ const Dashboard = () => {
                                                 label={shipment.status}
                                                 color={
                                                     shipment.status === 'Delivered' ? 'success' :
-                                                        shipment.status === 'Awaiting Shipment' ? 'warning' :
-                                                            shipment.status === 'In Transit' ? 'primary' :
-                                                                'default'
+                                                        shipment.status === 'In Transit' ? 'primary' :
+                                                            'default'
                                                 }
                                                 size="small"
                                             />

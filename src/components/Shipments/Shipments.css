@@ -1,0 +1,202 @@
+/* Shipments Component Styles */
+
+/* Table styles */
+.MuiTableContainer-root {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.MuiTableHead-root {
+    background-color: #f4f6f8;
+}
+
+.MuiTableHead-root .MuiTableCell-root {
+    font-weight: 600;
+    color: #637381;
+    padding: 16px;
+}
+
+.MuiTableBody-root .MuiTableCell-root {
+    padding: 16px;
+}
+
+.MuiTableRow-root:hover {
+    background-color: #f9fafb !important;
+}
+
+/* Search and filter controls */
+.MuiToolbar-root {
+    padding: 16px 24px !important;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root {
+    background-color: #fff;
+}
+
+.MuiButton-outlined {
+    text-transform: none !important;
+    font-weight: 500 !important;
+    border-color: #e0e0e0;
+    color: #637381;
+}
+
+.MuiButton-outlined:hover {
+    border-color: #2C6ECB;
+    color: #2C6ECB;
+    background-color: rgba(44, 110, 203, 0.04);
+}
+
+.MuiButton-contained {
+    text-transform: none !important;
+    font-weight: 500 !important;
+    background-color: #2C6ECB;
+}
+
+.MuiButton-contained:hover {
+    background-color: #1e4c8f;
+}
+
+/* Status chip styles */
+.MuiChip-root {
+    font-weight: 500 !important;
+    height: 24px;
+    font-size: 0.75rem;
+}
+
+.MuiChip-root.MuiChip-colorPrimary {
+    background-color: #f4f6f8 !important;
+    color: #2c6ecb !important;
+}
+
+.MuiChip-root.MuiChip-colorSuccess {
+    background-color: #f1f8f5 !important;
+    color: #0a875a !important;
+}
+
+.MuiTableCell-head {
+    background-color: #f9fafb !important;
+    font-weight: 600 !important;
+    color: #637381 !important;
+}
+
+/* Filter and Sort menus */
+.MuiMenu-paper {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+/* Pagination styles */
+.MuiTablePagination-root {
+    border-top: 1px solid #e0e0e0;
+}
+
+.MuiTablePagination-select {
+    padding-right: 24px !important;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 960px) {
+    .MuiToolbar-root {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+    }
+
+    .MuiStack-root {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .MuiTextField-root {
+        width: 100% !important;
+    }
+
+    .MuiButton-root {
+        width: 100%;
+    }
+
+    .MuiTableCell-root {
+        padding: 12px 8px;
+    }
+
+    .MuiTableContainer-root {
+        overflow-x: auto;
+    }
+}
+
+/* Loading state styles */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1;
+}
+
+/* Export dialog styles */
+.MuiDialog-paper {
+    min-width: 400px;
+}
+
+.MuiDialogTitle-root {
+    background-color: #f4f6f8;
+    padding: 16px 24px;
+}
+
+.MuiDialogContent-root {
+    padding: 24px !important;
+}
+
+.MuiDialogActions-root {
+    padding: 16px 24px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.MuiTab-root {
+    text-transform: none !important;
+    font-weight: 500 !important;
+    min-width: 100px !important;
+}
+
+.MuiTab-root.Mui-selected {
+    color: #2c6ecb !important;
+}
+
+.MuiTabs-indicator {
+    background-color: #2c6ecb !important;
+}
+
+.search-input {
+    border-radius: 4px !important;
+    border: 1px solid #dfe3e8 !important;
+}
+
+.filter-button {
+    border: 1px solid #dfe3e8 !important;
+    color: #454f5b !important;
+}
+
+.action-menu {
+    min-width: 200px !important;
+}
+
+.action-menu .MuiMenuItem-root {
+    font-size: 0.875rem !important;
+    padding: 0.75rem 1rem !important;
+}
+
+.shipment-link {
+    color: #2c6ecb !important;
+    text-decoration: none !important;
+    font-weight: 500 !important;
+}
+
+.shipment-link:hover {
+    text-decoration: underline !important;
+} 

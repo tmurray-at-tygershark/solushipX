@@ -145,9 +145,8 @@ const ShipmentDetail = () => {
                         label={shipment.status}
                         color={
                             shipment.status === 'Delivered' ? 'success' :
-                                shipment.status === 'Awaiting Shipment' ? 'warning' :
-                                    shipment.status === 'In Transit' ? 'primary' :
-                                        'default'
+                                shipment.status === 'In Transit' ? 'primary' :
+                                    'default'
                         }
                         sx={{ ml: 'auto' }}
                     />
