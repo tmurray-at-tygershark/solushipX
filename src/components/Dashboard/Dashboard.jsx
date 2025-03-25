@@ -43,9 +43,10 @@ import {
     CheckCircle as CheckCircleIcon,
     Schedule as ScheduleIcon,
     Refresh as RefreshIcon,
-    CalendarToday as CalendarIcon
+    CalendarToday as CalendarIcon,
+    LocalShipping as LocalShipping
 } from '@mui/icons-material';
-import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { Link } from 'react-router-dom';
@@ -53,6 +54,7 @@ import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { PieChart } from '@mui/x-charts/PieChart';
 import './Dashboard.css';
+import dayjs from 'dayjs';
 
 // Helper function to generate random shipment data
 const generateRandomShipments = (count) => {
@@ -131,10 +133,8 @@ const generateRandomShipments = (count) => {
 const Dashboard = () => {
     const [selectedTab, setSelectedTab] = useState('all');
     const [anchorEl, setAnchorEl] = useState(null);
-    const [dateRange, setDateRange] = useState([
-        new Date(new Date().setDate(new Date().getDate() - 30)),
-        new Date()
-    ]);
+    const [startDate, setStartDate] = useState(dayjs());
+    const [endDate, setEndDate] = useState(dayjs());
 
     // Dummy data for shipments
     const shipments = [
@@ -496,24 +496,21 @@ const Dashboard = () => {
                     alignItems: 'center',
                     flexWrap: 'wrap'
                 }}>
-                    <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <DateRangePicker
-                            value={dateRange}
-                            onChange={(newValue) => setDateRange(newValue)}
-                            size="small"
-                            sx={{
-                                '& .MuiOutlinedInput-root': {
-                                    bgcolor: '#ffffff',
-                                    '& fieldset': {
-                                        borderColor: '#e2e8f0',
-                                    },
-                                    '&:hover fieldset': {
-                                        borderColor: '#cbd5e1',
-                                    },
-                                }
-                            }}
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                        <DatePicker
+                            label="Start Date"
+                            value={startDate}
+                            onChange={(newValue) => setStartDate(newValue)}
+                            sx={{ width: '200px' }}
                         />
-                    </LocalizationProvider>
+                        <DatePicker
+                            label="End Date"
+                            value={endDate}
+                            onChange={(newValue) => setEndDate(newValue)}
+                            minDate={startDate}
+                            sx={{ width: '200px' }}
+                        />
+                    </Box>
                     <Button
                         variant="outlined"
                         startIcon={<RefreshIcon />}
@@ -535,390 +532,156 @@ const Dashboard = () => {
 
             {/* Rest of the dashboard content */}
             <Box sx={{ width: '100%', bgcolor: '#f8fafc' }}>
-                {/* Metrics Cards */}
+                {/* Status Boxes */}
                 <Grid container spacing={3} sx={{ mb: 4 }}>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} sm={6} md={3}>
                         <Paper sx={{
                             p: 3,
                             bgcolor: '#ffffff',
                             boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
                             borderRadius: 2,
-                            position: 'relative',
-                            overflow: 'hidden',
-                            height: '100%'
+                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                            '&:hover': {
+                                transform: 'translateY(-4px)',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+                            }
                         }}>
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'flex-start',
-                                mb: 3
-                            }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 0.5, fontWeight: 500 }}>
-                                        Total Shipments Value
-                                    </Typography>
-                                    <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
-                                        {formatCurrency(metrics.totalValue)}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-end',
-                                    gap: 1
-                                }}>
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.5,
-                                        bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                        px: 1,
-                                        py: 0.5,
-                                        borderRadius: 1
-                                    }}>
-                                        <Typography variant="caption" sx={{ color: '#10b981', fontWeight: 500 }}>
-                                            +{((metrics.totalValue / (metrics.totalValue * 0.9) - 1) * 100).toFixed(1)}%
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ color: '#10b981' }}>
-                                            vs Last Month
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </Box>
-                            <Stack spacing={2}>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
-                                }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            Average Value
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#3b82f6', fontWeight: 600 }}>
-                                            {formatCurrency(metrics.averageValue)}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(59, 130, 246, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <MoneyIcon sx={{ color: '#3b82f6' }} />
-                                    </Box>
-                                </Box>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
-                                }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            Total Shipments
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#6366f1', fontWeight: 600 }}>
-                                            {metrics.totalShipments}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(99, 102, 241, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <ShippingIcon sx={{ color: '#6366f1' }} />
-                                    </Box>
-                                </Box>
-                            </Stack>
-                        </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            position: 'relative',
-                            overflow: 'hidden',
-                            height: '100%'
-                        }}>
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'flex-start',
-                                mb: 3
-                            }}>
-                                <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 0.5, fontWeight: 500 }}>
-                                        Delivery Success Rate
-                                    </Typography>
-                                    <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
-                                        {((shipments.filter(s => s.status === 'Delivered').length / shipments.length) * 100).toFixed(1)}%
-                                    </Typography>
-                                </Box>
-                                <Box sx={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-end',
-                                    gap: 1
-                                }}>
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.5,
-                                        bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                        px: 1,
-                                        py: 0.5,
-                                        borderRadius: 1
-                                    }}>
-                                        <Typography variant="caption" sx={{ color: '#10b981', fontWeight: 500 }}>
-                                            On Target
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </Box>
-                            <Stack spacing={2}>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
-                                }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            Delivered
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#10b981', fontWeight: 600 }}>
-                                            {shipments.filter(s => s.status === 'Delivered').length}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <CheckCircleIcon sx={{ color: '#10b981' }} />
-                                    </Box>
-                                </Box>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
-                                }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            Delayed
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#ef4444', fontWeight: 600 }}>
-                                            {shipments.filter(s => s.status === 'Delayed').length}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <WarningIcon sx={{ color: '#ef4444' }} />
-                                    </Box>
-                                </Box>
-                            </Stack>
-                        </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2
-                        }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                                <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 0.5, fontWeight: 500 }}>
+                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
                                         Active Shipments
                                     </Typography>
-                                    <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                    <Typography variant="h4" sx={{ color: '#3b82f6', fontWeight: 600 }}>
+                                        {shipments.filter(s => s.status === 'In Transit' || s.status === 'Awaiting Shipment').length}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: '12px',
+                                    bgcolor: 'rgba(59, 130, 246, 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <ShippingIcon sx={{ color: '#3b82f6', fontSize: 24 }} />
+                                </Box>
+                            </Box>
+                        </Paper>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Paper sx={{
+                            p: 3,
+                            bgcolor: '#ffffff',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                            borderRadius: 2,
+                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                            '&:hover': {
+                                transform: 'translateY(-4px)',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+                            }
+                        }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Box>
+                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
+                                        Waiting for Pickup
+                                    </Typography>
+                                    <Typography variant="h4" sx={{ color: '#f59e0b', fontWeight: 600 }}>
+                                        {shipments.filter(s => s.status === 'Awaiting Shipment').length}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: '12px',
+                                    bgcolor: 'rgba(245, 158, 11, 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <ScheduleIcon sx={{ color: '#f59e0b', fontSize: 24 }} />
+                                </Box>
+                            </Box>
+                        </Paper>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Paper sx={{
+                            p: 3,
+                            bgcolor: '#ffffff',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                            borderRadius: 2,
+                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                            '&:hover': {
+                                transform: 'translateY(-4px)',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+                            }
+                        }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Box>
+                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
+                                        In Transit
+                                    </Typography>
+                                    <Typography variant="h4" sx={{ color: '#6366f1', fontWeight: 600 }}>
                                         {shipments.filter(s => s.status === 'In Transit').length}
                                     </Typography>
                                 </Box>
                                 <Box sx={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: '12px',
+                                    bgcolor: 'rgba(99, 102, 241, 0.1)',
                                     display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-end',
-                                    gap: 1
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                 }}>
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.5,
-                                        bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                        px: 1,
-                                        py: 0.5,
-                                        borderRadius: 1
-                                    }}>
-                                        <Typography variant="caption" sx={{ color: '#10b981', fontWeight: 500 }}>
-                                            {((shipments.filter(s => s.status === 'Delivered').length / shipments.length) * 100).toFixed(1)}%
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ color: '#10b981' }}>
-                                            Delivered
-                                        </Typography>
-                                    </Box>
+                                    <LocalShipping sx={{ color: '#6366f1', fontSize: 24 }} />
                                 </Box>
                             </Box>
-                            <Stack spacing={2}>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
-                                }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            Waiting for Pickup
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#f59e0b', fontWeight: 600 }}>
-                                            {shipments.filter(s => s.status === 'Awaiting Shipment').length}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(245, 158, 11, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <ScheduleIcon sx={{ color: '#f59e0b' }} />
-                                    </Box>
+                        </Paper>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6} md={3}>
+                        <Paper sx={{
+                            p: 3,
+                            bgcolor: '#ffffff',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                            borderRadius: 2,
+                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                            '&:hover': {
+                                transform: 'translateY(-4px)',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+                            }
+                        }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Box>
+                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
+                                        Delivered
+                                    </Typography>
+                                    <Typography variant="h4" sx={{ color: '#10b981', fontWeight: 600 }}>
+                                        {shipments.filter(s => s.status === 'Delivered').length}
+                                    </Typography>
                                 </Box>
                                 <Box sx={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: '12px',
+                                    bgcolor: 'rgba(16, 185, 129, 0.1)',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
+                                    justifyContent: 'center'
                                 }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            In Transit
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#3b82f6', fontWeight: 600 }}>
-                                            {shipments.filter(s => s.status === 'In Transit').length}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(59, 130, 246, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <ShippingIcon sx={{ color: '#3b82f6' }} />
-                                    </Box>
+                                    <CheckCircleIcon sx={{ color: '#10b981', fontSize: 24 }} />
                                 </Box>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    p: 2,
-                                    bgcolor: '#f8fafc',
-                                    borderRadius: 2,
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        transform: 'translateX(4px)'
-                                    }
-                                }}>
-                                    <Box>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                                            Delivered
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ color: '#10b981', fontWeight: 600 }}>
-                                            {shipments.filter(s => s.status === 'Delivered').length}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '50%',
-                                        bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        <CheckCircleIcon sx={{ color: '#10b981' }} />
-                                    </Box>
-                                </Box>
-                            </Stack>
+                            </Box>
                         </Paper>
                     </Grid>
                 </Grid>
 
-                {/* Charts Section */}
+                {/* Monthly Shipment Volume Chart */}
                 <Grid container spacing={3}>
-                    {/* Monthly Shipment Trends */}
-                    <Grid item xs={12} md={8}>
+                    <Grid item xs={12}>
                         <Paper sx={{
                             p: 3,
                             bgcolor: '#ffffff',
@@ -951,7 +714,7 @@ const Dashboard = () => {
                                 </Box>
                             </Box>
                             <Box sx={{ height: 300 }}>
-                                <BarChart
+                                <LineChart
                                     dataset={monthlyData.map((_, index) => {
                                         const date = new Date();
                                         date.setDate(index + 1);
@@ -968,20 +731,16 @@ const Dashboard = () => {
                                     series={[
                                         {
                                             dataKey: 'value',
-                                            label: 'Number of Shipments',
                                             valueFormatter: (value) => value.toString(),
                                             color: '#3b82f6',
-                                            highlightScope: {
-                                                highlighted: 'item',
-                                                faded: 'global'
-                                            },
-                                            borderRadius: 4,
-                                            barSize: 12
+                                            area: true,
+                                            showMark: false,
+                                            curve: "monotoneX"
                                         }
                                     ]}
                                     xAxis={[{
                                         dataKey: 'day',
-                                        scaleType: 'band',
+                                        scaleType: 'point',
                                         tickLabelStyle: {
                                             angle: 0,
                                             textAnchor: 'middle',
@@ -1005,12 +764,12 @@ const Dashboard = () => {
                                         axisLine: { stroke: '#e2e8f0' }
                                     }]}
                                     sx={{
-                                        '.MuiBarElement-root': {
+                                        '.MuiLineElement-root': {
+                                            strokeWidth: 2,
                                             transition: 'all 0.2s ease-in-out',
-                                            '&:hover': {
-                                                filter: 'brightness(0.9)',
-                                                transform: 'translateY(-2px)'
-                                            }
+                                        },
+                                        '.MuiAreaElement-root': {
+                                            fillOpacity: 0.15,
                                         },
                                         '.MuiChartsAxis-line': {
                                             stroke: '#e2e8f0'
@@ -1025,187 +784,8 @@ const Dashboard = () => {
                                     height={300}
                                     margin={{ left: 60, right: 20, top: 20, bottom: 40 }}
                                     tooltip={{
-                                        trigger: 'item',
-                                        formatter: (params) => [
-                                            `${params.value} shipments`,
-                                            params.name
-                                        ]
+                                        trigger: 'axis'
                                     }}
-                                />
-                            </Box>
-                        </Paper>
-                    </Grid>
-
-                    {/* Shipment Status Distribution */}
-                    <Grid item xs={12} md={4}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2
-                        }}>
-                            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1e293b' }}>
-                                Shipment Status
-                            </Typography>
-                            <Box sx={{ height: 300 }}>
-                                <PieChart
-                                    series={[
-                                        {
-                                            data: [
-                                                {
-                                                    id: 'In Transit',
-                                                    value: shipments.filter(s => s.status === 'In Transit').length,
-                                                    label: 'In Transit',
-                                                    color: '#3b82f6'
-                                                },
-                                                {
-                                                    id: 'Delivered',
-                                                    value: shipments.filter(s => s.status === 'Delivered').length,
-                                                    label: 'Delivered',
-                                                    color: '#10b981'
-                                                },
-                                                {
-                                                    id: 'Waiting for Pickup',
-                                                    value: shipments.filter(s => s.status === 'Awaiting Shipment').length,
-                                                    label: 'Waiting for Pickup',
-                                                    color: '#f59e0b'
-                                                }
-                                            ],
-                                            innerRadius: 60,
-                                            paddingAngle: 2,
-                                            cornerRadius: 4,
-                                            valueFormatter: (value) => `${((value / shipments.length) * 100).toFixed(1)}%`
-                                        }
-                                    ]}
-                                    height={300}
-                                    slotProps={{
-                                        legend: {
-                                            direction: 'row',
-                                            position: { vertical: 'bottom', horizontal: 'middle' },
-                                            padding: 0
-                                        }
-                                    }}
-                                />
-                            </Box>
-                        </Paper>
-                    </Grid>
-
-                    {/* Top Customers */}
-                    <Grid item xs={12} md={6}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            height: '100%'
-                        }}>
-                            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1e293b' }}>
-                                Top Customers
-                            </Typography>
-                            <Box sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 2,
-                                height: 'calc(100% - 48px)' // Subtract header height
-                            }}>
-                                {topCustomers.map((customer, index) => (
-                                    <Paper
-                                        key={customer.name}
-                                        sx={{
-                                            p: 2,
-                                            bgcolor: '#f8fafc',
-                                            borderRadius: 2,
-                                            transition: 'all 0.2s ease-in-out',
-                                            '&:hover': {
-                                                bgcolor: '#f1f5f9',
-                                                transform: 'translateY(-1px)',
-                                                boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                                            }
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                            <Avatar
-                                                sx={{
-                                                    bgcolor: ['#3b82f6', '#10b981', '#6366f1'][index % 3],
-                                                    width: 56,
-                                                    height: 56,
-                                                    fontSize: '1.25rem',
-                                                    fontWeight: 600
-                                                }}
-                                            >
-                                                {customer.name.split(' ').map(word => word[0]).join('')}
-                                            </Avatar>
-                                            <Box sx={{ flex: 1 }}>
-                                                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1e293b', mb: 0.5 }}>
-                                                    {customer.name}
-                                                </Typography>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={6}>
-                                                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
-                                                            Shipments
-                                                        </Typography>
-                                                        <Typography variant="body1" sx={{ color: '#1e293b', fontWeight: 500 }}>
-                                                            {shipments.filter(s => s.customer === customer.name).length}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid item xs={6}>
-                                                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
-                                                            Total Value
-                                                        </Typography>
-                                                        <Typography variant="body1" sx={{ color: '#1e293b', fontWeight: 500 }}>
-                                                            {formatCurrency(customer.value)}
-                                                        </Typography>
-                                                    </Grid>
-                                                </Grid>
-                                            </Box>
-                                        </Box>
-                                    </Paper>
-                                ))}
-                            </Box>
-                        </Paper>
-                    </Grid>
-
-                    {/* Delivery Performance */}
-                    <Grid item xs={12} md={6}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2
-                        }}>
-                            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1e293b' }}>
-                                Shipment Status by Carrier
-                            </Typography>
-                            <Box sx={{ height: 300 }}>
-                                <BarChart
-                                    xAxis={[{
-                                        scaleType: 'band',
-                                        data: ['FedEx', 'UPS', 'DHL', 'USPS']
-                                    }]}
-                                    series={[
-                                        {
-                                            label: 'In Transit',
-                                            data: ['FedEx', 'UPS', 'DHL', 'USPS'].map(carrier =>
-                                                shipments.filter(s => s.carrier === carrier && s.status === 'In Transit').length
-                                            ),
-                                            color: '#3b82f6'
-                                        },
-                                        {
-                                            label: 'Delivered',
-                                            data: ['FedEx', 'UPS', 'DHL', 'USPS'].map(carrier =>
-                                                shipments.filter(s => s.carrier === carrier && s.status === 'Delivered').length
-                                            ),
-                                            color: '#10b981'
-                                        },
-                                        {
-                                            label: 'Waiting for Pickup',
-                                            data: ['FedEx', 'UPS', 'DHL', 'USPS'].map(carrier =>
-                                                shipments.filter(s => s.carrier === carrier && s.status === 'Awaiting Shipment').length
-                                            ),
-                                            color: '#f59e0b'
-                                        }
-                                    ]}
-                                    height={300}
                                 />
                             </Box>
                         </Paper>

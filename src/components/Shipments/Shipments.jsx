@@ -42,9 +42,10 @@ import {
     MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs from 'dayjs';
 import './Shipments.css';
 
 const Shipments = () => {
@@ -68,7 +69,7 @@ const Shipments = () => {
     });
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
-    const [dateRange, setDateRange] = useState([null, null]);
+    const [dateRange, setDateRange] = useState([dayjs(), dayjs()]);
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const [selected, setSelected] = useState([]);
 
@@ -178,7 +179,7 @@ const Shipments = () => {
             if (dateRange[0] && dateRange[1]) {
                 filteredData = filteredData.filter(shipment => {
                     const shipmentDate = new Date(shipment.date);
-                    return shipmentDate >= dateRange[0] && shipmentDate <= dateRange[1];
+                    return shipmentDate >= dateRange[0].toDate() && shipmentDate <= dateRange[1].toDate();
                 });
             }
 
@@ -590,18 +591,36 @@ const Shipments = () => {
                         </FormControl>
                     </MenuItem>
                     <MenuItem>
-                        <LocalizationProvider dateAdapter={AdapterDateFns}>
-                            <DatePicker
-                                label="Date Range"
-                                value={dateRange}
-                                onChange={(newValue) => setDateRange(newValue)}
-                                renderInput={(startProps, endProps) => (
-                                    <Stack direction="row" spacing={2}>
-                                        <TextField {...startProps} />
-                                        <TextField {...endProps} />
-                                    </Stack>
-                                )}
-                            />
+                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <Stack direction="row" spacing={2}>
+                                <DatePicker
+                                    label="From Date"
+                                    value={dateRange[0]}
+                                    onChange={(newValue) => {
+                                        setDateRange([newValue, dateRange[1]]);
+                                    }}
+                                    slotProps={{
+                                        textField: {
+                                            size: "small",
+                                            sx: { width: 200 }
+                                        }
+                                    }}
+                                />
+                                <DatePicker
+                                    label="To Date"
+                                    value={dateRange[1]}
+                                    onChange={(newValue) => {
+                                        setDateRange([dateRange[0], newValue]);
+                                    }}
+                                    slotProps={{
+                                        textField: {
+                                            size: "small",
+                                            sx: { width: 200 }
+                                        }
+                                    }}
+                                    minDate={dateRange[0]}
+                                />
+                            </Stack>
                         </LocalizationProvider>
                     </MenuItem>
                 </Menu>

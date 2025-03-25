@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
+import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
+// Your web app's Firebase configuration
 const firebaseConfig = {
     apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
     authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
@@ -13,25 +15,39 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Functions with custom URLs for Cloud Run
-const functions = getFunctions(app, 'us-central1');
+// Initialize Auth
+const auth = getAuth(app);
 
-// Set custom function URLs for Cloud Run
-const getShippingRates = functions.httpsCallable('getShippingRates', {
-    url: 'https://getshippingrates-xedyh5vw7a-uc.a.run.app'
-});
+// Initialize Functions
+const functions = getFunctions(app);
 
-const analyzeRatesWithAI = functions.httpsCallable('analyzeRatesWithAI', {
-    url: 'https://analyzerateswithai-xedyh5vw7a-uc.a.run.app'
-});
-
-const getMapsApiKey = functions.httpsCallable('getMapsApiKey', {
-    url: 'https://getmapsapikey-xedyh5vw7a-uc.a.run.app'
-});
+// Define callable functions
+const getShippingRates = httpsCallable(functions, 'getShippingRates');
+const analyzeRatesWithAI = httpsCallable(functions, 'analyzeRatesWithAI');
+const getMapsApiKey = httpsCallable(functions, 'getMapsApiKey');
 
 // Connect to emulator in development
 if (process.env.NODE_ENV === 'development') {
-    connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+    connectFunctionsEmulator(functions, 'localhost', 5001);
+    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
 }
 
-export { functions, getShippingRates, analyzeRatesWithAI, getMapsApiKey }; 
+// Add error handling for functions
+const wrapCallable = (callable) => {
+    return async (...args) => {
+        try {
+            const result = await callable(...args);
+            return result.data;
+        } catch (error) {
+            console.error('Firebase function error:', error);
+            throw error;
+        }
+    };
+};
+
+// Export wrapped functions
+const wrappedGetShippingRates = wrapCallable(getShippingRates);
+const wrappedAnalyzeRatesWithAI = wrapCallable(analyzeRatesWithAI);
+const wrappedGetMapsApiKey = wrapCallable(getMapsApiKey);
+
+export { auth, functions, wrappedGetShippingRates, wrappedAnalyzeRatesWithAI, wrappedGetMapsApiKey }; 

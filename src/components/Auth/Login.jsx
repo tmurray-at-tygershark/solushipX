@@ -20,9 +20,11 @@ import {
     Microsoft as MicrosoftIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Login = () => {
     const navigate = useNavigate();
+    const { login, resetPassword, signInWithGoogle, error: authError } = useAuth();
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -38,11 +40,26 @@ const Login = () => {
         setError('');
 
         try {
-            // TODO: Implement actual login logic here
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulated delay
+            await login(email, password);
             navigate('/dashboard');
         } catch (err) {
-            setError('Invalid email or password');
+            console.error('Login error:', err);
+            setError(err.message || 'Invalid email or password');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleGoogleLogin = async () => {
+        setIsLoading(true);
+        setError('');
+
+        try {
+            await signInWithGoogle();
+            navigate('/dashboard');
+        } catch (err) {
+            console.error('Google login error:', err);
+            setError(err.message || 'Failed to sign in with Google');
         } finally {
             setIsLoading(false);
         }
@@ -54,11 +71,11 @@ const Login = () => {
         setError('');
 
         try {
-            // TODO: Implement actual password reset logic here
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulated delay
+            await resetPassword(resetEmail);
             setResetSent(true);
         } catch (err) {
-            setError('Failed to send reset email');
+            console.error('Password reset error:', err);
+            setError(err.message || 'Failed to send reset email');
         } finally {
             setIsLoading(false);
         }
@@ -172,6 +189,7 @@ const Login = () => {
                                         variant="outlined"
                                         startIcon={<GoogleIcon />}
                                         sx={{ py: 1.5 }}
+                                        onClick={handleGoogleLogin}
                                     >
                                         Continue with Google
                                     </Button>
