@@ -29,7 +29,9 @@ import {
     InputBase,
     Tabs,
     Tab,
-    Checkbox
+    Checkbox,
+    CircularProgress,
+    ListItemIcon
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -39,16 +41,20 @@ import {
     Sort as SortIcon,
     Add as AddIcon,
     CalendarToday as CalendarIcon,
-    MoreVert as MoreVertIcon
+    MoreVert as MoreVertIcon,
+    Visibility as VisibilityIcon,
+    Print as PrintIcon
 } from '@mui/icons-material';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import './Shipments.css';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Shipments = () => {
+    const { user, loading: authLoading } = useAuth();
     const [shipments, setShipments] = useState([]);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
@@ -61,7 +67,8 @@ const Shipments = () => {
     const [filters, setFilters] = useState({
         status: 'all',
         carrier: 'all',
-        dateRange: [null, null]
+        dateRange: [null, null],
+        shipmentType: 'all'
     });
     const [sortBy, setSortBy] = useState({
         field: 'date',
@@ -69,45 +76,51 @@ const Shipments = () => {
     });
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
-    const [dateRange, setDateRange] = useState([dayjs(), dayjs()]);
+    const [dateRange, setDateRange] = useState([null, null]);
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const [selected, setSelected] = useState([]);
+    const [selectedShipment, setSelectedShipment] = useState(null);
+    const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
+    const navigate = useNavigate();
+
+    // Calculate stats from filtered data
+    const stats = {
+        total: totalCount,
+        inTransit: shipments.filter(s => s.status === 'In Transit').length,
+        delivered: shipments.filter(s => s.status === 'Delivered').length,
+        awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length
+    };
 
     // Mock data generation
     const generateMockShipments = (count) => {
         const carriers = ['FedEx', 'UPS', 'DHL', 'USPS', 'Canada Post', 'Purolator'];
         const statuses = ['In Transit', 'Delivered', 'Pending', 'Awaiting Shipment'];
-        const usStates = [
-            { city: 'New York', state: 'NY' },
-            { city: 'Los Angeles', state: 'CA' },
-            { city: 'Chicago', state: 'IL' },
-            { city: 'Houston', state: 'TX' },
-            { city: 'Miami', state: 'FL' },
-            { city: 'Seattle', state: 'WA' },
-            { city: 'Boston', state: 'MA' },
-            { city: 'Denver', state: 'CO' }
+        const shipmentTypes = ['Courier', 'Freight'];
+        const companies = [
+            'Acme Corporation',
+            'TechCorp Solutions',
+            'Global Logistics Inc',
+            'Innovative Systems Ltd',
+            'Pacific Trading Co',
+            'Atlas Manufacturing',
+            'Summit Industries',
+            'Quantum Enterprises',
+            'Stellar Shipping LLC',
+            'Pioneer Distributors'
         ];
-        const canadianProvinces = [
-            { city: 'Toronto', province: 'ON' },
-            { city: 'Vancouver', province: 'BC' },
-            { city: 'Montreal', province: 'QC' },
-            { city: 'Calgary', province: 'AB' },
-            { city: 'Ottawa', province: 'ON' },
-            { city: 'Edmonton', province: 'AB' },
-            { city: 'Winnipeg', province: 'MB' },
-            { city: 'Halifax', province: 'NS' }
-        ];
-        const customers = [
-            'John Smith', 'Emma Wilson', 'Michael Brown', 'Sarah Davis',
-            'David Miller', 'Lisa Anderson', 'James Taylor', 'Jennifer White',
-            'Robert Martin', 'Maria Garcia', 'William Lee', 'Patricia Moore',
-            'Christopher Clark', 'Elizabeth Hall', 'Daniel Young', 'Margaret King'
+        const addresses = [
+            { street: '123 Main Street', city: 'New York', state: 'NY', zip: '10001', country: 'USA' },
+            { street: '456 Market Ave', city: 'Los Angeles', state: 'CA', zip: '90012', country: 'USA' },
+            { street: '789 Bay Street', city: 'Toronto', state: 'ON', zip: 'M5H 2N2', country: 'Canada' },
+            { street: '321 Queen Street', city: 'Vancouver', state: 'BC', zip: 'V6B 1B5', country: 'Canada' },
+            { street: '555 Fifth Avenue', city: 'Chicago', state: 'IL', zip: '60601', country: 'USA' },
+            { street: '999 Peel Street', city: 'Montreal', state: 'QC', zip: 'H3A 1M5', country: 'Canada' },
+            { street: '777 Biscayne Blvd', city: 'Miami', state: 'FL', zip: '33131', country: 'USA' },
+            { street: '888 Robson Street', city: 'Calgary', state: 'AB', zip: 'T2P 1B8', country: 'Canada' }
         ];
 
-        const getRandomLocation = () => {
-            const isUS = Math.random() < 0.5;
-            return isUS ? usStates[Math.floor(Math.random() * usStates.length)] :
-                canadianProvinces[Math.floor(Math.random() * canadianProvinces.length)];
+        const formatAddress = (addr) => {
+            return `${addr.street}, ${addr.city}, ${addr.state} ${addr.zip}, ${addr.country}`;
         };
 
         const getRandomDate = () => {
@@ -116,119 +129,147 @@ const Shipments = () => {
             return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
         };
 
-        const getRandomCost = () => (50 + Math.random() * 450).toFixed(2);
-        const getRandomItems = () => Math.floor(1 + Math.random() * 5);
-
-        return Array.from({ length: count }, (_, i) => {
-            const origin = getRandomLocation();
+        const mockShipments = [];
+        for (let i = 0; i < count; i++) {
+            const origin = addresses[Math.floor(Math.random() * addresses.length)];
             let destination;
             do {
-                destination = getRandomLocation();
+                destination = addresses[Math.floor(Math.random() * addresses.length)];
             } while (destination === origin);
 
-            const items = getRandomItems();
             const status = statuses[Math.floor(Math.random() * statuses.length)];
             const carrier = carriers[Math.floor(Math.random() * carriers.length)];
             const date = getRandomDate();
+            const shipmentType = shipmentTypes[Math.floor(Math.random() * shipmentTypes.length)];
 
-            return {
+            mockShipments.push({
                 id: `SHP${String(287683 - i).padStart(6, '0')}`,
-                date: date.toISOString(),
-                customer: customers[Math.floor(Math.random() * customers.length)],
-                origin: `${origin.city}, ${origin.state || origin.province}`,
-                destination: `${destination.city}, ${destination.state || destination.province}`,
+                date: date,
+                customer: companies[Math.floor(Math.random() * companies.length)],
+                origin: formatAddress(origin),
+                destination: formatAddress(destination),
                 status: status,
                 carrier: carrier,
-                trackingNumber: Math.random().toString(36).substring(2, 12).toUpperCase(),
-                items: items,
-                deliveryStatus: status === 'Delivered' ? 'Delivered' : status === 'Awaiting Shipment' ? 'Not Started' : 'On Schedule',
-                cost: getRandomCost()
-            };
-        });
+                shipmentType: shipmentType,
+                trackingNumber: Math.random().toString(36).substring(2, 12).toUpperCase()
+            });
+        }
+
+        return mockShipments;
     };
+
+    // Initial load effect
+    useEffect(() => {
+        console.log('Initial load effect - Auth state:', { user, authLoading });
+        if (!authLoading && user) {
+            loadShipments();
+        }
+    }, [user, authLoading]);
+
+    // Update when filters change
+    useEffect(() => {
+        console.log('Filter change effect running');
+        if (!authLoading && user) {
+            loadShipments();
+        }
+    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
 
     // Load shipments with filters and pagination
     const loadShipments = async () => {
+        console.log('Loading shipments...');
         setLoading(true);
         try {
-            // Simulate API call
+            // Generate mock data
             const mockData = generateMockShipments(100);
-            let filteredData = mockData;
+            console.log('Generated mock data:', mockData.length, 'shipments');
+            console.log('Sample shipment:', mockData[0]);
+            let filteredData = [...mockData];
 
             // Apply filters
             if (searchTerm) {
+                console.log('Applying search filter:', searchTerm);
                 filteredData = filteredData.filter(shipment =>
                     Object.values(shipment).some(value =>
                         String(value).toLowerCase().includes(searchTerm.toLowerCase())
                     )
                 );
+                console.log('After search filter:', filteredData.length);
             }
 
             if (filters.status !== 'all') {
+                console.log('Applying status filter:', filters.status);
                 filteredData = filteredData.filter(shipment =>
                     shipment.status === filters.status
                 );
+                console.log('After status filter:', filteredData.length);
             }
 
             if (filters.carrier !== 'all') {
+                console.log('Applying carrier filter:', filters.carrier);
                 filteredData = filteredData.filter(shipment =>
                     shipment.carrier === filters.carrier
                 );
+                console.log('After carrier filter:', filteredData.length);
             }
 
             if (dateRange[0] && dateRange[1]) {
+                console.log('Applying date range filter:', dateRange[0].format('YYYY-MM-DD'), 'to', dateRange[1].format('YYYY-MM-DD'));
                 filteredData = filteredData.filter(shipment => {
                     const shipmentDate = new Date(shipment.date);
-                    return shipmentDate >= dateRange[0].toDate() && shipmentDate <= dateRange[1].toDate();
+                    const result = shipmentDate >= dateRange[0].toDate() && shipmentDate <= dateRange[1].toDate();
+                    return result;
                 });
+                console.log('After date filter:', filteredData.length);
             }
 
             // Filter by tab
-            switch (selectedTab) {
-                case 'in-transit':
-                    filteredData = filteredData.filter(s => s.status === 'In Transit');
-                    break;
-                case 'delivered':
-                    filteredData = filteredData.filter(s => s.status === 'Delivered');
-                    break;
-                case 'awaiting':
-                    filteredData = filteredData.filter(s => s.status === 'Awaiting Shipment');
-                    break;
-                default:
-                    break;
+            if (selectedTab !== 'all') {
+                console.log('Applying tab filter:', selectedTab);
+                filteredData = filteredData.filter(s => s.status === selectedTab);
+                console.log('After tab filter:', filteredData.length);
             }
 
             // Apply sorting
+            console.log('Applying sorting:', sortBy);
             filteredData.sort((a, b) => {
                 const aValue = a[sortBy.field];
                 const bValue = b[sortBy.field];
                 const direction = sortBy.direction === 'asc' ? 1 : -1;
 
+                if (sortBy.field === 'date') {
+                    return direction * (new Date(aValue) - new Date(bValue));
+                }
+
+                if (sortBy.field === 'cost') {
+                    return direction * (aValue - bValue);
+                }
+
                 if (typeof aValue === 'string') {
                     return direction * aValue.localeCompare(bValue);
                 }
+
                 return direction * (aValue - bValue);
             });
 
+            // Update state with filtered data
+            console.log('Setting filtered data:', filteredData.length, 'shipments');
             setTotalCount(filteredData.length);
-            setShipments(filteredData.slice(page * rowsPerPage, (page + 1) * rowsPerPage));
+
+            // Calculate pagination
+            const startIndex = page * rowsPerPage;
+            const endIndex = startIndex + rowsPerPage;
+            const paginatedData = filteredData.slice(startIndex, endIndex);
+
+            console.log('Setting paginated data:', paginatedData.length, 'shipments');
+            console.log('Sample paginated shipment:', paginatedData[0]);
+            setShipments(paginatedData);
         } catch (error) {
             console.error('Error loading shipments:', error);
+            setShipments([]);
+            setTotalCount(0);
         } finally {
             setLoading(false);
         }
-    };
-
-    useEffect(() => {
-        loadShipments();
-    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
-
-    // Calculate stats
-    const stats = {
-        total: totalCount,
-        inTransit: shipments.filter(s => s.status === 'In Transit').length,
-        delivered: shipments.filter(s => s.status === 'Delivered').length,
-        awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length
     };
 
     // Handle status chip display
@@ -273,7 +314,7 @@ const Shipments = () => {
             'Status': shipment.status,
             'Carrier': shipment.carrier,
             'Items': shipment.items,
-            'Cost': `$${shipment.cost}`
+            'Cost': `$${shipment.cost.toFixed(2)}`
         }));
 
         if (selectedExportFormat === 'csv') {
@@ -328,8 +369,7 @@ const Shipments = () => {
     };
 
     const handleShipmentClick = (shipment) => {
-        // Navigate to shipment detail or handle click
-        console.log('Shipment clicked:', shipment);
+        navigate(`/shipment/${shipment.id}`, { state: { from: '/shipments' } });
     };
 
     const getStatusColor = (status) => {
@@ -344,6 +384,21 @@ const Shipments = () => {
             default:
                 return { color: '#637381', bgcolor: '#f9fafb' };
         }
+    };
+
+    const handleActionMenuOpen = (event, shipment) => {
+        setSelectedShipment(shipment);
+        setActionMenuAnchorEl(event.currentTarget);
+    };
+
+    const handleActionMenuClose = () => {
+        setSelectedShipment(null);
+        setActionMenuAnchorEl(null);
+    };
+
+    const handleSelectClick = (event, id) => {
+        event.stopPropagation();
+        handleSelect(id);
     };
 
     return (
@@ -380,12 +435,12 @@ const Shipments = () => {
                     <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
                         <Tabs value={selectedTab} onChange={handleTabChange}>
                             <Tab label={`All (${stats.total})`} value="all" />
-                            <Tab label={`In Transit (${stats.inTransit})`} value="in-transit" />
-                            <Tab label={`Delivered (${stats.delivered})`} value="delivered" />
-                            <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="awaiting" />
+                            <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
+                            <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
+                            <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
                         </Tabs>
                         <Box sx={{ flexGrow: 1 }} />
-                        {/* Search and Filter Section */}
+                        {/* Search Section */}
                         <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
                             <Paper
                                 component="div"
@@ -407,22 +462,79 @@ const Shipments = () => {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </Paper>
-
-                            <IconButton
-                                onClick={() => setFilterAnchorEl(true)}
-                                sx={{ color: '#64748b' }}
-                            >
-                                <FilterIcon />
-                            </IconButton>
-
-                            <IconButton
-                                onClick={() => setSortAnchorEl(true)}
-                                sx={{ color: '#64748b' }}
-                            >
-                                <SortIcon />
-                            </IconButton>
                         </Box>
                     </Toolbar>
+
+                    {/* Smart Filters */}
+                    <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <FormControl sx={{ minWidth: 200 }}>
+                            <InputLabel>Carrier</InputLabel>
+                            <Select
+                                value={filters.carrier}
+                                onChange={(e) => setFilters(prev => ({
+                                    ...prev,
+                                    carrier: e.target.value
+                                }))}
+                                label="Carrier"
+                            >
+                                <MenuItem value="all">All Carriers</MenuItem>
+                                <MenuItem value="FedEx">FedEx</MenuItem>
+                                <MenuItem value="UPS">UPS</MenuItem>
+                                <MenuItem value="DHL">DHL</MenuItem>
+                                <MenuItem value="USPS">USPS</MenuItem>
+                                <MenuItem value="Canada Post">Canada Post</MenuItem>
+                                <MenuItem value="Purolator">Purolator</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        <FormControl sx={{ minWidth: 200 }}>
+                            <InputLabel>Shipment Type</InputLabel>
+                            <Select
+                                value={filters.shipmentType || 'all'}
+                                onChange={(e) => setFilters(prev => ({
+                                    ...prev,
+                                    shipmentType: e.target.value
+                                }))}
+                                label="Shipment Type"
+                            >
+                                <MenuItem value="all">All Types</MenuItem>
+                                <MenuItem value="Courier">Courier</MenuItem>
+                                <MenuItem value="Freight">Freight</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <DatePicker
+                                label="From Date"
+                                value={dateRange[0]}
+                                onChange={(newValue) => setDateRange([newValue, dateRange[1]])}
+                                renderInput={(params) => <TextField {...params} />}
+                                sx={{ minWidth: 200 }}
+                            />
+                            <DatePicker
+                                label="To Date"
+                                value={dateRange[1]}
+                                onChange={(newValue) => setDateRange([dateRange[0], newValue])}
+                                renderInput={(params) => <TextField {...params} />}
+                                sx={{ minWidth: 200 }}
+                            />
+                        </LocalizationProvider>
+
+                        <Button
+                            variant="outlined"
+                            onClick={() => {
+                                setDateRange([null, null]);
+                                setFilters(prev => ({
+                                    ...prev,
+                                    carrier: 'all',
+                                    shipmentType: 'all'
+                                }));
+                            }}
+                            startIcon={<ClearIcon />}
+                        >
+                            Clear Filters
+                        </Button>
+                    </Box>
 
                     {/* Shipments Table */}
                     <TableContainer>
@@ -431,78 +543,91 @@ const Shipments = () => {
                                 <TableRow>
                                     <TableCell padding="checkbox">
                                         <Checkbox
-                                            checked={selected.length === shipments.length}
                                             indeterminate={selected.length > 0 && selected.length < shipments.length}
+                                            checked={shipments.length > 0 && selected.length === shipments.length}
                                             onChange={handleSelectAll}
                                         />
                                     </TableCell>
-                                    <TableCell>Shipment</TableCell>
-                                    <TableCell>Date</TableCell>
-                                    <TableCell>Customer</TableCell>
-                                    <TableCell>Origin</TableCell>
-                                    <TableCell>Destination</TableCell>
-                                    <TableCell>Status</TableCell>
-                                    <TableCell>Carrier</TableCell>
-                                    <TableCell>Items</TableCell>
-                                    <TableCell>Cost</TableCell>
-                                    <TableCell>Actions</TableCell>
+                                    <TableCell>ID</TableCell>
+                                    <TableCell>CUSTOMER</TableCell>
+                                    <TableCell>ORIGIN</TableCell>
+                                    <TableCell>DESTINATION</TableCell>
+                                    <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
+                                    <TableCell>TYPE</TableCell>
+                                    <TableCell>STATUS</TableCell>
+                                    <TableCell align="right">ACTIONS</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {shipments.map((shipment) => (
-                                    <TableRow key={shipment.id} hover>
-                                        <TableCell padding="checkbox">
-                                            <Checkbox
-                                                checked={selected.includes(shipment.id)}
-                                                onChange={() => handleSelect(shipment.id)}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Link
-                                                to={`/shipment/${shipment.id}`}
-                                                style={{
-                                                    color: '#3b82f6',
-                                                    textDecoration: 'none',
-                                                    fontWeight: 500
-                                                }}
-                                            >
-                                                {shipment.id}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell>{shipment.date}</TableCell>
-                                        <TableCell>{shipment.customer}</TableCell>
-                                        <TableCell>{shipment.origin}</TableCell>
-                                        <TableCell>{shipment.destination}</TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={shipment.status}
-                                                color={
-                                                    shipment.status === 'Delivered' ? 'success' :
-                                                        shipment.status === 'In Transit' ? 'primary' :
-                                                            'default'
-                                                }
-                                                size="small"
-                                                sx={{
-                                                    bgcolor: shipment.status === 'Delivered' ? '#f0fdf4' :
-                                                        shipment.status === 'In Transit' ? '#eff6ff' :
-                                                            '#f1f5f9',
-                                                    color: shipment.status === 'Delivered' ? '#10b981' :
-                                                        shipment.status === 'In Transit' ? '#3b82f6' :
-                                                            '#64748b',
-                                                    fontWeight: 500
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>{shipment.carrier}</TableCell>
-                                        <TableCell>{shipment.items}</TableCell>
-                                        <TableCell>{shipment.cost}</TableCell>
-                                        <TableCell>
-                                            <IconButton size="small" sx={{ color: '#64748b' }}>
-                                                <MoreVertIcon />
-                                            </IconButton>
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={9} align="center">
+                                            <CircularProgress />
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                ) : shipments.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={9} align="center">
+                                            No shipments found
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    shipments.map((shipment) => (
+                                        <TableRow
+                                            hover
+                                            key={shipment.id}
+                                            onClick={(event) => handleShipmentClick(shipment)}
+                                            selected={selected.indexOf(shipment.id) !== -1}
+                                            sx={{ cursor: 'pointer' }}
+                                        >
+                                            <TableCell padding="checkbox">
+                                                <Checkbox
+                                                    checked={selected.indexOf(shipment.id) !== -1}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onChange={(e) => handleSelectClick(e, shipment.id)}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography
+                                                    sx={{
+                                                        color: '#3b82f6',
+                                                        textDecoration: 'none',
+                                                        fontWeight: 500
+                                                    }}
+                                                >
+                                                    {shipment.id}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>{shipment.customer}</TableCell>
+                                            <TableCell>{shipment.origin}</TableCell>
+                                            <TableCell>{shipment.destination}</TableCell>
+                                            <TableCell>{shipment.carrier}</TableCell>
+                                            <TableCell>{shipment.shipmentType}</TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={shipment.status}
+                                                    color={
+                                                        shipment.status === 'Delivered' ? 'success' :
+                                                            shipment.status === 'In Transit' ? 'primary' :
+                                                                shipment.status === 'Pending' ? 'default' : 'default'
+                                                    }
+                                                    size="small"
+                                                />
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                <IconButton
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleActionMenuOpen(e, shipment);
+                                                    }}
+                                                    size="small"
+                                                >
+                                                    <MoreVertIcon />
+                                                </IconButton>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
                             </TableBody>
                         </Table>
                     </TableContainer>
@@ -547,94 +672,33 @@ const Shipments = () => {
                     </DialogActions>
                 </Dialog>
 
-                {/* Filter Menu */}
+                {/* Action Menu */}
                 <Menu
-                    anchorEl={filterAnchorEl}
-                    open={Boolean(filterAnchorEl)}
-                    onClose={() => setFilterAnchorEl(null)}
+                    anchorEl={actionMenuAnchorEl}
+                    open={Boolean(actionMenuAnchorEl)}
+                    onClose={handleActionMenuClose}
                 >
-                    <MenuItem>
-                        <FormControl fullWidth>
-                            <InputLabel>Status</InputLabel>
-                            <Select
-                                value={filters.status}
-                                onChange={(e) => setFilters(prev => ({
-                                    ...prev,
-                                    status: e.target.value
-                                }))}
-                                label="Status"
-                            >
-                                <MenuItem value="all">All</MenuItem>
-                                <MenuItem value="in-transit">In Transit</MenuItem>
-                                <MenuItem value="delivered">Delivered</MenuItem>
-                                <MenuItem value="awaiting">Awaiting Shipment</MenuItem>
-                            </Select>
-                        </FormControl>
+                    <MenuItem onClick={() => {
+                        handleActionMenuClose();
+                        if (selectedShipment) {
+                            navigate(`/shipment/${selectedShipment.id}`);
+                        }
+                    }}>
+                        <ListItemIcon>
+                            <VisibilityIcon fontSize="small" />
+                        </ListItemIcon>
+                        View Details
                     </MenuItem>
-                    <MenuItem>
-                        <FormControl fullWidth>
-                            <InputLabel>Carrier</InputLabel>
-                            <Select
-                                value={filters.carrier}
-                                onChange={(e) => setFilters(prev => ({
-                                    ...prev,
-                                    carrier: e.target.value
-                                }))}
-                                label="Carrier"
-                            >
-                                <MenuItem value="all">All</MenuItem>
-                                <MenuItem value="fedex">FedEx</MenuItem>
-                                <MenuItem value="ups">UPS</MenuItem>
-                                <MenuItem value="dhl">DHL</MenuItem>
-                                <MenuItem value="usps">USPS</MenuItem>
-                            </Select>
-                        </FormControl>
+                    <MenuItem onClick={() => {
+                        handleActionMenuClose();
+                        // Handle print label
+                        console.log('Print label for:', selectedShipment?.id);
+                    }}>
+                        <ListItemIcon>
+                            <PrintIcon fontSize="small" />
+                        </ListItemIcon>
+                        Print Label
                     </MenuItem>
-                    <MenuItem>
-                        <LocalizationProvider dateAdapter={AdapterDayjs}>
-                            <Stack direction="row" spacing={2}>
-                                <DatePicker
-                                    label="From Date"
-                                    value={dateRange[0]}
-                                    onChange={(newValue) => {
-                                        setDateRange([newValue, dateRange[1]]);
-                                    }}
-                                    slotProps={{
-                                        textField: {
-                                            size: "small",
-                                            sx: { width: 200 }
-                                        }
-                                    }}
-                                />
-                                <DatePicker
-                                    label="To Date"
-                                    value={dateRange[1]}
-                                    onChange={(newValue) => {
-                                        setDateRange([dateRange[0], newValue]);
-                                    }}
-                                    slotProps={{
-                                        textField: {
-                                            size: "small",
-                                            sx: { width: 200 }
-                                        }
-                                    }}
-                                    minDate={dateRange[0]}
-                                />
-                            </Stack>
-                        </LocalizationProvider>
-                    </MenuItem>
-                </Menu>
-
-                {/* Sort Menu */}
-                <Menu
-                    anchorEl={sortAnchorEl}
-                    open={Boolean(sortAnchorEl)}
-                    onClose={() => setSortAnchorEl(null)}
-                >
-                    <MenuItem onClick={() => setSortBy({ field: 'date', direction: 'desc' })}>Date (Newest)</MenuItem>
-                    <MenuItem onClick={() => setSortBy({ field: 'date', direction: 'asc' })}>Date (Oldest)</MenuItem>
-                    <MenuItem onClick={() => setSortBy({ field: 'cost', direction: 'desc' })}>Cost (High to Low)</MenuItem>
-                    <MenuItem onClick={() => setSortBy({ field: 'cost', direction: 'asc' })}>Cost (Low to High)</MenuItem>
                 </Menu>
             </Box>
         </Box>

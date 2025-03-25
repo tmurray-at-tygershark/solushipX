@@ -44,12 +44,11 @@ const Navigation = () => {
         location.pathname !== '/';
 
     const menuItems = isAuthenticated ? [
-        { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-chart-line' },
-        { path: '/shipments', label: 'Shipments', icon: 'fas fa-box' },
-        { path: '/create-shipment', label: 'Create Shipment', icon: 'fas fa-plus-circle' },
-        { path: '/tracking', label: 'Track Shipment', icon: 'fas fa-truck' },
-        { path: '/customers', label: 'Customers', icon: 'fas fa-users' },
-        { path: '/reports', label: 'Reports', icon: 'fas fa-chart-bar' }
+        { path: '/dashboard', label: 'Dashboard' },
+        { path: '/shipments', label: 'Shipments' },
+        { path: '/tracking', label: 'Track Shipment' },
+        { path: '/customers', label: 'Customers' },
+        { path: '/reports', label: 'Reports' }
     ] : [];
 
     const featuresMenuItems = [
@@ -253,7 +252,7 @@ const Navigation = () => {
         <>
             <nav className="navbar navbar-expand-lg">
                 <div className="container">
-                    <Link className="navbar-brand" to="/">
+                    <Link className="navbar-brand" to={isAuthenticated ? "/dashboard" : "/homepage"}>
                         <i className="fas fa-shipping-fast me-2"></i>
                         SolushipX
                     </Link>
@@ -321,8 +320,7 @@ const Navigation = () => {
                                         to={item.path}
                                         onClick={item.label === 'Track Shipment' ? handleTrackingClick : () => setIsOpen(false)}
                                     >
-                                        <i className={item.icon}></i>
-                                        <span className="ms-1">{item.label}</span>
+                                        <span>{item.label}</span>
                                     </Link>
                                 </li>
                             ))}

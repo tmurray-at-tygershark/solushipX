@@ -27,7 +27,8 @@ import {
     ListItemText,
     Divider,
     Stack,
-    TextField
+    TextField,
+    ListItemIcon
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -44,12 +45,15 @@ import {
     Schedule as ScheduleIcon,
     Refresh as RefreshIcon,
     CalendarToday as CalendarIcon,
-    LocalShipping as LocalShipping
+    LocalShipping as LocalShipping,
+    ArrowForward as ArrowForwardIcon,
+    Visibility as VisibilityIcon,
+    Print as PrintIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { PieChart } from '@mui/x-charts/PieChart';
@@ -58,74 +62,66 @@ import dayjs from 'dayjs';
 
 // Helper function to generate random shipment data
 const generateRandomShipments = (count) => {
-    const carriers = ['FedEx', 'UPS', 'DHL', 'USPS', 'Canada Post', 'Purolator'];
-    const statuses = ['In Transit', 'Delivered', 'Pending', 'Awaiting Shipment'];
-    const usStates = [
-        { city: 'New York', state: 'NY' },
-        { city: 'Los Angeles', state: 'CA' },
-        { city: 'Chicago', state: 'IL' },
-        { city: 'Houston', state: 'TX' },
-        { city: 'Miami', state: 'FL' },
-        { city: 'Seattle', state: 'WA' },
-        { city: 'Boston', state: 'MA' },
-        { city: 'Denver', state: 'CO' }
-    ];
-    const canadianProvinces = [
-        { city: 'Toronto', province: 'ON' },
-        { city: 'Vancouver', province: 'BC' },
-        { city: 'Montreal', province: 'QC' },
-        { city: 'Calgary', province: 'AB' },
-        { city: 'Ottawa', province: 'ON' },
-        { city: 'Edmonton', province: 'AB' },
-        { city: 'Winnipeg', province: 'MB' },
-        { city: 'Halifax', province: 'NS' }
-    ];
-    const customers = [
-        'John Smith', 'Emma Wilson', 'Michael Brown', 'Sarah Davis',
-        'David Miller', 'Lisa Anderson', 'James Taylor', 'Jennifer White',
-        'Robert Martin', 'Maria Garcia', 'William Lee', 'Patricia Moore',
-        'Christopher Clark', 'Elizabeth Hall', 'Daniel Young', 'Margaret King'
+    const companies = [
+        'Acme Corporation',
+        'Tech Solutions Inc',
+        'Global Industries',
+        'Retail Plus',
+        'Manufacturing Co',
+        'E-commerce Solutions',
+        'Healthcare Systems',
+        'Construction Corp',
+        'Food Distribution',
+        'Fashion Retail',
+        'Tech Gadgets',
+        'Home Goods',
+        'Sports Equipment',
+        'Auto Parts',
+        'Pharmaceuticals'
     ];
 
-    const getRandomLocation = () => {
-        const isUS = Math.random() < 0.5;
-        return isUS ? usStates[Math.floor(Math.random() * usStates.length)] :
-            canadianProvinces[Math.floor(Math.random() * canadianProvinces.length)];
-    };
+    const addresses = [
+        '123 Main St, New York, NY 10001',
+        '456 Market St, San Francisco, CA 94105',
+        '789 Lake Ave, Chicago, IL 60601',
+        '321 Pine St, Boston, MA 02108',
+        '654 Oak Rd, Houston, TX 77001',
+        '987 Maple Dr, Seattle, WA 98101',
+        '147 Cedar Ln, Miami, FL 33101',
+        '258 Birch St, Denver, CO 80201',
+        '369 Elm Ave, Atlanta, GA 30301',
+        '741 Spruce Rd, Portland, OR 97201',
+        '852 Willow Ln, Dallas, TX 75201',
+        '963 Ash St, Philadelphia, PA 19101',
+        '159 Pinecone Rd, San Diego, CA 92101',
+        '267 Acorn Ln, Minneapolis, MN 55401',
+        '348 Oakwood Dr, Cleveland, OH 44101'
+    ];
 
-    const getRandomDate = () => {
-        const start = new Date(2024, 0, 1);
-        const end = new Date();
-        return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
-    };
+    const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
+    const statuses = ['In Transit', 'Delivered', 'Delayed', 'Awaiting Shipment'];
+    const shipmentTypes = ['Courier', 'Freight'];
 
-    const getRandomCost = () => (50 + Math.random() * 450).toFixed(2);
-    const getRandomItems = () => Math.floor(1 + Math.random() * 5);
-
-    return Array.from({ length: count }, (_, i) => {
-        const origin = getRandomLocation();
-        let destination;
+    return Array.from({ length: count }, (_, index) => {
+        const originIndex = Math.floor(Math.random() * addresses.length);
+        let destinationIndex;
         do {
-            destination = getRandomLocation();
-        } while (destination === origin);
+            destinationIndex = Math.floor(Math.random() * addresses.length);
+        } while (destinationIndex === originIndex);
 
-        const items = getRandomItems();
-        const status = statuses[Math.floor(Math.random() * statuses.length)];
-        const carrier = carriers[Math.floor(Math.random() * carriers.length)];
-        const date = getRandomDate();
+        const date = new Date();
+        date.setDate(date.getDate() - Math.floor(Math.random() * 30));
 
         return {
-            id: `SHP${String(287683 - i).padStart(6, '0')}`,
-            date: date.toLocaleString(),
-            customer: customers[Math.floor(Math.random() * customers.length)],
-            origin: `${origin.city}, ${origin.state || origin.province}`,
-            destination: `${destination.city}, ${destination.state || destination.province}`,
-            status: status,
-            carrier: carrier,
-            trackingNumber: Math.random().toString(36).substring(2, 12).toUpperCase(),
-            items: `${items} ${items === 1 ? 'item' : 'items'}`,
-            deliveryStatus: status === 'Delivered' ? 'Delivered' : status === 'Awaiting Shipment' ? 'Not Started' : 'On Schedule',
-            cost: `$${getRandomCost()}`
+            id: `SHIP${String(index + 1).padStart(3, '0')}`,
+            date: date.toISOString(),
+            customer: companies[Math.floor(Math.random() * companies.length)],
+            origin: addresses[originIndex],
+            destination: addresses[destinationIndex],
+            status: statuses[Math.floor(Math.random() * statuses.length)],
+            carrier: carriers[Math.floor(Math.random() * carriers.length)],
+            shipmentType: shipmentTypes[Math.floor(Math.random() * shipmentTypes.length)],
+            trackingNumber: `TRK${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`
         };
     });
 };
@@ -135,6 +131,7 @@ const Dashboard = () => {
     const [anchorEl, setAnchorEl] = useState(null);
     const [startDate, setStartDate] = useState(dayjs());
     const [endDate, setEndDate] = useState(dayjs());
+    const navigate = useNavigate();
 
     // Dummy data for shipments
     const shipments = [
@@ -142,61 +139,51 @@ const Dashboard = () => {
             id: 'SHIP001',
             date: '2024-03-20',
             customer: 'Acme Corporation',
-            origin: 'New York, NY',
-            destination: 'Los Angeles, CA',
-            status: 'Delivered',
+            origin: '123 Main St, New York, NY 10001',
+            destination: '456 Market St, San Francisco, CA 94105',
             carrier: 'FedEx',
-            items: 'Electronics',
-            value: 250.00,
-            cost: '$250.00'
+            shipmentType: 'Courier',
+            status: 'Delivered'
         },
         {
             id: 'SHIP002',
             date: '2024-03-19',
             customer: 'Tech Solutions Inc',
-            origin: 'San Francisco, CA',
-            destination: 'Chicago, IL',
-            status: 'In Transit',
+            origin: '789 Lake Ave, Chicago, IL 60601',
+            destination: '321 Pine St, Boston, MA 02108',
             carrier: 'UPS',
-            items: 'Office Equipment',
-            value: 350.00,
-            cost: '$350.00'
+            shipmentType: 'Freight',
+            status: 'In Transit'
         },
         {
             id: 'SHIP003',
             date: '2024-03-18',
             customer: 'Global Industries',
-            origin: 'Miami, FL',
-            destination: 'Seattle, WA',
-            status: 'Delayed',
+            origin: '654 Oak Rd, Houston, TX 77001',
+            destination: '987 Maple Dr, Seattle, WA 98101',
             carrier: 'DHL',
-            items: 'Machinery Parts',
-            value: 850.00,
-            cost: '$850.00'
+            shipmentType: 'Freight',
+            status: 'Delayed'
         },
         {
             id: 'SHIP004',
-            date: new Date().toISOString().split('T')[0], // Today's date
+            date: '2024-03-17',
             customer: 'Retail Plus',
-            origin: 'Boston, MA',
-            destination: 'Houston, TX',
-            status: 'Delivered',
+            origin: '147 Cedar Ln, Miami, FL 33101',
+            destination: '258 Birch St, Denver, CO 80201',
             carrier: 'FedEx',
-            items: 'Retail Goods',
-            value: 420.00,
-            cost: '$420.00'
+            shipmentType: 'Courier',
+            status: 'Delivered'
         },
         {
             id: 'SHIP005',
-            date: new Date().toISOString().split('T')[0], // Today's date
+            date: '2024-03-16',
             customer: 'Manufacturing Co',
-            origin: 'Detroit, MI',
-            destination: 'Phoenix, AZ',
-            status: 'In Transit',
+            origin: '369 Elm Ave, Atlanta, GA 30301',
+            destination: '741 Spruce Rd, Portland, OR 97201',
             carrier: 'UPS',
-            items: 'Industrial Equipment',
-            value: 920.00,
-            cost: '$920.00'
+            shipmentType: 'Freight',
+            status: 'In Transit'
         },
         {
             id: 'SHIP006',
@@ -380,8 +367,8 @@ const Dashboard = () => {
     const dailyShipmentValue = useMemo(() => {
         const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
         return shipments
-            .filter(shipment => shipment.date.startsWith(today))
-            .reduce((sum, shipment) => sum + shipment.value, 0);
+            .filter(shipment => shipment.date && shipment.date.startsWith(today))
+            .reduce((sum, shipment) => sum + (shipment.value || 0), 0);
     }, [shipments]);
 
     // Update the monthly data calculation
@@ -548,10 +535,10 @@ const Dashboard = () => {
                         }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
+                                    <Typography variant="subtitle1" sx={{ color: '#000000', mb: 1, fontWeight: 500 }}>
                                         Active Shipments
                                     </Typography>
-                                    <Typography variant="h4" sx={{ color: '#3b82f6', fontWeight: 600 }}>
+                                    <Typography variant="h4" sx={{ color: '#000000', fontWeight: 600 }}>
                                         {shipments.filter(s => s.status === 'In Transit' || s.status === 'Awaiting Shipment').length}
                                     </Typography>
                                 </Box>
@@ -559,12 +546,12 @@ const Dashboard = () => {
                                     width: 48,
                                     height: 48,
                                     borderRadius: '12px',
-                                    bgcolor: 'rgba(59, 130, 246, 0.1)',
+                                    bgcolor: 'rgba(0, 0, 0, 0.1)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center'
                                 }}>
-                                    <ShippingIcon sx={{ color: '#3b82f6', fontSize: 24 }} />
+                                    <ShippingIcon sx={{ color: '#000000', fontSize: 24 }} />
                                 </Box>
                             </Box>
                         </Paper>
@@ -793,79 +780,120 @@ const Dashboard = () => {
                 </Grid>
 
                 {/* Recent Shipments Table */}
-                <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                    <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
-                        <Tabs value={selectedTab} onChange={handleTabChange}>
-                            <Tab label={`All (${stats.total})`} value="all" />
-                            <Tab label={`In Transit (${stats.inTransit})`} value="in-transit" />
-                            <Tab label={`Delivered (${stats.delivered})`} value="delivered" />
-                            <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="awaiting" />
-                        </Tabs>
-                        <Box sx={{ flexGrow: 1 }} />
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Paper sx={{ p: '2px 4px', display: 'flex', alignItems: 'center', width: 400, bgcolor: '#f8fafc' }}>
-                                <SearchIcon sx={{ p: 1, color: '#64748b' }} />
-                                <InputBase
-                                    sx={{ ml: 1, flex: 1 }}
-                                    placeholder="Search shipments"
-                                />
-                            </Paper>
-                            <IconButton sx={{ color: '#64748b' }}>
-                                <FilterListIcon />
-                            </IconButton>
-                        </Box>
-                    </Toolbar>
-
+                <Paper sx={{ p: 2, mb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6">Recent Shipments</Typography>
+                        <Button
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={() => navigate('/create-shipment')}
+                        >
+                            New Shipment
+                        </Button>
+                    </Box>
                     <TableContainer>
                         <Table>
                             <TableHead>
                                 <TableRow>
-                                    <TableCell padding="checkbox">
-                                        <Checkbox />
-                                    </TableCell>
-                                    <TableCell>Shipment</TableCell>
-                                    <TableCell>Date</TableCell>
-                                    <TableCell>Customer</TableCell>
-                                    <TableCell>Origin</TableCell>
-                                    <TableCell>Destination</TableCell>
-                                    <TableCell>Status</TableCell>
-                                    <TableCell>Carrier</TableCell>
-                                    <TableCell>Items</TableCell>
-                                    <TableCell>Cost</TableCell>
-                                    <TableCell>Actions</TableCell>
+                                    <TableCell>ID</TableCell>
+                                    <TableCell>CUSTOMER</TableCell>
+                                    <TableCell>ORIGIN</TableCell>
+                                    <TableCell>DESTINATION</TableCell>
+                                    <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
+                                    <TableCell>TYPE</TableCell>
+                                    <TableCell>STATUS</TableCell>
+                                    <TableCell>ACTIONS</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {filteredShipments.map((shipment) => (
-                                    <TableRow key={shipment.id} hover>
-                                        <TableCell padding="checkbox">
-                                            <Checkbox />
-                                        </TableCell>
-                                        <TableCell>
+                                {shipments.slice(0, 20).map((shipment) => (
+                                    <TableRow
+                                        key={shipment.id}
+                                        hover
+                                        onClick={() => navigate(`/shipment/${shipment.id}`)}
+                                        sx={{
+                                            cursor: 'pointer',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <TableCell onClick={(e) => e.stopPropagation()}>
                                             <Link
                                                 to={`/shipment/${shipment.id}`}
+                                                style={{ textDecoration: 'none', color: '#3b82f6' }}
                                             >
                                                 {shipment.id}
                                             </Link>
                                         </TableCell>
-                                        <TableCell>{shipment.date}</TableCell>
                                         <TableCell>{shipment.customer}</TableCell>
                                         <TableCell>{shipment.origin}</TableCell>
                                         <TableCell>{shipment.destination}</TableCell>
-                                        <TableCell>{shipment.status}</TableCell>
                                         <TableCell>{shipment.carrier}</TableCell>
-                                        <TableCell>{shipment.items}</TableCell>
-                                        <TableCell>{shipment.cost}</TableCell>
+                                        <TableCell>{shipment.shipmentType}</TableCell>
                                         <TableCell>
-                                            <IconButton onClick={handleMenuClick}>
+                                            <Chip
+                                                label={shipment.status}
+                                                color={
+                                                    shipment.status === 'Delivered'
+                                                        ? 'success'
+                                                        : shipment.status === 'In Transit'
+                                                            ? 'primary'
+                                                            : shipment.status === 'Delayed'
+                                                                ? 'error'
+                                                                : 'default'
+                                                }
+                                                size="small"
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(e) => {
+                                                    setAnchorEl(e.currentTarget);
+                                                }}
+                                            >
                                                 <MoreVertIcon />
                                             </IconButton>
+                                            <Menu
+                                                anchorEl={anchorEl}
+                                                open={Boolean(anchorEl)}
+                                                onClose={() => setAnchorEl(null)}
+                                            >
+                                                <MenuItem onClick={() => {
+                                                    navigate(`/shipment/${shipment.id}`);
+                                                    setAnchorEl(null);
+                                                }}>
+                                                    <ListItemIcon>
+                                                        <VisibilityIcon fontSize="small" />
+                                                    </ListItemIcon>
+                                                    View
+                                                </MenuItem>
+                                                <MenuItem onClick={() => {
+                                                    console.log('Print label for shipment:', shipment.id);
+                                                    setAnchorEl(null);
+                                                }}>
+                                                    <ListItemIcon>
+                                                        <PrintIcon fontSize="small" />
+                                                    </ListItemIcon>
+                                                    Print Label
+                                                </MenuItem>
+                                            </Menu>
                                         </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
                         </Table>
                     </TableContainer>
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                        <Button
+                            variant="text"
+                            endIcon={<ArrowForwardIcon />}
+                            onClick={() => navigate('/shipments')}
+                        >
+                            View All
+                        </Button>
+                    </Box>
                 </Paper>
             </Box>
         </Box>

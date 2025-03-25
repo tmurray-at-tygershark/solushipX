@@ -22,6 +22,7 @@ import {
 
 const TrackingResults = () => {
     const { trackingNumber } = useParams();
+    const navigate = useNavigate();
 
     // Mock tracking data - in a real app, this would come from an API
     const trackingData = {
@@ -88,7 +89,17 @@ const TrackingResults = () => {
                     <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, color: '#000000' }}>
                         Tracking Details
                     </Typography>
-                    <Typography variant="subtitle1" color="text.secondary" gutterBottom sx={{ fontSize: '1.1rem' }}>
+                    <Typography
+                        variant="subtitle1"
+                        color="text.secondary"
+                        gutterBottom
+                        sx={{
+                            fontSize: '1.1rem',
+                            cursor: 'pointer',
+                            '&:hover': { color: 'primary.main' }
+                        }}
+                        onClick={() => navigate(`/shipment/${trackingData.trackingNumber}`, { state: { from: '/tracking' } })}
+                    >
                         Tracking Number: <span style={{ fontWeight: 500, color: '#2C6ECB' }}>{trackingData.trackingNumber}</span>
                     </Typography>
                     <Chip
