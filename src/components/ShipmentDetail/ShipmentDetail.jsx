@@ -152,6 +152,7 @@ const ShipmentDetail = () => {
     const [isMapLoaded, setIsMapLoaded] = useState(false);
     const [mapCenter, setMapCenter] = useState({ lat: 43.6532, lng: -79.3832 });
     const [mapZoom, setMapZoom] = useState(5);
+    const [mapBounds, setMapBounds] = useState(null);
 
     const mapStyles = [
         {
@@ -161,6 +162,20 @@ const ShipmentDetail = () => {
         }
     ];
 
+    // Memoize the map options to prevent unnecessary re-renders
+    const mapOptions = React.useMemo(() => ({
+        styles: mapStyles,
+        disableDefaultUI: true,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+        maxZoom: 20,
+        minZoom: 18,
+        gestureHandling: 'greedy',
+        preserveViewport: true
+    }), []);
+
     const fromMarkerPosition = { lat: 43.6532, lng: -79.3832 };
     const toMarkerPosition = { lat: 49.2827, lng: -123.1207 };
 
@@ -168,7 +183,7 @@ const ShipmentDetail = () => {
     const previousPath = location.state?.from || '/dashboard';
 
     // Mock data generation for a single shipment
-    const generateMockShipment = () => {
+    const shipment = React.useMemo(() => {
         const mockData = {
             id: id,
             status: 'Awaiting Shipment',
@@ -180,18 +195,18 @@ const ShipmentDetail = () => {
                 latestPickup: '17:00',
                 earliestDelivery: '09:00',
                 latestDelivery: '17:00',
-                referenceNumber: 'REF-' + Math.random().toString(36).substring(7).toUpperCase()
+                referenceNumber: 'REF-' + id.toUpperCase()
             },
             shipFrom: {
                 company: 'Tech Solutions Inc.',
                 contactName: 'John Smith',
                 contactPhone: '(555) 123-4567',
                 contactEmail: 'john@techsolutions.com',
-                address1: '123 Business Ave',
-                address2: 'Suite 200',
+                address1: '55 Scollard St',
+                address2: '',
                 city: 'Toronto',
                 state: 'ON',
-                postalCode: 'M5V 2T6',
+                postalCode: 'M5R 0A1',
                 country: 'CA'
             },
             shipTo: {
@@ -199,11 +214,11 @@ const ShipmentDetail = () => {
                 contactName: 'Emma Wilson',
                 contactPhone: '(555) 987-6543',
                 contactEmail: 'emma@globalent.com',
-                address1: '456 Corporate Blvd',
-                address2: 'Floor 15',
-                city: 'Vancouver',
-                state: 'BC',
-                postalCode: 'V6B 4N7',
+                address1: '4 Plunkett Court',
+                address2: '',
+                city: 'Barrie',
+                state: 'ON',
+                postalCode: 'L4N 6M3',
                 country: 'CA'
             },
             packages: [
@@ -308,9 +323,7 @@ const ShipmentDetail = () => {
         };
 
         return mockData;
-    };
-
-    const shipment = generateMockShipment();
+    }, [id]);
 
     useEffect(() => {
         const fetchMapsApiKey = async () => {
@@ -331,8 +344,7 @@ const ShipmentDetail = () => {
 
     useEffect(() => {
         const calculateRoute = async () => {
-            if (!shipment.shipFrom || !shipment.shipTo || !window.google || !window.google.maps) {
-                setMapError('Google Maps not loaded');
+            if (!shipment.shipFrom || !shipment.shipTo || !window.google || !window.google.maps || !isGoogleMapsLoaded) {
                 return;
             }
 
@@ -356,11 +368,18 @@ const ShipmentDetail = () => {
                     })
                 ]);
 
-                const response = await fetch('https://getmapsapikey-xedyh5vw7a-uc.a.run.app/route', {
+                // Create bounds from origin and destination
+                const bounds = new window.google.maps.LatLngBounds();
+                bounds.extend(originResult.geometry.location);
+                bounds.extend(destinationResult.geometry.location);
+                setMapBounds(bounds);
+
+                const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Accept': 'application/json'
+                        'X-Goog-Api-Key': 'AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw',
+                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps'
                     },
                     body: JSON.stringify({
                         origin: {
@@ -382,9 +401,13 @@ const ShipmentDetail = () => {
                         travelMode: "DRIVE",
                         routingPreference: "TRAFFIC_AWARE",
                         computeAlternativeRoutes: false,
+                        routeModifiers: {
+                            avoidTolls: false,
+                            avoidHighways: false,
+                            avoidFerries: false
+                        },
                         languageCode: "en-US",
-                        units: "IMPERIAL",
-                        polylineEncoding: "ENCODED_POLYLINE"
+                        units: "IMPERIAL"
                     })
                 });
 
@@ -401,49 +424,130 @@ const ShipmentDetail = () => {
                 const route = routeData.routes[0];
                 const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
 
-                // Create a DirectionsResult object that DirectionsRenderer can understand
+                // Create steps from the decoded path
+                const steps = [];
+                for (let i = 0; i < decodedPath.length - 1; i++) {
+                    const start = decodedPath[i];
+                    const end = decodedPath[i + 1];
+                    const distance = window.google.maps.geometry.spherical.computeDistanceBetween(start, end);
+                    const duration = Math.round(distance / 20); // Assuming average speed of 20 m/s
+
+                    steps.push({
+                        path: [start, end],
+                        start_location: start,
+                        end_location: end,
+                        travel_mode: "DRIVING",
+                        distance: { text: `${Math.round(distance / 1609.34)} mi`, value: distance },
+                        duration: { text: `${Math.round(duration / 60)} mins`, value: duration },
+                        instructions: `Continue on route`
+                    });
+                }
+
                 const directionsResult = {
                     routes: [{
                         legs: [{
-                            steps: decodedPath.map((point, index) => ({
-                                path: [point],
-                                start_location: point,
-                                end_location: decodedPath[index + 1] || point,
-                                distance: { text: `${Math.round(route.distanceMeters / 1609.34)} mi` },
-                                duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 3600)} hours` }
-                            })),
+                            steps: steps,
                             start_location: decodedPath[0],
                             end_location: decodedPath[decodedPath.length - 1],
-                            distance: { text: `${Math.round(route.distanceMeters / 1609.34)} mi` },
-                            duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 3600)} hours` }
+                            distance: { text: `${Math.round(route.distanceMeters / 1609.34)} mi`, value: route.distanceMeters },
+                            duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 60)} mins`, value: parseInt(route.duration.replace('s', '')) },
+                            via_waypoints: []
                         }],
                         overview_path: decodedPath,
-                        bounds: new window.google.maps.LatLngBounds(
-                            new window.google.maps.LatLng(route.bounds.southwest.latitude, route.bounds.southwest.longitude),
-                            new window.google.maps.LatLng(route.bounds.northeast.latitude, route.bounds.northeast.longitude)
-                        )
-                    }]
+                        warnings: [],
+                        bounds: bounds,
+                        copyrights: "Map data ©2024 Google",
+                        summary: "Fastest route",
+                        waypoint_order: []
+                    }],
+                    request: {
+                        origin: originResult.geometry.location,
+                        destination: destinationResult.geometry.location,
+                        travelMode: "DRIVING"
+                    },
+                    status: "OK"
                 };
 
                 setDirections(directionsResult);
-
-                // Update map center and zoom based on the route bounds
-                const bounds = new window.google.maps.LatLngBounds();
-                decodedPath.forEach(point => bounds.extend(point));
-                setMapCenter({
-                    lat: bounds.getCenter().lat(),
-                    lng: bounds.getCenter().lng()
-                });
             } catch (error) {
                 console.error('Error calculating route:', error);
-                setMapError('Failed to calculate route');
+                setMapError('Error calculating route');
             }
         };
 
-        if (isGoogleMapsLoaded && window.google && window.google.maps) {
-            calculateRoute();
-        }
+        calculateRoute();
     }, [shipment.shipFrom, shipment.shipTo, isGoogleMapsLoaded]);
+
+    // Handle map load and bounds
+    const handleMapLoad = React.useCallback((map) => {
+        setIsMapLoaded(true);
+        if (directions?.request?.origin && directions?.request?.destination) {
+            // Create bounds to include both markers
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(directions.request.origin);
+            bounds.extend(directions.request.destination);
+
+            // Add padding to bounds
+            const padding = 50; // pixels
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+            const projection = map.getProjection();
+            const topRight = projection.fromLatLngToPoint(ne);
+            const bottomLeft = projection.fromLatLngToPoint(sw);
+
+            // Add padding
+            topRight.x += padding;
+            topRight.y -= padding;
+            bottomLeft.x -= padding;
+            bottomLeft.y += padding;
+
+            // Convert back to LatLng
+            const paddedNE = projection.fromPointToLatLng(topRight);
+            const paddedSW = projection.fromPointToLatLng(bottomLeft);
+
+            // Create new bounds with padding
+            const paddedBounds = new window.google.maps.LatLngBounds(paddedSW, paddedNE);
+
+            // Binary search for optimal zoom level
+            let minZoom = 5;  // Minimum zoom to ensure both pins are visible
+            let maxZoom = 20; // Maximum zoom level
+            let optimalZoom = minZoom;
+
+            const checkVisibility = (zoom) => {
+                map.setZoom(zoom);
+                const visibleBounds = map.getBounds();
+                return visibleBounds.contains(paddedBounds.getNorthEast()) &&
+                    visibleBounds.contains(paddedBounds.getSouthWest());
+            };
+
+            // Binary search to find the highest zoom level where both pins are visible
+            while (minZoom <= maxZoom) {
+                const midZoom = Math.floor((minZoom + maxZoom) / 2);
+                if (checkVisibility(midZoom)) {
+                    optimalZoom = midZoom;
+                    minZoom = midZoom + 1; // Try a higher zoom
+                } else {
+                    maxZoom = midZoom - 1; // Try a lower zoom
+                }
+            }
+
+            // Set the optimal zoom and center
+            map.setZoom(optimalZoom);
+            map.setCenter(paddedBounds.getCenter());
+
+            // Prevent automatic zoom adjustments
+            map.setOptions({
+                maxZoom: 20,
+                minZoom: 5,
+                gestureHandling: 'greedy',
+                disableDefaultUI: true,
+                zoomControl: true,
+                streetViewControl: false,
+                mapTypeControl: false,
+                fullscreenControl: false
+            });
+        }
+    }, [directions]);
 
     const toggleSection = (section) => {
         setExpandedSections(prev => ({
@@ -995,29 +1099,179 @@ const ShipmentDetail = () => {
                                 </Box>
                                 <Box sx={{ p: 3 }}>
                                     {isGoogleMapsLoaded ? (
-                                        <Box sx={{ height: '400px', borderRadius: '12px', overflow: 'hidden' }}>
-                                            <GoogleMap
-                                                mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                center={mapCenter}
-                                                zoom={mapZoom}
-                                                onLoad={setIsMapLoaded}
-                                                options={{
-                                                    styles: mapStyles,
-                                                    disableDefaultUI: true,
-                                                    zoomControl: true,
-                                                    streetViewControl: false,
-                                                    mapTypeControl: false,
-                                                    fullscreenControl: false
-                                                }}
-                                            >
-                                                <Marker position={fromMarkerPosition} />
-                                                <Marker position={toMarkerPosition} />
-                                                {directions && <DirectionsRenderer directions={directions} />}
-                                            </GoogleMap>
-                                        </Box>
+                                        <>
+                                            <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', mb: 3 }}>
+                                                <GoogleMap
+                                                    mapContainerStyle={{ width: '100%', height: '100%' }}
+                                                    center={directions?.request?.origin || mapCenter}
+                                                    zoom={18}
+                                                    onLoad={handleMapLoad}
+                                                    options={{
+                                                        ...mapOptions,
+                                                        maxZoom: 20,
+                                                        minZoom: 18,
+                                                        zoomControl: true,
+                                                        zoomControlOptions: {
+                                                            position: window.google.maps.ControlPosition.RIGHT_BOTTOM
+                                                        }
+                                                    }}
+                                                >
+                                                    {directions && (
+                                                        <DirectionsRenderer
+                                                            directions={directions}
+                                                            options={{
+                                                                suppressMarkers: true,
+                                                                preserveViewport: true,
+                                                                polylineOptions: {
+                                                                    strokeColor: '#2196f3',
+                                                                    strokeWeight: 4
+                                                                }
+                                                            }}
+                                                        />
+                                                    )}
+                                                    {directions?.request?.origin && (
+                                                        <Marker
+                                                            position={directions.request.origin}
+                                                            icon={{
+                                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                                scale: 12,
+                                                                fillColor: '#2196f3',
+                                                                fillOpacity: 1,
+                                                                strokeColor: '#ffffff',
+                                                                strokeWeight: 2
+                                                            }}
+                                                            label={{
+                                                                text: 'A',
+                                                                color: '#ffffff',
+                                                                fontSize: '14px',
+                                                                fontWeight: 'bold'
+                                                            }}
+                                                        />
+                                                    )}
+                                                    {directions?.request?.destination && (
+                                                        <Marker
+                                                            position={directions.request.destination}
+                                                            icon={{
+                                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                                scale: 12,
+                                                                fillColor: '#f44336',
+                                                                fillOpacity: 1,
+                                                                strokeColor: '#ffffff',
+                                                                strokeWeight: 2
+                                                            }}
+                                                            label={{
+                                                                text: 'B',
+                                                                color: '#ffffff',
+                                                                fontSize: '14px',
+                                                                fontWeight: 'bold'
+                                                            }}
+                                                        />
+                                                    )}
+                                                    {directions?.routes[0]?.legs[0]?.steps.map((step, index) => (
+                                                        <Marker
+                                                            key={index}
+                                                            position={step.start_location}
+                                                            icon={{
+                                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                                scale: 6,
+                                                                fillColor: '#4caf50',
+                                                                fillOpacity: 1,
+                                                                strokeColor: '#ffffff',
+                                                                strokeWeight: 1
+                                                            }}
+                                                            label={{
+                                                                text: (index + 1).toString(),
+                                                                color: '#ffffff',
+                                                                fontSize: '10px',
+                                                                fontWeight: 'bold'
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </GoogleMap>
+                                            </Box>
+
+                                            {/* Route Summary */}
+                                            <Box sx={{ mb: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={12} sm={6}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <TimeIcon sx={{ color: '#2196f3' }} />
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary">
+                                                                    Estimated Time
+                                                                </Typography>
+                                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                    {directions?.routes[0]?.legs[0]?.duration?.text}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </Grid>
+                                                    <Grid item xs={12} sm={6}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <LocationIcon sx={{ color: '#2196f3' }} />
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary">
+                                                                    Total Distance
+                                                                </Typography>
+                                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                    {directions?.routes[0]?.legs[0]?.distance?.text}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+
+                                            {/* Turn-by-Turn Directions */}
+                                            <Box sx={{
+                                                maxHeight: '200px',
+                                                overflowY: 'auto',
+                                                border: '1px solid #e0e0e0',
+                                                borderRadius: 1,
+                                                p: 2
+                                            }}>
+                                                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                                                    Turn-by-Turn Directions
+                                                </Typography>
+                                                {directions?.routes[0]?.legs[0]?.steps.map((step, index) => (
+                                                    <Box
+                                                        key={index}
+                                                        sx={{
+                                                            mb: 2,
+                                                            pb: 2,
+                                                            borderBottom: index < directions.routes[0].legs[0].steps.length - 1 ? '1px solid #e0e0e0' : 'none'
+                                                        }}
+                                                    >
+                                                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                                                            <Box sx={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                borderRadius: '50%',
+                                                                bgcolor: '#4caf50',
+                                                                color: '#fff',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                flexShrink: 0
+                                                            }}>
+                                                                {index + 1}
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                                                                    {step.instructions}
+                                                                </Typography>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    {step.distance?.text} • {step.duration?.text}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </Box>
+                                                ))}
+                                            </Box>
+                                        </>
                                     ) : (
                                         <Box sx={{
-                                            height: '400px',
+                                            height: '600px',
                                             borderRadius: '12px',
                                             bgcolor: '#f5f5f5',
                                             display: 'flex',
