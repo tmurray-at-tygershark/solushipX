@@ -153,6 +153,7 @@ const ShipmentDetail = () => {
     const [mapCenter, setMapCenter] = useState({ lat: 43.6532, lng: -79.3832 });
     const [mapZoom, setMapZoom] = useState(5);
     const [mapBounds, setMapBounds] = useState(null);
+    const [map, setMap] = useState(null);
 
     const mapStyles = [
         {
@@ -165,15 +166,15 @@ const ShipmentDetail = () => {
     // Memoize the map options to prevent unnecessary re-renders
     const mapOptions = React.useMemo(() => ({
         styles: mapStyles,
-        disableDefaultUI: true,
+        disableDefaultUI: false,
         zoomControl: true,
         streetViewControl: false,
         mapTypeControl: false,
         fullscreenControl: false,
         maxZoom: 20,
-        minZoom: 18,
+        minZoom: 5,
         gestureHandling: 'greedy',
-        preserveViewport: true
+        preserveViewport: false
     }), []);
 
     const fromMarkerPosition = { lat: 43.6532, lng: -79.3832 };
@@ -379,7 +380,7 @@ const ShipmentDetail = () => {
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Goog-Api-Key': 'AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw',
-                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps'
+                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps,routes.legs.steps.instructions,routes.legs.steps.duration,routes.legs.steps.distanceMeters'
                     },
                     body: JSON.stringify({
                         origin: {
@@ -424,24 +425,22 @@ const ShipmentDetail = () => {
                 const route = routeData.routes[0];
                 const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
 
-                // Create steps from the decoded path
-                const steps = [];
-                for (let i = 0; i < decodedPath.length - 1; i++) {
-                    const start = decodedPath[i];
-                    const end = decodedPath[i + 1];
-                    const distance = window.google.maps.geometry.spherical.computeDistanceBetween(start, end);
-                    const duration = Math.round(distance / 20); // Assuming average speed of 20 m/s
-
-                    steps.push({
-                        path: [start, end],
-                        start_location: start,
-                        end_location: end,
-                        travel_mode: "DRIVING",
-                        distance: { text: `${Math.round(distance / 1609.34)} mi`, value: distance },
-                        duration: { text: `${Math.round(duration / 60)} mins`, value: duration },
-                        instructions: `Continue on route`
-                    });
-                }
+                // Use the actual steps from the API response
+                const steps = route.legs[0].steps.map(step => ({
+                    path: [step.startLocation, step.endLocation],
+                    start_location: step.startLocation,
+                    end_location: step.endLocation,
+                    travel_mode: "DRIVING",
+                    distance: {
+                        text: `${Math.round(step.distanceMeters / 1609.34)} mi`,
+                        value: step.distanceMeters
+                    },
+                    duration: {
+                        text: `${Math.round(parseInt(step.duration.replace('s', '')) / 60)} mins`,
+                        value: parseInt(step.duration.replace('s', ''))
+                    },
+                    instructions: step.instructions
+                }));
 
                 const directionsResult = {
                     routes: [{
@@ -480,72 +479,39 @@ const ShipmentDetail = () => {
 
     // Handle map load and bounds
     const handleMapLoad = React.useCallback((map) => {
+        setMap(map);
         setIsMapLoaded(true);
+
         if (directions?.request?.origin && directions?.request?.destination) {
-            // Create bounds to include both markers
+            // Create bounds that include both markers
             const bounds = new window.google.maps.LatLngBounds();
             bounds.extend(directions.request.origin);
             bounds.extend(directions.request.destination);
 
-            // Add padding to bounds
-            const padding = 50; // pixels
+            // Add padding to the bounds
+            const padding = 15; // reduced from 25 to 15 pixels
             const ne = bounds.getNorthEast();
             const sw = bounds.getSouthWest();
-            const projection = map.getProjection();
-            const topRight = projection.fromLatLngToPoint(ne);
-            const bottomLeft = projection.fromLatLngToPoint(sw);
+            const latPadding = (ne.lat() - sw.lat()) * 0.02; // reduced from 0.05 to 0.02 (2% padding)
+            const lngPadding = (ne.lng() - sw.lng()) * 0.02; // reduced from 0.05 to 0.02 (2% padding)
+            bounds.extend(new window.google.maps.LatLng(ne.lat() + latPadding, ne.lng() + lngPadding));
+            bounds.extend(new window.google.maps.LatLng(sw.lat() - latPadding, sw.lng() - lngPadding));
 
-            // Add padding
-            topRight.x += padding;
-            topRight.y -= padding;
-            bottomLeft.x -= padding;
-            bottomLeft.y += padding;
-
-            // Convert back to LatLng
-            const paddedNE = projection.fromPointToLatLng(topRight);
-            const paddedSW = projection.fromPointToLatLng(bottomLeft);
-
-            // Create new bounds with padding
-            const paddedBounds = new window.google.maps.LatLngBounds(paddedSW, paddedNE);
-
-            // Binary search for optimal zoom level
-            let minZoom = 5;  // Minimum zoom to ensure both pins are visible
-            let maxZoom = 20; // Maximum zoom level
-            let optimalZoom = minZoom;
-
-            const checkVisibility = (zoom) => {
-                map.setZoom(zoom);
-                const visibleBounds = map.getBounds();
-                return visibleBounds.contains(paddedBounds.getNorthEast()) &&
-                    visibleBounds.contains(paddedBounds.getSouthWest());
-            };
-
-            // Binary search to find the highest zoom level where both pins are visible
-            while (minZoom <= maxZoom) {
-                const midZoom = Math.floor((minZoom + maxZoom) / 2);
-                if (checkVisibility(midZoom)) {
-                    optimalZoom = midZoom;
-                    minZoom = midZoom + 1; // Try a higher zoom
-                } else {
-                    maxZoom = midZoom - 1; // Try a lower zoom
+            // Fit the map to the bounds
+            map.fitBounds(bounds, {
+                padding: {
+                    top: padding,
+                    right: padding,
+                    bottom: padding,
+                    left: padding
                 }
-            }
-
-            // Set the optimal zoom and center
-            map.setZoom(optimalZoom);
-            map.setCenter(paddedBounds.getCenter());
-
-            // Prevent automatic zoom adjustments
-            map.setOptions({
-                maxZoom: 20,
-                minZoom: 5,
-                gestureHandling: 'greedy',
-                disableDefaultUI: true,
-                zoomControl: true,
-                streetViewControl: false,
-                mapTypeControl: false,
-                fullscreenControl: false
             });
+
+            // Set a closer zoom level
+            const currentZoom = map.getZoom();
+            if (currentZoom) {
+                map.setZoom(currentZoom + 2); // reduced from 5 to 2 for a more moderate zoom
+            }
         }
     }, [directions]);
 
@@ -1104,17 +1070,9 @@ const ShipmentDetail = () => {
                                                 <GoogleMap
                                                     mapContainerStyle={{ width: '100%', height: '100%' }}
                                                     center={directions?.request?.origin || mapCenter}
-                                                    zoom={18}
+                                                    zoom={8}
                                                     onLoad={handleMapLoad}
-                                                    options={{
-                                                        ...mapOptions,
-                                                        maxZoom: 20,
-                                                        minZoom: 18,
-                                                        zoomControl: true,
-                                                        zoomControlOptions: {
-                                                            position: window.google.maps.ControlPosition.RIGHT_BOTTOM
-                                                        }
-                                                    }}
+                                                    options={mapOptions}
                                                 >
                                                     {directions && (
                                                         <DirectionsRenderer
@@ -1167,26 +1125,6 @@ const ShipmentDetail = () => {
                                                             }}
                                                         />
                                                     )}
-                                                    {directions?.routes[0]?.legs[0]?.steps.map((step, index) => (
-                                                        <Marker
-                                                            key={index}
-                                                            position={step.start_location}
-                                                            icon={{
-                                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                                scale: 6,
-                                                                fillColor: '#4caf50',
-                                                                fillOpacity: 1,
-                                                                strokeColor: '#ffffff',
-                                                                strokeWeight: 1
-                                                            }}
-                                                            label={{
-                                                                text: (index + 1).toString(),
-                                                                color: '#ffffff',
-                                                                fontSize: '10px',
-                                                                fontWeight: 'bold'
-                                                            }}
-                                                        />
-                                                    ))}
                                                 </GoogleMap>
                                             </Box>
 
@@ -1224,45 +1162,80 @@ const ShipmentDetail = () => {
 
                                             {/* Turn-by-Turn Directions */}
                                             <Box sx={{
-                                                maxHeight: '200px',
+                                                maxHeight: '300px',
                                                 overflowY: 'auto',
                                                 border: '1px solid #e0e0e0',
                                                 borderRadius: 1,
                                                 p: 2
                                             }}>
-                                                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                                                    Turn-by-Turn Directions
-                                                </Typography>
+                                                <Box sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    mb: 2
+                                                }}>
+                                                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                                        Turn-by-Turn Directions
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {directions?.routes[0]?.legs[0]?.steps.length} steps
+                                                    </Typography>
+                                                </Box>
                                                 {directions?.routes[0]?.legs[0]?.steps.map((step, index) => (
                                                     <Box
                                                         key={index}
                                                         sx={{
                                                             mb: 2,
                                                             pb: 2,
-                                                            borderBottom: index < directions.routes[0].legs[0].steps.length - 1 ? '1px solid #e0e0e0' : 'none'
+                                                            borderBottom: index < directions.routes[0].legs[0].steps.length - 1 ? '1px solid #e0e0e0' : 'none',
+                                                            '&:hover': {
+                                                                bgcolor: 'rgba(0, 0, 0, 0.02)',
+                                                                borderRadius: 1,
+                                                                transition: 'background-color 0.2s'
+                                                            }
                                                         }}
                                                     >
                                                         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
                                                             <Box sx={{
-                                                                width: 24,
-                                                                height: 24,
+                                                                width: 28,
+                                                                height: 28,
                                                                 borderRadius: '50%',
-                                                                bgcolor: '#4caf50',
+                                                                bgcolor: '#2196f3',
                                                                 color: '#fff',
                                                                 display: 'flex',
                                                                 alignItems: 'center',
                                                                 justifyContent: 'center',
-                                                                flexShrink: 0
+                                                                flexShrink: 0,
+                                                                fontWeight: 600,
+                                                                fontSize: '0.875rem'
                                                             }}>
                                                                 {index + 1}
                                                             </Box>
-                                                            <Box>
-                                                                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                                                            <Box sx={{ flex: 1 }}>
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    sx={{
+                                                                        mb: 0.5,
+                                                                        fontWeight: 500,
+                                                                        color: '#000'
+                                                                    }}
+                                                                >
                                                                     {step.instructions}
                                                                 </Typography>
-                                                                <Typography variant="caption" color="text.secondary">
-                                                                    {step.distance?.text} • {step.duration?.text}
-                                                                </Typography>
+                                                                <Box sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 1,
+                                                                    color: 'text.secondary'
+                                                                }}>
+                                                                    <Typography variant="caption">
+                                                                        {step.distance?.text}
+                                                                    </Typography>
+                                                                    <Typography variant="caption">•</Typography>
+                                                                    <Typography variant="caption">
+                                                                        {step.duration?.text}
+                                                                    </Typography>
+                                                                </Box>
                                                             </Box>
                                                         </Box>
                                                     </Box>
