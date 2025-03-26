@@ -27,7 +27,10 @@ import {
     NavigateNext as NavigateNextIcon,
     Home as HomeIcon,
     Download as DownloadIcon,
-    Print as PrintIcon
+    Print as PrintIcon,
+    AccessTime as AccessTimeIcon,
+    LocationOn as LocationOnIcon,
+    SwapHoriz as SwapHorizIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google-maps/api';
@@ -154,6 +157,7 @@ const ShipmentDetail = () => {
     const [mapZoom, setMapZoom] = useState(5);
     const [mapBounds, setMapBounds] = useState(null);
     const [map, setMap] = useState(null);
+    const [useMetric, setUseMetric] = useState(false);
 
     const mapStyles = [
         {
@@ -380,7 +384,7 @@ const ShipmentDetail = () => {
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Goog-Api-Key': 'AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw',
-                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps,routes.legs.steps.instructions,routes.legs.steps.duration,routes.legs.steps.distanceMeters'
+                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps'
                     },
                     body: JSON.stringify({
                         origin: {
@@ -425,22 +429,24 @@ const ShipmentDetail = () => {
                 const route = routeData.routes[0];
                 const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
 
-                // Use the actual steps from the API response
-                const steps = route.legs[0].steps.map(step => ({
-                    path: [step.startLocation, step.endLocation],
-                    start_location: step.startLocation,
-                    end_location: step.endLocation,
-                    travel_mode: "DRIVING",
-                    distance: {
-                        text: `${Math.round(step.distanceMeters / 1609.34)} mi`,
-                        value: step.distanceMeters
-                    },
-                    duration: {
-                        text: `${Math.round(parseInt(step.duration.replace('s', '')) / 60)} mins`,
-                        value: parseInt(step.duration.replace('s', ''))
-                    },
-                    instructions: step.instructions
-                }));
+                // Create steps from the decoded path
+                const steps = [];
+                for (let i = 0; i < decodedPath.length - 1; i++) {
+                    const start = decodedPath[i];
+                    const end = decodedPath[i + 1];
+                    const distance = window.google.maps.geometry.spherical.computeDistanceBetween(start, end);
+                    const duration = Math.round(distance / 20); // Assuming average speed of 20 m/s
+
+                    steps.push({
+                        path: [start, end],
+                        start_location: start,
+                        end_location: end,
+                        travel_mode: "DRIVING",
+                        distance: { text: `${Math.round(distance / 1609.34)} mi`, value: distance },
+                        duration: { text: `${Math.round(duration / 60)} mins`, value: duration },
+                        instructions: `Continue on route`
+                    });
+                }
 
                 const directionsResult = {
                     routes: [{
@@ -531,6 +537,14 @@ const ShipmentDetail = () => {
     };
 
     const displayedPackages = showAllPackages ? shipment.packages : shipment.packages.slice(0, 3);
+
+    // Add conversion function for distance
+    const convertDistance = (distanceInMeters) => {
+        if (useMetric) {
+            return `${Math.round(distanceInMeters / 1000)} km`;
+        }
+        return `${Math.round(distanceInMeters / 1609.34)} mi`;
+    };
 
     return (
         <LoadScript
@@ -1065,8 +1079,8 @@ const ShipmentDetail = () => {
                                 </Box>
                                 <Box sx={{ p: 3 }}>
                                     {isGoogleMapsLoaded ? (
-                                        <>
-                                            <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', mb: 3 }}>
+                                        <Box>
+                                            <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
                                                 <GoogleMap
                                                     mapContainerStyle={{ width: '100%', height: '100%' }}
                                                     center={directions?.request?.origin || mapCenter}
@@ -1126,122 +1140,82 @@ const ShipmentDetail = () => {
                                                         />
                                                     )}
                                                 </GoogleMap>
-                                            </Box>
-
-                                            {/* Route Summary */}
-                                            <Box sx={{ mb: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <TimeIcon sx={{ color: '#2196f3' }} />
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary">
-                                                                    Estimated Time
-                                                                </Typography>
-                                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                    {directions?.routes[0]?.legs[0]?.duration?.text}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <LocationIcon sx={{ color: '#2196f3' }} />
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary">
-                                                                    Total Distance
-                                                                </Typography>
-                                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                    {directions?.routes[0]?.legs[0]?.distance?.text}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </Grid>
-                                                </Grid>
-                                            </Box>
-
-                                            {/* Turn-by-Turn Directions */}
-                                            <Box sx={{
-                                                maxHeight: '300px',
-                                                overflowY: 'auto',
-                                                border: '1px solid #e0e0e0',
-                                                borderRadius: 1,
-                                                p: 2
-                                            }}>
+                                                {/* Route Summary Overlay */}
                                                 <Box sx={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    mb: 2
+                                                    position: 'absolute',
+                                                    top: 16,
+                                                    right: 16,
+                                                    background: 'rgba(255, 255, 255, 0.95)',
+                                                    backdropFilter: 'blur(10px)',
+                                                    borderRadius: '16px',
+                                                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                                                    p: 2,
+                                                    zIndex: 1,
+                                                    minWidth: '200px'
                                                 }}>
-                                                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                                        Turn-by-Turn Directions
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {directions?.routes[0]?.legs[0]?.steps.length} steps
-                                                    </Typography>
-                                                </Box>
-                                                {directions?.routes[0]?.legs[0]?.steps.map((step, index) => (
-                                                    <Box
-                                                        key={index}
-                                                        sx={{
-                                                            mb: 2,
-                                                            pb: 2,
-                                                            borderBottom: index < directions.routes[0].legs[0].steps.length - 1 ? '1px solid #e0e0e0' : 'none',
-                                                            '&:hover': {
-                                                                bgcolor: 'rgba(0, 0, 0, 0.02)',
-                                                                borderRadius: 1,
-                                                                transition: 'background-color 0.2s'
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                                                            <Box sx={{
-                                                                width: 28,
-                                                                height: 28,
-                                                                borderRadius: '50%',
-                                                                bgcolor: '#2196f3',
-                                                                color: '#fff',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                flexShrink: 0,
-                                                                fontWeight: 600,
-                                                                fontSize: '0.875rem'
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 2,
+                                                        p: 1.5,
+                                                        borderRadius: '12px',
+                                                        background: 'rgba(25, 118, 210, 0.04)'
+                                                    }}>
+                                                        <LocationIcon sx={{
+                                                            color: 'primary.main',
+                                                            fontSize: 28,
+                                                            opacity: 0.9
+                                                        }} />
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Typography variant="subtitle2" sx={{
+                                                                color: 'text.secondary',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 500,
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.5px'
                                                             }}>
-                                                                {index + 1}
-                                                            </Box>
-                                                            <Box sx={{ flex: 1 }}>
-                                                                <Typography
-                                                                    variant="body2"
-                                                                    sx={{
-                                                                        mb: 0.5,
-                                                                        fontWeight: 500,
-                                                                        color: '#000'
-                                                                    }}
-                                                                >
-                                                                    {step.instructions}
-                                                                </Typography>
-                                                                <Box sx={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: 1,
-                                                                    color: 'text.secondary'
+                                                                Total Distance
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <Typography variant="h6" sx={{
+                                                                    color: 'primary.main',
+                                                                    fontWeight: 700,
+                                                                    fontSize: '1.25rem',
+                                                                    lineHeight: 1.2
                                                                 }}>
-                                                                    <Typography variant="caption">
-                                                                        {step.distance?.text}
+                                                                    {directions?.routes[0]?.legs[0]?.distance?.value &&
+                                                                        convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <Typography component="span" sx={{
+                                                                        fontSize: '0.875rem',
+                                                                        fontWeight: 500,
+                                                                        color: 'text.secondary'
+                                                                    }}>
+                                                                        {useMetric ? 'km' : 'mi'}
                                                                     </Typography>
-                                                                    <Typography variant="caption">•</Typography>
-                                                                    <Typography variant="caption">
-                                                                        {step.duration?.text}
-                                                                    </Typography>
+                                                                    <Button
+                                                                        onClick={() => setUseMetric(!useMetric)}
+                                                                        sx={{
+                                                                            minWidth: 'auto',
+                                                                            p: 1,
+                                                                            borderRadius: '8px',
+                                                                            background: 'rgba(25, 118, 210, 0.08)',
+                                                                            color: 'primary.main',
+                                                                            '&:hover': {
+                                                                                background: 'rgba(25, 118, 210, 0.12)'
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <SwapHorizIcon sx={{ fontSize: 20 }} />
+                                                                    </Button>
                                                                 </Box>
                                                             </Box>
                                                         </Box>
                                                     </Box>
-                                                ))}
+                                                </Box>
                                             </Box>
-                                        </>
+                                        </Box>
                                     ) : (
                                         <Box sx={{
                                             height: '600px',
