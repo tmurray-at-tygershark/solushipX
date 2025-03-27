@@ -52,7 +52,10 @@ import {
     AttachMoney as MoneyIcon,
     Person as PersonIcon,
     Business as BusinessIcon,
-    Category as CategoryIcon
+    Category as CategoryIcon,
+    Schedule as ScheduleIcon,
+    CheckCircle as CheckCircleIcon,
+    MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -63,72 +66,140 @@ import { PieChart } from '@mui/x-charts/PieChart';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { CSVLink } from 'react-csv';
 import './Reports.css';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Generate dummy data for the last 7 days
+const generateDummyData = () => {
+    const data = [];
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7); // Last 7 days
+
+    const customers = [
+        'TechCorp Solutions',
+        'Acme Corporation',
+        'Quantum Enterprises',
+        'Atlas Manufacturing'
+    ];
+    const origins = [
+        '888 Robson Street, Calgary, AB T2P 1B8, Canada',
+        '999 Peel Street, Montreal, QC H3A 1M5, Canada',
+        '555 Fifth Avenue, Chicago, IL 60601, USA',
+        '321 Queen Street, Vancouver, BC V6B 1B5, Canada',
+        '777 Biscayne Blvd, Miami, FL 33131, USA'
+    ];
+    const destinations = [
+        '777 Biscayne Blvd, Miami, FL 33131, USA',
+        '888 Robson Street, Calgary, AB T2P 1B8, Canada',
+        '123 Main Street, New York, NY 10001, USA',
+        '456 Market Ave, Los Angeles, CA 90012, USA',
+        '321 Queen Street, Vancouver, BC V6B 1B5, Canada'
+    ];
+    const carriers = ['USPS', 'Purolator', 'UPS', 'Canada Post'];
+    const types = ['Courier', 'Freight'];
+    const statuses = ['Awaiting Shipment', 'In Transit', 'Delivered'];
+
+    // Generate dates for the visualization
+    const visualizationDates = Array.from({ length: 7 }, (_, i) => {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        return date;
+    });
+
+    // Generate shipment data
+    for (let i = 0; i < 50; i++) {
+        const randomDate = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
+        const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
+        const randomOrigin = origins[Math.floor(Math.random() * origins.length)];
+        const randomDestination = destinations[Math.floor(Math.random() * destinations.length)];
+        const randomCarrier = carriers[Math.floor(Math.random() * carriers.length)];
+        const randomType = types[Math.floor(Math.random() * types.length)];
+        const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+
+        data.push({
+            id: `SHP${String(287587 + i).padStart(6, '0')}`,
+            customer: randomCustomer,
+            origin: randomOrigin,
+            destination: randomDestination,
+            carrier: randomCarrier,
+            type: randomType,
+            status: randomStatus,
+            date: randomDate.toISOString()
+        });
+    }
+
+    // Format the dataset for the LineChart
+    const formattedData = visualizationDates.map((date, index) => {
+        const dayStart = new Date(date);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(date);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const dayData = data.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate >= dayStart && itemDate <= dayEnd;
+        });
+
+        return {
+            day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            value: dayData.length
+        };
+    });
+
+    return {
+        rawData: data,
+        visualizations: {
+            shipmentTrends: {
+                dataset: formattedData
+            },
+            carrierDistribution: carriers.map(carrier => ({
+                name: carrier,
+                value: Math.floor(Math.random() * 20) + 5
+            }))
+        }
+    };
+};
 
 const Reports = () => {
-    // State for report configuration
+    const navigate = useNavigate();
+    const { user } = useAuth();
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(50);
+    const [anchorEl, setAnchorEl] = useState(null);
+    const [selectedShipment, setSelectedShipment] = useState(null);
+    const [dateRange, setDateRange] = useState({
+        start: new Date(new Date().setDate(new Date().getDate() - 7)),
+        end: new Date()
+    });
     const [reportConfig, setReportConfig] = useState({
         name: '',
         type: 'shipments',
-        dateRange: [null, null],
         filters: {
-            status: [],
-            carriers: [],
-            customers: [],
-            locations: [],
-            valueRange: [0, 100000],
-            categories: []
-        },
-        metrics: {
-            totalShipments: true,
-            totalValue: true,
-            averageValue: true,
-            onTimeDelivery: true,
-            customerDistribution: true,
-            carrierDistribution: true,
-            locationDistribution: true,
-            categoryDistribution: true
-        },
-        visualization: {
-            type: 'table',
-            chartType: 'bar'
+            dateRange: {
+                type: 'last7days',
+                start: new Date(new Date().setDate(new Date().getDate() - 7)),
+                end: new Date()
+            },
+            status: 'ANY',
+            carriers: []
         }
     });
-
-    // State for saved reports
-    const [savedReports, setSavedReports] = useState([
-        {
-            id: 1,
-            name: 'Monthly Shipment Analysis',
-            type: 'shipments',
-            lastRun: '2024-03-20'
-        },
-        {
-            id: 2,
-            name: 'Customer Performance Report',
-            type: 'customers',
-            lastRun: '2024-03-19'
-        }
-    ]);
-
-    // State for report data
-    const [reportData, setReportData] = useState({
-        rawData: [],
-        metrics: {
-            totalShipments: 0,
-            totalValue: 0,
-            averageValue: 0,
-            onTimeDelivery: 0
-        },
-        visualizations: {
-            shipmentTrends: {
-                dates: [],
-                counts: [],
-                values: []
+    const [reportData, setReportData] = useState(() => {
+        const dummyData = generateDummyData();
+        return {
+            rawData: dummyData.rawData,
+            metrics: {
+                totalShipments: 50,
+                totalValue: 25000
             },
-            customerPerformance: [],
-            carrierDistribution: [],
-            categoryDistribution: []
-        }
+            visualizations: {
+                shipmentTrends: {
+                    dataset: dummyData.visualizations.shipmentTrends.dataset
+                },
+                carrierDistribution: dummyData.visualizations.carrierDistribution
+            }
+        };
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -137,97 +208,6 @@ const Reports = () => {
     const [selectedTab, setSelectedTab] = useState('builder');
     const [exportDialogOpen, setExportDialogOpen] = useState(false);
     const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
-
-    // Dummy data for demonstration
-    const dummyData = useMemo(() => {
-        const generateData = (count) => {
-            const data = [];
-            const customers = [
-                'Acme Corp',
-                'Tech Solutions',
-                'Global Industries',
-                'Retail Plus',
-                'Manufacturing Co',
-                'Healthcare Systems',
-                'Food Distribution',
-                'Electronics Retail',
-                'Fashion Outlet',
-                'Construction Supply'
-            ];
-            const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
-            const statuses = ['Delivered', 'In Transit', 'Delayed'];
-            const categories = ['Electronics', 'Furniture', 'Clothing', 'Food', 'Medical Supplies', 'Construction Materials', 'Automotive Parts'];
-            const origins = ['New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Houston, TX', 'Miami, FL'];
-            const destinations = ['San Francisco, CA', 'Seattle, WA', 'Boston, MA', 'Dallas, TX', 'Atlanta, GA'];
-
-            // Generate dates for the last 30 days
-            const today = new Date();
-            const dates = Array.from({ length: 30 }, (_, i) => {
-                const date = new Date(today);
-                date.setDate(date.getDate() - i);
-                return date;
-            }).reverse();
-
-            // Generate shipments with realistic patterns
-            for (let i = 0; i < count; i++) {
-                const date = dates[Math.floor(Math.random() * dates.length)];
-                const customer = customers[Math.floor(Math.random() * customers.length)];
-                const carrier = carriers[Math.floor(Math.random() * carriers.length)];
-                const status = statuses[Math.floor(Math.random() * statuses.length)];
-                const category = categories[Math.floor(Math.random() * categories.length)];
-
-                // Generate realistic value based on category
-                let value;
-                switch (category) {
-                    case 'Electronics':
-                        value = Math.floor(Math.random() * 5000) + 1000;
-                        break;
-                    case 'Furniture':
-                        value = Math.floor(Math.random() * 3000) + 500;
-                        break;
-                    case 'Clothing':
-                        value = Math.floor(Math.random() * 2000) + 200;
-                        break;
-                    case 'Food':
-                        value = Math.floor(Math.random() * 1500) + 300;
-                        break;
-                    case 'Medical Supplies':
-                        value = Math.floor(Math.random() * 8000) + 2000;
-                        break;
-                    case 'Construction Materials':
-                        value = Math.floor(Math.random() * 4000) + 800;
-                        break;
-                    case 'Automotive Parts':
-                        value = Math.floor(Math.random() * 3500) + 600;
-                        break;
-                    default:
-                        value = Math.floor(Math.random() * 3000) + 500;
-                }
-
-                const origin = origins[Math.floor(Math.random() * origins.length)];
-                const destination = destinations[Math.floor(Math.random() * destinations.length)];
-
-                data.push({
-                    id: `SHIP${String(i + 1).padStart(6, '0')}`,
-                    date: date,
-                    customer: customer,
-                    carrier: carrier,
-                    status: status,
-                    category: category,
-                    value: value,
-                    origin: origin,
-                    destination: destination
-                });
-            }
-
-            // Sort data by date
-            return data.sort((a, b) => a.date - b.date);
-        };
-
-        return generateData(150); // Increased number of records for better visualization
-    }, []);
 
     // Add this helper function at the top of the component
     const formatNumber = (number) => {
@@ -246,6 +226,67 @@ const Reports = () => {
         }).format(amount);
     };
 
+    // Add predefined date range options
+    const dateRangeOptions = [
+        { label: 'Today', value: 'today' },
+        { label: 'Last 7 Days', value: 'last7days' },
+        { label: 'Last 30 Days', value: 'last30days' },
+        { label: 'Last 90 Days', value: 'last90days' },
+        { label: 'Year to Date', value: 'yearToDate' },
+        { label: 'Custom Range', value: 'custom' }
+    ];
+
+    // Add predefined report templates
+    const reportTemplates = [
+        {
+            id: 'shipping_overview',
+            name: 'Shipping Overview',
+            description: 'Key metrics and trends for all shipments',
+            type: 'shipments',
+            metrics: {
+                totalShipments: true,
+                totalValue: true,
+                totalShippingCost: true,
+                onTimeDelivery: true
+            }
+        },
+        {
+            id: 'customer_analysis',
+            name: 'Customer Analysis',
+            description: 'Customer shipping patterns and value',
+            type: 'customers',
+            metrics: {
+                uniqueCustomers: true,
+                customerDistribution: true,
+                customerValueDistribution: true
+            }
+        },
+        {
+            id: 'carrier_performance',
+            name: 'Carrier Performance',
+            description: 'Carrier metrics and service quality',
+            type: 'carriers',
+            metrics: {
+                carrierDistribution: true,
+                carrierPerformance: true,
+                serviceTypeDistribution: true
+            }
+        },
+        {
+            id: 'cost_analysis',
+            name: 'Cost Analysis',
+            description: 'Detailed shipping cost breakdown',
+            type: 'costs',
+            metrics: {
+                totalShippingCost: true,
+                averageShippingCost: true,
+                totalSurcharges: true,
+                totalInsurance: true,
+                totalTaxes: true
+            }
+        }
+    ];
+
     // Handle report generation
     const handleGenerateReport = async () => {
         setLoading(true);
@@ -255,47 +296,38 @@ const Reports = () => {
             await new Promise(resolve => setTimeout(resolve, 1500));
 
             // Filter data based on report configuration
-            let filteredData = [...dummyData];
+            let filteredData = [...reportData.rawData];
 
             // Apply date range filter
-            if (reportConfig.dateRange[0] && reportConfig.dateRange[1]) {
+            const { start, end } = reportConfig.filters.dateRange;
+            if (start && end) {
                 filteredData = filteredData.filter(item => {
                     const itemDate = new Date(item.date);
-                    return itemDate >= reportConfig.dateRange[0] && itemDate <= reportConfig.dateRange[1];
+                    return itemDate >= start && itemDate <= end;
                 });
             }
 
-            // Apply status filter
+            // Apply other filters
             if (reportConfig.filters.status.length > 0) {
                 filteredData = filteredData.filter(item =>
                     reportConfig.filters.status.includes(item.status)
                 );
             }
 
-            // Apply carrier filter
             if (reportConfig.filters.carriers.length > 0) {
                 filteredData = filteredData.filter(item =>
                     reportConfig.filters.carriers.includes(item.carrier)
                 );
             }
 
-            // Apply value range filter
-            filteredData = filteredData.filter(item =>
-                item.value >= reportConfig.filters.valueRange[0] &&
-                item.value <= reportConfig.filters.valueRange[1]
-            );
+            if (reportConfig.filters.customers.length > 0) {
+                filteredData = filteredData.filter(item =>
+                    reportConfig.filters.customers.includes(item.customer)
+                );
+            }
 
             // Calculate metrics
-            const metrics = {
-                totalShipments: filteredData.length,
-                totalValue: filteredData.reduce((sum, item) => sum + item.value, 0),
-                averageValue: filteredData.length > 0 ? filteredData.reduce((sum, item) => sum + item.value, 0) / filteredData.length : 0,
-                onTimeDelivery: filteredData.length > 0 ? (filteredData.filter(item => item.status === 'Delivered').length / filteredData.length) * 100 : 0,
-                customerDistribution: calculateDistribution(filteredData, 'customer'),
-                carrierDistribution: calculateDistribution(filteredData, 'carrier'),
-                categoryDistribution: calculateDistribution(filteredData, 'category')
-            };
-
+            const metrics = calculateMetrics(filteredData);
             setReportData({
                 rawData: filteredData,
                 metrics,
@@ -307,6 +339,81 @@ const Reports = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    // Add helper function to calculate metrics
+    const calculateMetrics = (data) => {
+        const metrics = {
+            // Shipment Metrics
+            totalShipments: data.length,
+            totalPackages: data.reduce((sum, item) => sum + (item.packages || 1), 0),
+            totalWeight: data.reduce((sum, item) => sum + (item.weight || 0), 0),
+            totalValue: data.reduce((sum, item) => sum + item.value, 0),
+            averageValue: data.length > 0 ? data.reduce((sum, item) => sum + item.value, 0) / data.length : 0,
+            onTimeDelivery: data.length > 0 ? (data.filter(item => item.status === 'Delivered').length / data.length) * 100 : 0,
+            customsDeclaredValue: data.reduce((sum, item) => sum + (item.customsValue || 0), 0),
+
+            // Cost Metrics
+            totalShippingCost: data.reduce((sum, item) => sum + (item.shippingCost || 0), 0),
+            averageShippingCost: data.length > 0 ? data.reduce((sum, item) => sum + (item.shippingCost || 0), 0) / data.length : 0,
+            totalSurcharges: data.reduce((sum, item) => sum + (item.surcharges || 0), 0),
+            totalInsurance: data.reduce((sum, item) => sum + (item.insurance || 0), 0),
+            totalTaxes: data.reduce((sum, item) => sum + (item.taxes || 0), 0),
+
+            // Customer Metrics
+            uniqueCustomers: new Set(data.map(item => item.customer)).size,
+            customerDistribution: calculateDistribution(data, 'customer'),
+            customerValueDistribution: calculateValueDistribution(data, 'customer'),
+
+            // Carrier Metrics
+            carrierDistribution: calculateDistribution(data, 'carrier'),
+            carrierPerformance: calculateCarrierPerformance(data),
+            serviceTypeDistribution: calculateDistribution(data, 'serviceType'),
+
+            // Location Metrics
+            originDistribution: calculateDistribution(data, 'origin'),
+            destinationDistribution: calculateDistribution(data, 'destination'),
+            internationalRatio: calculateInternationalRatio(data)
+        };
+
+        return metrics;
+    };
+
+    // Add helper function to calculate value distribution
+    const calculateValueDistribution = (data, field) => {
+        const distribution = data.reduce((acc, item) => {
+            acc[item[field]] = (acc[item[field]] || 0) + item.value;
+            return acc;
+        }, {});
+
+        return Object.entries(distribution).map(([key, value]) => ({
+            name: key,
+            value: value,
+            percentage: (value / data.reduce((sum, item) => sum + item.value, 0)) * 100
+        }));
+    };
+
+    // Add helper function to calculate carrier performance
+    const calculateCarrierPerformance = (data) => {
+        const carriers = [...new Set(data.map(item => item.carrier))];
+        return carriers.map(carrier => {
+            const carrierData = data.filter(item => item.carrier === carrier);
+            return {
+                name: carrier,
+                totalShipments: carrierData.length,
+                onTimeDelivery: carrierData.length > 0 ?
+                    (carrierData.filter(item => item.status === 'Delivered').length / carrierData.length) * 100 : 0,
+                averageCost: carrierData.length > 0 ?
+                    carrierData.reduce((sum, item) => sum + (item.shippingCost || 0), 0) / carrierData.length : 0
+            };
+        });
+    };
+
+    // Add helper function to calculate international ratio
+    const calculateInternationalRatio = (data) => {
+        const total = data.length;
+        const international = data.filter(item => item.isInternational).length;
+        return total > 0 ? (international / total) * 100 : 0;
     };
 
     // Helper function to calculate distribution
@@ -327,23 +434,90 @@ const Reports = () => {
     const generateVisualizations = (data, metrics) => {
         const visualizations = {
             shipmentTrends: {
-                dates: [...new Set(data.map(item => item.date.toISOString().split('T')[0]))].sort(),
+                dates: [...new Set(data.map(item => new Date(item.date).toISOString().split('T')[0]))].sort(),
                 counts: [],
-                values: []
+                values: [],
+                costs: [],
+                weights: []
             },
-            customerPerformance: metrics.customerDistribution,
-            carrierDistribution: metrics.carrierDistribution,
-            categoryDistribution: metrics.categoryDistribution
+            customerPerformance: metrics.customerDistribution || [],
+            carrierDistribution: metrics.carrierDistribution || [],
+            serviceTypeDistribution: metrics.serviceTypeDistribution || [],
+            costBreakdown: calculateCostBreakdown(data, metrics) || [],
+            locationDistribution: calculateLocationDistribution(data, metrics) || []
         };
 
         // Calculate daily trends
         visualizations.shipmentTrends.dates.forEach(date => {
-            const dayData = data.filter(item => item.date.toISOString().split('T')[0] === date);
+            const dayData = data.filter(item => new Date(item.date).toISOString().split('T')[0] === date);
             visualizations.shipmentTrends.counts.push(dayData.length);
-            visualizations.shipmentTrends.values.push(dayData.reduce((sum, item) => sum + item.value, 0));
+            visualizations.shipmentTrends.values.push(dayData.reduce((sum, item) => sum + (item.value || 0), 0));
+            visualizations.shipmentTrends.costs.push(dayData.reduce((sum, item) => sum + (item.shippingCost || 0), 0));
+            visualizations.shipmentTrends.weights.push(dayData.reduce((sum, item) => sum + (item.weight || 0), 0));
         });
 
+        // Format the dataset for the LineChart
+        visualizations.shipmentTrends.dataset = visualizations.shipmentTrends.dates.map((date, index) => ({
+            day: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            value: visualizations.shipmentTrends.counts[index] || 0
+        }));
+
+        // Ensure we have at least one data point for each visualization
+        if (visualizations.shipmentTrends.counts.length === 0) {
+            visualizations.shipmentTrends.counts.push(0);
+            visualizations.shipmentTrends.values.push(0);
+            visualizations.shipmentTrends.costs.push(0);
+            visualizations.shipmentTrends.weights.push(0);
+            visualizations.shipmentTrends.dataset = [{
+                day: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                value: 0
+            }];
+        }
+
+        if (visualizations.customerPerformance.length === 0) {
+            visualizations.customerPerformance.push({ name: 'No Data', value: 0, percentage: 0 });
+        }
+
+        if (visualizations.carrierDistribution.length === 0) {
+            visualizations.carrierDistribution.push({ name: 'No Data', value: 0, percentage: 0 });
+        }
+
+        if (visualizations.serviceTypeDistribution.length === 0) {
+            visualizations.serviceTypeDistribution.push({ name: 'No Data', value: 0, percentage: 0 });
+        }
+
         return visualizations;
+    };
+
+    // Add helper function to calculate cost breakdown
+    const calculateCostBreakdown = (data, metrics) => {
+        const breakdown = [
+            { name: 'Base Shipping', value: metrics.totalShippingCost - metrics.totalSurcharges - metrics.totalInsurance - metrics.totalTaxes },
+            { name: 'Surcharges', value: metrics.totalSurcharges },
+            { name: 'Insurance', value: metrics.totalInsurance },
+            { name: 'Taxes', value: metrics.totalTaxes }
+        ];
+
+        // Calculate percentages
+        const total = breakdown.reduce((sum, item) => sum + item.value, 0);
+        return breakdown.map(item => ({
+            ...item,
+            percentage: total > 0 ? (item.value / total) * 100 : 0
+        }));
+    };
+
+    // Add helper function to calculate location distribution
+    const calculateLocationDistribution = (data, metrics) => {
+        const locations = [...new Set(data.map(item => item.origin))];
+        return locations.map(location => {
+            const locationData = data.filter(item => item.origin === location);
+            return {
+                name: location,
+                shipments: locationData.length,
+                value: locationData.reduce((sum, item) => sum + item.value, 0),
+                percentage: (locationData.length / data.length) * 100
+            };
+        });
     };
 
     // Handle export
@@ -353,11 +527,10 @@ const Reports = () => {
         if (format === 'csv') {
             const csvData = reportData.rawData.map(item => ({
                 ID: item.id,
-                Date: item.date.toLocaleDateString(),
+                Date: new Date(item.date).toLocaleDateString(),
                 Customer: item.customer,
                 Carrier: item.carrier,
                 Status: item.status,
-                Category: item.category,
                 Value: formatCurrency(item.value),
                 Origin: item.origin,
                 Destination: item.destination
@@ -370,14 +543,28 @@ const Reports = () => {
     // Handle save report
     const handleSaveReport = () => {
         const newReport = {
-            id: savedReports.length + 1,
+            id: reportData.rawData.length + 1,
             name: reportConfig.name || 'Untitled Report',
             type: reportConfig.type,
             lastRun: new Date().toISOString().split('T')[0]
         };
-        setSavedReports([...savedReports, newReport]);
+        setReportData({
+            ...reportData,
+            rawData: [...reportData.rawData, newReport]
+        });
         setSaveDialogOpen(false);
     };
+
+    const [filters, setFilters] = useState({
+        dateRange: '7d',
+        status: 'all',
+        carriers: [],
+        customer: 'all',
+        originCity: '',
+        destinationCity: '',
+        country: 'all',
+        shipmentType: 'all'
+    });
 
     return (
         <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
@@ -392,7 +579,15 @@ const Reports = () => {
                             variant="outlined"
                             startIcon={<ExportIcon />}
                             onClick={() => setExportDialogOpen(true)}
-                            sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
+                            sx={{
+                                color: '#64748b',
+                                borderColor: '#e2e8f0',
+                                bgcolor: '#ffffff',
+                                '&:hover': {
+                                    borderColor: '#cbd5e1',
+                                    bgcolor: '#f8fafc'
+                                }
+                            }}
                         >
                             Export
                         </Button>
@@ -400,7 +595,15 @@ const Reports = () => {
                             variant="outlined"
                             startIcon={<SaveIcon />}
                             onClick={() => setSaveDialogOpen(true)}
-                            sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
+                            sx={{
+                                color: '#64748b',
+                                borderColor: '#e2e8f0',
+                                bgcolor: '#ffffff',
+                                '&:hover': {
+                                    borderColor: '#cbd5e1',
+                                    bgcolor: '#f8fafc'
+                                }
+                            }}
                         >
                             Save Report
                         </Button>
@@ -408,11 +611,29 @@ const Reports = () => {
                 </Box>
 
                 {/* Main Content */}
-                <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                <Paper sx={{ bgcolor: '#ffffff', borderRadius: 2, boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                    {/* Tabs */}
                     <Tabs
                         value={selectedTab}
                         onChange={(e, newValue) => setSelectedTab(newValue)}
-                        sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}
+                        sx={{
+                            borderBottom: 1,
+                            borderColor: '#e2e8f0',
+                            '& .MuiTab-root': {
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                color: '#64748b',
+                                minWidth: 120
+                            },
+                            '& .MuiTab-root.Mui-selected': {
+                                color: '#3b82f6',
+                                fontWeight: 600
+                            },
+                            '& .MuiTabs-indicator': {
+                                backgroundColor: '#3b82f6',
+                                height: 3
+                            }
+                        }}
                     >
                         <Tab label="Report Builder" value="builder" />
                         <Tab label="Saved Reports" value="saved" />
@@ -425,7 +646,17 @@ const Reports = () => {
                             <Grid container spacing={3}>
                                 {/* Report Configuration */}
                                 <Grid item xs={12} md={4}>
-                                    <Paper sx={{ p: 3, bgcolor: '#f8fafc' }}>
+                                    <Paper sx={{
+                                        p: 3,
+                                        bgcolor: '#ffffff',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                                        borderRadius: 2,
+                                        transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                                        '&:hover': {
+                                            transform: 'translateY(-4px)',
+                                            boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+                                        }
+                                    }}>
                                         <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
                                             Report Configuration
                                         </Typography>
@@ -435,6 +666,11 @@ const Reports = () => {
                                                 value={reportConfig.name}
                                                 onChange={(e) => setReportConfig({ ...reportConfig, name: e.target.value })}
                                                 fullWidth
+                                                sx={{
+                                                    '& .MuiOutlinedInput-root': {
+                                                        borderRadius: 2
+                                                    }
+                                                }}
                                             />
                                             <FormControl fullWidth>
                                                 <InputLabel>Report Type</InputLabel>
@@ -442,6 +678,9 @@ const Reports = () => {
                                                     value={reportConfig.type}
                                                     onChange={(e) => setReportConfig({ ...reportConfig, type: e.target.value })}
                                                     label="Report Type"
+                                                    sx={{
+                                                        borderRadius: 2
+                                                    }}
                                                 >
                                                     <MenuItem value="shipments">Shipments Analysis</MenuItem>
                                                     <MenuItem value="customers">Customer Analysis</MenuItem>
@@ -449,38 +688,17 @@ const Reports = () => {
                                                 </Select>
                                             </FormControl>
 
-                                            <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                                <DatePicker
-                                                    label="Date Range"
-                                                    value={reportConfig.dateRange}
-                                                    onChange={(newValue) => setReportConfig({ ...reportConfig, dateRange: newValue })}
-                                                    renderInput={(startProps, endProps) => (
-                                                        <Stack direction="row" spacing={2}>
-                                                            <TextField {...startProps} />
-                                                            <TextField {...endProps} />
-                                                        </Stack>
-                                                    )}
-                                                />
-                                            </LocalizationProvider>
-
-                                            <FormControl fullWidth>
-                                                <InputLabel>Visualization Type</InputLabel>
-                                                <Select
-                                                    value={reportConfig.visualization.type}
-                                                    onChange={(e) => setReportConfig({ ...reportConfig, visualization: { ...reportConfig.visualization, type: e.target.value } })}
-                                                    label="Visualization Type"
-                                                >
-                                                    <MenuItem value="table">Table</MenuItem>
-                                                    <MenuItem value="chart">Chart</MenuItem>
-                                                    <MenuItem value="both">Both</MenuItem>
-                                                </Select>
-                                            </FormControl>
-
                                             <Button
                                                 variant="contained"
                                                 onClick={handleGenerateReport}
                                                 disabled={loading}
-                                                sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
+                                                sx={{
+                                                    bgcolor: '#0f172a',
+                                                    '&:hover': { bgcolor: '#1e293b' },
+                                                    borderRadius: 2,
+                                                    textTransform: 'none',
+                                                    fontWeight: 500
+                                                }}
                                             >
                                                 {loading ? 'Generating...' : 'Generate Report'}
                                             </Button>
@@ -488,186 +706,189 @@ const Reports = () => {
                                     </Paper>
                                 </Grid>
 
-                                {/* Filters */}
-                                <Grid item xs={12} md={4}>
-                                    <Paper sx={{ p: 3, bgcolor: '#f8fafc' }}>
-                                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
-                                            Filters
-                                        </Typography>
-                                        <Stack spacing={3}>
-                                            <FormControl fullWidth>
-                                                <InputLabel>Status</InputLabel>
-                                                <Select
-                                                    multiple
-                                                    value={reportConfig.filters.status}
-                                                    onChange={(e) => setReportConfig({
-                                                        ...reportConfig,
-                                                        filters: { ...reportConfig.filters, status: e.target.value }
-                                                    })}
-                                                    label="Status"
-                                                >
-                                                    <MenuItem value="Delivered">Delivered</MenuItem>
-                                                    <MenuItem value="In Transit">In Transit</MenuItem>
-                                                    <MenuItem value="Delayed">Delayed</MenuItem>
-                                                </Select>
-                                            </FormControl>
+                                {/* Filters - Now spans 8 columns */}
+                                <Grid item xs={12} md={8}>
+                                    <Paper sx={{ p: 3, mb: 3 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <FilterIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="h6">Filters</Typography>
+                                        </Box>
+                                        <Grid container spacing={2}>
+                                            {/* Date Range */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel>Date Range</InputLabel>
+                                                    <Select
+                                                        value={filters.dateRange}
+                                                        onChange={(e) => setFilters({ ...filters, dateRange: e.target.value })}
+                                                        label="Date Range"
+                                                    >
+                                                        <MenuItem value="7d">Last 7 Days</MenuItem>
+                                                        <MenuItem value="30d">Last 30 Days</MenuItem>
+                                                        <MenuItem value="90d">Last 90 Days</MenuItem>
+                                                        <MenuItem value="custom">Custom Range</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
 
-                                            <FormControl fullWidth>
-                                                <InputLabel>Carriers</InputLabel>
-                                                <Select
-                                                    multiple
-                                                    value={reportConfig.filters.carriers}
-                                                    onChange={(e) => setReportConfig({
-                                                        ...reportConfig,
-                                                        filters: { ...reportConfig.filters, carriers: e.target.value }
-                                                    })}
-                                                    label="Carriers"
-                                                >
-                                                    <MenuItem value="FedEx">FedEx</MenuItem>
-                                                    <MenuItem value="UPS">UPS</MenuItem>
-                                                    <MenuItem value="DHL">DHL</MenuItem>
-                                                    <MenuItem value="USPS">USPS</MenuItem>
-                                                </Select>
-                                            </FormControl>
+                                            {/* Status */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel>Status</InputLabel>
+                                                    <Select
+                                                        value={filters.status}
+                                                        onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                                                        label="Status"
+                                                    >
+                                                        <MenuItem value="all">All Statuses</MenuItem>
+                                                        <MenuItem value="pending">Pending</MenuItem>
+                                                        <MenuItem value="in_transit">In Transit</MenuItem>
+                                                        <MenuItem value="delivered">Delivered</MenuItem>
+                                                        <MenuItem value="cancelled">Cancelled</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
 
-                                            <FormControl fullWidth>
-                                                <InputLabel>Categories</InputLabel>
-                                                <Select
-                                                    multiple
-                                                    value={reportConfig.filters.categories}
-                                                    onChange={(e) => setReportConfig({
-                                                        ...reportConfig,
-                                                        filters: { ...reportConfig.filters, categories: e.target.value }
-                                                    })}
-                                                    label="Categories"
-                                                >
-                                                    <MenuItem value="Electronics">Electronics</MenuItem>
-                                                    <MenuItem value="Furniture">Furniture</MenuItem>
-                                                    <MenuItem value="Clothing">Clothing</MenuItem>
-                                                    <MenuItem value="Food">Food</MenuItem>
-                                                    <MenuItem value="Medical Supplies">Medical Supplies</MenuItem>
-                                                </Select>
-                                            </FormControl>
+                                            {/* Carriers */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel id="carriers-label">Carriers</InputLabel>
+                                                    <Select
+                                                        labelId="carriers-label"
+                                                        multiple
+                                                        value={filters.carriers}
+                                                        onChange={(e) => setFilters({ ...filters, carriers: e.target.value })}
+                                                        label="Carriers"
+                                                        renderValue={(selected) => (
+                                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                                {selected.map((value) => (
+                                                                    <Chip key={value} label={value} />
+                                                                ))}
+                                                            </Box>
+                                                        )}
+                                                        sx={{
+                                                            '& .MuiInputLabel-root': {
+                                                                backgroundColor: '#ffffff',
+                                                                px: 1,
+                                                                color: '#64748b'
+                                                            }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="fedex">FedEx</MenuItem>
+                                                        <MenuItem value="ups">UPS</MenuItem>
+                                                        <MenuItem value="usps">USPS</MenuItem>
+                                                        <MenuItem value="dhl">DHL</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
 
-                                            <Typography variant="subtitle2" sx={{ color: '#64748b' }}>
-                                                Value Range
-                                            </Typography>
-                                            <Stack direction="row" spacing={2}>
+                                            {/* Customer */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel>Customer</InputLabel>
+                                                    <Select
+                                                        value={filters.customer}
+                                                        onChange={(e) => setFilters({ ...filters, customer: e.target.value })}
+                                                        label="Customer"
+                                                    >
+                                                        <MenuItem value="all">All Customers</MenuItem>
+                                                        <MenuItem value="customer1">Customer 1</MenuItem>
+                                                        <MenuItem value="customer2">Customer 2</MenuItem>
+                                                        <MenuItem value="customer3">Customer 3</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+                                            {/* Origin City */}
+                                            <Grid item xs={12} sm={6} md={3}>
                                                 <TextField
-                                                    type="number"
-                                                    label="Min"
-                                                    value={reportConfig.filters.valueRange[0]}
-                                                    onChange={(e) => setReportConfig({
-                                                        ...reportConfig,
-                                                        filters: {
-                                                            ...reportConfig.filters,
-                                                            valueRange: [parseInt(e.target.value), reportConfig.filters.valueRange[1]]
-                                                        }
-                                                    })}
+                                                    fullWidth
+                                                    label="Origin City"
+                                                    value={filters.originCity}
+                                                    onChange={(e) => setFilters({ ...filters, originCity: e.target.value })}
+                                                    placeholder="Enter origin city"
                                                 />
-                                                <TextField
-                                                    type="number"
-                                                    label="Max"
-                                                    value={reportConfig.filters.valueRange[1]}
-                                                    onChange={(e) => setReportConfig({
-                                                        ...reportConfig,
-                                                        filters: {
-                                                            ...reportConfig.filters,
-                                                            valueRange: [reportConfig.filters.valueRange[0], parseInt(e.target.value)]
-                                                        }
-                                                    })}
-                                                />
-                                            </Stack>
-                                        </Stack>
-                                    </Paper>
-                                </Grid>
+                                            </Grid>
 
-                                {/* Metrics Selection */}
-                                <Grid item xs={12} md={4}>
-                                    <Paper sx={{ p: 3, bgcolor: '#f8fafc' }}>
-                                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
-                                            Metrics
-                                        </Typography>
-                                        <FormGroup>
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={reportConfig.metrics.totalShipments}
-                                                        onChange={(e) => setReportConfig({
-                                                            ...reportConfig,
-                                                            metrics: { ...reportConfig.metrics, totalShipments: e.target.checked }
+                                            {/* Destination City */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Destination City"
+                                                    value={filters.destinationCity}
+                                                    onChange={(e) => setFilters({ ...filters, destinationCity: e.target.value })}
+                                                    placeholder="Enter destination city"
+                                                />
+                                            </Grid>
+
+                                            {/* Country */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel>Country</InputLabel>
+                                                    <Select
+                                                        value={filters.country}
+                                                        onChange={(e) => setFilters({ ...filters, country: e.target.value })}
+                                                        label="Country"
+                                                    >
+                                                        <MenuItem value="all">All Countries</MenuItem>
+                                                        <MenuItem value="usa">USA</MenuItem>
+                                                        <MenuItem value="canada">Canada</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+                                            {/* Shipment Type */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel>Shipment Type</InputLabel>
+                                                    <Select
+                                                        value={filters.shipmentType}
+                                                        onChange={(e) => setFilters({ ...filters, shipmentType: e.target.value })}
+                                                        label="Shipment Type"
+                                                    >
+                                                        <MenuItem value="all">All Types</MenuItem>
+                                                        <MenuItem value="courier">Courier</MenuItem>
+                                                        <MenuItem value="freight">Freight</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+                                            {/* Filter Actions */}
+                                            <Grid item xs={12}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                                                    <Button
+                                                        variant="outlined"
+                                                        onClick={() => setFilters({
+                                                            dateRange: '7d',
+                                                            status: 'all',
+                                                            carriers: [],
+                                                            customer: 'all',
+                                                            originCity: '',
+                                                            destinationCity: '',
+                                                            country: 'all',
+                                                            shipmentType: 'all'
                                                         })}
-                                                    />
-                                                }
-                                                label="Total Shipments"
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={reportConfig.metrics.totalValue}
-                                                        onChange={(e) => setReportConfig({
-                                                            ...reportConfig,
-                                                            metrics: { ...reportConfig.metrics, totalValue: e.target.checked }
-                                                        })}
-                                                    />
-                                                }
-                                                label="Total Value"
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={reportConfig.metrics.averageValue}
-                                                        onChange={(e) => setReportConfig({
-                                                            ...reportConfig,
-                                                            metrics: { ...reportConfig.metrics, averageValue: e.target.checked }
-                                                        })}
-                                                    />
-                                                }
-                                                label="Average Value"
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={reportConfig.metrics.onTimeDelivery}
-                                                        onChange={(e) => setReportConfig({
-                                                            ...reportConfig,
-                                                            metrics: { ...reportConfig.metrics, onTimeDelivery: e.target.checked }
-                                                        })}
-                                                    />
-                                                }
-                                                label="On-Time Delivery Rate"
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={reportConfig.metrics.customerDistribution}
-                                                        onChange={(e) => setReportConfig({
-                                                            ...reportConfig,
-                                                            metrics: { ...reportConfig.metrics, customerDistribution: e.target.checked }
-                                                        })}
-                                                    />
-                                                }
-                                                label="Customer Distribution"
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={reportConfig.metrics.carrierDistribution}
-                                                        onChange={(e) => setReportConfig({
-                                                            ...reportConfig,
-                                                            metrics: { ...reportConfig.metrics, carrierDistribution: e.target.checked }
-                                                        })}
-                                                    />
-                                                }
-                                                label="Carrier Distribution"
-                                            />
-                                        </FormGroup>
+                                                    >
+                                                        Reset Filters
+                                                    </Button>
+                                                    <Button
+                                                        variant="contained"
+                                                        onClick={() => {
+                                                            // Apply filters logic here
+                                                            console.log('Applying filters:', filters);
+                                                        }}
+                                                    >
+                                                        Apply Filters
+                                                    </Button>
+                                                </Box>
+                                            </Grid>
+                                        </Grid>
                                     </Paper>
                                 </Grid>
                             </Grid>
 
                             {/* Report Results */}
-                            {reportData ? (
+                            {reportData && (
                                 <Box sx={{ mt: 4 }}>
                                     <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
                                         Report Results
@@ -675,44 +896,92 @@ const Reports = () => {
 
                                     {/* Metrics Summary */}
                                     <Grid container spacing={3} sx={{ mb: 4 }}>
-                                        <Grid item xs={12} md={3}>
-                                            <Paper sx={{ p: 2, bgcolor: '#f8fafc' }}>
-                                                <Typography variant="subtitle2" sx={{ color: '#64748b' }}>
-                                                    Total Shipments
-                                                </Typography>
-                                                <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
-                                                    {formatNumber(reportData.metrics.totalShipments)}
-                                                </Typography>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Paper sx={{
+                                                p: 2,
+                                                bgcolor: '#ffffff',
+                                                boxShadow: '0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12)',
+                                                borderRadius: 2
+                                            }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle1" sx={{ color: '#64748b' }}>
+                                                            Total Shipments
+                                                        </Typography>
+                                                        <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                                            {reportData.rawData.length}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box sx={{ color: '#3b82f6' }}>
+                                                        <ShippingIcon fontSize="medium" />
+                                                    </Box>
+                                                </Box>
                                             </Paper>
                                         </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Paper sx={{ p: 2, bgcolor: '#f8fafc' }}>
-                                                <Typography variant="subtitle2" sx={{ color: '#64748b' }}>
-                                                    Total Value
-                                                </Typography>
-                                                <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
-                                                    {formatCurrency(reportData.metrics.totalValue)}
-                                                </Typography>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Paper sx={{
+                                                p: 2,
+                                                bgcolor: '#ffffff',
+                                                boxShadow: '0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12)',
+                                                borderRadius: 2
+                                            }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle1" sx={{ color: '#64748b' }}>
+                                                            Waiting for Pickup
+                                                        </Typography>
+                                                        <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                                            {reportData.rawData.filter(item => item.status === 'AWAITING_SHIPMENT').length}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box sx={{ color: '#3b82f6' }}>
+                                                        <ScheduleIcon fontSize="medium" />
+                                                    </Box>
+                                                </Box>
                                             </Paper>
                                         </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Paper sx={{ p: 2, bgcolor: '#f8fafc' }}>
-                                                <Typography variant="subtitle2" sx={{ color: '#64748b' }}>
-                                                    Average Value
-                                                </Typography>
-                                                <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
-                                                    {formatCurrency(reportData.metrics.averageValue)}
-                                                </Typography>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Paper sx={{
+                                                p: 2,
+                                                bgcolor: '#ffffff',
+                                                boxShadow: '0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12)',
+                                                borderRadius: 2
+                                            }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle1" sx={{ color: '#64748b' }}>
+                                                            In Transit
+                                                        </Typography>
+                                                        <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                                            {reportData.rawData.filter(item => item.status === 'IN_TRANSIT').length}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box sx={{ color: '#3b82f6' }}>
+                                                        <ShippingIcon fontSize="medium" />
+                                                    </Box>
+                                                </Box>
                                             </Paper>
                                         </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Paper sx={{ p: 2, bgcolor: '#f8fafc' }}>
-                                                <Typography variant="subtitle2" sx={{ color: '#64748b' }}>
-                                                    On-Time Delivery
-                                                </Typography>
-                                                <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
-                                                    {formatNumber(reportData.metrics.onTimeDelivery)}%
-                                                </Typography>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Paper sx={{
+                                                p: 2,
+                                                bgcolor: '#ffffff',
+                                                boxShadow: '0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12)',
+                                                borderRadius: 2
+                                            }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle1" sx={{ color: '#64748b' }}>
+                                                            Delivered
+                                                        </Typography>
+                                                        <Typography variant="h4" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                                            {reportData.rawData.filter(item => item.status === 'DELIVERED').length}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box sx={{ color: '#3b82f6' }}>
+                                                        <CheckCircleIcon fontSize="medium" />
+                                                    </Box>
+                                                </Box>
                                             </Paper>
                                         </Grid>
                                     </Grid>
@@ -721,26 +990,95 @@ const Reports = () => {
                                     <Grid container spacing={3}>
                                         {/* Shipment Trends */}
                                         <Grid item xs={12} md={8}>
-                                            <Paper sx={{ p: 3, bgcolor: '#ffffff' }}>
-                                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
-                                                    Shipment Trends
-                                                </Typography>
+                                            <Paper sx={{
+                                                p: 3,
+                                                bgcolor: '#ffffff',
+                                                boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                                                borderRadius: 2,
+                                                position: 'relative',
+                                                overflow: 'hidden'
+                                            }}>
+                                                <Box sx={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    mb: 3
+                                                }}>
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                                        Total Shipments
+                                                    </Typography>
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 1,
+                                                        bgcolor: 'rgba(59, 130, 246, 0.1)',
+                                                        px: 2,
+                                                        py: 1,
+                                                        borderRadius: 2
+                                                    }}>
+                                                        <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 500 }}>
+                                                            {reportData.rawData.length} Total Shipments
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
                                                 <Box sx={{ height: 300 }}>
                                                     <LineChart
-                                                        xAxis={[{ data: reportData.visualizations.shipmentTrends.dates.map((_, i) => i), scaleType: 'linear' }]}
+                                                        dataset={reportData.visualizations.shipmentTrends.dataset}
                                                         series={[
                                                             {
-                                                                data: reportData.visualizations.shipmentTrends.counts,
-                                                                label: 'Shipments',
-                                                                color: '#3b82f6'
-                                                            },
-                                                            {
-                                                                data: reportData.visualizations.shipmentTrends.values.map(v => v / 100),
-                                                                label: 'Value (hundreds)',
-                                                                color: '#10b981'
+                                                                dataKey: 'value',
+                                                                valueFormatter: (value) => value.toString(),
+                                                                color: '#3b82f6',
+                                                                area: true,
+                                                                showMark: false,
+                                                                curve: "monotoneX"
                                                             }
                                                         ]}
+                                                        xAxis={[{
+                                                            dataKey: 'day',
+                                                            scaleType: 'point',
+                                                            tickLabelStyle: {
+                                                                angle: 0,
+                                                                textAnchor: 'middle',
+                                                                fontSize: 12,
+                                                                fill: '#64748b'
+                                                            },
+                                                            position: 'bottom',
+                                                            tickSize: 0,
+                                                            axisLine: { stroke: '#e2e8f0' }
+                                                        }]}
+                                                        yAxis={[{
+                                                            min: 0,
+                                                            max: Math.max(...reportData.visualizations.shipmentTrends.dataset.map(item => item.value)) + 2,
+                                                            tickMinStep: 1,
+                                                            tickLabelStyle: {
+                                                                fontSize: 12,
+                                                                fill: '#64748b'
+                                                            },
+                                                            position: 'left',
+                                                            tickSize: 0,
+                                                            axisLine: { stroke: '#e2e8f0' }
+                                                        }]}
+                                                        sx={{
+                                                            '.MuiLineElement-root': {
+                                                                strokeWidth: 2,
+                                                                transition: 'all 0.2s ease-in-out',
+                                                            },
+                                                            '.MuiAreaElement-root': {
+                                                                fillOpacity: 0.15,
+                                                            },
+                                                            '.MuiChartsAxis-line': {
+                                                                stroke: '#e2e8f0'
+                                                            },
+                                                            '.MuiChartsAxis-tick': {
+                                                                stroke: '#e2e8f0'
+                                                            },
+                                                            '.MuiChartsAxis-grid': {
+                                                                stroke: '#f1f5f9'
+                                                            }
+                                                        }}
                                                         height={300}
+                                                        margin={{ left: 60, right: 20, top: 20, bottom: 40 }}
                                                     />
                                                 </Box>
                                             </Paper>
@@ -748,163 +1086,179 @@ const Reports = () => {
 
                                         {/* Carrier Distribution */}
                                         <Grid item xs={12} md={4}>
-                                            <Paper sx={{ p: 3, bgcolor: '#ffffff' }}>
-                                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
-                                                    Carrier Distribution
-                                                </Typography>
-                                                <Box sx={{ height: 300 }}>
-                                                    <PieChart
-                                                        series={[
-                                                            {
-                                                                data: reportData.visualizations.carrierDistribution.map(item => ({
-                                                                    id: item.name,
-                                                                    value: item.value,
-                                                                    label: `${item.name} (${item.percentage.toFixed(1)}%)`
-                                                                })),
-                                                                highlightScope: { faded: 'global', highlighted: 'item' },
-                                                                faded: { innerRadius: 30, additionalRadius: -30 }
-                                                            }
-                                                        ]}
-                                                        height={300}
-                                                    />
+                                            <Paper sx={{
+                                                p: 3,
+                                                bgcolor: '#ffffff',
+                                                boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                                                borderRadius: 2,
+                                                position: 'relative',
+                                                overflow: 'hidden'
+                                            }}>
+                                                <Box sx={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    mb: 3
+                                                }}>
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                                        Carrier Shipments
+                                                    </Typography>
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 1,
+                                                        bgcolor: 'rgba(59, 130, 246, 0.1)',
+                                                        px: 2,
+                                                        py: 1,
+                                                        borderRadius: 2
+                                                    }}>
+                                                        <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 500 }}>
+                                                            {reportData.rawData.length} Total Shipments
+                                                        </Typography>
+                                                    </Box>
                                                 </Box>
-                                            </Paper>
-                                        </Grid>
-
-                                        {/* Category Distribution */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper sx={{ p: 3, bgcolor: '#ffffff' }}>
-                                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
-                                                    Category Distribution
-                                                </Typography>
                                                 <Box sx={{ height: 300 }}>
-                                                    <BarChart
-                                                        xAxis={[{
-                                                            scaleType: 'band',
-                                                            data: reportData.visualizations.categoryDistribution.map(item => item.name)
-                                                        }]}
-                                                        series={[{
-                                                            data: reportData.visualizations.categoryDistribution.map(item => item.value),
-                                                            color: '#3b82f6'
-                                                        }]}
-                                                        height={300}
-                                                    />
-                                                </Box>
-                                            </Paper>
-                                        </Grid>
-
-                                        {/* Customer Performance */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper sx={{ p: 3, bgcolor: '#ffffff' }}>
-                                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1e293b' }}>
-                                                    Customer Performance
-                                                </Typography>
-                                                <Box sx={{ height: 300 }}>
-                                                    <BarChart
-                                                        xAxis={[{
-                                                            scaleType: 'band',
-                                                            data: reportData.visualizations.customerPerformance.map(item => item.name)
-                                                        }]}
-                                                        series={[{
-                                                            data: reportData.visualizations.customerPerformance.map(item => item.value),
-                                                            color: '#10b981'
-                                                        }]}
-                                                        height={300}
-                                                    />
+                                                    {reportData.visualizations.carrierDistribution && reportData.visualizations.carrierDistribution.length > 0 && (
+                                                        <BarChart
+                                                            xAxis={[{
+                                                                scaleType: 'linear',
+                                                                data: reportData.visualizations.carrierDistribution.map(item => item.value),
+                                                                tickLabelStyle: {
+                                                                    angle: 0,
+                                                                    textAnchor: 'end',
+                                                                    fontSize: 12,
+                                                                    fill: '#64748b'
+                                                                },
+                                                                position: 'bottom',
+                                                                tickSize: 0,
+                                                                axisLine: { stroke: '#e2e8f0' }
+                                                            }]}
+                                                            yAxis={[{
+                                                                scaleType: 'band',
+                                                                data: reportData.visualizations.carrierDistribution.map(item => item.name),
+                                                                tickLabelStyle: {
+                                                                    angle: 0,
+                                                                    textAnchor: 'end',
+                                                                    fontSize: 12,
+                                                                    fill: '#64748b'
+                                                                },
+                                                                position: 'left',
+                                                                tickSize: 0,
+                                                                axisLine: { stroke: '#e2e8f0' }
+                                                            }]}
+                                                            series={[{
+                                                                data: reportData.visualizations.carrierDistribution.map(item => item.value),
+                                                                color: '#3b82f6'
+                                                            }]}
+                                                            height={300}
+                                                            layout="horizontal"
+                                                            margin={{ left: 100, right: 20, top: 20, bottom: 40 }}
+                                                            sx={{
+                                                                '.MuiBarElement-root': {
+                                                                    transition: 'all 0.2s ease-in-out',
+                                                                    '&:hover': {
+                                                                        fill: '#2563eb'
+                                                                    }
+                                                                },
+                                                                '.MuiChartsAxis-line': {
+                                                                    stroke: '#e2e8f0'
+                                                                },
+                                                                '.MuiChartsAxis-tick': {
+                                                                    stroke: '#e2e8f0'
+                                                                },
+                                                                '.MuiChartsAxis-grid': {
+                                                                    stroke: '#f1f5f9'
+                                                                }
+                                                            }}
+                                                        />
+                                                    )}
                                                 </Box>
                                             </Paper>
                                         </Grid>
                                     </Grid>
 
                                     {/* Detailed Data Table */}
-                                    <Paper sx={{ mt: 4, bgcolor: '#ffffff' }}>
+                                    <Paper sx={{ mt: 4, overflow: 'hidden' }}>
                                         <TableContainer>
                                             <Table>
                                                 <TableHead>
                                                     <TableRow>
                                                         <TableCell>ID</TableCell>
-                                                        <TableCell>Date</TableCell>
-                                                        <TableCell>Customer</TableCell>
-                                                        <TableCell>Carrier</TableCell>
-                                                        <TableCell>Status</TableCell>
-                                                        <TableCell>Category</TableCell>
-                                                        <TableCell>Value</TableCell>
-                                                        <TableCell>Origin</TableCell>
-                                                        <TableCell>Destination</TableCell>
+                                                        <TableCell>CUSTOMER</TableCell>
+                                                        <TableCell>ORIGIN</TableCell>
+                                                        <TableCell>DESTINATION</TableCell>
+                                                        <TableCell>CARRIER</TableCell>
+                                                        <TableCell>TYPE</TableCell>
+                                                        <TableCell>STATUS</TableCell>
+                                                        <TableCell align="right">ACTIONS</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {reportData?.rawData ? (
-                                                        reportData.rawData
-                                                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                                            .map((row) => (
-                                                                <TableRow key={row.id}>
-                                                                    <TableCell>{row.id}</TableCell>
-                                                                    <TableCell>{row.date.toLocaleDateString()}</TableCell>
-                                                                    <TableCell>{row.customer}</TableCell>
-                                                                    <TableCell>{row.carrier}</TableCell>
-                                                                    <TableCell>
-                                                                        <Chip
-                                                                            label={row.status}
-                                                                            color={
-                                                                                row.status === 'Delivered' ? 'success' :
-                                                                                    row.status === 'In Transit' ? 'primary' :
-                                                                                        'default'
-                                                                            }
-                                                                            size="small"
-                                                                            sx={{
-                                                                                bgcolor: row.status === 'Delivered' ? '#f0fdf4' :
-                                                                                    row.status === 'In Transit' ? '#eff6ff' :
-                                                                                        '#f1f5f9',
-                                                                                color: row.status === 'Delivered' ? '#10b981' :
-                                                                                    row.status === 'In Transit' ? '#3b82f6' :
-                                                                                        '#64748b',
-                                                                                fontWeight: 500
-                                                                            }}
-                                                                        />
-                                                                    </TableCell>
-                                                                    <TableCell>{row.category}</TableCell>
-                                                                    <TableCell>{formatCurrency(row.value)}</TableCell>
-                                                                    <TableCell>{row.origin}</TableCell>
-                                                                    <TableCell>{row.destination}</TableCell>
-                                                                </TableRow>
-                                                            ))
-                                                    ) : (
-                                                        <TableRow>
-                                                            <TableCell colSpan={9} align="center">
-                                                                <Typography variant="body2" sx={{ color: '#64748b', py: 2 }}>
-                                                                    No data available
-                                                                </Typography>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    )}
+                                                    {reportData.rawData
+                                                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                                        .map((row) => (
+                                                            <TableRow
+                                                                hover
+                                                                key={row.id}
+                                                                onClick={() => navigate(`/shipments/${row.id}`)}
+                                                                sx={{ cursor: 'pointer' }}
+                                                            >
+                                                                <TableCell>
+                                                                    <Typography
+                                                                        sx={{
+                                                                            color: '#3b82f6',
+                                                                            textDecoration: 'none',
+                                                                            fontWeight: 500
+                                                                        }}
+                                                                    >
+                                                                        {row.id}
+                                                                    </Typography>
+                                                                </TableCell>
+                                                                <TableCell>{row.customer}</TableCell>
+                                                                <TableCell>{row.origin}</TableCell>
+                                                                <TableCell>{row.destination}</TableCell>
+                                                                <TableCell>{row.carrier}</TableCell>
+                                                                <TableCell>{row.type}</TableCell>
+                                                                <TableCell>
+                                                                    <Chip
+                                                                        label={row.status}
+                                                                        color={
+                                                                            row.status === 'Delivered' ? 'success' :
+                                                                                row.status === 'In Transit' ? 'primary' :
+                                                                                    'default'
+                                                                        }
+                                                                        size="small"
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell align="right">
+                                                                    <IconButton
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            // Handle action menu open
+                                                                        }}
+                                                                        size="small"
+                                                                    >
+                                                                        <MoreVertIcon />
+                                                                    </IconButton>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
                                                 </TableBody>
                                             </Table>
                                         </TableContainer>
-                                        {reportData?.rawData && (
-                                            <TablePagination
-                                                component="div"
-                                                count={reportData.rawData.length}
-                                                page={page}
-                                                onPageChange={(e, newPage) => setPage(newPage)}
-                                                rowsPerPage={rowsPerPage}
-                                                onRowsPerPageChange={(e) => {
-                                                    setRowsPerPage(parseInt(e.target.value, 10));
-                                                    setPage(0);
-                                                }}
-                                                rowsPerPageOptions={[10, 25, 50, 100]}
-                                            />
-                                        )}
+                                        <TablePagination
+                                            component="div"
+                                            count={reportData.rawData.length}
+                                            page={page}
+                                            onPageChange={(e, newPage) => setPage(newPage)}
+                                            rowsPerPage={rowsPerPage}
+                                            onRowsPerPageChange={(e) => {
+                                                setRowsPerPage(parseInt(e.target.value, 10));
+                                                setPage(0);
+                                            }}
+                                            rowsPerPageOptions={[10, 25, 50, 100]}
+                                        />
                                     </Paper>
-                                </Box>
-                            ) : (
-                                <Box sx={{ mt: 4, textAlign: 'center', py: 8 }}>
-                                    <Typography variant="h6" sx={{ color: '#64748b', mb: 2 }}>
-                                        No Report Data Available
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                                        Configure your report settings and click "Generate Report" to view the data.
-                                    </Typography>
                                 </Box>
                             )}
                         </Box>
@@ -914,9 +1268,19 @@ const Reports = () => {
                     {selectedTab === 'saved' && (
                         <Box sx={{ p: 3 }}>
                             <Grid container spacing={3}>
-                                {savedReports.map((report) => (
+                                {reportData.rawData.map((report) => (
                                     <Grid item xs={12} md={6} key={report.id}>
-                                        <Paper sx={{ p: 3, bgcolor: '#ffffff' }}>
+                                        <Paper sx={{
+                                            p: 3,
+                                            bgcolor: '#ffffff',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                                            borderRadius: 2,
+                                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                                            '&:hover': {
+                                                transform: 'translateY(-4px)',
+                                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+                                            }
+                                        }}>
                                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
                                                     {report.name}
@@ -934,12 +1298,21 @@ const Reports = () => {
                                                 Type: {report.type}
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: '#64748b' }}>
-                                                Last Run: {report.lastRun}
+                                                Last Run: {new Date(report.date).toLocaleDateString()}
                                             </Typography>
                                             <Button
                                                 variant="outlined"
                                                 startIcon={<RefreshIcon />}
-                                                sx={{ mt: 2, color: '#64748b', borderColor: '#e2e8f0' }}
+                                                sx={{
+                                                    mt: 2,
+                                                    color: '#64748b',
+                                                    borderColor: '#e2e8f0',
+                                                    bgcolor: '#ffffff',
+                                                    '&:hover': {
+                                                        borderColor: '#cbd5e1',
+                                                        bgcolor: '#f8fafc'
+                                                    }
+                                                }}
                                             >
                                                 Run Report
                                             </Button>

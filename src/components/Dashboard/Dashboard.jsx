@@ -684,7 +684,7 @@ const Dashboard = () => {
                                 mb: 3
                             }}>
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                    Monthly Shipment Volume
+                                    Total Shipments
                                 </Typography>
                                 <Box sx={{
                                     display: 'flex',
