@@ -1,0 +1,208 @@
+.carriers-container {
+    margin: 0 auto;
+    max-width: 1300px;
+    width: 100%;
+}
+
+.breadcrumb-container {
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.breadcrumb-link {
+    color: #1976d2;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.breadcrumb-link:hover {
+    background-color: rgba(25, 118, 210, 0.04);
+}
+
+.breadcrumb-link .MuiSvgIcon-root {
+    font-size: 20px;
+}
+
+.breadcrumb-link .MuiTypography-root {
+    font-size: 0.875rem;
+    line-height: 1.43;
+}
+
+.breadcrumb-separator {
+    color: rgba(0, 0, 0, 0.54);
+    display: flex;
+    align-items: center;
+}
+
+.breadcrumb-separator .MuiSvgIcon-root {
+    font-size: 20px;
+}
+
+.breadcrumb-current {
+    color: rgba(0, 0, 0, 0.87);
+    font-size: 0.875rem;
+    line-height: 1.43;
+}
+
+.carriers-paper {
+    padding: 24px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background-color: #ffffff;
+}
+
+.carrier-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.carrier-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.carrier-logo {
+    object-fit: contain;
+    padding: 16px;
+    background-color: #f8fafc;
+}
+
+.connection-status {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+
+.carrier-actions {
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.credentials-form {
+    padding: 16px 0;
+}
+
+.credentials-info {
+    margin-top: 16px;
+    padding: 16px;
+    background-color: #f8fafc;
+    border-radius: 4px;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+    .carriers-container {
+        padding: 16px;
+    }
+
+    .carriers-paper {
+        padding: 16px;
+    }
+
+    .carrier-card {
+        margin-bottom: 16px;
+    }
+}
+
+/* Dialog styles */
+.MuiDialog-paper {
+    border-radius: 8px;
+}
+
+.MuiDialogTitle-root {
+    background-color: #f8fafc;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.MuiDialogContent-root {
+    padding: 24px !important;
+}
+
+.MuiDialogActions-root {
+    padding: 16px 24px;
+    border-top: 1px solid #e2e8f0;
+}
+
+/* Form styles */
+.MuiTextField-root {
+    margin-bottom: 16px;
+}
+
+.MuiFormControl-root {
+    margin-bottom: 16px;
+}
+
+.MuiFormLabel-root {
+    color: #64748b;
+}
+
+.MuiRadio-root {
+    color: #64748b;
+}
+
+.MuiRadio-root.Mui-checked {
+    color: #1976d2;
+}
+
+/* Button styles */
+.MuiButton-root {
+    text-transform: none;
+    font-weight: 500;
+}
+
+.MuiButton-outlined {
+    border-color: #e2e8f0;
+    color: #64748b;
+}
+
+.MuiButton-outlined:hover {
+    border-color: #1976d2;
+    color: #1976d2;
+    background-color: rgba(25, 118, 210, 0.04);
+}
+
+.MuiButton-contained {
+    background-color: #1976d2;
+}
+
+.MuiButton-contained:hover {
+    background-color: #1565c0;
+}
+
+/* Switch styles */
+.MuiSwitch-root {
+    color: #64748b;
+}
+
+.MuiSwitch-root.Mui-checked {
+    color: #1976d2;
+}
+
+/* Chip styles */
+.MuiChip-root {
+    height: 24px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.MuiChip-root.MuiChip-colorSuccess {
+    background-color: #f1f8f5;
+    color: #0a875a;
+}
+
+.MuiChip-root.MuiChip-colorDefault {
+    background-color: #f1f5f9;
+    color: #64748b;
+} 

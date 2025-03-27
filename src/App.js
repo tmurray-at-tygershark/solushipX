@@ -33,6 +33,7 @@ const Login = lazy(() => import('./components/Auth/Login'));
 const Signup = lazy(() => import('./components/Auth/Signup'));
 const EditCustomer = lazy(() => import('./components/Customers/EditCustomer'));
 const Profile = lazy(() => import('./components/Profile/Profile'));
+const Carriers = lazy(() => import('./components/Carriers/Carriers'));
 
 // Loading Component
 const LoadingFallback = () => (
@@ -126,6 +127,11 @@ function AppRoutes() {
                 <Route path="/shipment/:id" element={
                     <ProtectedRoute>
                         <ShipmentDetail />
+                    </ProtectedRoute>
+                } />
+                <Route path="/carriers" element={
+                    <ProtectedRoute>
+                        <Carriers />
                     </ProtectedRoute>
                 } />
 
