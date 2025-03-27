@@ -24,12 +24,15 @@ const Shipments = lazy(() => import('./components/Shipments/Shipments'));
 const Tracking = lazy(() => import('./components/Tracking/Tracking'));
 const TrackingResults = lazy(() => import('./components/Tracking/TrackingResults'));
 const Customers = lazy(() => import('./components/Customers/Customers'));
+const CustomerDetail = lazy(() => import('./components/Customers/CustomerDetail'));
 const Reports = lazy(() => import('./components/Reports/Reports'));
 const Billing = lazy(() => import('./components/Billing/Billing'));
 const Pricing = lazy(() => import('./components/Pricing/Pricing'));
 const Homepage = lazy(() => import('./components/Homepage/Homepage'));
 const Login = lazy(() => import('./components/Auth/Login'));
 const Signup = lazy(() => import('./components/Auth/Signup'));
+const EditCustomer = lazy(() => import('./components/Customers/EditCustomer'));
+const Profile = lazy(() => import('./components/Profile/Profile'));
 
 // Loading Component
 const LoadingFallback = () => (
@@ -95,6 +98,16 @@ function AppRoutes() {
                         <Customers />
                     </ProtectedRoute>
                 } />
+                <Route path="/customers/:id" element={
+                    <ProtectedRoute>
+                        <CustomerDetail />
+                    </ProtectedRoute>
+                } />
+                <Route path="/customers/:id/edit" element={
+                    <ProtectedRoute>
+                        <EditCustomer />
+                    </ProtectedRoute>
+                } />
                 <Route path="/reports" element={
                     <ProtectedRoute>
                         <Reports />
@@ -103,6 +116,11 @@ function AppRoutes() {
                 <Route path="/billing" element={
                     <ProtectedRoute>
                         <Billing />
+                    </ProtectedRoute>
+                } />
+                <Route path="/profile" element={
+                    <ProtectedRoute>
+                        <Profile />
                     </ProtectedRoute>
                 } />
                 <Route path="/shipment/:id" element={

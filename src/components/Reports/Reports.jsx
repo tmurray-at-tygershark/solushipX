@@ -111,7 +111,25 @@ const Reports = () => {
     ]);
 
     // State for report data
-    const [reportData, setReportData] = useState(null);
+    const [reportData, setReportData] = useState({
+        rawData: [],
+        metrics: {
+            totalShipments: 0,
+            totalValue: 0,
+            averageValue: 0,
+            onTimeDelivery: 0
+        },
+        visualizations: {
+            shipmentTrends: {
+                dates: [],
+                counts: [],
+                values: []
+            },
+            customerPerformance: [],
+            carrierDistribution: [],
+            categoryDistribution: []
+        }
+    });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -271,8 +289,8 @@ const Reports = () => {
             const metrics = {
                 totalShipments: filteredData.length,
                 totalValue: filteredData.reduce((sum, item) => sum + item.value, 0),
-                averageValue: filteredData.reduce((sum, item) => sum + item.value, 0) / filteredData.length,
-                onTimeDelivery: (filteredData.filter(item => item.status === 'Delivered').length / filteredData.length) * 100,
+                averageValue: filteredData.length > 0 ? filteredData.reduce((sum, item) => sum + item.value, 0) / filteredData.length : 0,
+                onTimeDelivery: filteredData.length > 0 ? (filteredData.filter(item => item.status === 'Delivered').length / filteredData.length) * 100 : 0,
                 customerDistribution: calculateDistribution(filteredData, 'customer'),
                 carrierDistribution: calculateDistribution(filteredData, 'carrier'),
                 categoryDistribution: calculateDistribution(filteredData, 'category')
@@ -285,6 +303,7 @@ const Reports = () => {
             });
         } catch (err) {
             setError('Failed to generate report. Please try again.');
+            console.error('Report generation error:', err);
         } finally {
             setLoading(false);
         }
@@ -329,6 +348,8 @@ const Reports = () => {
 
     // Handle export
     const handleExport = (format) => {
+        if (!reportData?.rawData) return [];
+
         if (format === 'csv') {
             const csvData = reportData.rawData.map(item => ({
                 ID: item.id,

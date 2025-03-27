@@ -23,7 +23,12 @@ import {
     DialogActions,
     FormControl,
     InputLabel,
-    Select
+    Select,
+    Toolbar,
+    Tabs,
+    Tab,
+    Stack,
+    CircularProgress
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -31,10 +36,16 @@ import {
     Visibility as VisibilityIcon,
     GetApp as ExportIcon,
     FilterList as FilterIcon,
-    Sort as SortIcon
+    Sort as SortIcon,
+    Clear as ClearIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    SearchOff as SearchOffIcon,
+    Home as HomeIcon,
+    NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import './Customers.css';
 
 const Customers = () => {
@@ -47,6 +58,7 @@ const Customers = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterAnchorEl, setFilterAnchorEl] = useState(null);
     const [sortAnchorEl, setSortAnchorEl] = useState(null);
+    const [selectedTab, setSelectedTab] = useState('all');
     const [filters, setFilters] = useState({
         status: 'all',
         type: 'all'
@@ -57,6 +69,15 @@ const Customers = () => {
     });
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
+
+    // Calculate stats from filtered data
+    const stats = {
+        total: totalCount,
+        active: customers.filter(c => c.status === 'Active').length,
+        inactive: customers.filter(c => c.status === 'Inactive').length,
+        suspended: customers.filter(c => c.status === 'Suspended').length,
+        pending: customers.filter(c => c.status === 'Pending').length
+    };
 
     // Mock data generation
     const generateMockCustomers = (count) => {
@@ -137,6 +158,11 @@ const Customers = () => {
                 );
             }
 
+            // Filter by tab
+            if (selectedTab !== 'all') {
+                filteredData = filteredData.filter(c => c.status === selectedTab);
+            }
+
             // Apply sorting
             filteredData.sort((a, b) => {
                 const aValue = a[sortBy.field];
@@ -160,7 +186,7 @@ const Customers = () => {
 
     useEffect(() => {
         loadCustomers();
-    }, [page, rowsPerPage, searchQuery, filters, sortBy]);
+    }, [page, rowsPerPage, searchQuery, filters, sortBy, selectedTab]);
 
     const handleChangePage = (event, newPage) => {
         setPage(newPage);
@@ -205,6 +231,10 @@ const Customers = () => {
         setIsExportDialogOpen(false);
     };
 
+    const handleTabChange = (event, newValue) => {
+        setSelectedTab(newValue);
+    };
+
     const getStatusColor = (status) => {
         switch (status.toLowerCase()) {
             case 'active':
@@ -220,270 +250,244 @@ const Customers = () => {
         }
     };
 
+    const handleRowClick = (customerId) => {
+        navigate(`/customers/${customerId}`);
+    };
+
     return (
-        <Box sx={{ p: 3 }}>
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                style={{ width: '100%' }}
-            >
-                <Box sx={{ maxWidth: '1200px', mx: 'auto' }}>
-                    {/* Page Header */}
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        mb: 4
-                    }}>
-                        <Typography
-                            variant="h3"
-                            component="h2"
-                            sx={{
-                                fontWeight: 800,
-                                color: '#000',
-                                letterSpacing: '-0.02em'
-                            }}
-                        >
-                            Customers
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 2 }}>
-                            <Button
-                                variant="outlined"
-                                startIcon={<ExportIcon />}
-                                onClick={handleExport}
-                                sx={{
-                                    borderColor: '#000',
-                                    color: '#000',
-                                    '&:hover': {
-                                        borderColor: '#000',
-                                        bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                Export
-                            </Button>
-                            <Button
-                                variant="contained"
-                                startIcon={<i className="fas fa-plus"></i>}
-                                sx={{
-                                    bgcolor: '#000',
-                                    '&:hover': {
-                                        bgcolor: '#333'
-                                    }
-                                }}
-                            >
-                                Create Customer
-                            </Button>
-                            <IconButton
-                                onClick={handleFilterClick}
-                                sx={{
-                                    border: '1px solid #000',
-                                    color: '#000',
-                                    '&:hover': {
-                                        bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <FilterIcon />
-                            </IconButton>
-                            <IconButton
-                                onClick={handleSortClick}
-                                sx={{
-                                    border: '1px solid #000',
-                                    color: '#000',
-                                    '&:hover': {
-                                        bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <SortIcon />
-                            </IconButton>
+        <div className="customers-container">
+            <div className="breadcrumb-container">
+                <Link to="/" className="breadcrumb-link">
+                    <HomeIcon />
+                    <Typography variant="body2">Home</Typography>
+                </Link>
+                <div className="breadcrumb-separator">
+                    <NavigateNextIcon />
+                </div>
+                <Typography variant="body2" className="breadcrumb-current">
+                    Customers
+                </Typography>
+            </div>
+
+            <Paper className="customers-paper">
+                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
+                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
+                        {/* Header Section */}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                            <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                Customers
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<ExportIcon />}
+                                    onClick={handleExport}
+                                    sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
+                                >
+                                    Export
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<i className="fas fa-plus"></i>}
+                                    sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
+                                >
+                                    Create Customer
+                                </Button>
+                            </Box>
                         </Box>
-                    </Box>
 
-                    {/* Search Bar */}
-                    <Paper
-                        component="div"
-                        sx={{
-                            p: '2px 4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            mb: 3,
-                            boxShadow: 'none',
-                            border: '1px solid #dfe3e8'
-                        }}
-                    >
-                        <SearchIcon sx={{ p: 1, color: 'action.active' }} />
-                        <InputBase
-                            sx={{ ml: 1, flex: 1 }}
-                            placeholder="Search customers..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </Paper>
+                        {/* Main Content */}
+                        <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                            <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
+                                <Tabs value={selectedTab} onChange={handleTabChange}>
+                                    <Tab label={`All (${stats.total})`} value="all" />
+                                    <Tab label={`Active (${stats.active})`} value="Active" />
+                                    <Tab label={`Inactive (${stats.inactive})`} value="Inactive" />
+                                    <Tab label={`Suspended (${stats.suspended})`} value="Suspended" />
+                                    <Tab label={`Pending (${stats.pending})`} value="Pending" />
+                                </Tabs>
+                                <Box sx={{ flexGrow: 1 }} />
+                                {/* Search Section */}
+                                <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
+                                    <Paper
+                                        component="div"
+                                        sx={{
+                                            p: '2px 4px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            width: '300px',
+                                            boxShadow: 'none',
+                                            border: '1px solid #e2e8f0',
+                                            bgcolor: '#f8fafc'
+                                        }}
+                                    >
+                                        <SearchIcon sx={{ p: 1, color: '#64748b' }} />
+                                        <InputBase
+                                            sx={{ ml: 1, flex: 1 }}
+                                            placeholder="Search customers..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
+                                    </Paper>
+                                </Box>
+                            </Toolbar>
 
-                    {/* Customers Table */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            borderRadius: 2,
-                            border: '1px solid #e0e0e0',
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <TableContainer>
-                            <Table>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>ACCOUNT #</TableCell>
-                                        <TableCell>Company</TableCell>
-                                        <TableCell>Type</TableCell>
-                                        <TableCell>Location</TableCell>
-                                        <TableCell>Status</TableCell>
-                                        <TableCell>Total Shipments</TableCell>
-                                        <TableCell>Last Shipment</TableCell>
-                                        <TableCell align="right">Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {customers.map((customer) => (
-                                        <TableRow key={customer.accountNumber}>
-                                            <TableCell>{customer.accountNumber}</TableCell>
-                                            <TableCell>{customer.company}</TableCell>
-                                            <TableCell>{customer.type}</TableCell>
-                                            <TableCell>{customer.location}</TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={customer.status}
-                                                    color={getStatusColor(customer.status)}
-                                                    size="small"
-                                                />
-                                            </TableCell>
-                                            <TableCell>{customer.totalShipments}</TableCell>
-                                            <TableCell>
-                                                {new Date(customer.lastShipment).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                <IconButton
-                                                    onClick={() => navigate(`/customers/${customer.accountNumber}`)}
-                                                    sx={{ color: '#000' }}
-                                                >
-                                                    <i className="fas fa-chevron-right"></i>
-                                                </IconButton>
-                                            </TableCell>
+                            {/* Smart Filters */}
+                            {/* Removed empty Box container */}
+
+                            {/* Active Filters */}
+                            {(filters.type !== 'all' || filters.status !== 'all') && (
+                                <Box sx={{ px: 2, pb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                    {filters.type !== 'all' && (
+                                        <Chip
+                                            label={`Type: ${filters.type}`}
+                                            onDelete={() => handleFilterChange('type', 'all')}
+                                            color="primary"
+                                            variant="outlined"
+                                        />
+                                    )}
+                                    {filters.status !== 'all' && (
+                                        <Chip
+                                            label={`Status: ${filters.status}`}
+                                            onDelete={() => handleFilterChange('status', 'all')}
+                                            color="primary"
+                                            variant="outlined"
+                                        />
+                                    )}
+                                </Box>
+                            )}
+
+                            {/* Customers Table */}
+                            <TableContainer component={Paper} className="customers-table">
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Account Number</TableCell>
+                                            <TableCell>Company</TableCell>
+                                            <TableCell>Type</TableCell>
+                                            <TableCell>Status</TableCell>
+                                            <TableCell>Location</TableCell>
+                                            <TableCell>Date Added</TableCell>
+                                            <TableCell align="right">Actions</TableCell>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                        <TablePagination
-                            component="div"
-                            count={totalCount}
-                            page={page}
-                            onPageChange={handleChangePage}
-                            rowsPerPage={rowsPerPage}
-                            onRowsPerPageChange={handleChangeRowsPerPage}
-                            rowsPerPageOptions={[10, 25, 50, 100]}
-                        />
-                    </Paper>
+                                    </TableHead>
+                                    <TableBody>
+                                        {loading ? (
+                                            <TableRow>
+                                                <TableCell colSpan={8} align="center">
+                                                    <CircularProgress />
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : customers.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={7} align="center">
+                                                    <Box sx={{ py: 3 }}>
+                                                        <SearchOffIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                                                        <Typography variant="h6" color="text.secondary">
+                                                            No customers found
+                                                        </Typography>
+                                                    </Box>
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            customers.map((customer) => (
+                                                <TableRow
+                                                    key={customer.accountNumber}
+                                                    hover
+                                                    onClick={() => handleRowClick(customer.accountNumber)}
+                                                    sx={{
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                                        },
+                                                    }}
+                                                >
+                                                    <TableCell>{customer.accountNumber}</TableCell>
+                                                    <TableCell>{customer.company}</TableCell>
+                                                    <TableCell>{customer.type}</TableCell>
+                                                    <TableCell>
+                                                        <Chip
+                                                            label={customer.status}
+                                                            color={getStatusColor(customer.status)}
+                                                            size="small"
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>{customer.location}</TableCell>
+                                                    <TableCell>{new Date(customer.dateAdded).toLocaleDateString()}</TableCell>
+                                                    <TableCell align="right">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRowClick(customer.accountNumber);
+                                                            }}
+                                                        >
+                                                            <VisibilityIcon />
+                                                        </IconButton>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                // handleEditCustomer(customer.id);
+                                                            }}
+                                                        >
+                                                            <EditIcon />
+                                                        </IconButton>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                // handleDeleteCustomer(customer.id);
+                                                            }}
+                                                        >
+                                                            <DeleteIcon />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <TablePagination
+                                component="div"
+                                count={totalCount}
+                                page={page}
+                                onPageChange={handleChangePage}
+                                rowsPerPage={rowsPerPage}
+                                onRowsPerPageChange={handleChangeRowsPerPage}
+                                rowsPerPageOptions={[10, 25, 50, 100]}
+                            />
+                        </Paper>
+                    </Box>
                 </Box>
-            </motion.div>
 
-            {/* Filter Menu */}
-            <Menu
-                anchorEl={filterAnchorEl}
-                open={Boolean(filterAnchorEl)}
-                onClose={handleFilterClose}
-            >
-                <MenuItem>
-                    <FormControl fullWidth>
-                        <InputLabel>Status</InputLabel>
-                        <Select
-                            value={filters.status}
-                            onChange={(e) => handleFilterChange('status', e.target.value)}
-                            label="Status"
-                        >
-                            <MenuItem value="all">All</MenuItem>
-                            <MenuItem value="Active">Active</MenuItem>
-                            <MenuItem value="Inactive">Inactive</MenuItem>
-                            <MenuItem value="Suspended">Suspended</MenuItem>
-                            <MenuItem value="Pending">Pending</MenuItem>
-                        </Select>
-                    </FormControl>
-                </MenuItem>
-                <MenuItem>
-                    <FormControl fullWidth>
-                        <InputLabel>Type</InputLabel>
-                        <Select
-                            value={filters.type}
-                            onChange={(e) => handleFilterChange('type', e.target.value)}
-                            label="Type"
-                        >
-                            <MenuItem value="all">All</MenuItem>
-                            <MenuItem value="Retail">Retail</MenuItem>
-                            <MenuItem value="Manufacturing">Manufacturing</MenuItem>
-                            <MenuItem value="Technology">Technology</MenuItem>
-                            <MenuItem value="Healthcare">Healthcare</MenuItem>
-                            <MenuItem value="Finance">Finance</MenuItem>
-                            <MenuItem value="Education">Education</MenuItem>
-                            <MenuItem value="Other">Other</MenuItem>
-                        </Select>
-                    </FormControl>
-                </MenuItem>
-            </Menu>
-
-            {/* Sort Menu */}
-            <Menu
-                anchorEl={sortAnchorEl}
-                open={Boolean(sortAnchorEl)}
-                onClose={handleSortClose}
-            >
-                <MenuItem onClick={() => handleSortChange('company', 'asc')}>
-                    Company Name (A-Z)
-                </MenuItem>
-                <MenuItem onClick={() => handleSortChange('company', 'desc')}>
-                    Company Name (Z-A)
-                </MenuItem>
-                <MenuItem onClick={() => handleSortChange('dateAdded', 'desc')}>
-                    Date Added (Newest)
-                </MenuItem>
-                <MenuItem onClick={() => handleSortChange('dateAdded', 'asc')}>
-                    Date Added (Oldest)
-                </MenuItem>
-                <MenuItem onClick={() => handleSortChange('totalShipments', 'desc')}>
-                    Total Shipments (High-Low)
-                </MenuItem>
-                <MenuItem onClick={() => handleSortChange('totalShipments', 'asc')}>
-                    Total Shipments (Low-High)
-                </MenuItem>
-            </Menu>
-
-            {/* Export Dialog */}
-            <Dialog open={isExportDialogOpen} onClose={handleExportClose}>
-                <DialogTitle>Export Customers</DialogTitle>
-                <DialogContent>
-                    <FormControl fullWidth sx={{ mt: 2 }}>
-                        <InputLabel>Format</InputLabel>
-                        <Select
-                            value={selectedExportFormat}
-                            onChange={(e) => setSelectedExportFormat(e.target.value)}
-                            label="Format"
-                        >
-                            <MenuItem value="csv">CSV</MenuItem>
-                            <MenuItem value="excel">Excel</MenuItem>
-                            <MenuItem value="pdf">PDF</MenuItem>
-                        </Select>
-                    </FormControl>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleExportClose}>Cancel</Button>
-                    <Button onClick={handleExportClose} variant="contained">
-                        Export
-                    </Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
+                {/* Export Dialog */}
+                <Dialog open={isExportDialogOpen} onClose={handleExportClose}>
+                    <DialogTitle>Export Customers</DialogTitle>
+                    <DialogContent>
+                        <FormControl fullWidth sx={{ mt: 2 }}>
+                            <InputLabel>Format</InputLabel>
+                            <Select
+                                value={selectedExportFormat}
+                                onChange={(e) => setSelectedExportFormat(e.target.value)}
+                                label="Format"
+                            >
+                                <MenuItem value="csv">CSV</MenuItem>
+                                <MenuItem value="excel">Excel</MenuItem>
+                                <MenuItem value="pdf">PDF</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={handleExportClose}>Cancel</Button>
+                        <Button onClick={handleExportClose} variant="contained">
+                            Export
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            </Paper>
+        </div>
     );
 };
 

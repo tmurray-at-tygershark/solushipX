@@ -43,7 +43,9 @@ import {
     CalendarToday as CalendarIcon,
     MoreVert as MoreVertIcon,
     Visibility as VisibilityIcon,
-    Print as PrintIcon
+    Print as PrintIcon,
+    Home as HomeIcon,
+    NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -402,306 +404,323 @@ const Shipments = () => {
     };
 
     return (
-        <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-            <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                {/* Header Section */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                        Shipments
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                        <Button
-                            variant="outlined"
-                            startIcon={<ExportIcon />}
-                            onClick={() => setIsExportDialogOpen(true)}
-                            sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
-                        >
-                            Export
-                        </Button>
-                        <Button
-                            variant="contained"
-                            startIcon={<AddIcon />}
-                            component={Link}
-                            to="/create-shipment"
-                            sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
-                        >
-                            Create shipment
-                        </Button>
-                    </Box>
-                </Box>
+        <div className="shipments-container">
+            <div className="breadcrumb-container">
+                <Link to="/" className="breadcrumb-link">
+                    <HomeIcon />
+                    <Typography variant="body2">Home</Typography>
+                </Link>
+                <div className="breadcrumb-separator">
+                    <NavigateNextIcon />
+                </div>
+                <Typography variant="body2" className="breadcrumb-current">
+                    Shipments
+                </Typography>
+            </div>
 
-                {/* Main Content */}
-                <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                    <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
-                        <Tabs value={selectedTab} onChange={handleTabChange}>
-                            <Tab label={`All (${stats.total})`} value="all" />
-                            <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
-                            <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
-                            <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
-                        </Tabs>
-                        <Box sx={{ flexGrow: 1 }} />
-                        {/* Search Section */}
-                        <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
-                            <Paper
-                                component="div"
-                                sx={{
-                                    p: '2px 4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    width: '300px',
-                                    boxShadow: 'none',
-                                    border: '1px solid #e2e8f0',
-                                    bgcolor: '#f8fafc'
-                                }}
-                            >
-                                <SearchIcon sx={{ p: 1, color: '#64748b' }} />
-                                <InputBase
-                                    sx={{ ml: 1, flex: 1 }}
-                                    placeholder="Search shipments..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
-                            </Paper>
+            <Paper className="shipments-paper">
+                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
+                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
+                        {/* Header Section */}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                            <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                Shipments
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<ExportIcon />}
+                                    onClick={() => setIsExportDialogOpen(true)}
+                                    sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
+                                >
+                                    Export
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<AddIcon />}
+                                    component={Link}
+                                    to="/create-shipment"
+                                    sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
+                                >
+                                    Create shipment
+                                </Button>
+                            </Box>
                         </Box>
-                    </Toolbar>
 
-                    {/* Smart Filters */}
-                    <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <FormControl sx={{ minWidth: 200 }}>
-                            <InputLabel>Carrier</InputLabel>
-                            <Select
-                                value={filters.carrier}
-                                onChange={(e) => setFilters(prev => ({
-                                    ...prev,
-                                    carrier: e.target.value
-                                }))}
-                                label="Carrier"
-                            >
-                                <MenuItem value="all">All Carriers</MenuItem>
-                                <MenuItem value="FedEx">FedEx</MenuItem>
-                                <MenuItem value="UPS">UPS</MenuItem>
-                                <MenuItem value="DHL">DHL</MenuItem>
-                                <MenuItem value="USPS">USPS</MenuItem>
-                                <MenuItem value="Canada Post">Canada Post</MenuItem>
-                                <MenuItem value="Purolator">Purolator</MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        <FormControl sx={{ minWidth: 200 }}>
-                            <InputLabel>Shipment Type</InputLabel>
-                            <Select
-                                value={filters.shipmentType || 'all'}
-                                onChange={(e) => setFilters(prev => ({
-                                    ...prev,
-                                    shipmentType: e.target.value
-                                }))}
-                                label="Shipment Type"
-                            >
-                                <MenuItem value="all">All Types</MenuItem>
-                                <MenuItem value="Courier">Courier</MenuItem>
-                                <MenuItem value="Freight">Freight</MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        <LocalizationProvider dateAdapter={AdapterDayjs}>
-                            <DatePicker
-                                label="From Date"
-                                value={dateRange[0]}
-                                onChange={(newValue) => setDateRange([newValue, dateRange[1]])}
-                                renderInput={(params) => <TextField {...params} />}
-                                sx={{ minWidth: 200 }}
-                            />
-                            <DatePicker
-                                label="To Date"
-                                value={dateRange[1]}
-                                onChange={(newValue) => setDateRange([dateRange[0], newValue])}
-                                renderInput={(params) => <TextField {...params} />}
-                                sx={{ minWidth: 200 }}
-                            />
-                        </LocalizationProvider>
-
-                        <Button
-                            variant="outlined"
-                            onClick={() => {
-                                setDateRange([null, null]);
-                                setFilters(prev => ({
-                                    ...prev,
-                                    carrier: 'all',
-                                    shipmentType: 'all'
-                                }));
-                            }}
-                            startIcon={<ClearIcon />}
-                        >
-                            Clear Filters
-                        </Button>
-                    </Box>
-
-                    {/* Shipments Table */}
-                    <TableContainer>
-                        <Table>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell padding="checkbox">
-                                        <Checkbox
-                                            indeterminate={selected.length > 0 && selected.length < shipments.length}
-                                            checked={shipments.length > 0 && selected.length === shipments.length}
-                                            onChange={handleSelectAll}
+                        {/* Main Content */}
+                        <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                            <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
+                                <Tabs value={selectedTab} onChange={handleTabChange}>
+                                    <Tab label={`All (${stats.total})`} value="all" />
+                                    <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
+                                    <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
+                                    <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
+                                </Tabs>
+                                <Box sx={{ flexGrow: 1 }} />
+                                {/* Search Section */}
+                                <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
+                                    <Paper
+                                        component="div"
+                                        sx={{
+                                            p: '2px 4px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            width: '300px',
+                                            boxShadow: 'none',
+                                            border: '1px solid #e2e8f0',
+                                            bgcolor: '#f8fafc'
+                                        }}
+                                    >
+                                        <SearchIcon sx={{ p: 1, color: '#64748b' }} />
+                                        <InputBase
+                                            sx={{ ml: 1, flex: 1 }}
+                                            placeholder="Search shipments..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
                                         />
-                                    </TableCell>
-                                    <TableCell>ID</TableCell>
-                                    <TableCell>CUSTOMER</TableCell>
-                                    <TableCell>ORIGIN</TableCell>
-                                    <TableCell>DESTINATION</TableCell>
-                                    <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
-                                    <TableCell>TYPE</TableCell>
-                                    <TableCell>STATUS</TableCell>
-                                    <TableCell align="right">ACTIONS</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {loading ? (
-                                    <TableRow>
-                                        <TableCell colSpan={9} align="center">
-                                            <CircularProgress />
-                                        </TableCell>
-                                    </TableRow>
-                                ) : shipments.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={9} align="center">
-                                            No shipments found
-                                        </TableCell>
-                                    </TableRow>
-                                ) : (
-                                    shipments.map((shipment) => (
-                                        <TableRow
-                                            hover
-                                            key={shipment.id}
-                                            onClick={(event) => handleShipmentClick(shipment)}
-                                            selected={selected.indexOf(shipment.id) !== -1}
-                                            sx={{ cursor: 'pointer' }}
-                                        >
+                                    </Paper>
+                                </Box>
+                            </Toolbar>
+
+                            {/* Smart Filters */}
+                            <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <FormControl sx={{ minWidth: 200 }}>
+                                    <InputLabel>Carrier</InputLabel>
+                                    <Select
+                                        value={filters.carrier}
+                                        onChange={(e) => setFilters(prev => ({
+                                            ...prev,
+                                            carrier: e.target.value
+                                        }))}
+                                        label="Carrier"
+                                    >
+                                        <MenuItem value="all">All Carriers</MenuItem>
+                                        <MenuItem value="FedEx">FedEx</MenuItem>
+                                        <MenuItem value="UPS">UPS</MenuItem>
+                                        <MenuItem value="DHL">DHL</MenuItem>
+                                        <MenuItem value="USPS">USPS</MenuItem>
+                                        <MenuItem value="Canada Post">Canada Post</MenuItem>
+                                        <MenuItem value="Purolator">Purolator</MenuItem>
+                                    </Select>
+                                </FormControl>
+
+                                <FormControl sx={{ minWidth: 200 }}>
+                                    <InputLabel>Shipment Type</InputLabel>
+                                    <Select
+                                        value={filters.shipmentType || 'all'}
+                                        onChange={(e) => setFilters(prev => ({
+                                            ...prev,
+                                            shipmentType: e.target.value
+                                        }))}
+                                        label="Shipment Type"
+                                    >
+                                        <MenuItem value="all">All Types</MenuItem>
+                                        <MenuItem value="Courier">Courier</MenuItem>
+                                        <MenuItem value="Freight">Freight</MenuItem>
+                                    </Select>
+                                </FormControl>
+
+                                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                    <DatePicker
+                                        label="From Date"
+                                        value={dateRange[0]}
+                                        onChange={(newValue) => setDateRange([newValue, dateRange[1]])}
+                                        renderInput={(params) => <TextField {...params} />}
+                                        sx={{ minWidth: 200 }}
+                                    />
+                                    <DatePicker
+                                        label="To Date"
+                                        value={dateRange[1]}
+                                        onChange={(newValue) => setDateRange([dateRange[0], newValue])}
+                                        renderInput={(params) => <TextField {...params} />}
+                                        sx={{ minWidth: 200 }}
+                                    />
+                                </LocalizationProvider>
+
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => {
+                                        setDateRange([null, null]);
+                                        setFilters(prev => ({
+                                            ...prev,
+                                            carrier: 'all',
+                                            shipmentType: 'all'
+                                        }));
+                                    }}
+                                    startIcon={<ClearIcon />}
+                                >
+                                    Clear Filters
+                                </Button>
+                            </Box>
+
+                            {/* Shipments Table */}
+                            <TableContainer>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
                                             <TableCell padding="checkbox">
                                                 <Checkbox
-                                                    checked={selected.indexOf(shipment.id) !== -1}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    onChange={(e) => handleSelectClick(e, shipment.id)}
+                                                    indeterminate={selected.length > 0 && selected.length < shipments.length}
+                                                    checked={shipments.length > 0 && selected.length === shipments.length}
+                                                    onChange={handleSelectAll}
                                                 />
                                             </TableCell>
-                                            <TableCell>
-                                                <Typography
-                                                    sx={{
-                                                        color: '#3b82f6',
-                                                        textDecoration: 'none',
-                                                        fontWeight: 500
-                                                    }}
-                                                >
-                                                    {shipment.id}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>{shipment.customer}</TableCell>
-                                            <TableCell>{shipment.origin}</TableCell>
-                                            <TableCell>{shipment.destination}</TableCell>
-                                            <TableCell>{shipment.carrier}</TableCell>
-                                            <TableCell>{shipment.shipmentType}</TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={shipment.status}
-                                                    color={
-                                                        shipment.status === 'Delivered' ? 'success' :
-                                                            shipment.status === 'In Transit' ? 'primary' :
-                                                                shipment.status === 'Pending' ? 'default' : 'default'
-                                                    }
-                                                    size="small"
-                                                />
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                <IconButton
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleActionMenuOpen(e, shipment);
-                                                    }}
-                                                    size="small"
-                                                >
-                                                    <MoreVertIcon />
-                                                </IconButton>
-                                            </TableCell>
+                                            <TableCell>ID</TableCell>
+                                            <TableCell>CUSTOMER</TableCell>
+                                            <TableCell>ORIGIN</TableCell>
+                                            <TableCell>DESTINATION</TableCell>
+                                            <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
+                                            <TableCell>TYPE</TableCell>
+                                            <TableCell>STATUS</TableCell>
+                                            <TableCell align="right">ACTIONS</TableCell>
                                         </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
+                                    </TableHead>
+                                    <TableBody>
+                                        {loading ? (
+                                            <TableRow>
+                                                <TableCell colSpan={9} align="center">
+                                                    <CircularProgress />
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : shipments.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={9} align="center">
+                                                    No shipments found
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            shipments.map((shipment) => (
+                                                <TableRow
+                                                    hover
+                                                    key={shipment.id}
+                                                    onClick={(event) => handleShipmentClick(shipment)}
+                                                    selected={selected.indexOf(shipment.id) !== -1}
+                                                    sx={{ cursor: 'pointer' }}
+                                                >
+                                                    <TableCell padding="checkbox">
+                                                        <Checkbox
+                                                            checked={selected.indexOf(shipment.id) !== -1}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            onChange={(e) => handleSelectClick(e, shipment.id)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Typography
+                                                            sx={{
+                                                                color: '#3b82f6',
+                                                                textDecoration: 'none',
+                                                                fontWeight: 500
+                                                            }}
+                                                        >
+                                                            {shipment.id}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>{shipment.customer}</TableCell>
+                                                    <TableCell>{shipment.origin}</TableCell>
+                                                    <TableCell>{shipment.destination}</TableCell>
+                                                    <TableCell>{shipment.carrier}</TableCell>
+                                                    <TableCell>{shipment.shipmentType}</TableCell>
+                                                    <TableCell>
+                                                        <Chip
+                                                            label={shipment.status}
+                                                            color={
+                                                                shipment.status === 'Delivered' ? 'success' :
+                                                                    shipment.status === 'In Transit' ? 'primary' :
+                                                                        shipment.status === 'Pending' ? 'default' : 'default'
+                                                            }
+                                                            size="small"
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        <IconButton
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleActionMenuOpen(e, shipment);
+                                                            }}
+                                                            size="small"
+                                                        >
+                                                            <MoreVertIcon />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
 
-                    {/* Pagination */}
-                    <TablePagination
-                        component="div"
-                        count={totalCount}
-                        page={page}
-                        onPageChange={(event, newPage) => setPage(newPage)}
-                        rowsPerPage={rowsPerPage}
-                        onRowsPerPageChange={(event) => {
-                            setRowsPerPage(parseInt(event.target.value, 10));
-                            setPage(0);
-                        }}
-                        rowsPerPageOptions={[10, 25, 50, 100]}
-                    />
-                </Paper>
+                            {/* Pagination */}
+                            <TablePagination
+                                component="div"
+                                count={totalCount}
+                                page={page}
+                                onPageChange={(event, newPage) => setPage(newPage)}
+                                rowsPerPage={rowsPerPage}
+                                onRowsPerPageChange={(event) => {
+                                    setRowsPerPage(parseInt(event.target.value, 10));
+                                    setPage(0);
+                                }}
+                                rowsPerPageOptions={[10, 25, 50, 100]}
+                            />
+                        </Paper>
 
-                {/* Export Dialog */}
-                <Dialog open={isExportDialogOpen} onClose={() => setIsExportDialogOpen(false)}>
-                    <DialogTitle>Export Shipments</DialogTitle>
-                    <DialogContent>
-                        <FormControl fullWidth sx={{ mt: 2 }}>
-                            <InputLabel>Format</InputLabel>
-                            <Select
-                                value={selectedExportFormat}
-                                onChange={(e) => setSelectedExportFormat(e.target.value)}
-                                label="Format"
-                            >
-                                <MenuItem value="csv">CSV</MenuItem>
-                                <MenuItem value="excel">Excel</MenuItem>
-                                <MenuItem value="pdf">PDF</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setIsExportDialogOpen(false)}>Cancel</Button>
-                        <Button onClick={handleExport} variant="contained">
-                            Export
-                        </Button>
-                    </DialogActions>
-                </Dialog>
+                        {/* Export Dialog */}
+                        <Dialog open={isExportDialogOpen} onClose={() => setIsExportDialogOpen(false)}>
+                            <DialogTitle>Export Shipments</DialogTitle>
+                            <DialogContent>
+                                <FormControl fullWidth sx={{ mt: 2 }}>
+                                    <InputLabel>Format</InputLabel>
+                                    <Select
+                                        value={selectedExportFormat}
+                                        onChange={(e) => setSelectedExportFormat(e.target.value)}
+                                        label="Format"
+                                    >
+                                        <MenuItem value="csv">CSV</MenuItem>
+                                        <MenuItem value="excel">Excel</MenuItem>
+                                        <MenuItem value="pdf">PDF</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </DialogContent>
+                            <DialogActions>
+                                <Button onClick={() => setIsExportDialogOpen(false)}>Cancel</Button>
+                                <Button onClick={handleExport} variant="contained">
+                                    Export
+                                </Button>
+                            </DialogActions>
+                        </Dialog>
 
-                {/* Action Menu */}
-                <Menu
-                    anchorEl={actionMenuAnchorEl}
-                    open={Boolean(actionMenuAnchorEl)}
-                    onClose={handleActionMenuClose}
-                >
-                    <MenuItem onClick={() => {
-                        handleActionMenuClose();
-                        if (selectedShipment) {
-                            navigate(`/shipment/${selectedShipment.id}`);
-                        }
-                    }}>
-                        <ListItemIcon>
-                            <VisibilityIcon fontSize="small" />
-                        </ListItemIcon>
-                        View Details
-                    </MenuItem>
-                    <MenuItem onClick={() => {
-                        handleActionMenuClose();
-                        // Handle print label
-                        console.log('Print label for:', selectedShipment?.id);
-                    }}>
-                        <ListItemIcon>
-                            <PrintIcon fontSize="small" />
-                        </ListItemIcon>
-                        Print Label
-                    </MenuItem>
-                </Menu>
-            </Box>
-        </Box>
+                        {/* Action Menu */}
+                        <Menu
+                            anchorEl={actionMenuAnchorEl}
+                            open={Boolean(actionMenuAnchorEl)}
+                            onClose={handleActionMenuClose}
+                        >
+                            <MenuItem onClick={() => {
+                                handleActionMenuClose();
+                                if (selectedShipment) {
+                                    navigate(`/shipment/${selectedShipment.id}`);
+                                }
+                            }}>
+                                <ListItemIcon>
+                                    <VisibilityIcon fontSize="small" />
+                                </ListItemIcon>
+                                View Details
+                            </MenuItem>
+                            <MenuItem onClick={() => {
+                                handleActionMenuClose();
+                                // Handle print label
+                                console.log('Print label for:', selectedShipment?.id);
+                            }}>
+                                <ListItemIcon>
+                                    <PrintIcon fontSize="small" />
+                                </ListItemIcon>
+                                Print Label
+                            </MenuItem>
+                        </Menu>
+                    </Box>
+                </Box>
+            </Paper>
+        </div>
     );
 };
 

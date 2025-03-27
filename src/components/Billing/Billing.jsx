@@ -6,12 +6,16 @@ import {
     Typography,
     Tabs,
     Tab,
-    useTheme
+    useTheme,
+    Link
 } from '@mui/material';
 import { motion } from 'framer-motion';
+import { Link as RouterLink } from 'react-router-dom';
+import { Home as HomeIcon, NavigateNext as NavigateNextIcon } from '@mui/icons-material';
 import BillingProfiles from './BillingProfiles';
 import Invoices from './Invoices';
 import PaymentMethods from './PaymentMethods';
+import './Billing.css';
 
 const Billing = () => {
     const theme = useTheme();
@@ -22,19 +26,28 @@ const Billing = () => {
     };
 
     return (
-        <Box
-            sx={{
-                minHeight: '100vh',
-                bgcolor: '#f8f9fa',
-                py: 8
-            }}
-        >
-            <Container maxWidth="lg">
+        <Box className="billing-container">
+            <Container maxWidth={false} sx={{ maxWidth: '1300px', mx: 'auto' }}>
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6 }}
                 >
+                    <div className="breadcrumb-container">
+                        <Link
+                            component={RouterLink}
+                            to="/"
+                            className="breadcrumb-link"
+                        >
+                            <HomeIcon sx={{ fontSize: 20, mr: 0.5 }} />
+                            Home
+                        </Link>
+                        <NavigateNextIcon className="breadcrumb-separator" />
+                        <Typography className="breadcrumb-current">
+                            Billing & Payments
+                        </Typography>
+                    </div>
+
                     <Box sx={{ mb: 4 }}>
                         <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1 }}>
                             Billing & Payments

@@ -1,285 +1,318 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
     Box,
     Paper,
     Typography,
     Grid,
+    Button,
     Chip,
     Divider,
+    Breadcrumbs,
+    CircularProgress,
     Table,
     TableBody,
     TableCell,
     TableContainer,
     TableHead,
     TableRow,
-    IconButton,
-    useTheme,
-    Button
+    TablePagination,
+    TextField,
+    InputAdornment,
+    Stack,
+    Tooltip,
+    IconButton
 } from '@mui/material';
 import {
     ArrowBack as ArrowBackIcon,
     Edit as EditIcon,
+    Delete as DeleteIcon,
     LocationOn as LocationIcon,
-    Business as BusinessIcon,
-    Person as PersonIcon,
     Phone as PhoneIcon,
-    Email as EmailIcon
+    Email as EmailIcon,
+    Business as BusinessIcon,
+    CalendarToday as CalendarIcon,
+    NavigateNext as NavigateNextIcon,
+    Home as HomeIcon,
+    Search as SearchIcon,
+    LocalShipping as ShippingIcon
 } from '@mui/icons-material';
-import { motion } from 'framer-motion';
+import './CustomerDetail.css';
 
 const CustomerDetail = () => {
-    const theme = useTheme();
-
-    // Mock data - replace with actual API call
-    const customer = {
-        accountNumber: 'ACC001',
-        company: 'Acme Corporation',
-        status: 'Active',
-        contact: {
-            name: 'John Doe',
-            phone: '(555) 123-4567',
-            email: 'john.doe@acme.com'
-        },
-        address: {
-            address1: '123 Business Street',
-            address2: 'Suite 100',
-            city: 'New York',
-            state: 'NY',
-            country: 'United States',
-            postalCode: '10001'
-        },
-        shipmentHistory: [
-            {
-                id: 'SH001',
-                date: '2024-03-15',
-                status: 'Delivered',
-                origin: 'New York, NY',
-                destination: 'Los Angeles, CA',
-                trackingNumber: 'TRK123456789'
-            },
-            {
-                id: 'SH002',
-                date: '2024-03-10',
-                status: 'In Transit',
-                origin: 'Chicago, IL',
-                destination: 'Miami, FL',
-                trackingNumber: 'TRK987654321'
-            }
-        ]
-    };
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const [customer, setCustomer] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [shipments, setShipments] = useState([]);
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [customerStatus, setCustomerStatus] = useState('active');
 
     const getStatusColor = (status) => {
         switch (status.toLowerCase()) {
-            case 'active':
+            case 'delivered':
                 return 'success';
-            case 'inactive':
-                return 'default';
-            case 'suspended':
+            case 'in transit':
+                return 'primary';
+            case 'pending':
+                return 'warning';
+            case 'cancelled':
                 return 'error';
             default:
                 return 'default';
         }
     };
 
+    useEffect(() => {
+        // Simulate API call to fetch customer data
+        const fetchCustomerData = async () => {
+            try {
+                // Mock data - replace with actual API call
+                const mockCustomer = {
+                    id: id,
+                    companyName: 'Acme Corporation',
+                    accountNumber: 'ACC-123456',
+                    contactName: 'John Doe',
+                    email: 'john.doe@acme.com',
+                    phone: '+1 (555) 123-4567',
+                    address: '123 Business Ave, Suite 100, New York, NY 10001',
+                    createdAt: '2024-01-15',
+                    status: 'active'
+                };
+
+                const mockShipments = [
+                    {
+                        id: 'SHP287656',
+                        origin: '555 Fifth Avenue, Chicago, IL 60601, USA',
+                        destination: '888 Robson Street, Calgary, AB T2P 1B8, Canada',
+                        carrier: 'FedEx',
+                        type: 'Courier',
+                        status: 'Delivered',
+                        date: '2024-03-15'
+                    },
+                    {
+                        id: 'SHP287657',
+                        origin: '123 Main Street, New York, NY 10001, USA',
+                        destination: '456 Queen Street, Toronto, ON M5V 2A9, Canada',
+                        carrier: 'UPS',
+                        type: 'Express',
+                        status: 'In Transit',
+                        date: '2024-03-14'
+                    },
+                    {
+                        id: 'SHP287658',
+                        origin: '789 Market Street, San Francisco, CA 94103, USA',
+                        destination: '321 Yonge Street, Toronto, ON M5B 1T1, Canada',
+                        carrier: 'DHL',
+                        type: 'Standard',
+                        status: 'Pending',
+                        date: '2024-03-13'
+                    }
+                ];
+
+                setCustomer(mockCustomer);
+                setShipments(mockShipments);
+            } catch (error) {
+                console.error('Error fetching customer data:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchCustomerData();
+    }, [id]);
+
+    const handleChangePage = (event, newPage) => {
+        setPage(newPage);
+    };
+
+    const handleChangeRowsPerPage = (event) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
+    };
+
+    const handleSearchChange = (event) => {
+        setSearchQuery(event.target.value);
+        setPage(0);
+    };
+
+    const handleShipmentClick = (shipmentId) => {
+        navigate(`/shipment/${shipmentId}`);
+    };
+
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    if (!customer) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                <Typography variant="h6" color="error">Customer not found</Typography>
+            </Box>
+        );
+    }
+
+    const filteredShipments = shipments.filter(shipment =>
+        shipment.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        shipment.origin.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        shipment.destination.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        shipment.carrier.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        shipment.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        shipment.status.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     return (
-        <Box sx={{ p: 3 }}>
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                style={{ width: '100%' }}
-            >
-                <Box sx={{ maxWidth: '1200px', mx: 'auto' }}>
-                    {/* Page Header */}
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        mb: 4
-                    }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <IconButton
-                                onClick={() => window.history.back()}
-                                sx={{ color: '#000' }}
-                            >
-                                <ArrowBackIcon />
-                            </IconButton>
-                            <Typography
-                                variant="h3"
-                                component="h2"
-                                sx={{
-                                    fontWeight: 800,
-                                    color: '#000',
-                                    letterSpacing: '-0.02em'
-                                }}
-                            >
-                                Customer Details
-                            </Typography>
-                        </Box>
+        <div className="customer-detail-container">
+            <div className="breadcrumb-container">
+                <Link to="/" className="breadcrumb-link">
+                    <HomeIcon />
+                    <Typography variant="body2">Home</Typography>
+                </Link>
+                <div className="breadcrumb-separator">
+                    <NavigateNextIcon />
+                </div>
+                <Link to="/customers" className="breadcrumb-link">
+                    <Typography variant="body2">Customers</Typography>
+                </Link>
+                <div className="breadcrumb-separator">
+                    <NavigateNextIcon />
+                </div>
+                <Typography variant="body2" className="breadcrumb-current">
+                    {customer?.companyName || 'Customer Details'}
+                </Typography>
+            </div>
+
+            <Paper className="customer-detail-paper">
+                <div className="customer-header">
+                    <div>
+                        <Typography variant="h4" gutterBottom>
+                            {customer.companyName}
+                        </Typography>
+                        <Typography variant="subtitle1" color="text.secondary">
+                            Account Number: {customer.accountNumber}
+                        </Typography>
+                    </div>
+                    <div className="customer-actions">
+                        <Chip
+                            label={customerStatus === 'active' ? 'Active' : 'Inactive'}
+                            color={customerStatus === 'active' ? 'success' : 'default'}
+                            size="medium"
+                            sx={{ mr: 2 }}
+                        />
                         <Button
-                            variant="contained"
-                            startIcon={<i className="fas fa-edit"></i>}
-                            sx={{
-                                bgcolor: '#000',
-                                '&:hover': {
-                                    bgcolor: '#333'
-                                }
-                            }}
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<EditIcon />}
+                            className="action-button"
+                            onClick={() => navigate(`/customers/${id}/edit`)}
                         >
                             Edit Customer
                         </Button>
-                    </Box>
+                    </div>
+                </div>
 
-                    <Grid container spacing={3}>
-                        {/* Customer Information Card */}
-                        <Grid item xs={12} md={4}>
-                            <Paper
-                                elevation={0}
-                                sx={{
-                                    p: 3,
-                                    borderRadius: 2,
-                                    border: '1px solid #e0e0e0',
-                                    height: '100%'
-                                }}
-                            >
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                    <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                        {customer.company}
-                                    </Typography>
-                                </Box>
-
-                                <Box sx={{ mb: 3 }}>
-                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                        Account Number
-                                    </Typography>
-                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                        {customer.accountNumber}
-                                    </Typography>
-                                </Box>
-
-                                <Box sx={{ mb: 3 }}>
-                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                        Status
-                                    </Typography>
-                                    <Chip
-                                        label={customer.status}
-                                        color={getStatusColor(customer.status)}
-                                        size="small"
-                                        sx={{ fontWeight: 500 }}
-                                    />
-                                </Box>
-
-                                <Divider sx={{ my: 3 }} />
-
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                    <PersonIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                                    <Typography variant="subtitle2" color="text.secondary">
-                                        Contact Person
-                                    </Typography>
-                                </Box>
-                                <Typography variant="body1" sx={{ mb: 1, fontWeight: 500 }}>
-                                    {customer.contact.name}
-                                </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                    <PhoneIcon sx={{ mr: 1, color: 'text.secondary', fontSize: '1.2rem' }} />
-                                    <Typography variant="body2">{customer.contact.phone}</Typography>
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    <EmailIcon sx={{ mr: 1, color: 'text.secondary', fontSize: '1.2rem' }} />
-                                    <Typography variant="body2">{customer.contact.email}</Typography>
-                                </Box>
-                            </Paper>
+                <div className="customer-info">
+                    <Typography variant="h6" gutterBottom>Contact Information</Typography>
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
+                            <Typography><strong>Contact Name:</strong> {customer.contactName}</Typography>
+                            <Typography><strong>Email:</strong> {customer.email}</Typography>
+                            <Typography><strong>Phone:</strong> {customer.phone}</Typography>
                         </Grid>
-
-                        {/* Address Card */}
-                        <Grid item xs={12} md={4}>
-                            <Paper
-                                elevation={0}
-                                sx={{
-                                    p: 3,
-                                    borderRadius: 2,
-                                    border: '1px solid #e0e0e0',
-                                    height: '100%'
-                                }}
-                            >
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                    <LocationIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                        Address
-                                    </Typography>
-                                </Box>
-
-                                <Typography variant="body1" sx={{ mb: 1 }}>
-                                    {customer.address.address1}
-                                </Typography>
-                                {customer.address.address2 && (
-                                    <Typography variant="body1" sx={{ mb: 1 }}>
-                                        {customer.address.address2}
-                                    </Typography>
-                                )}
-                                <Typography variant="body1" sx={{ mb: 1 }}>
-                                    {customer.address.city}, {customer.address.state} {customer.address.postalCode}
-                                </Typography>
-                                <Typography variant="body1">
-                                    {customer.address.country}
-                                </Typography>
-                            </Paper>
-                        </Grid>
-
-                        {/* Shipment History Card */}
-                        <Grid item xs={12} md={4}>
-                            <Paper
-                                elevation={0}
-                                sx={{
-                                    p: 3,
-                                    borderRadius: 2,
-                                    border: '1px solid #e0e0e0',
-                                    height: '100%'
-                                }}
-                            >
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                            Recent Shipments
-                                        </Typography>
-                                    </Box>
-                                    <IconButton size="small" sx={{ color: 'text.secondary' }}>
-                                        <EditIcon />
-                                    </IconButton>
-                                </Box>
-
-                                <TableContainer>
-                                    <Table size="small">
-                                        <TableBody>
-                                            {customer.shipmentHistory.map((shipment) => (
-                                                <TableRow key={shipment.id}>
-                                                    <TableCell>
-                                                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                            {shipment.id}
-                                                        </Typography>
-                                                        <Typography variant="caption" color="text.secondary">
-                                                            {shipment.date}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell align="right">
-                                                        <Chip
-                                                            label={shipment.status}
-                                                            size="small"
-                                                            color={shipment.status === 'Delivered' ? 'success' : 'primary'}
-                                                        />
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </TableContainer>
-                            </Paper>
+                        <Grid item xs={12} md={6}>
+                            <Typography><strong>Address:</strong> {customer.address}</Typography>
+                            <Typography><strong>Created:</strong> {new Date(customer.createdAt).toLocaleDateString()}</Typography>
+                            <Typography><strong>Status:</strong> {customer.status}</Typography>
                         </Grid>
                     </Grid>
-                </Box>
-            </motion.div>
-        </Box>
+                </div>
+
+                <div className="shipments-section">
+                    <div className="shipments-header">
+                        <Typography variant="h6">Recent Shipments</Typography>
+                        <TextField
+                            placeholder="Search shipments..."
+                            value={searchQuery}
+                            onChange={handleSearchChange}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+                    </div>
+
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>ID</TableCell>
+                                    <TableCell>ORIGIN</TableCell>
+                                    <TableCell>DESTINATION</TableCell>
+                                    <TableCell>CARRIER</TableCell>
+                                    <TableCell>TYPE</TableCell>
+                                    <TableCell>STATUS</TableCell>
+                                    <TableCell>ACTIONS</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredShipments.map((shipment) => (
+                                    <TableRow
+                                        key={shipment.id}
+                                        className="shipment-row"
+                                        onClick={() => navigate(`/shipments/${shipment.id}`)}
+                                    >
+                                        <TableCell>{shipment.id}</TableCell>
+                                        <TableCell>{shipment.origin}</TableCell>
+                                        <TableCell>{shipment.destination}</TableCell>
+                                        <TableCell>{shipment.carrier}</TableCell>
+                                        <TableCell>{shipment.type}</TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={shipment.status}
+                                                color={getStatusColor(shipment.status)}
+                                                size="small"
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button
+                                                variant="text"
+                                                color="primary"
+                                                size="small"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigate(`/shipments/${shipment.id}`);
+                                                }}
+                                            >
+                                                View
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+
+                    <TablePagination
+                        component="div"
+                        count={filteredShipments.length}
+                        page={page}
+                        onPageChange={handleChangePage}
+                        rowsPerPage={rowsPerPage}
+                        onRowsPerPageChange={handleChangeRowsPerPage}
+                        rowsPerPageOptions={[5, 10, 25]}
+                    />
+                </div>
+            </Paper>
+        </div>
     );
 };
 
