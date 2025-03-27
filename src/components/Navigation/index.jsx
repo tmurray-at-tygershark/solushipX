@@ -48,8 +48,8 @@ const Navigation = () => {
         { path: '/shipments', label: 'Shipments' },
         { path: '/tracking', label: 'Track Shipment' },
         { path: '/customers', label: 'Customers' },
-        { path: '/reports', label: 'Reports' },
-        { path: '/carriers', label: 'Carriers' }
+        { path: '/carriers', label: 'Carriers' },
+        { path: '/reports', label: 'Reports' }
     ] : [];
 
     const featuresMenuItems = [

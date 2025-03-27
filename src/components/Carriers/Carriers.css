@@ -74,6 +74,8 @@
     object-fit: contain;
     padding: 16px;
     background-color: #f8fafc;
+    width: 100%;
+    height: auto;
 }
 
 .connection-status {

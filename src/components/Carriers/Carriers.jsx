@@ -37,7 +37,7 @@ const carriers = [
     {
         id: 'fedex',
         name: 'FedEx',
-        logo: '/images/carriers/fedex.png',
+        logo: '/images/carrier-badges/fedex.png',
         description: 'Global shipping and logistics services',
         enabled: true,
         connected: true,
@@ -49,16 +49,20 @@ const carriers = [
     {
         id: 'ups',
         name: 'UPS',
-        logo: '/images/carriers/ups.png',
-        description: 'Worldwide shipping and delivery services',
+        logo: '/images/carrier-badges/ups.png',
+        description: 'Connect your UPS account to enable shipping with UPS services.',
         enabled: true,
         connected: false,
-        credentials: null
+        credentials: {
+            accountNumber: '',
+            apiKey: '',
+            apiSecret: ''
+        }
     },
     {
         id: 'eship',
         name: 'eShip Plus',
-        logo: '/images/carriers/eship.png',
+        logo: '/images/carrier-badges/eship.png',
         description: 'Canadian shipping and logistics solutions',
         enabled: false,
         connected: false,
@@ -67,7 +71,7 @@ const carriers = [
     {
         id: 'purolator',
         name: 'Purolator',
-        logo: '/images/carriers/purolator.png',
+        logo: '/images/carrier-badges/purolator.png',
         description: 'Canadian courier and freight services',
         enabled: false,
         connected: false,
@@ -76,7 +80,7 @@ const carriers = [
     {
         id: 'dhl',
         name: 'DHL',
-        logo: '/images/carriers/dhl.png',
+        logo: '/images/carrier-badges/dhl.png',
         description: 'International shipping and logistics',
         enabled: false,
         connected: false,
@@ -85,7 +89,7 @@ const carriers = [
     {
         id: 'canadapost',
         name: 'Canada Post',
-        logo: '/images/carriers/canadapost.png',
+        logo: '/images/carrier-badges/canadapost.png',
         description: 'Canadian postal service',
         enabled: false,
         connected: false,
@@ -94,7 +98,7 @@ const carriers = [
     {
         id: 'canpar',
         name: 'Canpar',
-        logo: '/images/carriers/canpar.png',
+        logo: '/images/carrier-badges/canpar.png',
         description: 'Canadian parcel delivery service',
         enabled: false,
         connected: false,
@@ -103,7 +107,7 @@ const carriers = [
     {
         id: 'usps',
         name: 'USPS',
-        logo: '/images/carriers/usps.png',
+        logo: '/images/carrier-badges/usps.png',
         description: 'United States Postal Service',
         enabled: false,
         connected: false,
@@ -224,7 +228,7 @@ const Carriers = () => {
                                                 />
                                                 {carrier.connected && (
                                                     <Typography variant="body2" color="text.secondary">
-                                                        {carrier.credentials?.type === 'soluship' ? 'Using Soluship credentials' : 'Using custom credentials'}
+                                                        {carrier.credentials?.type === 'soluship' ? 'Using Soluship Connect' : 'Using custom credentials'}
                                                     </Typography>
                                                 )}
                                             </Box>
@@ -263,7 +267,7 @@ const Carriers = () => {
                                 <FormControlLabel
                                     value="soluship"
                                     control={<Radio />}
-                                    label="Use Soluship Credentials"
+                                    label="Auto-Connect with Soluship"
                                 />
                                 <FormControlLabel
                                     value="custom"
@@ -302,9 +306,11 @@ const Carriers = () => {
 
                         {credentials.type === 'soluship' && (
                             <Box className="credentials-info">
-                                <Typography variant="body2" color="text.secondary">
-                                    You will be using Soluship's credentials to connect to {selectedCarrier?.name}.
-                                    This is the recommended approach for most users.
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                    Auto-Connect with Soluship
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Using Soluship Connect
                                 </Typography>
                             </Box>
                         )}

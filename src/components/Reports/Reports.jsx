@@ -1200,7 +1200,7 @@ const Reports = () => {
                                                             <TableRow
                                                                 hover
                                                                 key={row.id}
-                                                                onClick={() => navigate(`/shipments/${row.id}`)}
+                                                                onClick={() => navigate(`/shipment/${row.id}`)}
                                                                 sx={{ cursor: 'pointer' }}
                                                             >
                                                                 <TableCell>
