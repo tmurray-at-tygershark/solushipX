@@ -1,141 +1,86 @@
-.admin-header {
-    padding: 24px;
-    margin-left: 280px;
-    min-height: calc(100vh - 64px); /* Subtract nav height */
-    background-color: #f8fafc;
-    margin-top: 64px; /* Add top margin for nav */
-}
-
-.header-paper {
+.navbar {
     background-color: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    padding: 24px;
-    margin-bottom: 24px;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.5rem 1rem;
 }
 
-.header-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.header-title {
+.navbar-brand {
     color: #0f172a;
     font-weight: 600;
-    margin: 0;
-}
-
-.header-subtitle {
-    color: #64748b;
-    margin: 0;
-}
-
-.header-right {
+    text-decoration: none;
     display: flex;
     align-items: center;
 }
 
-.search-input {
-    width: 300px;
+.navbar-brand i {
+    font-size: 1.25rem;
 }
 
-.search-input .MuiOutlinedInput-root {
-    border-radius: 8px;
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
-}
-
-.search-input .MuiOutlinedInput-root:hover {
-    border-color: #94a3b8;
-}
-
-.search-input .MuiOutlinedInput-root.Mui-focused {
-    border-color: #0f172a;
-}
-
-.search-input .MuiInputAdornment-root .MuiSvgIcon-root {
+.nav-link {
     color: #64748b;
-}
-
-.filter-button {
-    color: #64748b;
-    border: 1px solid #e2e8f0;
-    padding: 8px;
-}
-
-.filter-button:hover {
-    background-color: #f8fafc;
-    border-color: #94a3b8;
-}
-
-.add-button {
-    background-color: #0f172a;
-    color: white;
-    text-transform: none;
-    padding: 8px 16px;
-    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
     font-weight: 500;
+    transition: color 0.2s ease-in-out;
 }
 
-.add-button:hover {
-    background-color: #1e293b;
+.nav-link:hover {
+    color: #0f172a;
 }
 
-.menu-button {
-    color: #64748b;
+.nav-link.active {
+    color: #0f172a;
 }
 
-.menu-button:hover {
-    background-color: #f8fafc;
+.profile-button {
+    margin-left: 0.5rem !important;
 }
 
-.action-menu {
+.profile-avatar {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0.875rem !important;
+    background-color: #0f172a !important;
+}
+
+.profile-menu .MuiPaper-root {
+    margin-top: 8px;
     min-width: 200px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
 }
 
-.action-menu .MuiMenuItem-root {
-    font-size: 0.875rem;
+.profile-menu .MuiMenuItem-root {
     padding: 0.75rem 1rem;
     color: #1e293b;
 }
 
-.menu-icon {
-    margin-right: 12px;
+.profile-menu .MuiMenuItem-root:hover {
+    background-color: #f8fafc;
+}
+
+.profile-menu .MuiListItemIcon-root {
+    min-width: 36px;
     color: #64748b;
 }
 
-/* Responsive styles */
 @media (max-width: 960px) {
-    .admin-header {
-        margin-left: 0;
-        padding: 16px;
-        margin-top: 0; /* Remove top margin on mobile */
+    .navbar-collapse {
+        background-color: #ffffff;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        padding: 1rem;
+        border-top: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
 
-    .header-paper {
-        padding: 16px;
+    .navbar-nav {
+        padding: 0.5rem 0;
     }
 
-    .header-content {
-        flex-direction: column;
-        gap: 16px;
-        align-items: flex-start;
-    }
-
-    .header-right {
-        width: 100%;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .search-input {
-        width: 100%;
+    .nav-item {
+        margin: 0.25rem 0;
     }
 } 
