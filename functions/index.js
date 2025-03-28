@@ -484,17 +484,32 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
             messages: [
                 {
                     role: "system",
-                    content: "You are a shipping rate analysis expert. Analyze the provided shipping rates and provide a clear, concise explanation of the options. Focus on cost-effectiveness and delivery speed."
+                    content: "You are a shipping rate analysis expert. Provide concise, formatted analysis using markdown. Focus on key metrics and recommendations."
                 },
                 {
                     role: "user",
-                    content: `Please analyze these shipping rates and provide a clear explanation:
-                    1. Best value option (considering total cost and transit time)
-                    2. Fastest delivery option
-                    3. Most economical option
-                    4. Any notable observations or special considerations
-                    
-                    Rates: ${JSON.stringify(transformedRates, null, 2)}`
+                    content: `Analyze these shipping rates and provide a formatted response:
+
+**Best Value Option:**
+- Carrier & Service
+- Cost & Transit Time
+- Why it's the best value
+
+**Fastest Delivery:**
+- Carrier & Service
+- Delivery Time
+- Cost Premium
+
+**Most Economical:**
+- Carrier & Service
+- Cost Savings
+- Trade-offs
+
+**Key Considerations:**
+- Special Notes
+- Recommendations
+
+Rates: ${JSON.stringify(transformedRates, null, 2)}`
                 }
             ]
         };

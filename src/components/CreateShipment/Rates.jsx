@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { Card, CardHeader, CardContent, Box, Typography } from '@mui/material';
 
 const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isLoading, setIsLoading] = useState(true);
@@ -734,16 +736,31 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
                             {/* AI Analysis Result - Moved to top */}
                             {analysisResult && (
-                                <div className="ai-analysis-content mb-4">
-                                    <div className="card">
-                                        <div className="card-header bg-primary text-white">
-                                            <h5 className="mb-0"><i className="fas fa-robot me-2"></i>AI Analysis</h5>
-                                        </div>
-                                        <div className="card-body">
+                                <Card sx={{ mb: 4, backgroundColor: 'background.paper' }}>
+                                    <CardHeader
+                                        title="AI Analysis"
+                                        sx={{
+                                            backgroundColor: 'primary.main',
+                                            color: 'white',
+                                            '& .MuiTypography-root': {
+                                                color: 'white',
+                                                fontWeight: 'bold'
+                                            }
+                                        }}
+                                    />
+                                    <CardContent>
+                                        <ReactMarkdown
+                                            components={{
+                                                h2: ({ node, ...props }) => <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }} {...props} />,
+                                                ul: ({ node, ...props }) => <Box component="ul" sx={{ pl: 2, mb: 1 }} {...props} />,
+                                                li: ({ node, ...props }) => <Box component="li" sx={{ mb: 0.5 }} {...props} />,
+                                                p: ({ node, ...props }) => <Typography variant="body1" sx={{ mb: 1 }} {...props} />
+                                            }}
+                                        >
                                             {analysisResult}
-                                        </div>
-                                    </div>
-                                </div>
+                                        </ReactMarkdown>
+                                    </CardContent>
+                                </Card>
                             )}
 
                             {analysisError && (
