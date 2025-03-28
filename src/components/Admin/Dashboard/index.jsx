@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Grid,
     Paper,
@@ -7,6 +7,15 @@ import {
     Card,
     CardContent,
     IconButton,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Button,
+    TextField,
+    InputAdornment,
 } from '@mui/material';
 import {
     LocalShipping,
@@ -16,11 +25,19 @@ import {
     TrendingUp,
     TrendingDown,
     Refresh as RefreshIcon,
+    LocalShipping as CourierIcon,
+    Public,
+    Person,
+    Timeline,
+    Schedule,
+    PendingActions,
+    FlightTakeoff as FreightIcon,
+    CalendarToday,
 } from '@mui/icons-material';
-import { LineChart, PieChart } from '@mui/x-charts';
+import { LineChart } from '@mui/x-charts';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import './Dashboard.css';
-import { Line } from 'react-chartjs-2';
+import { Line, Pie } from 'react-chartjs-2';
 import { DateRangePicker } from '@mui/x-date-pickers-pro';
 import {
     Chart as ChartJS,
@@ -31,8 +48,12 @@ import {
     Title,
     Tooltip,
     Filler,
-    Legend
+    Legend,
+    ArcElement
 } from 'chart.js';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 
 ChartJS.register(
     CategoryScale,
@@ -42,7 +63,8 @@ ChartJS.register(
     Title,
     Tooltip,
     Filler,
-    Legend
+    Legend,
+    ArcElement
 );
 
 const StatCard = ({ title, value, icon }) => (
@@ -250,7 +272,141 @@ const RevenueChart = () => {
     );
 };
 
+const CarrierPieChart = () => {
+    const data = {
+        labels: ['FedEx', 'UPS', 'DHL', 'USPS', 'Others'],
+        datasets: [{
+            data: [35, 25, 20, 15, 5],
+            backgroundColor: [
+                '#3b82f6',
+                '#22c55e',
+                '#f59e0b',
+                '#ef4444',
+                '#64748b'
+            ],
+            borderWidth: 0,
+        }]
+    };
+
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: {
+                    usePointStyle: true,
+                    padding: 20,
+                }
+            }
+        }
+    };
+
+    return (
+        <div className="chart-card">
+            <div className="chart-header">
+                <div>
+                    <h3 className="chart-title">Shipments by Carrier</h3>
+                    <p className="chart-subtitle">Distribution across carriers</p>
+                </div>
+            </div>
+            <div className="chart-container">
+                <Pie data={data} options={options} />
+            </div>
+        </div>
+    );
+};
+
+const RevenueByCarrierChart = () => {
+    const data = {
+        labels: ['FedEx', 'UPS', 'DHL', 'USPS', 'Others'],
+        datasets: [{
+            data: [45000, 35000, 28000, 22000, 8000],
+            backgroundColor: [
+                '#3b82f6',
+                '#22c55e',
+                '#f59e0b',
+                '#ef4444',
+                '#64748b'
+            ],
+            borderWidth: 0,
+        }]
+    };
+
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: {
+                    usePointStyle: true,
+                    padding: 20,
+                }
+            }
+        }
+    };
+
+    return (
+        <div className="chart-card">
+            <div className="chart-header">
+                <div>
+                    <h3 className="chart-title">Revenue by Carrier</h3>
+                    <p className="chart-subtitle">Monthly revenue distribution</p>
+                </div>
+            </div>
+            <div className="chart-container">
+                <Pie data={data} options={options} />
+            </div>
+        </div>
+    );
+};
+
+const TopCustomersTable = () => {
+    const customers = [
+        { name: 'Acme Corp', shipments: 245, revenue: '$45,678' },
+        { name: 'Tech Solutions', shipments: 198, revenue: '$38,456' },
+        { name: 'Global Industries', shipments: 167, revenue: '$32,789' },
+        { name: 'Retail Plus', shipments: 145, revenue: '$28,901' },
+        { name: 'Manufacturing Co', shipments: 132, revenue: '$25,432' },
+    ];
+
+    return (
+        <div className="chart-card">
+            <div className="chart-header">
+                <div>
+                    <h3 className="chart-title">Top 5 Customers</h3>
+                    <p className="chart-subtitle">By shipment volume</p>
+                </div>
+            </div>
+            <TableContainer>
+                <Table>
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>Company</TableCell>
+                            <TableCell align="right">Shipments</TableCell>
+                            <TableCell align="right">Revenue</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {customers.map((customer, index) => (
+                            <TableRow key={index}>
+                                <TableCell>{customer.name}</TableCell>
+                                <TableCell align="right">{customer.shipments}</TableCell>
+                                <TableCell align="right">{customer.revenue}</TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+        </div>
+    );
+};
+
 const AdminDashboard = () => {
+    const [startDate, setStartDate] = useState(null);
+    const [endDate, setEndDate] = useState(null);
+
     // Mock data - replace with real data from Firebase
     const stats = {
         totalShipments: '1,234',
@@ -261,6 +417,13 @@ const AdminDashboard = () => {
         companyTrend: 5.2,
         userTrend: 8.7,
         revenueTrend: 15.3,
+        courierShipments: '856',
+        freightShipments: '378',
+        usShipments: '892',
+        canadaShipments: '342',
+        activeShipments: '245',
+        inTransitShipments: '189',
+        awaitingShipments: '156',
     };
 
     // Chart data
@@ -276,58 +439,170 @@ const AdminDashboard = () => {
     ];
 
     return (
-        <div className="admin-dashboard">
-            <div className="dashboard-header">
-                <div>
-                    <h1 className="dashboard-title">Dashboard</h1>
-                    <p className="dashboard-subtitle">Overview of your business</p>
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <div className="admin-dashboard">
+                <div className="dashboard-header">
+                    <div className="dashboard-title-section">
+                        <h1 className="dashboard-title">Dashboard</h1>
+                        <p className="dashboard-subtitle">Overview of your business</p>
+                    </div>
+                    <div className="dashboard-actions">
+                        <div className="date-range-picker">
+                            <DatePicker
+                                label="Start Date"
+                                value={startDate}
+                                onChange={(newValue) => setStartDate(newValue)}
+                                slotProps={{
+                                    textField: {
+                                        variant: "outlined",
+                                        size: "medium",
+                                        InputProps: {
+                                            endAdornment: (
+                                                <InputAdornment position="end">
+                                                    <IconButton>
+                                                        <CalendarToday />
+                                                    </IconButton>
+                                                </InputAdornment>
+                                            ),
+                                        },
+                                    },
+                                }}
+                            />
+                            <DatePicker
+                                label="End Date"
+                                value={endDate}
+                                onChange={(newValue) => setEndDate(newValue)}
+                                slotProps={{
+                                    textField: {
+                                        variant: "outlined",
+                                        size: "medium",
+                                        InputProps: {
+                                            endAdornment: (
+                                                <InputAdornment position="end">
+                                                    <IconButton>
+                                                        <CalendarToday />
+                                                    </IconButton>
+                                                </InputAdornment>
+                                            ),
+                                        },
+                                    },
+                                }}
+                            />
+                        </div>
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<RefreshIcon />}
+                            size="medium"
+                        >
+                            Refresh
+                        </Button>
+                    </div>
                 </div>
-                <div className="dashboard-actions">
-                    <DateRangePicker />
-                    <IconButton>
-                        <RefreshIcon />
-                    </IconButton>
+
+                <div className="dashboard-stats">
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Total Shipments"
+                                value={stats.totalShipments}
+                                icon={<LocalShipping sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Active Companies"
+                                value={stats.activeCompanies}
+                                icon={<Business sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Total Users"
+                                value={stats.totalUsers}
+                                icon={<People sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Monthly Revenue"
+                                value={stats.monthlyRevenue}
+                                icon={<Receipt sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Courier Shipments"
+                                value={stats.courierShipments}
+                                icon={<CourierIcon sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Freight Shipments"
+                                value={stats.freightShipments}
+                                icon={<FreightIcon sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="US Shipments"
+                                value={stats.usShipments}
+                                icon={<Public sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Canada Shipments"
+                                value={stats.canadaShipments}
+                                icon={<Public sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Active Shipments"
+                                value={stats.activeShipments}
+                                icon={<Timeline sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="In-Transit"
+                                value={stats.inTransitShipments}
+                                icon={<LocalShipping sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Awaiting Shipping"
+                                value={stats.awaitingShipments}
+                                icon={<PendingActions sx={{ fontSize: 28 }} />}
+                            />
+                        </Grid>
+                    </Grid>
+                </div>
+
+                <div className="dashboard-charts">
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={6}>
+                            <ShipmentVolumeChart />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <RevenueChart />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <CarrierPieChart />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <RevenueByCarrierChart />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TopCustomersTable />
+                        </Grid>
+                    </Grid>
                 </div>
             </div>
-
-            <div className="dashboard-stats">
-                <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatCard
-                            title="Total Shipments"
-                            value={stats.totalShipments}
-                            icon={<LocalShipping sx={{ fontSize: 28 }} />}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatCard
-                            title="Active Companies"
-                            value={stats.activeCompanies}
-                            icon={<Business sx={{ fontSize: 28 }} />}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatCard
-                            title="Total Users"
-                            value={stats.totalUsers}
-                            icon={<People sx={{ fontSize: 28 }} />}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatCard
-                            title="Monthly Revenue"
-                            value={stats.monthlyRevenue}
-                            icon={<Receipt sx={{ fontSize: 28 }} />}
-                        />
-                    </Grid>
-                </Grid>
-            </div>
-
-            <div className="dashboard-charts">
-                <ShipmentVolumeChart />
-                <RevenueChart />
-            </div>
-        </div>
+        </LocalizationProvider>
     );
 };
 
