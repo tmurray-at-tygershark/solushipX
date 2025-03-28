@@ -5,6 +5,10 @@ const axios = require('axios');
 const { parseStringPromise } = require("xml2js");
 require('dotenv').config();
 
+// Import GenKit dependencies
+const { gemini20Flash, googleAI } = require('@genkit-ai/googleai');
+const { genkit } = require('genkit');
+
 // Create Express app
 const app = express();
 
@@ -19,6 +23,12 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+
+// Configure GenKit instance
+const ai = genkit({
+  plugins: [googleAI()],
+  model: gemini20Flash,
+});
 
 // Input validation
 function validateShipmentData(data) {
@@ -475,20 +485,8 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
             isExpress: rate.express
         }));
 
-        // Use the OpenAI API key directly
-        const apiKey = "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";
-
-        const payload = {
-            model: "gpt-4",
-            temperature: 0.1,
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a shipping rate analysis expert. Provide concise, formatted analysis using markdown. Focus on key metrics and recommendations."
-                },
-                {
-                    role: "user",
-                    content: `Analyze these shipping rates and provide a formatted response:
+        // Set up the prompt for analysis
+        const prompt = `Analyze these shipping rates and provide a formatted response:
 
 **Best Value Option:**
 - Carrier & Service
@@ -509,45 +507,24 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
 - Special Notes
 - Recommendations
 
-Rates: ${JSON.stringify(transformedRates, null, 2)}`
-                }
-            ]
-        };
+Rates: ${JSON.stringify(transformedRates, null, 2)}`;
 
-        console.log("OpenAI Request payload:", JSON.stringify(payload, null, 2));
+        // Generate analysis using GenKit
+        const { text } = await ai.generate(prompt);
 
-        const response = await axios.post(OPENAI_API_URL, payload, {
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            }
-        });
-
-        console.log("OpenAI API Response:", JSON.stringify(response.data, null, 2));
-
-        if (!response.data.choices || !response.data.choices[0]?.message?.content) {
-            throw new Error("Invalid response format from OpenAI API");
-        }
-
-        res.json({
+        console.log("AI Analysis completed successfully");
+        
+        return res.json({
             success: true,
-            analysis: response.data.choices[0].message.content
+            analysis: text
         });
 
     } catch (error) {
-        console.error("❌ AI Processing Error:", error.message);
-        console.error("Error details:", {
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            data: error.response?.data,
-            headers: error.response?.headers
-        });
-
-        res.status(500).json({
+        console.error("Error in AI analysis:", error);
+        return res.status(500).json({
             success: false,
-            message: "AI processing failed.",
-            error: error.message,
-            details: error.response?.data || "No additional details available"
+            message: "Failed to analyze rates with AI",
+            error: error.message
         });
     }
 });
