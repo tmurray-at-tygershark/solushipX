@@ -6,8 +6,10 @@ import {
     ListItemIcon,
     ListItemText,
     ListItemButton,
-    Divider,
     Box,
+    Typography,
+    Divider,
+    Collapse,
 } from '@mui/material';
 import {
     Dashboard as DashboardIcon,
@@ -18,6 +20,8 @@ import {
     Assessment as AnalyticsIcon,
     Settings as SettingsIcon,
     Security as SecurityIcon,
+    ExpandLess,
+    ExpandMore,
 } from '@mui/icons-material';
 import './AdminSidebar.css';
 
@@ -35,21 +39,40 @@ const menuItems = [
 const AdminSidebar = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const [open, setOpen] = React.useState(true);
+
+    const handleClick = () => {
+        setOpen(!open);
+    };
 
     return (
         <Box className="admin-sidebar">
-            <List>
+            <Box className="admin-sidebar-header">
+                <Typography variant="h6" component="div" className="admin-sidebar-title">
+                    Admin Panel
+                </Typography>
+            </Box>
+            <Divider />
+            <List component="nav" className="admin-sidebar-list">
                 {menuItems.map((item) => (
                     <ListItem key={item.text} disablePadding>
                         <ListItemButton
                             selected={location.pathname === item.path}
                             onClick={() => navigate(item.path)}
-                            className="admin-sidebar-item"
+                            className={`admin-sidebar-item ${location.pathname === item.path ? 'selected' : ''}`}
                         >
                             <ListItemIcon className="admin-sidebar-icon">
                                 {item.icon}
                             </ListItemIcon>
-                            <ListItemText primary={item.text} />
+                            <ListItemText
+                                primary={item.text}
+                                primaryTypographyProps={{
+                                    style: {
+                                        fontWeight: location.pathname === item.path ? 600 : 400,
+                                        color: location.pathname === item.path ? '#0f172a' : '#64748b'
+                                    }
+                                }}
+                            />
                         </ListItemButton>
                     </ListItem>
                 ))}
