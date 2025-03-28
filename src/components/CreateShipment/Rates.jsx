@@ -498,7 +498,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                         amount: parseFloat(accessorial.Amount || accessorial.amount || 0),
                                         category: accessorial.Category || accessorial.category || 'Service'
                                     })))
-                                ]
+                                ].filter(surcharge => surcharge.amount > 0)
                             };
                         });
 
@@ -736,12 +736,24 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                                             <span className="charge-name">Service Mode</span>
                                                             <span className="charge-amount">{rate.serviceLevel}</span>
                                                         </li>
-                                                        {rate.surcharges.map((surcharge, index) => (
-                                                            <li key={index}>
-                                                                <span className="charge-name">{surcharge.name}</span>
-                                                                <span className="charge-amount">${surcharge.amount.toFixed(2)}</span>
+                                                        <li>
+                                                            <span className="charge-name">Freight Charges</span>
+                                                            <span className="charge-amount">${rate.freightCharges.toFixed(2)}</span>
+                                                        </li>
+                                                        <li>
+                                                            <span className="charge-name">Fuel Charges</span>
+                                                            <span className="charge-amount">${rate.fuelCharges.toFixed(2)}</span>
+                                                        </li>
+                                                        <li>
+                                                            <span className="charge-name">Service Charges</span>
+                                                            <span className="charge-amount">${rate.serviceCharges.toFixed(2)}</span>
+                                                        </li>
+                                                        {rate.accessorialCharges > 0 && (
+                                                            <li>
+                                                                <span className="charge-name">Accessorial Charges</span>
+                                                                <span className="charge-amount">${rate.accessorialCharges.toFixed(2)}</span>
                                                             </li>
-                                                        ))}
+                                                        )}
                                                     </ul>
                                                 </div>
 
