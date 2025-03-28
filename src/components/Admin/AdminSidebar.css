@@ -1,0 +1,36 @@
+.admin-sidebar {
+  padding: 16px 0;
+}
+
+.admin-sidebar-item {
+  padding: 12px 24px;
+  margin: 4px 0;
+}
+
+.admin-sidebar-item:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.admin-sidebar-item.Mui-selected {
+  background-color: rgba(25, 118, 210, 0.08);
+  color: #1976d2;
+}
+
+.admin-sidebar-icon {
+  min-width: 40px;
+  color: inherit;
+}
+
+.admin-sidebar-item.Mui-selected .admin-sidebar-icon {
+  color: #1976d2;
+}
+
+@media (max-width: 960px) {
+  .admin-sidebar {
+    padding: 8px 0;
+  }
+
+  .admin-sidebar-item {
+    padding: 8px 16px;
+  }
+} 

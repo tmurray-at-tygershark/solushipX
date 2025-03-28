@@ -22,6 +22,7 @@
     "date-fns": "^2.30.0",
     "dayjs": "^1.11.13",
     "firebase": "^10.14.1",
+    "firebase-admin": "^13.2.0",
     "framer-motion": "^12.5.0",
     "html2pdf.js": "^0.10.3",
     "livekit-client": "^1.15.9",
@@ -32,6 +33,7 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.4.0",
     "react-scripts": "5.0.1",
+    "recharts": "^2.15.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {

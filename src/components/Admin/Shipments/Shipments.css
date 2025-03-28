@@ -1,0 +1,154 @@
+.shipments-container {
+    padding: 24px;
+}
+
+.shipments-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.shipments-title {
+    color: #1a237e;
+    margin: 0;
+}
+
+.shipments-filters {
+    margin-bottom: 24px;
+    padding: 16px;
+}
+
+.shipments-table {
+    margin-bottom: 24px;
+}
+
+.shipments-table .MuiTableCell-head {
+    background-color: #f5f5f5;
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.shipments-table .MuiTableCell-body {
+    padding: 16px;
+}
+
+.shipments-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 24px;
+}
+
+/* Shipment Details Styles */
+.shipment-details {
+    padding: 16px;
+}
+
+.shipment-info-paper,
+.shipment-progress-paper,
+.shipment-address-paper,
+.shipment-timeline-paper,
+.shipment-package-paper {
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.shipment-info-paper h6,
+.shipment-progress-paper h6,
+.shipment-address-paper h6,
+.shipment-timeline-paper h6,
+.shipment-package-paper h6 {
+    color: #1a237e;
+    margin-bottom: 16px;
+}
+
+.shipment-progress-paper .MuiStepLabel-label {
+    color: #1a237e;
+}
+
+.shipment-progress-paper .MuiStepLabel-active {
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.shipment-progress-paper .MuiStepLabel-completed {
+    color: #4caf50;
+}
+
+.shipment-timeline-paper .MuiTimelineDot-root {
+    background-color: #1a237e;
+}
+
+.shipment-timeline-paper .MuiTimelineConnector-root {
+    background-color: #e0e0e0;
+}
+
+.shipment-address-paper {
+    height: 100%;
+}
+
+/* Responsive Styles */
+@media (max-width: 960px) {
+    .shipments-container {
+        padding: 16px;
+    }
+
+    .shipments-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .shipments-filters {
+        padding: 8px;
+    }
+
+    .shipment-details {
+        padding: 8px;
+    }
+
+    .shipment-info-paper,
+    .shipment-progress-paper,
+    .shipment-address-paper,
+    .shipment-timeline-paper,
+    .shipment-package-paper {
+        padding: 12px;
+    }
+}
+
+/* Animation Styles */
+.shipment-progress-paper .MuiStepContent-root {
+    transition: all 0.3s ease-in-out;
+}
+
+.shipment-timeline-paper .MuiTimelineItem-root {
+    transition: all 0.3s ease-in-out;
+}
+
+.shipment-timeline-paper .MuiTimelineItem-root:hover {
+    transform: translateX(4px);
+}
+
+/* Custom Scrollbar */
+.shipment-details {
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.shipment-details::-webkit-scrollbar {
+    width: 8px;
+}
+
+.shipment-details::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.shipment-details::-webkit-scrollbar-thumb {
+    background: #1a237e;
+    border-radius: 4px;
+}
+
+.shipment-details::-webkit-scrollbar-thumb:hover {
+    background: #283593;
+} 

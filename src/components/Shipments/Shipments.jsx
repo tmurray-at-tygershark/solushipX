@@ -163,7 +163,7 @@ const Shipments = () => {
     // Initial load effect
     useEffect(() => {
         console.log('Initial load effect - Auth state:', { user, authLoading });
-        if (!authLoading && user) {
+        if (!authLoading) {
             loadShipments();
         }
     }, [user, authLoading]);
@@ -171,7 +171,7 @@ const Shipments = () => {
     // Update when filters change
     useEffect(() => {
         console.log('Filter change effect running');
-        if (!authLoading && user) {
+        if (!authLoading) {
             loadShipments();
         }
     }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
@@ -593,7 +593,7 @@ const Shipments = () => {
                                                 <TableRow
                                                     hover
                                                     key={shipment.id}
-                                                    onClick={(event) => handleShipmentClick(shipment)}
+                                                    onClick={() => handleShipmentClick(shipment)}
                                                     selected={selected.indexOf(shipment.id) !== -1}
                                                     sx={{ cursor: 'pointer' }}
                                                 >
@@ -626,7 +626,7 @@ const Shipments = () => {
                                                             color={
                                                                 shipment.status === 'Delivered' ? 'success' :
                                                                     shipment.status === 'In Transit' ? 'primary' :
-                                                                        shipment.status === 'Pending' ? 'default' : 'default'
+                                                                        'default'
                                                             }
                                                             size="small"
                                                         />

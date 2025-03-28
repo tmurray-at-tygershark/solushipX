@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -18,6 +19,9 @@ const app = initializeApp(firebaseConfig);
 // Initialize Auth
 const auth = getAuth(app);
 
+// Initialize Firestore
+const db = getFirestore(app);
+
 // Initialize Functions
 const functions = getFunctions(app);
 
@@ -30,6 +34,7 @@ const getMapsApiKey = httpsCallable(functions, 'getMapsApiKey');
 if (process.env.NODE_ENV === 'development') {
     connectFunctionsEmulator(functions, 'localhost', 5001);
     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, 'localhost', 8080);
 }
 
 // Add error handling for functions
@@ -50,4 +55,11 @@ const wrappedGetShippingRates = wrapCallable(getShippingRates);
 const wrappedAnalyzeRatesWithAI = wrapCallable(analyzeRatesWithAI);
 const wrappedGetMapsApiKey = wrapCallable(getMapsApiKey);
 
-export { auth, functions, wrappedGetShippingRates, wrappedAnalyzeRatesWithAI, wrappedGetMapsApiKey }; 
+export {
+    auth,
+    db,
+    functions,
+    wrappedGetShippingRates,
+    wrappedAnalyzeRatesWithAI,
+    wrappedGetMapsApiKey
+}; 

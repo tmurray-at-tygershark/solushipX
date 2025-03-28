@@ -1,0 +1,89 @@
+.companies-container {
+    padding: 24px;
+}
+
+.companies-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.companies-title {
+    color: #1a237e;
+    margin: 0;
+}
+
+.companies-search {
+    margin-bottom: 24px;
+    padding: 16px;
+}
+
+.companies-table {
+    margin-bottom: 24px;
+}
+
+.companies-table .MuiTableCell-head {
+    background-color: #f5f5f5;
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.companies-table .MuiTableCell-body {
+    padding: 16px;
+}
+
+.companies-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 24px;
+}
+
+.company-form {
+    padding: 24px;
+}
+
+.company-form .MuiTextField-root,
+.company-form .MuiFormControl-root {
+    margin-bottom: 16px;
+}
+
+.company-form .MuiInputLabel-root {
+    color: #1a237e;
+}
+
+.company-form .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+    border-color: #1a237e;
+}
+
+.company-form .Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: #1a237e;
+}
+
+.company-form .MuiFormHelperText-root {
+    color: #d32f2f;
+}
+
+.company-form .MuiSelect-select {
+    padding: 12px;
+}
+
+@media (max-width: 960px) {
+    .companies-container {
+        padding: 16px;
+    }
+
+    .companies-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .companies-search {
+        padding: 8px;
+    }
+
+    .company-form {
+        padding: 16px;
+    }
+} 
