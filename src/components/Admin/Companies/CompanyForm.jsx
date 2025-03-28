@@ -1,279 +1,279 @@
 import React, { useState, useEffect } from 'react';
 import {
     Box,
-    Grid,
+    Paper,
+    Typography,
     TextField,
+    Button,
+    Grid,
     FormControl,
     InputLabel,
     Select,
     MenuItem,
-    FormHelperText,
+    Stack,
+    IconButton,
+    Tooltip,
 } from '@mui/material';
-import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../../../firebase';
+import {
+    Close as CloseIcon,
+    Add as AddIcon,
+    Remove as RemoveIcon,
+} from '@mui/icons-material';
+import AdminBreadcrumb from '../AdminBreadcrumb';
+import './CompanyForm.css';
 
-const CompanyForm = ({ company, onSubmit, onCancel }) => {
+const CompanyForm = ({ company = null, onSubmit, onCancel }) => {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
         phone: '',
         address: '',
-        city: '',
-        state: '',
-        zipCode: '',
-        country: '',
+        type: '',
         status: 'active',
-        type: 'customer',
-        notes: '',
+        contacts: [{ name: '', email: '', phone: '', role: '' }],
     });
-    const [errors, setErrors] = useState({});
-    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (company) {
             setFormData({
-                name: company.name || '',
-                email: company.email || '',
-                phone: company.phone || '',
-                address: company.address || '',
-                city: company.city || '',
-                state: company.state || '',
-                zipCode: company.zipCode || '',
-                country: company.country || '',
-                status: company.status || 'active',
-                type: company.type || 'customer',
-                notes: company.notes || '',
+                ...company,
+                contacts: company.contacts || [{ name: '', email: '', phone: '', role: '' }],
             });
         }
     }, [company]);
 
-    const validateForm = () => {
-        const newErrors = {};
-        if (!formData.name.trim()) {
-            newErrors.name = 'Company name is required';
-        }
-        if (!formData.email.trim()) {
-            newErrors.email = 'Email is required';
-        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-            newErrors.email = 'Invalid email format';
-        }
-        if (!formData.phone.trim()) {
-            newErrors.phone = 'Phone number is required';
-        }
-        if (!formData.address.trim()) {
-            newErrors.address = 'Address is required';
-        }
-        if (!formData.city.trim()) {
-            newErrors.city = 'City is required';
-        }
-        if (!formData.state.trim()) {
-            newErrors.state = 'State is required';
-        }
-        if (!formData.zipCode.trim()) {
-            newErrors.zipCode = 'ZIP code is required';
-        }
-        if (!formData.country.trim()) {
-            newErrors.country = 'Country is required';
-        }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
-
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({
+        setFormData((prev) => ({
             ...prev,
-            [name]: value
+            [name]: value,
         }));
-        // Clear error when user starts typing
-        if (errors[name]) {
-            setErrors(prev => ({
-                ...prev,
-                [name]: ''
-            }));
-        }
     };
 
-    const handleSubmit = async (e) => {
+    const handleContactChange = (index, field, value) => {
+        setFormData((prev) => ({
+            ...prev,
+            contacts: prev.contacts.map((contact, i) =>
+                i === index ? { ...contact, [field]: value } : contact
+            ),
+        }));
+    };
+
+    const addContact = () => {
+        setFormData((prev) => ({
+            ...prev,
+            contacts: [...prev.contacts, { name: '', email: '', phone: '', role: '' }],
+        }));
+    };
+
+    const removeContact = (index) => {
+        setFormData((prev) => ({
+            ...prev,
+            contacts: prev.contacts.filter((_, i) => i !== index),
+        }));
+    };
+
+    const handleSubmit = (e) => {
         e.preventDefault();
-        if (!validateForm()) return;
-
-        try {
-            setLoading(true);
-            const companyData = {
-                ...formData,
-                updatedAt: new Date(),
-            };
-
-            if (company) {
-                // Update existing company
-                await updateDoc(doc(db, 'companies', company.id), companyData);
-            } else {
-                // Create new company
-                companyData.createdAt = new Date();
-                await addDoc(collection(db, 'companies'), companyData);
-            }
-
-            onSubmit();
-        } catch (error) {
-            console.error('Error saving company:', error);
-            setErrors(prev => ({
-                ...prev,
-                submit: 'Error saving company. Please try again.'
-            }));
-        } finally {
-            setLoading(false);
-        }
+        onSubmit(formData);
     };
 
     return (
-        <Box component="form" onSubmit={handleSubmit} className="company-form">
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Company Name"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleChange}
-                        error={!!errors.name}
-                        helperText={errors.name}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Email"
-                        name="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        error={!!errors.email}
-                        helperText={errors.email}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Phone"
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleChange}
-                        error={!!errors.phone}
-                        helperText={errors.phone}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <FormControl fullWidth error={!!errors.type}>
-                        <InputLabel>Company Type</InputLabel>
-                        <Select
-                            name="type"
-                            value={formData.type}
-                            onChange={handleChange}
-                            label="Company Type"
-                        >
-                            <MenuItem value="customer">Customer</MenuItem>
-                            <MenuItem value="vendor">Vendor</MenuItem>
-                            <MenuItem value="partner">Partner</MenuItem>
-                        </Select>
-                        {errors.type && (
-                            <FormHelperText>{errors.type}</FormHelperText>
-                        )}
-                    </FormControl>
-                </Grid>
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Address"
-                        name="address"
-                        value={formData.address}
-                        onChange={handleChange}
-                        error={!!errors.address}
-                        helperText={errors.address}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={4}>
-                    <TextField
-                        fullWidth
-                        label="City"
-                        name="city"
-                        value={formData.city}
-                        onChange={handleChange}
-                        error={!!errors.city}
-                        helperText={errors.city}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={4}>
-                    <TextField
-                        fullWidth
-                        label="State"
-                        name="state"
-                        value={formData.state}
-                        onChange={handleChange}
-                        error={!!errors.state}
-                        helperText={errors.state}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={4}>
-                    <TextField
-                        fullWidth
-                        label="ZIP Code"
-                        name="zipCode"
-                        value={formData.zipCode}
-                        onChange={handleChange}
-                        error={!!errors.zipCode}
-                        helperText={errors.zipCode}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Country"
-                        name="country"
-                        value={formData.country}
-                        onChange={handleChange}
-                        error={!!errors.country}
-                        helperText={errors.country}
-                        required
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <FormControl fullWidth error={!!errors.status}>
-                        <InputLabel>Status</InputLabel>
-                        <Select
-                            name="status"
-                            value={formData.status}
-                            onChange={handleChange}
-                            label="Status"
-                        >
-                            <MenuItem value="active">Active</MenuItem>
-                            <MenuItem value="inactive">Inactive</MenuItem>
-                            <MenuItem value="suspended">Suspended</MenuItem>
-                        </Select>
-                        {errors.status && (
-                            <FormHelperText>{errors.status}</FormHelperText>
-                        )}
-                    </FormControl>
-                </Grid>
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Notes"
-                        name="notes"
-                        value={formData.notes}
-                        onChange={handleChange}
-                        multiline
-                        rows={4}
-                    />
-                </Grid>
-            </Grid>
+        <Box className="admin-company-form">
+            <AdminBreadcrumb items={['Companies', company ? 'Edit Company' : 'Add Company']} />
+
+            <Paper className="company-form-paper">
+                <Box className="form-header">
+                    <Typography variant="h4" className="form-title">
+                        {company ? 'Edit Company' : 'Add New Company'}
+                    </Typography>
+                    <Tooltip title="Close">
+                        <IconButton onClick={onCancel} size="small">
+                            <CloseIcon />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+
+                <form onSubmit={handleSubmit}>
+                    <Grid container spacing={3}>
+                        {/* Company Information */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" className="section-title">
+                                Company Information
+                            </Typography>
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Company Name"
+                                name="name"
+                                value={formData.name}
+                                onChange={handleChange}
+                                required
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Email"
+                                name="email"
+                                type="email"
+                                value={formData.email}
+                                onChange={handleChange}
+                                required
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Phone"
+                                name="phone"
+                                value={formData.phone}
+                                onChange={handleChange}
+                                required
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth required>
+                                <InputLabel>Company Type</InputLabel>
+                                <Select
+                                    name="type"
+                                    value={formData.type}
+                                    onChange={handleChange}
+                                    label="Company Type"
+                                >
+                                    <MenuItem value="Enterprise">Enterprise</MenuItem>
+                                    <MenuItem value="SMB">SMB</MenuItem>
+                                    <MenuItem value="Startup">Startup</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                label="Address"
+                                name="address"
+                                value={formData.address}
+                                onChange={handleChange}
+                                multiline
+                                rows={3}
+                                required
+                            />
+                        </Grid>
+
+                        {/* Contact Information */}
+                        <Grid item xs={12}>
+                            <Box className="contacts-section">
+                                <Typography variant="h6" className="section-title">
+                                    Contact Information
+                                </Typography>
+                                <Button
+                                    startIcon={<AddIcon />}
+                                    onClick={addContact}
+                                    className="add-contact-btn"
+                                >
+                                    Add Contact
+                                </Button>
+                            </Box>
+                        </Grid>
+
+                        {formData.contacts.map((contact, index) => (
+                            <Grid item xs={12} key={index}>
+                                <Paper className="contact-card">
+                                    <Box className="contact-header">
+                                        <Typography variant="subtitle1">
+                                            Contact {index + 1}
+                                        </Typography>
+                                        {index > 0 && (
+                                            <Tooltip title="Remove Contact">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => removeContact(index)}
+                                                >
+                                                    <RemoveIcon />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
+                                    </Box>
+
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Name"
+                                                value={contact.name}
+                                                onChange={(e) =>
+                                                    handleContactChange(index, 'name', e.target.value)
+                                                }
+                                                required
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Email"
+                                                type="email"
+                                                value={contact.email}
+                                                onChange={(e) =>
+                                                    handleContactChange(index, 'email', e.target.value)
+                                                }
+                                                required
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Phone"
+                                                value={contact.phone}
+                                                onChange={(e) =>
+                                                    handleContactChange(index, 'phone', e.target.value)
+                                                }
+                                                required
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Role"
+                                                value={contact.role}
+                                                onChange={(e) =>
+                                                    handleContactChange(index, 'role', e.target.value)
+                                                }
+                                                required
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                </Paper>
+                            </Grid>
+                        ))}
+
+                        {/* Form Actions */}
+                        <Grid item xs={12}>
+                            <Stack direction="row" spacing={2} justifyContent="flex-end">
+                                <Button
+                                    variant="outlined"
+                                    onClick={onCancel}
+                                    className="cancel-btn"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    className="submit-btn"
+                                >
+                                    {company ? 'Update Company' : 'Create Company'}
+                                </Button>
+                            </Stack>
+                        </Grid>
+                    </Grid>
+                </form>
+            </Paper>
         </Box>
     );
 };

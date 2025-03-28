@@ -1,0 +1,141 @@
+.admin-header {
+    padding: 24px;
+    margin-left: 280px;
+    min-height: calc(100vh - 64px); /* Subtract nav height */
+    background-color: #f8fafc;
+    margin-top: 64px; /* Add top margin for nav */
+}
+
+.header-paper {
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.header-title {
+    color: #0f172a;
+    font-weight: 600;
+    margin: 0;
+}
+
+.header-subtitle {
+    color: #64748b;
+    margin: 0;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+}
+
+.search-input {
+    width: 300px;
+}
+
+.search-input .MuiOutlinedInput-root {
+    border-radius: 8px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.search-input .MuiOutlinedInput-root:hover {
+    border-color: #94a3b8;
+}
+
+.search-input .MuiOutlinedInput-root.Mui-focused {
+    border-color: #0f172a;
+}
+
+.search-input .MuiInputAdornment-root .MuiSvgIcon-root {
+    color: #64748b;
+}
+
+.filter-button {
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+    padding: 8px;
+}
+
+.filter-button:hover {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+}
+
+.add-button {
+    background-color: #0f172a;
+    color: white;
+    text-transform: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.add-button:hover {
+    background-color: #1e293b;
+}
+
+.menu-button {
+    color: #64748b;
+}
+
+.menu-button:hover {
+    background-color: #f8fafc;
+}
+
+.action-menu {
+    min-width: 200px;
+}
+
+.action-menu .MuiMenuItem-root {
+    font-size: 0.875rem;
+    padding: 0.75rem 1rem;
+    color: #1e293b;
+}
+
+.menu-icon {
+    margin-right: 12px;
+    color: #64748b;
+}
+
+/* Responsive styles */
+@media (max-width: 960px) {
+    .admin-header {
+        margin-left: 0;
+        padding: 16px;
+        margin-top: 0; /* Remove top margin on mobile */
+    }
+
+    .header-paper {
+        padding: 16px;
+    }
+
+    .header-content {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .header-right {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .search-input {
+        width: 100%;
+    }
+} 

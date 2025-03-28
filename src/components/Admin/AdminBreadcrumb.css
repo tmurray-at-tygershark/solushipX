@@ -1,0 +1,35 @@
+.admin-breadcrumb {
+    margin-bottom: 24px;
+    padding: 16px 24px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.breadcrumb-link {
+    display: flex;
+    align-items: center;
+    color: #64748b;
+    text-decoration: none;
+    font-size: 0.875rem;
+    line-height: 1.43;
+    transition: color 0.2s;
+}
+
+.breadcrumb-link:hover {
+    color: #0f172a;
+}
+
+.breadcrumb-item {
+    font-size: 0.875rem;
+    line-height: 1.43;
+    color: #64748b;
+}
+
+.MuiBreadcrumbs-separator {
+    color: #94a3b8;
+}
+
+.MuiBreadcrumbs-separator .MuiSvgIcon-root {
+    font-size: 20px;
+} 

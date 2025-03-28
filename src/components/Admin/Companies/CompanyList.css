@@ -1,0 +1,109 @@
+.admin-companies {
+    padding: 24px;
+    min-height: calc(100vh - 64px);
+    background-color: #f8fafc;
+}
+
+.companies-paper {
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    margin-top: 24px;
+}
+
+.company-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.company-icon {
+    color: #64748b;
+    font-size: 20px;
+}
+
+.contact-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #64748b;
+}
+
+.status-chip {
+    font-weight: 500;
+}
+
+.dialog-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.dialog-icon {
+    color: #0f172a;
+    font-size: 24px;
+}
+
+.company-info-section {
+    padding: 16px;
+    background-color: #f8fafc;
+    border-radius: 8px;
+}
+
+.info-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #64748b;
+}
+
+.info-row svg {
+    color: #94a3b8;
+}
+
+/* Table styles */
+.MuiTableHead-root .MuiTableCell-root {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-weight: 600;
+    padding: 16px 24px;
+}
+
+.MuiTableBody-root .MuiTableCell-root {
+    padding: 16px 24px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.MuiTableRow-root:hover {
+    background-color: #f8fafc;
+}
+
+/* Pagination styles */
+.MuiTablePagination-root {
+    padding: 16px 24px;
+    border-top: 1px solid #e2e8f0;
+}
+
+/* Responsive styles */
+@media (max-width: 960px) {
+    .admin-companies {
+        padding: 16px;
+    }
+
+    .company-name-cell {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .contact-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .MuiTableHead-root .MuiTableCell-root,
+    .MuiTableBody-root .MuiTableCell-root {
+        padding: 12px 16px;
+    }
+} 

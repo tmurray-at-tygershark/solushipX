@@ -1,8 +1,10 @@
-import React, { lazy } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
+import Navigation from './components/Navigation';
 import Logout from './components/Auth/Logout';
+import { Box, CircularProgress } from '@mui/material';
 
 const Customers = lazy(() => import('./components/Customers/Customers'));
 const CustomerDetail = lazy(() => import('./components/Customers/CustomerDetail'));
@@ -21,50 +23,67 @@ const RoleManagement = lazy(() => import('./components/Admin/Roles/RoleManagemen
 const SystemSettings = lazy(() => import('./components/Admin/Settings/SystemSettings'));
 const CarrierKeys = lazy(() => import('./components/Admin/Carriers/CarrierKeys'));
 
+// Loading component for Suspense
+const LoadingFallback = () => (
+    <Box sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh'
+    }}>
+        <CircularProgress />
+    </Box>
+);
+
 const App = () => {
     return (
-        <div>
-            <Routes>
-                <Route path="/logout" element={<Logout />} />
-                <Route path="/customers" element={
-                    <ProtectedRoute>
-                        <Customers />
-                    </ProtectedRoute>
-                } />
-                <Route path="/customers/:id" element={
-                    <ProtectedRoute>
-                        <CustomerDetail />
-                    </ProtectedRoute>
-                } />
-                <Route path="/reports" element={
-                    <ProtectedRoute>
-                        <Reports />
-                    </ProtectedRoute>
-                } />
-                <Route path="/carriers" element={
-                    <ProtectedRoute>
-                        <Carriers />
-                    </ProtectedRoute>
-                } />
+        <div className="app">
+            <Navigation />
+            <main className="main-content">
+                <Suspense fallback={<LoadingFallback />}>
+                    <Routes>
+                        <Route path="/logout" element={<Logout />} />
+                        <Route path="/customers" element={
+                            <ProtectedRoute>
+                                <Customers />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/customers/:id" element={
+                            <ProtectedRoute>
+                                <CustomerDetail />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/reports" element={
+                            <ProtectedRoute>
+                                <Reports />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/carriers" element={
+                            <ProtectedRoute>
+                                <Carriers />
+                            </ProtectedRoute>
+                        } />
 
-                <Route path="/admin/*" element={
-                    <AdminRoute>
-                        <AdminLayout />
-                    </AdminRoute>
-                }>
-                    <Route index element={<AdminDashboard />} />
-                    <Route path="companies" element={<CompanyList />} />
-                    <Route path="users" element={<UserList />} />
-                    <Route path="shipments" element={<GlobalShipmentList />} />
-                    <Route path="analytics" element={<AnalyticsDashboard />} />
-                    <Route path="billing" element={<BillingDashboard />} />
-                    <Route path="billing/invoice/new" element={<InvoiceForm />} />
-                    <Route path="billing/invoice/:id" element={<InvoiceForm />} />
-                    <Route path="roles" element={<RoleManagement />} />
-                    <Route path="settings" element={<SystemSettings />} />
-                    <Route path="carrier-keys" element={<CarrierKeys />} />
-                </Route>
-            </Routes>
+                        <Route path="/admin/*" element={
+                            <AdminRoute>
+                                <AdminLayout />
+                            </AdminRoute>
+                        }>
+                            <Route index element={<AdminDashboard />} />
+                            <Route path="companies" element={<CompanyList />} />
+                            <Route path="users" element={<UserList />} />
+                            <Route path="shipments" element={<GlobalShipmentList />} />
+                            <Route path="analytics" element={<AnalyticsDashboard />} />
+                            <Route path="billing" element={<BillingDashboard />} />
+                            <Route path="billing/invoice/new" element={<InvoiceForm />} />
+                            <Route path="billing/invoice/:id" element={<InvoiceForm />} />
+                            <Route path="roles" element={<RoleManagement />} />
+                            <Route path="settings" element={<SystemSettings />} />
+                            <Route path="carrier-keys" element={<CarrierKeys />} />
+                        </Route>
+                    </Routes>
+                </Suspense>
+            </main>
         </div>
     );
 };
