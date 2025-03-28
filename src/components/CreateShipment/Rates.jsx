@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Card, CardHeader, CardContent, Box, Typography } from '@mui/material';
+import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton } from '@mui/material';
+import { CircularProgress, Divider } from '@mui/material';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 
 const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isLoading, setIsLoading] = useState(true);
@@ -16,6 +19,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState(null);
     const [analysisError, setAnalysisError] = useState(null);
+    const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
 
     // Add CSS styles
     const styles = `
@@ -734,34 +738,82 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                 </div>
                             </div>
 
-                            {/* AI Analysis Result - Moved to top */}
-                            {analysisResult && (
-                                <Card sx={{ mb: 4, backgroundColor: 'background.paper' }}>
-                                    <CardHeader
-                                        title="AI Analysis"
-                                        sx={{
-                                            backgroundColor: 'primary.main',
-                                            color: 'white',
-                                            '& .MuiTypography-root': {
-                                                color: 'white',
-                                                fontWeight: 'bold'
-                                            }
-                                        }}
-                                    />
-                                    <CardContent>
-                                        <ReactMarkdown
-                                            components={{
-                                                h2: ({ node, ...props }) => <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }} {...props} />,
-                                                ul: ({ node, ...props }) => <Box component="ul" sx={{ pl: 2, mb: 1 }} {...props} />,
-                                                li: ({ node, ...props }) => <Box component="li" sx={{ mb: 0.5 }} {...props} />,
-                                                p: ({ node, ...props }) => <Typography variant="body1" sx={{ mb: 1 }} {...props} />
+                            {/* AI Analysis Container */}
+                            <Card sx={{ mb: 3, backgroundColor: '#f5f5f5' }}>
+                                <CardHeader
+                                    onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                                    sx={{
+                                        backgroundColor: '#000000',
+                                        color: '#ffffff',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            backgroundColor: '#333333'
+                                        },
+                                        '& .MuiCardHeader-title': {
+                                            color: '#ffffff'
+                                        },
+                                        '& .MuiCardHeader-action': {
+                                            color: '#ffffff'
+                                        }
+                                    }}
+                                    title={
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#ffffff' }}>
+                                            <SmartToyIcon sx={{ color: '#ffffff' }} />
+                                            <Typography variant="h5" sx={{ color: '#ffffff' }}>AI Rate Analysis</Typography>
+                                        </Box>
+                                    }
+                                    action={
+                                        <IconButton
+                                            sx={{
+                                                color: '#ffffff',
+                                                transform: isAnalysisExpanded ? 'rotate(180deg)' : 'none',
+                                                transition: 'transform 0.3s'
                                             }}
                                         >
-                                            {analysisResult}
-                                        </ReactMarkdown>
+                                            <KeyboardArrowDownIcon sx={{ color: '#ffffff' }} />
+                                        </IconButton>
+                                    }
+                                />
+                                <Collapse in={isAnalysisExpanded}>
+                                    <CardContent>
+                                        {isAnalyzing ? (
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
+                                                <CircularProgress />
+                                                <Typography>Analyzing rates{loadingDots}</Typography>
+                                            </Box>
+                                        ) : analysisResult ? (
+                                            <Box>
+                                                <ReactMarkdown
+                                                    components={{
+                                                        h2: ({ node, ...props }) => (
+                                                            <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }} {...props} />
+                                                        ),
+                                                        ul: ({ node, ...props }) => (
+                                                            <Box component="ul" sx={{ pl: 2, mb: 1 }} {...props} />
+                                                        ),
+                                                        li: ({ node, ...props }) => (
+                                                            <Box component="li" sx={{ mb: 0.5 }} {...props} />
+                                                        ),
+                                                        p: ({ node, ...props }) => (
+                                                            <Typography variant="body1" sx={{ mb: 1 }} {...props} />
+                                                        )
+                                                    }}
+                                                >
+                                                    {analysisResult}
+                                                </ReactMarkdown>
+                                                <Divider sx={{ my: 2 }} />
+                                                <Typography variant="subtitle2" color="text.secondary">
+                                                    This analysis is based on current market rates and historical shipping data.
+                                                </Typography>
+                                            </Box>
+                                        ) : (
+                                            <Typography color="text.secondary">
+                                                Select a rate to get AI-powered analysis and recommendations.
+                                            </Typography>
+                                        )}
                                     </CardContent>
-                                </Card>
-                            )}
+                                </Collapse>
+                            </Card>
 
                             {analysisError && (
                                 <div className="alert alert-danger mb-4">
