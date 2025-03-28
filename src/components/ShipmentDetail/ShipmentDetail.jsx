@@ -1244,217 +1244,273 @@ const ShipmentDetail = () => {
                                     </Collapse>
                                 </Paper>
 
-                                {/* Route Map Section */}
-                                <Paper>
-                                    <Box
-                                        sx={{
-                                            p: 2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            borderBottom: '1px solid #e0e0e0'
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <MapIcon sx={{ color: '#000' }} />
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                Route Map
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                    <Box sx={{ p: 3 }}>
-                                        {isGoogleMapsLoaded ? (
-                                            <Box>
-                                                <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
-                                                    <GoogleMap
-                                                        mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                        center={directions?.request?.origin || mapCenter}
-                                                        zoom={8}
-                                                        onLoad={handleMapLoad}
-                                                        options={mapOptions}
-                                                    >
-                                                        {directions && (
-                                                            <DirectionsRenderer
-                                                                directions={directions}
-                                                                options={{
-                                                                    suppressMarkers: true,
-                                                                    preserveViewport: true,
-                                                                    polylineOptions: {
-                                                                        strokeColor: '#2196f3',
-                                                                        strokeWeight: 4
-                                                                    }
-                                                                }}
-                                                            />
-                                                        )}
-                                                        {directions?.request?.origin && (
-                                                            <Marker
-                                                                position={directions.request.origin}
-                                                                icon={{
-                                                                    path: window.google.maps.SymbolPath.CIRCLE,
-                                                                    scale: 12,
-                                                                    fillColor: '#2196f3',
-                                                                    fillOpacity: 1,
-                                                                    strokeColor: '#ffffff',
-                                                                    strokeWeight: 2
-                                                                }}
-                                                                label={{
-                                                                    text: 'A',
-                                                                    color: '#ffffff',
-                                                                    fontSize: '14px',
-                                                                    fontWeight: 'bold'
-                                                                }}
-                                                            />
-                                                        )}
-                                                        {directions?.request?.destination && (
-                                                            <Marker
-                                                                position={directions.request.destination}
-                                                                icon={{
-                                                                    path: window.google.maps.SymbolPath.CIRCLE,
-                                                                    scale: 12,
-                                                                    fillColor: '#f44336',
-                                                                    fillOpacity: 1,
-                                                                    strokeColor: '#ffffff',
-                                                                    strokeWeight: 2
-                                                                }}
-                                                                label={{
-                                                                    text: 'B',
-                                                                    color: '#ffffff',
-                                                                    fontSize: '14px',
-                                                                    fontWeight: 'bold'
-                                                                }}
-                                                            />
-                                                        )}
-                                                    </GoogleMap>
-                                                    {/* Route Summary Overlay */}
-                                                    <Box sx={{
-                                                        position: 'absolute',
-                                                        top: 16,
-                                                        right: 16,
-                                                        background: 'rgba(255, 255, 255, 0.95)',
-                                                        backdropFilter: 'blur(10px)',
-                                                        borderRadius: '16px',
-                                                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-                                                        p: 2,
-                                                        zIndex: 1,
-                                                        minWidth: '200px'
-                                                    }}>
-                                                        <Box sx={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: 2,
-                                                            p: 1.5,
-                                                            borderRadius: '12px',
-                                                            background: 'rgba(25, 118, 210, 0.04)'
-                                                        }}>
-                                                            <LocationIcon sx={{
-                                                                color: 'primary.main',
-                                                                fontSize: 28,
-                                                                opacity: 0.9
-                                                            }} />
-                                                            <Box sx={{ flex: 1 }}>
-                                                                <Typography variant="subtitle2" sx={{
-                                                                    color: 'text.secondary',
-                                                                    fontSize: '0.75rem',
-                                                                    fontWeight: 500,
-                                                                    textTransform: 'uppercase',
-                                                                    letterSpacing: '0.5px'
+                                {/* Route Map and Shipment History in one row */}
+                                <Grid container spacing={3}>
+                                    {/* Route Map Section - Left Column */}
+                                    <Grid item xs={12} md={6}>
+                                        <Paper>
+                                            <Box
+                                                sx={{
+                                                    p: 2,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    borderBottom: '1px solid #e0e0e0'
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <MapIcon sx={{ color: '#000' }} />
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                        Route Map
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                            <Box sx={{ p: 3 }}>
+                                                {isGoogleMapsLoaded ? (
+                                                    <Box>
+                                                        <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
+                                                            <GoogleMap
+                                                                mapContainerStyle={{ width: '100%', height: '100%' }}
+                                                                center={directions?.request?.origin || mapCenter}
+                                                                zoom={8}
+                                                                onLoad={handleMapLoad}
+                                                                options={mapOptions}
+                                                            >
+                                                                {directions && (
+                                                                    <DirectionsRenderer
+                                                                        directions={directions}
+                                                                        options={{
+                                                                            suppressMarkers: true,
+                                                                            preserveViewport: true,
+                                                                            polylineOptions: {
+                                                                                strokeColor: '#2196f3',
+                                                                                strokeWeight: 4
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                {directions?.request?.origin && (
+                                                                    <Marker
+                                                                        position={directions.request.origin}
+                                                                        icon={{
+                                                                            path: window.google.maps.SymbolPath.CIRCLE,
+                                                                            scale: 12,
+                                                                            fillColor: '#2196f3',
+                                                                            fillOpacity: 1,
+                                                                            strokeColor: '#ffffff',
+                                                                            strokeWeight: 2
+                                                                        }}
+                                                                        label={{
+                                                                            text: 'A',
+                                                                            color: '#ffffff',
+                                                                            fontSize: '14px',
+                                                                            fontWeight: 'bold'
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                {directions?.request?.destination && (
+                                                                    <Marker
+                                                                        position={directions.request.destination}
+                                                                        icon={{
+                                                                            path: window.google.maps.SymbolPath.CIRCLE,
+                                                                            scale: 12,
+                                                                            fillColor: '#f44336',
+                                                                            fillOpacity: 1,
+                                                                            strokeColor: '#ffffff',
+                                                                            strokeWeight: 2
+                                                                        }}
+                                                                        label={{
+                                                                            text: 'B',
+                                                                            color: '#ffffff',
+                                                                            fontSize: '14px',
+                                                                            fontWeight: 'bold'
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            </GoogleMap>
+                                                            {/* Route Summary Overlay */}
+                                                            <Box sx={{
+                                                                position: 'absolute',
+                                                                top: 16,
+                                                                right: 16,
+                                                                background: 'rgba(255, 255, 255, 0.95)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                borderRadius: '16px',
+                                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                                                                p: 2,
+                                                                zIndex: 1,
+                                                                minWidth: '200px'
+                                                            }}>
+                                                                <Box sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 2,
+                                                                    p: 1.5,
+                                                                    borderRadius: '12px',
+                                                                    background: 'rgba(25, 118, 210, 0.04)'
                                                                 }}>
-                                                                    Total Distance
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <Typography variant="h6" sx={{
+                                                                    <LocationIcon sx={{
                                                                         color: 'primary.main',
-                                                                        fontWeight: 700,
-                                                                        fontSize: '1.25rem',
-                                                                        lineHeight: 1.2
-                                                                    }}>
-                                                                        {directions?.routes[0]?.legs[0]?.distance?.value &&
-                                                                            convertDistance(directions.routes[0].legs[0].distance.value)}
-                                                                    </Typography>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                        <Typography component="span" sx={{
-                                                                            fontSize: '0.875rem',
+                                                                        fontSize: 28,
+                                                                        opacity: 0.9
+                                                                    }} />
+                                                                    <Box sx={{ flex: 1 }}>
+                                                                        <Typography variant="subtitle2" sx={{
+                                                                            color: 'text.secondary',
+                                                                            fontSize: '0.75rem',
                                                                             fontWeight: 500,
-                                                                            color: 'text.secondary'
+                                                                            textTransform: 'uppercase',
+                                                                            letterSpacing: '0.5px'
                                                                         }}>
-                                                                            {useMetric ? 'km' : 'mi'}
+                                                                            Total Distance
                                                                         </Typography>
-                                                                        <Button
-                                                                            onClick={() => setUseMetric(!useMetric)}
-                                                                            sx={{
-                                                                                minWidth: 'auto',
-                                                                                p: 1,
-                                                                                borderRadius: '8px',
-                                                                                background: 'rgba(25, 118, 210, 0.08)',
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                            <Typography variant="h6" sx={{
                                                                                 color: 'primary.main',
-                                                                                '&:hover': {
-                                                                                    background: 'rgba(25, 118, 210, 0.12)'
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            <SwapHorizIcon sx={{ fontSize: 20 }} />
-                                                                        </Button>
+                                                                                fontWeight: 700,
+                                                                                fontSize: '1.25rem',
+                                                                                lineHeight: 1.2
+                                                                            }}>
+                                                                                {directions?.routes[0]?.legs[0]?.distance?.value &&
+                                                                                    convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                                            </Typography>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                <Typography component="span" sx={{
+                                                                                    fontSize: '0.875rem',
+                                                                                    fontWeight: 500,
+                                                                                    color: 'text.secondary'
+                                                                                }}>
+                                                                                    {useMetric ? 'km' : 'mi'}
+                                                                                </Typography>
+                                                                                <Button
+                                                                                    onClick={() => setUseMetric(!useMetric)}
+                                                                                    sx={{
+                                                                                        minWidth: 'auto',
+                                                                                        p: 1,
+                                                                                        borderRadius: '8px',
+                                                                                        background: 'rgba(25, 118, 210, 0.08)',
+                                                                                        color: 'primary.main',
+                                                                                        '&:hover': {
+                                                                                            background: 'rgba(25, 118, 210, 0.12)'
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    <SwapHorizIcon sx={{ fontSize: 20 }} />
+                                                                                </Button>
+                                                                            </Box>
+                                                                        </Box>
                                                                     </Box>
                                                                 </Box>
                                                             </Box>
                                                         </Box>
                                                     </Box>
-                                                </Box>
+                                                ) : (
+                                                    <Box sx={{
+                                                        height: '600px',
+                                                        borderRadius: '12px',
+                                                        bgcolor: '#f5f5f5',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}>
+                                                        <Typography color="text.secondary">Loading map...</Typography>
+                                                    </Box>
+                                                )}
                                             </Box>
-                                        ) : (
+                                        </Paper>
+                                    </Grid>
+
+                                    {/* Shipment History Section - Right Column */}
+                                    <Grid item xs={12} md={6}>
+                                        <Paper sx={{ height: '100%' }} elevation={1}>
+                                            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                                                <Typography variant="h6" component="h2">
+                                                    Shipment History
+                                                </Typography>
+                                            </Box>
                                             <Box sx={{
+                                                p: 2,
                                                 height: '600px',
-                                                borderRadius: '12px',
-                                                bgcolor: '#f5f5f5',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
+                                                overflowY: 'auto',
+                                                '&::-webkit-scrollbar': {
+                                                    width: '8px',
+                                                },
+                                                '&::-webkit-scrollbar-track': {
+                                                    background: '#f1f1f1',
+                                                    borderRadius: '4px',
+                                                },
+                                                '&::-webkit-scrollbar-thumb': {
+                                                    background: '#888',
+                                                    borderRadius: '4px',
+                                                    '&:hover': {
+                                                        background: '#555',
+                                                    },
+                                                },
                                             }}>
-                                                <Typography color="text.secondary">Loading map...</Typography>
+                                                <Timeline
+                                                    position="right"
+                                                    sx={{
+                                                        '& .MuiTimelineItem-root': {
+                                                            minHeight: '80px',
+                                                            '&:last-child': {
+                                                                minHeight: 'auto',
+                                                            },
+                                                            pl: 0,
+                                                            '&::before': {
+                                                                display: 'none'
+                                                            }
+                                                        },
+                                                        '& .MuiTimelineContent-root': {
+                                                            py: 1,
+                                                            textAlign: 'left',
+                                                            pl: 2,
+                                                        },
+                                                        '& .MuiTimelineDot-root': {
+                                                            p: 1,
+                                                            boxShadow: 'none',
+                                                        },
+                                                        '& .MuiTimelineConnector-root': {
+                                                            backgroundColor: '#e0e0e0',
+                                                        },
+                                                        '& .MuiTimelineSeparator-root': {
+                                                            marginLeft: 0,
+                                                            paddingLeft: 0,
+                                                        },
+                                                        pl: 0,
+                                                    }}
+                                                >
+                                                    {shipmentHistory.map((event) => (
+                                                        <TimelineItem key={event.id}>
+                                                            <TimelineSeparator>
+                                                                <TimelineDot sx={{ bgcolor: event.color }}>
+                                                                    {event.icon}
+                                                                </TimelineDot>
+                                                                <TimelineConnector />
+                                                            </TimelineSeparator>
+                                                            <TimelineContent>
+                                                                <Typography variant="subtitle1" component="span" sx={{ fontWeight: 600 }}>
+                                                                    {event.status}
+                                                                </Typography>
+                                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                                    {event.location}
+                                                                </Typography>
+                                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                                                                    {formatTimestamp(event.timestamp)}
+                                                                </Typography>
+                                                                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                                                    {event.description}
+                                                                </Typography>
+                                                            </TimelineContent>
+                                                        </TimelineItem>
+                                                    ))}
+                                                </Timeline>
                                             </Box>
-                                        )}
-                                    </Box>
-                                </Paper>
+                                        </Paper>
+                                    </Grid>
+                                </Grid>
                             </Grid>
                         </Grid>
                     </Box>
-
-                    {/* Add Shipment History Section */}
-                    <Paper sx={{ mt: 4 }} elevation={1}>
-                        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                            <Typography variant="h6" component="h2">
-                                Shipment History
-                            </Typography>
-                        </Box>
-                        <Box sx={{ p: 3 }}>
-                            <Timeline position="right">
-                                {shipmentHistory.map((event) => (
-                                    <TimelineItem key={event.id}>
-                                        <TimelineSeparator>
-                                            <TimelineDot sx={{ bgcolor: event.color }}>
-                                                {event.icon}
-                                            </TimelineDot>
-                                            <TimelineConnector />
-                                        </TimelineSeparator>
-                                        <TimelineContent>
-                                            <Typography variant="h6" component="span">
-                                                {event.status}
-                                            </Typography>
-                                            <Typography color="text.secondary">
-                                                {event.location}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {formatTimestamp(event.timestamp)}
-                                            </Typography>
-                                            <Typography>
-                                                {event.description}
-                                            </Typography>
-                                        </TimelineContent>
-                                    </TimelineItem>
-                                ))}
-                            </Timeline>
-                        </Box>
-                    </Paper>
                 </Box>
             </Box>
 
