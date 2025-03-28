@@ -26,6 +26,7 @@ import {
     ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import './Navigation.css';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Navigation = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -37,6 +38,7 @@ const Navigation = () => {
     const [resourcesAnchorEl, setResourcesAnchorEl] = useState(null);
     const location = useLocation();
     const navigate = useNavigate();
+    const { logout } = useAuth();
 
     // Update authentication check to include homepage
     const isAuthenticated = location.pathname !== '/login' &&
@@ -182,9 +184,14 @@ const Navigation = () => {
         setResourcesAnchorEl(null);
     };
 
-    const handleLogout = () => {
-        handleProfileClose();
-        navigate('/');
+    const handleLogout = async () => {
+        try {
+            await logout();
+            handleProfileClose();
+            navigate('/');
+        } catch (error) {
+            console.error('Error logging out:', error);
+        }
     };
 
     const handleTrackingClick = (e) => {

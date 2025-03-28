@@ -1,0 +1,174 @@
+.roles-container {
+    padding: 24px;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+}
+
+.roles-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.roles-title {
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.roles-table {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.roles-table .MuiTableCell-head {
+    background-color: #f8f9fa;
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.permissions-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.permission-chip {
+    background-color: #e3f2fd;
+    color: #1a237e;
+    font-size: 0.75rem;
+    height: 24px;
+}
+
+.permission-chip:hover {
+    background-color: #bbdefb;
+}
+
+.roles-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+/* Dialog Styles */
+.MuiDialog-paper {
+    border-radius: 12px;
+}
+
+.MuiDialogTitle-root {
+    background-color: #f8f9fa;
+    color: #1a237e;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.MuiDialogContent-root {
+    padding: 24px;
+}
+
+.MuiDialogActions-root {
+    padding: 16px 24px;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* Form Styles */
+.MuiTextField-root {
+    margin-bottom: 16px;
+}
+
+.MuiFormControlLabel-root {
+    margin: 0;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.MuiFormControlLabel-root:hover {
+    background-color: #f5f5f5;
+}
+
+.MuiCheckbox-root {
+    color: #1a237e;
+}
+
+.MuiCheckbox-root.Mui-checked {
+    color: #1a237e;
+}
+
+/* Button Styles */
+.MuiButton-contained {
+    background-color: #1a237e;
+    color: white;
+}
+
+.MuiButton-contained:hover {
+    background-color: #0d47a1;
+}
+
+.MuiButton-outlined {
+    border-color: #1a237e;
+    color: #1a237e;
+}
+
+.MuiButton-outlined:hover {
+    border-color: #0d47a1;
+    background-color: rgba(26, 35, 126, 0.04);
+}
+
+/* Responsive Styles */
+@media (max-width: 960px) {
+    .roles-container {
+        padding: 16px;
+    }
+
+    .roles-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .roles-table {
+        overflow-x: auto;
+    }
+
+    .permissions-container {
+        min-width: 200px;
+    }
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.roles-container {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Custom Scrollbar */
+.roles-table::-webkit-scrollbar {
+    height: 8px;
+}
+
+.roles-table::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.roles-table::-webkit-scrollbar-thumb {
+    background: #1a237e;
+    border-radius: 4px;
+}
+
+.roles-table::-webkit-scrollbar-thumb:hover {
+    background: #0d47a1;
+} 

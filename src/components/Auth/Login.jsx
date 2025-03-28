@@ -24,7 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const Login = () => {
     const navigate = useNavigate();
-    const { login, resetPassword, signInWithGoogle, error: authError } = useAuth();
+    const { login, resetPassword, signInWithGoogle, error: authError, userRole } = useAuth();
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -41,7 +41,14 @@ const Login = () => {
 
         try {
             await login(email, password);
-            navigate('/dashboard');
+            // Check user role and redirect accordingly
+            const redirectPath = ['admin', 'super_admin', 'business_admin'].includes(userRole)
+                ? '/admin'
+                : '/dashboard';
+            console.log('Login successful, redirecting to:', redirectPath);
+            setTimeout(() => {
+                navigate(redirectPath);
+            }, 100);
         } catch (err) {
             console.error('Login error:', err);
             setError(err.message || 'Invalid email or password');
@@ -56,7 +63,12 @@ const Login = () => {
 
         try {
             await signInWithGoogle();
-            navigate('/dashboard');
+            // Check user role and redirect accordingly
+            const redirectPath = ['admin', 'super_admin', 'business_admin'].includes(userRole)
+                ? '/admin'
+                : '/dashboard';
+            console.log('Google login successful, redirecting to:', redirectPath);
+            navigate(redirectPath);
         } catch (err) {
             console.error('Google login error:', err);
             setError(err.message || 'Failed to sign in with Google');

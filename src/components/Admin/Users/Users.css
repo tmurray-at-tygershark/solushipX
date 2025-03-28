@@ -1,0 +1,103 @@
+.users-container {
+    padding: 24px;
+}
+
+.users-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.users-title {
+    color: #1a237e;
+    margin: 0;
+}
+
+.users-search {
+    margin-bottom: 24px;
+    padding: 16px;
+}
+
+.users-table {
+    margin-bottom: 24px;
+}
+
+.users-table .MuiTableCell-head {
+    background-color: #f5f5f5;
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.users-table .MuiTableCell-body {
+    padding: 16px;
+}
+
+.users-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 24px;
+}
+
+.user-form {
+    padding: 24px;
+}
+
+.user-form .MuiTextField-root,
+.user-form .MuiFormControl-root {
+    margin-bottom: 16px;
+}
+
+.user-form .MuiInputLabel-root {
+    color: #1a237e;
+}
+
+.user-form .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+    border-color: #1a237e;
+}
+
+.user-form .Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: #1a237e;
+}
+
+.user-form .MuiFormHelperText-root {
+    color: #d32f2f;
+}
+
+.user-form .MuiSelect-select {
+    padding: 12px;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    background-color: #1a237e;
+    color: white;
+    font-weight: 600;
+}
+
+@media (max-width: 960px) {
+    .users-container {
+        padding: 16px;
+    }
+
+    .users-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .users-search {
+        padding: 8px;
+    }
+
+    .user-form {
+        padding: 16px;
+    }
+} 

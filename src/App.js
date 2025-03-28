@@ -1,20 +1,15 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Box, CssBaseline, CircularProgress } from '@mui/material';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { CssBaseline, Box, CircularProgress } from '@mui/material';
+import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-
-// Styles
-import 'bootstrap/dist/css/bootstrap.min.css';
-import '@fortawesome/fontawesome-free/css/all.min.css';
-import './App.css';
-
-// Core Components (always loaded)
+import { AuthProvider } from './contexts/AuthContext';
 import Navigation from './components/Navigation';
 import Footer from './components/Footer/Footer';
 import NotificationBar from './components/NotificationBar/NotificationBar';
 import ErrorBoundary from './components/ErrorBoundary';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { AdminRoute } from './components/AdminRoute';
 
 // Lazy-loaded Pages
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
@@ -34,6 +29,17 @@ const Signup = lazy(() => import('./components/Auth/Signup'));
 const EditCustomer = lazy(() => import('./components/Customers/EditCustomer'));
 const Profile = lazy(() => import('./components/Profile/Profile'));
 const Carriers = lazy(() => import('./components/Carriers/Carriers'));
+const AdminLayout = lazy(() => import('./components/Admin/AdminLayout'));
+const AdminDashboard = lazy(() => import('./components/Admin/Dashboard'));
+const CompanyList = lazy(() => import('./components/Admin/Companies/CompanyList'));
+const UserList = lazy(() => import('./components/Admin/Users/UserList'));
+const GlobalShipmentList = lazy(() => import('./components/Admin/Shipments/GlobalShipmentList'));
+const AnalyticsDashboard = lazy(() => import('./components/Admin/Analytics/Dashboard'));
+const BillingDashboard = lazy(() => import('./components/Admin/Billing/BillingDashboard'));
+const InvoiceForm = lazy(() => import('./components/Admin/Billing/InvoiceForm'));
+const RoleManagement = lazy(() => import('./components/Admin/Roles/RoleManagement'));
+const SystemSettings = lazy(() => import('./components/Admin/Settings/SystemSettings'));
+const CarrierKeys = lazy(() => import('./components/Admin/Carriers/CarrierKeys'));
 
 // Loading Component
 const LoadingFallback = () => (
@@ -46,17 +52,6 @@ const LoadingFallback = () => (
         <CircularProgress />
     </Box>
 );
-
-// Protected Route Component
-const ProtectedRoute = ({ children }) => {
-    const { isAuthenticated, loading } = useAuth();
-
-    if (loading) {
-        return <LoadingFallback />;
-    }
-
-    return isAuthenticated ? children : <Navigate to="/login" />;
-};
 
 function AppRoutes() {
     return (
@@ -134,6 +129,25 @@ function AppRoutes() {
                         <Carriers />
                     </ProtectedRoute>
                 } />
+
+                {/* Admin Routes */}
+                <Route path="/admin/*" element={
+                    <AdminRoute>
+                        <AdminLayout />
+                    </AdminRoute>
+                }>
+                    <Route index element={<AdminDashboard />} />
+                    <Route path="companies" element={<CompanyList />} />
+                    <Route path="users" element={<UserList />} />
+                    <Route path="shipments" element={<GlobalShipmentList />} />
+                    <Route path="analytics" element={<AnalyticsDashboard />} />
+                    <Route path="billing" element={<BillingDashboard />} />
+                    <Route path="billing/invoice/new" element={<InvoiceForm />} />
+                    <Route path="billing/invoice/:id" element={<InvoiceForm />} />
+                    <Route path="roles" element={<RoleManagement />} />
+                    <Route path="settings" element={<SystemSettings />} />
+                    <Route path="carrier-keys" element={<CarrierKeys />} />
+                </Route>
 
                 {/* Fallback Route */}
                 <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,0 +1,210 @@
+.carrier-keys-container {
+    padding: 24px;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+}
+
+.carrier-keys-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.carrier-keys-title {
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.carrier-keys-table {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.carrier-keys-table .MuiTableCell-head {
+    background-color: #f8f9fa;
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.api-key-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.api-key-text {
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: #666;
+    word-break: break-all;
+}
+
+.carrier-keys-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+/* Dialog Styles */
+.MuiDialog-paper {
+    border-radius: 12px;
+}
+
+.MuiDialogTitle-root {
+    background-color: #f8f9fa;
+    color: #1a237e;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.MuiDialogContent-root {
+    padding: 24px;
+}
+
+.MuiDialogActions-root {
+    padding: 16px 24px;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* Form Styles */
+.MuiTextField-root {
+    margin-bottom: 16px;
+}
+
+.MuiFormControl-root {
+    margin-bottom: 16px;
+}
+
+.MuiFormControlLabel-root {
+    margin: 0;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.MuiFormControlLabel-root:hover {
+    background-color: #f5f5f5;
+}
+
+/* Button Styles */
+.MuiButton-contained {
+    background-color: #1a237e;
+    color: white;
+}
+
+.MuiButton-contained:hover {
+    background-color: #0d47a1;
+}
+
+.MuiButton-outlined {
+    border-color: #1a237e;
+    color: #1a237e;
+}
+
+.MuiButton-outlined:hover {
+    border-color: #0d47a1;
+    background-color: rgba(26, 35, 126, 0.04);
+}
+
+/* Select Styles */
+.MuiSelect-select {
+    padding: 12px;
+}
+
+.MuiInputLabel-root {
+    color: #1a237e;
+}
+
+.MuiInputLabel-root.Mui-focused {
+    color: #1a237e;
+}
+
+/* Alert Styles */
+.MuiAlert-root {
+    border-radius: 8px;
+    margin-bottom: 24px;
+}
+
+/* Responsive Styles */
+@media (max-width: 960px) {
+    .carrier-keys-container {
+        padding: 16px;
+    }
+
+    .carrier-keys-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .carrier-keys-table {
+        overflow-x: auto;
+    }
+
+    .api-key-cell {
+        min-width: 200px;
+    }
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.carrier-keys-container {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Custom Scrollbar */
+.carrier-keys-table::-webkit-scrollbar {
+    height: 8px;
+}
+
+.carrier-keys-table::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.carrier-keys-table::-webkit-scrollbar-thumb {
+    background: #1a237e;
+    border-radius: 4px;
+}
+
+.carrier-keys-table::-webkit-scrollbar-thumb:hover {
+    background: #0d47a1;
+}
+
+/* Icon Button Styles */
+.MuiIconButton-root {
+    padding: 4px;
+    margin: 0 2px;
+}
+
+.MuiIconButton-root:hover {
+    background-color: rgba(26, 35, 126, 0.04);
+}
+
+/* Chip Styles */
+.MuiChip-root {
+    height: 24px;
+    font-size: 0.75rem;
+}
+
+/* Form Field Focus */
+.MuiTextField-root .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: #1a237e;
+}
+
+.MuiSelect-root .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: #1a237e;
+} 
