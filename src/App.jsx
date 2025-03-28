@@ -16,7 +16,6 @@ const AdminDashboard = lazy(() => import('./components/Admin/Dashboard'));
 const CompanyList = lazy(() => import('./components/Admin/Companies/CompanyList'));
 const UserList = lazy(() => import('./components/Admin/Users/UserList'));
 const GlobalShipmentList = lazy(() => import('./components/Admin/Shipments/GlobalShipmentList'));
-const AnalyticsDashboard = lazy(() => import('./components/Admin/Analytics/Dashboard'));
 const BillingDashboard = lazy(() => import('./components/Admin/Billing/BillingDashboard'));
 const InvoiceForm = lazy(() => import('./components/Admin/Billing/InvoiceForm'));
 const RoleManagement = lazy(() => import('./components/Admin/Roles/RoleManagement'));
@@ -73,7 +72,6 @@ const App = () => {
                             <Route path="companies" element={<CompanyList />} />
                             <Route path="users" element={<UserList />} />
                             <Route path="shipments" element={<GlobalShipmentList />} />
-                            <Route path="analytics" element={<AnalyticsDashboard />} />
                             <Route path="billing" element={<BillingDashboard />} />
                             <Route path="billing/invoice/new" element={<InvoiceForm />} />
                             <Route path="billing/invoice/:id" element={<InvoiceForm />} />

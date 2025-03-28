@@ -1,36 +1,20 @@
 import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { IconButton, Avatar, Menu, MenuItem, ListItemIcon } from '@mui/material';
 import {
-    Box,
-    Typography,
-    Paper,
-    IconButton,
-    Button,
-    Menu,
-    MenuItem,
-    Stack,
-    TextField,
-    InputAdornment,
-    Tooltip,
-} from '@mui/material';
-import {
-    Search as SearchIcon,
-    MoreVert as MoreVertIcon,
-    FilterList as FilterListIcon,
-    GetApp as ExportIcon,
-    Add as AddIcon,
     Person as PersonIcon,
     Settings as SettingsIcon,
     Logout as LogoutIcon,
-    Refresh as RefreshIcon,
 } from '@mui/icons-material';
+import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import AdminBreadcrumb from './AdminBreadcrumb';
 import './AdminHeader.css';
 
-const AdminHeader = ({ title, subtitle, onAdd, onExport, onRefresh }) => {
-    const [anchorEl, setAnchorEl] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
+const AdminHeader = () => {
+    const location = useLocation();
     const navigate = useNavigate();
+    const { logout, currentUser } = useAuth();
+    const [anchorEl, setAnchorEl] = useState(null);
 
     const handleMenuClick = (event) => {
         setAnchorEl(event.currentTarget);
@@ -40,105 +24,105 @@ const AdminHeader = ({ title, subtitle, onAdd, onExport, onRefresh }) => {
         setAnchorEl(null);
     };
 
-    const handleLogout = () => {
-        // Add logout logic here
-        navigate('/login');
+    const handleLogout = async () => {
+        try {
+            await logout();
+            navigate('/login');
+        } catch (error) {
+            console.error('Failed to log out:', error);
+        }
+    };
+
+    const getInitials = (name) => {
+        if (!name) return 'A';
+        return name.split(' ').map(n => n[0]).join('').toUpperCase();
     };
 
     return (
-        <Box className="admin-header">
-            <AdminBreadcrumb items={[title]} />
-
-            <Paper className="header-paper">
-                <Box className="header-content">
-                    <Box className="header-left">
-                        <Typography variant="h4" className="header-title">
-                            {title}
-                        </Typography>
-                        {subtitle && (
-                            <Typography variant="subtitle1" className="header-subtitle">
-                                {subtitle}
-                            </Typography>
-                        )}
-                    </Box>
-
-                    <Box className="header-right">
-                        <Stack direction="row" spacing={2} alignItems="center">
-                            <TextField
-                                placeholder="Search..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                size="small"
-                                className="search-input"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <SearchIcon />
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
-
-                            <Tooltip title="Filter">
-                                <IconButton className="filter-button">
-                                    <FilterListIcon />
-                                </IconButton>
-                            </Tooltip>
-
-                            <Tooltip title="Export">
-                                <IconButton className="filter-button" onClick={onExport}>
-                                    <ExportIcon />
-                                </IconButton>
-                            </Tooltip>
-
-                            <Tooltip title="Refresh">
-                                <IconButton className="filter-button" onClick={onRefresh}>
-                                    <RefreshIcon />
-                                </IconButton>
-                            </Tooltip>
-
-                            {onAdd && (
-                                <Button
-                                    variant="contained"
-                                    startIcon={<AddIcon />}
-                                    onClick={onAdd}
-                                    className="add-button"
-                                >
-                                    Add New
-                                </Button>
-                            )}
-
+        <nav className="navbar navbar-expand-lg">
+            <div className="container">
+                <Link className="navbar-brand" to="/admin">
+                    <i className="fas fa-shipping-fast me-2" aria-hidden="true"></i>
+                    SolushipX Admin
+                </Link>
+                <button className="navbar-toggler" type="button" aria-label="Toggle navigation">
+                    <span className="navbar-toggler-icon"></span>
+                </button>
+                <div className="navbar-collapse">
+                    <ul className="navbar-nav me-auto"></ul>
+                    <ul className="navbar-nav ms-auto">
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname === '/admin' ? 'active' : ''}`} to="/admin">
+                                <span>Dashboard</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname === '/admin/companies' ? 'active' : ''}`} to="/admin/companies">
+                                <span>Companies</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname === '/admin/users' ? 'active' : ''}`} to="/admin/users">
+                                <span>Users</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname === '/admin/shipments' ? 'active' : ''}`} to="/admin/shipments">
+                                <span>Shipments</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname === '/admin/billing' ? 'active' : ''}`} to="/admin/billing">
+                                <span>Billing</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname === '/admin/roles' ? 'active' : ''}`} to="/admin/roles">
+                                <span>Roles</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item ms-2">
                             <IconButton
+                                size="small"
                                 onClick={handleMenuClick}
-                                className="menu-button"
+                                className="profile-button"
                             >
-                                <MoreVertIcon />
+                                <Avatar className="profile-avatar">
+                                    {getInitials(currentUser?.displayName)}
+                                </Avatar>
                             </IconButton>
-
                             <Menu
                                 anchorEl={anchorEl}
                                 open={Boolean(anchorEl)}
                                 onClose={handleMenuClose}
-                                className="action-menu"
+                                className="profile-menu"
+                                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
                             >
                                 <MenuItem onClick={() => { handleMenuClose(); navigate('/admin/profile'); }}>
-                                    <PersonIcon fontSize="small" className="menu-icon" />
+                                    <ListItemIcon>
+                                        <PersonIcon fontSize="small" />
+                                    </ListItemIcon>
                                     Profile
                                 </MenuItem>
                                 <MenuItem onClick={() => { handleMenuClose(); navigate('/admin/settings'); }}>
-                                    <SettingsIcon fontSize="small" className="menu-icon" />
+                                    <ListItemIcon>
+                                        <SettingsIcon fontSize="small" />
+                                    </ListItemIcon>
                                     Settings
                                 </MenuItem>
                                 <MenuItem onClick={handleLogout}>
-                                    <LogoutIcon fontSize="small" className="menu-icon" />
+                                    <ListItemIcon>
+                                        <LogoutIcon fontSize="small" />
+                                    </ListItemIcon>
                                     Logout
                                 </MenuItem>
                             </Menu>
-                        </Stack>
-                    </Box>
-                </Box>
-            </Paper>
-        </Box>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
     );
 };
 

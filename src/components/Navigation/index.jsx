@@ -40,10 +40,18 @@ const Navigation = () => {
     const navigate = useNavigate();
     const { logout } = useAuth();
 
-    // Update authentication check to include homepage
+    // Check if we're on an admin page
+    const isAdminPage = location.pathname.startsWith('/admin');
+
+    // Update authentication check to include homepage and admin pages
     const isAuthenticated = location.pathname !== '/login' &&
         location.pathname !== '/signup' &&
         location.pathname !== '/';
+
+    // If we're on an admin page, don't render the navigation
+    if (isAdminPage) {
+        return null;
+    }
 
     const menuItems = isAuthenticated ? [
         { path: '/dashboard', label: 'Dashboard' },
