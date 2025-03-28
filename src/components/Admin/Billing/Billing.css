@@ -1,1 +1,214 @@
- 
+.admin-billing-dashboard {
+    padding: 24px;
+}
+
+.admin-billing-dashboard .MuiPaper-root {
+    box-shadow: none;
+    border-radius: 8px;
+}
+
+.admin-billing-dashboard .MuiTabs-root {
+    margin-bottom: 24px;
+    border-bottom: 1px solid #eee;
+}
+
+.admin-billing-dashboard .MuiTab-root {
+    text-transform: none;
+    font-weight: 500;
+    min-height: 48px;
+    padding: 0 24px;
+}
+
+.admin-billing-dashboard .MuiTab-root.Mui-selected {
+    color: #1976d2;
+}
+
+.admin-billing-dashboard .MuiTableHead-root {
+    background-color: #f8f9fa;
+}
+
+.admin-billing-dashboard .MuiTableHead-root .MuiTableCell-root {
+    font-weight: 600;
+    color: #637381;
+    border-bottom: 1px solid #eee;
+}
+
+.admin-billing-dashboard .MuiTableBody-root .MuiTableCell-root {
+    color: #212b36;
+    border-bottom: 1px solid #eee;
+}
+
+.admin-billing-dashboard .MuiTableRow-root:hover {
+    background-color: #f8f9fa;
+}
+
+.admin-billing-dashboard .MuiChip-root {
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.admin-billing-dashboard .MuiChip-root.MuiChip-colorSuccess {
+    color: #0a875a;
+    background-color: #f1f8f5;
+}
+
+.admin-billing-dashboard .MuiChip-root.MuiChip-colorWarning {
+    color: #f59e0b;
+    background-color: #fff7ed;
+}
+
+.admin-billing-dashboard .MuiChip-root.MuiChip-colorError {
+    color: #b71c1c;
+    background-color: #fef2f2;
+}
+
+.admin-billing-dashboard .search-filters {
+    margin-bottom: 24px;
+}
+
+.admin-billing-dashboard .table-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.admin-billing-dashboard .MuiButton-root {
+    text-transform: none;
+    font-weight: 500;
+}
+
+.admin-billing-dashboard .MuiFormControl-root {
+    background-color: #fff;
+}
+
+.admin-billing-dashboard .MuiInputBase-root {
+    border-radius: 8px;
+}
+
+.admin-billing-dashboard .MuiMenu-paper {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+.admin-billing-dashboard .MuiMenuItem-root {
+    min-height: 40px;
+    font-size: 0.875rem;
+}
+
+.admin-billing-dashboard .table-pagination {
+    border-top: 1px solid #eee;
+    padding: 16px;
+}
+
+.admin-billing-dashboard .no-data {
+    text-align: center;
+    padding: 40px 0;
+    color: #637381;
+}
+
+.billing-loading,
+.billing-error {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+/* EDI Processing Styles */
+.edi-dropzone {
+    transition: all 0.3s ease;
+}
+
+.edi-dropzone:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.edi-dropzone.drag-active {
+    background-color: rgba(25, 118, 210, 0.08);
+    border-color: #1976d2;
+}
+
+.edi-file-list {
+    margin-top: 24px;
+}
+
+.edi-file-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.edi-file-item:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.edi-file-icon {
+    margin-right: 12px;
+    color: #1976d2;
+}
+
+.edi-file-info {
+    flex-grow: 1;
+}
+
+.edi-file-name {
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.edi-file-meta {
+    color: rgba(0, 0, 0, 0.6);
+    font-size: 0.875rem;
+}
+
+.edi-search-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.edi-status-chip {
+    min-width: 80px;
+    justify-content: center;
+}
+
+.edi-upload-progress {
+    margin-top: 8px;
+    width: 100%;
+}
+
+/* Responsive adjustments */
+@media (max-width: 960px) {
+    .admin-billing-dashboard {
+        padding: 16px;
+    }
+
+    .admin-billing-dashboard .MuiTab-root {
+        padding: 0 16px;
+        min-width: auto;
+    }
+}
+
+@media (max-width: 600px) {
+    .admin-billing-dashboard {
+        padding: 16px;
+    }
+
+    .admin-billing-dashboard .table-actions {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .admin-billing-dashboard .MuiTableContainer-root {
+        margin: 0 -16px;
+        width: calc(100% + 32px);
+    }
+
+    .edi-search-form {
+        grid-template-columns: 1fr;
+    }
+} 

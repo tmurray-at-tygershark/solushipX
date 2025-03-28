@@ -21,6 +21,14 @@ import {
     DialogActions,
     Stack,
     Tooltip,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    ListItemText,
+    FormControl,
+    InputLabel,
+    Select,
+    Grid
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -32,264 +40,349 @@ import {
     Email as EmailIcon,
     Phone as PhoneIcon,
     LocationOn as LocationIcon,
+    MoreVert as MoreVertIcon,
+    FilterList as FilterIcon,
+    Sort as SortIcon
 } from '@mui/icons-material';
 import './CompanyList.css';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../../../firebase/firebase';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
 
 const CompanyList = () => {
     const [companies, setCompanies] = useState([]);
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [anchorEl, setAnchorEl] = useState(null);
     const [selectedCompany, setSelectedCompany] = useState(null);
-    const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [filterAnchorEl, setFilterAnchorEl] = useState(null);
+    const [sortAnchorEl, setSortAnchorEl] = useState(null);
+    const [sortBy, setSortBy] = useState('name');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterType, setFilterType] = useState('all');
+    const { currentUser } = useAuth();
+    const navigate = useNavigate();
 
-    // Mock data - replace with Firebase data
+    // Generate random companies
+    const generateRandomCompanies = () => {
+        const companyTypes = ['Customer', 'Vendor', 'Partner', 'Carrier'];
+        const statuses = ['Active', 'Inactive', 'Pending'];
+        const industries = ['Technology', 'Manufacturing', 'Retail', 'Healthcare', 'Finance'];
+        const countries = ['US', 'UK', 'Canada', 'Germany', 'France', 'Japan', 'Australia'];
+
+        return Array.from({ length: 40 }, (_, index) => ({
+            id: `company-${index + 1}`,
+            name: `Company ${index + 1}`,
+            type: companyTypes[Math.floor(Math.random() * companyTypes.length)],
+            status: statuses[Math.floor(Math.random() * statuses.length)],
+            industry: industries[Math.floor(Math.random() * industries.length)],
+            country: countries[Math.floor(Math.random() * countries.length)],
+            createdAt: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
+            updatedAt: new Date()
+        }));
+    };
+
     useEffect(() => {
-        const mockCompanies = [
-            {
-                id: '1',
-                name: 'Acme Corporation',
-                email: 'contact@acme.com',
-                phone: '+1 (555) 123-4567',
-                address: '123 Business Ave, Suite 100, New York, NY 10001',
-                status: 'active',
-                type: 'Enterprise',
-                joinDate: '2024-01-15',
-            },
-            {
-                id: '2',
-                name: 'TechCorp Solutions',
-                email: 'info@techcorp.com',
-                phone: '+1 (555) 234-5678',
-                address: '456 Tech Blvd, San Francisco, CA 94105',
-                status: 'active',
-                type: 'SMB',
-                joinDate: '2024-02-01',
-            },
-            // Add more mock companies as needed
-        ];
-        setCompanies(mockCompanies);
-    }, []);
-
-    const handleChangePage = (event, newPage) => {
-        setPage(newPage);
-    };
-
-    const handleChangeRowsPerPage = (event) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
-        setPage(0);
-    };
-
-    const handleViewCompany = (company) => {
-        setSelectedCompany(company);
-        setIsViewDialogOpen(true);
-    };
-
-    const handleDeleteCompany = (company) => {
-        setSelectedCompany(company);
-        setIsDeleteDialogOpen(true);
-    };
-
-    const getStatusChip = (status) => {
-        const statusConfig = {
-            active: { color: 'success', label: 'Active' },
-            inactive: { color: 'default', label: 'Inactive' },
-            pending: { color: 'warning', label: 'Pending' },
+        const loadCompanies = async () => {
+            try {
+                // Simulate loading with random data
+                const randomCompanies = generateRandomCompanies();
+                setCompanies(randomCompanies);
+                setLoading(false);
+            } catch (err) {
+                console.error('Error loading companies:', err);
+                setError('Failed to load companies');
+                setLoading(false);
+            }
         };
 
-        const config = statusConfig[status] || statusConfig.inactive;
-        return (
-            <Chip
-                label={config.label}
-                color={config.color}
-                size="small"
-                className="status-chip"
-            />
-        );
+        loadCompanies();
+    }, []);
+
+    const handleActionsClick = (event, company) => {
+        setAnchorEl(event.currentTarget);
+        setSelectedCompany(company);
     };
 
-    const filteredCompanies = companies.filter(company =>
-        Object.values(company).some(value =>
-            String(value).toLowerCase().includes(searchTerm.toLowerCase())
-        )
-    );
+    const handleActionsClose = () => {
+        setAnchorEl(null);
+        setSelectedCompany(null);
+    };
+
+    const handleFilterClick = (event) => {
+        setFilterAnchorEl(event.currentTarget);
+    };
+
+    const handleSortClick = (event) => {
+        setSortAnchorEl(event.currentTarget);
+    };
+
+    const handleMenuClose = () => {
+        setFilterAnchorEl(null);
+        setSortAnchorEl(null);
+    };
+
+    const handleViewCompany = () => {
+        if (selectedCompany) {
+            navigate(`/admin/companies/${selectedCompany.id}`);
+            handleActionsClose();
+        }
+    };
+
+    const handleEditCompany = () => {
+        if (selectedCompany) {
+            navigate(`/admin/companies/${selectedCompany.id}/edit`);
+            handleActionsClose();
+        }
+    };
+
+    const handleDeleteCompany = () => {
+        if (selectedCompany) {
+            // Implement delete functionality
+            console.log('Delete company:', selectedCompany.id);
+            handleActionsClose();
+        }
+    };
+
+    const filteredCompanies = companies.filter(company => {
+        const matchesSearch = company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            company.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            company.industry.toLowerCase().includes(searchTerm.toLowerCase());
+
+        const matchesStatus = filterStatus === 'all' || company.status === filterStatus;
+        const matchesType = filterType === 'all' || company.type === filterType;
+
+        return matchesSearch && matchesStatus && matchesType;
+    });
+
+    const sortedCompanies = [...filteredCompanies].sort((a, b) => {
+        switch (sortBy) {
+            case 'name':
+                return a.name.localeCompare(b.name);
+            case 'type':
+                return a.type.localeCompare(b.type);
+            case 'status':
+                return a.status.localeCompare(b.status);
+            case 'industry':
+                return a.industry.localeCompare(b.industry);
+            case 'country':
+                return a.country.localeCompare(b.country);
+            case 'createdAt':
+                return b.createdAt - a.createdAt;
+            default:
+                return 0;
+        }
+    });
+
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'Active':
+                return { color: '#0a875a', bgcolor: '#f1f8f5' };
+            case 'Inactive':
+                return { color: '#637381', bgcolor: '#f9fafb' };
+            case 'Pending':
+                return { color: '#f59e0b', bgcolor: '#fff7ed' };
+            default:
+                return { color: '#637381', bgcolor: '#f9fafb' };
+        }
+    };
 
     return (
         <Box className="admin-companies">
-            <Paper className="companies-paper">
-                <TableContainer>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Company Name</TableCell>
-                                <TableCell>Contact</TableCell>
-                                <TableCell>Type</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Join Date</TableCell>
-                                <TableCell align="right">Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {filteredCompanies
-                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                .map((company) => (
-                                    <TableRow key={company.id} hover>
-                                        <TableCell>
-                                            <Box className="company-name-cell">
-                                                <BusinessIcon className="company-icon" />
-                                                <Typography variant="body1">
-                                                    {company.name}
-                                                </Typography>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Stack spacing={0.5}>
-                                                <Box className="contact-info">
-                                                    <EmailIcon fontSize="small" />
-                                                    <Typography variant="body2">
-                                                        {company.email}
-                                                    </Typography>
-                                                </Box>
-                                                <Box className="contact-info">
-                                                    <PhoneIcon fontSize="small" />
-                                                    <Typography variant="body2">
-                                                        {company.phone}
-                                                    </Typography>
-                                                </Box>
-                                            </Stack>
-                                        </TableCell>
-                                        <TableCell>{company.type}</TableCell>
-                                        <TableCell>{getStatusChip(company.status)}</TableCell>
-                                        <TableCell>{company.joinDate}</TableCell>
-                                        <TableCell align="right">
-                                            <Stack direction="row" spacing={1} justifyContent="flex-end">
-                                                <Tooltip title="View Details">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleViewCompany(company)}
-                                                    >
-                                                        <ViewIcon />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Edit Company">
-                                                    <IconButton size="small">
-                                                        <EditIcon />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Delete Company">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleDeleteCompany(company)}
-                                                    >
-                                                        <DeleteIcon />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Stack>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+            <Box sx={{ mb: 4 }}>
+                <Typography variant="h4" component="h1" gutterBottom>
+                    Companies
+                </Typography>
+                <Typography variant="body1" color="text.secondary" gutterBottom>
+                    Manage your company profiles and relationships
+                </Typography>
+            </Box>
 
-                <TablePagination
-                    component="div"
-                    count={filteredCompanies.length}
-                    page={page}
-                    onPageChange={handleChangePage}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={handleChangeRowsPerPage}
-                    rowsPerPageOptions={[5, 10, 25]}
-                />
-            </Paper>
-
-            {/* View Company Dialog */}
-            <Dialog
-                open={isViewDialogOpen}
-                onClose={() => setIsViewDialogOpen(false)}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle>
-                    <Box className="dialog-title">
-                        <BusinessIcon className="dialog-icon" />
-                        <Typography variant="h6">
-                            {selectedCompany?.name}
-                        </Typography>
-                    </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <Stack spacing={3}>
-                        <Box className="company-info-section">
-                            <Typography variant="subtitle2" color="text.secondary">
-                                Contact Information
-                            </Typography>
-                            <Stack spacing={2}>
-                                <Box className="info-row">
-                                    <EmailIcon />
-                                    <Typography>{selectedCompany?.email}</Typography>
-                                </Box>
-                                <Box className="info-row">
-                                    <PhoneIcon />
-                                    <Typography>{selectedCompany?.phone}</Typography>
-                                </Box>
-                                <Box className="info-row">
-                                    <LocationIcon />
-                                    <Typography>{selectedCompany?.address}</Typography>
-                                </Box>
-                            </Stack>
-                        </Box>
-                        <Box className="company-info-section">
-                            <Typography variant="subtitle2" color="text.secondary">
-                                Company Details
-                            </Typography>
-                            <Stack spacing={2}>
-                                <Box className="info-row">
-                                    <Typography variant="body2" color="text.secondary">
-                                        Type:
-                                    </Typography>
-                                    <Typography>{selectedCompany?.type}</Typography>
-                                </Box>
-                                <Box className="info-row">
-                                    <Typography variant="body2" color="text.secondary">
-                                        Status:
-                                    </Typography>
-                                    {getStatusChip(selectedCompany?.status)}
-                                </Box>
-                                <Box className="info-row">
-                                    <Typography variant="body2" color="text.secondary">
-                                        Join Date:
-                                    </Typography>
-                                    <Typography>{selectedCompany?.joinDate}</Typography>
-                                </Box>
-                            </Stack>
-                        </Box>
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} md={4}>
+                    <TextField
+                        fullWidth
+                        placeholder="Search companies..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                </Grid>
+                <Grid item xs={12} md={8}>
+                    <Stack direction="row" spacing={2} justifyContent="flex-end">
+                        <Button
+                            variant="outlined"
+                            startIcon={<FilterIcon />}
+                            onClick={handleFilterClick}
+                        >
+                            Filters
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            startIcon={<SortIcon />}
+                            onClick={handleSortClick}
+                        >
+                            Sort
+                        </Button>
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={() => navigate('/admin/companies/new')}
+                        >
+                            Add Company
+                        </Button>
                     </Stack>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
-                </DialogActions>
-            </Dialog>
+                </Grid>
+            </Grid>
 
-            {/* Delete Company Dialog */}
-            <Dialog
-                open={isDeleteDialogOpen}
-                onClose={() => setIsDeleteDialogOpen(false)}
+            <TableContainer component={Paper}>
+                <Table>
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>Company Name</TableCell>
+                            <TableCell>Type</TableCell>
+                            <TableCell>Status</TableCell>
+                            <TableCell>Industry</TableCell>
+                            <TableCell>Country</TableCell>
+                            <TableCell>Created At</TableCell>
+                            <TableCell>Actions</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {sortedCompanies.map((company) => (
+                            <TableRow key={company.id}>
+                                <TableCell>{company.name}</TableCell>
+                                <TableCell>{company.type}</TableCell>
+                                <TableCell>
+                                    <Chip
+                                        label={company.status}
+                                        sx={{
+                                            backgroundColor: getStatusColor(company.status).bgcolor,
+                                            color: getStatusColor(company.status).color,
+                                            fontWeight: 500,
+                                            '& .MuiChip-label': { px: 1.5 }
+                                        }}
+                                        size="small"
+                                    />
+                                </TableCell>
+                                <TableCell>{company.industry}</TableCell>
+                                <TableCell>{company.country}</TableCell>
+                                <TableCell>
+                                    {format(company.createdAt, 'MMM d, yyyy')}
+                                </TableCell>
+                                <TableCell>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(e) => handleActionsClick(e, company)}
+                                    >
+                                        <MoreVertIcon />
+                                    </IconButton>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+
+            {/* Actions Menu */}
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleActionsClose}
             >
-                <DialogTitle>Delete Company</DialogTitle>
-                <DialogContent>
-                    <Typography>
-                        Are you sure you want to delete {selectedCompany?.name}? This action cannot be undone.
-                    </Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setIsDeleteDialogOpen(false)}>Cancel</Button>
-                    <Button color="error" variant="contained">
-                        Delete
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                <MenuItem onClick={handleViewCompany}>
+                    <ListItemIcon>
+                        <ViewIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>View Details</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={handleEditCompany}>
+                    <ListItemIcon>
+                        <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Edit Company</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={handleDeleteCompany}>
+                    <ListItemIcon>
+                        <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Delete Company</ListItemText>
+                </MenuItem>
+            </Menu>
+
+            {/* Filter Menu */}
+            <Menu
+                anchorEl={filterAnchorEl}
+                open={Boolean(filterAnchorEl)}
+                onClose={handleMenuClose}
+            >
+                <MenuItem>
+                    <FormControl fullWidth>
+                        <InputLabel>Status</InputLabel>
+                        <Select
+                            value={filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value)}
+                            label="Status"
+                        >
+                            <MenuItem value="all">All</MenuItem>
+                            <MenuItem value="Active">Active</MenuItem>
+                            <MenuItem value="Inactive">Inactive</MenuItem>
+                            <MenuItem value="Pending">Pending</MenuItem>
+                        </Select>
+                    </FormControl>
+                </MenuItem>
+                <MenuItem>
+                    <FormControl fullWidth>
+                        <InputLabel>Type</InputLabel>
+                        <Select
+                            value={filterType}
+                            onChange={(e) => setFilterType(e.target.value)}
+                            label="Type"
+                        >
+                            <MenuItem value="all">All</MenuItem>
+                            <MenuItem value="Customer">Customer</MenuItem>
+                            <MenuItem value="Vendor">Vendor</MenuItem>
+                            <MenuItem value="Partner">Partner</MenuItem>
+                            <MenuItem value="Carrier">Carrier</MenuItem>
+                        </Select>
+                    </FormControl>
+                </MenuItem>
+            </Menu>
+
+            {/* Sort Menu */}
+            <Menu
+                anchorEl={sortAnchorEl}
+                open={Boolean(sortAnchorEl)}
+                onClose={handleMenuClose}
+            >
+                <MenuItem onClick={() => { setSortBy('name'); handleMenuClose(); }}>
+                    Name
+                </MenuItem>
+                <MenuItem onClick={() => { setSortBy('type'); handleMenuClose(); }}>
+                    Type
+                </MenuItem>
+                <MenuItem onClick={() => { setSortBy('status'); handleMenuClose(); }}>
+                    Status
+                </MenuItem>
+                <MenuItem onClick={() => { setSortBy('industry'); handleMenuClose(); }}>
+                    Industry
+                </MenuItem>
+                <MenuItem onClick={() => { setSortBy('country'); handleMenuClose(); }}>
+                    Country
+                </MenuItem>
+                <MenuItem onClick={() => { setSortBy('createdAt'); handleMenuClose(); }}>
+                    Created Date
+                </MenuItem>
+            </Menu>
         </Box>
     );
 };
