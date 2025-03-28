@@ -459,11 +459,24 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
     try {
         console.log("🤖 Sending rates to AI...");
         
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) {
-            console.error("OpenAI API key not found in environment variables");
-            throw new Error("OpenAI API key not configured");
-        }
+        // Transform rates data into a cleaner format
+        const transformedRates = ratesData.map(rate => ({
+            carrier: rate.carrier,
+            totalRate: rate.rate.toFixed(2),
+            transitDays: rate.transitDays,
+            deliveryDate: rate.deliveryDate,
+            breakdown: {
+                freight: rate.freightCharges.toFixed(2),
+                fuel: rate.fuelCharges.toFixed(2),
+                service: rate.serviceCharges.toFixed(2),
+                accessorial: rate.accessorialCharges.toFixed(2)
+            },
+            isGuaranteed: rate.guaranteed,
+            isExpress: rate.express
+        }));
+
+        // Use the OpenAI API key directly
+        const apiKey = "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";
 
         const payload = {
             model: "gpt-4",
@@ -471,21 +484,22 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
             messages: [
                 {
                     role: "system",
-                    content: "You are a shipping rate analysis expert. Analyze the provided shipping rates and provide a clear, concise explanation of the options, highlighting the best value and fastest options."
+                    content: "You are a shipping rate analysis expert. Analyze the provided shipping rates and provide a clear, concise explanation of the options. Focus on cost-effectiveness and delivery speed."
                 },
                 {
                     role: "user",
-                    content: `Analyze these shipping rates and provide a clear explanation of the options, including:
-                    1. Best value option
+                    content: `Please analyze these shipping rates and provide a clear explanation:
+                    1. Best value option (considering total cost and transit time)
                     2. Fastest delivery option
-                    3. Any special considerations or notes
+                    3. Most economical option
+                    4. Any notable observations or special considerations
                     
-                    Rates data: ${JSON.stringify(ratesData, null, 2)}`
+                    Rates: ${JSON.stringify(transformedRates, null, 2)}`
                 }
             ]
         };
 
-        console.log("Request payload:", JSON.stringify(payload, null, 2));
+        console.log("OpenAI Request payload:", JSON.stringify(payload, null, 2));
 
         const response = await axios.post(OPENAI_API_URL, payload, {
             headers: {

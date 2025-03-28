@@ -11,6 +11,9 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [showRateDetails, setShowRateDetails] = useState(false);
     const [loadingDots, setLoadingDots] = useState('');
     const [ratesLoaded, setRatesLoaded] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState(null);
+    const [analysisError, setAnalysisError] = useState(null);
 
     // Add CSS styles
     const styles = `
@@ -620,6 +623,43 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
         }
     };
 
+    // Add AI Analysis handler
+    const handleAIAnalysis = async () => {
+        if (!rates || rates.length === 0) {
+            setAnalysisError('No rates available for analysis. Please calculate rates first.');
+            return;
+        }
+
+        setIsAnalyzing(true);
+        setAnalysisError(null);
+
+        try {
+            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/analyzeRatesWithAI', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ rates })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to analyze rates: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                setAnalysisResult(data.analysis);
+            } else {
+                throw new Error(data.message || 'Analysis failed');
+            }
+        } catch (error) {
+            console.error('AI Analysis Error:', error);
+            setAnalysisError(error.message);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
     return (
         <div className="container mt-4">
             <h2>Available Rates</h2>
@@ -634,9 +674,9 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                     {!ratesLoaded ? (
                         <div style={{ textAlign: 'center', padding: '20px' }}>
                             <img
-                                src="animations/truck.gif"
+                                src="/animations/truck.gif"
                                 alt="Loading rates"
-                                style={{ width: '300px', height: '300px' }}
+                                style={{ width: '300px', height: '300px', margin: '0 auto' }}
                             />
                             <p style={{ marginTop: '10px', color: '#666' }}>
                                 <span className="spinner-border spinner-border-sm me-2" role="status"></span>
@@ -681,12 +721,37 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                             <i className={`bi bi-list-${showRateDetails ? 'check' : 'ul'}`}></i>
                                             {showRateDetails ? ' Hide Details' : ' Rate Details'}
                                         </button>
-                                        <button className="btn btn-primary">
-                                            <i className="fas fa-robot"></i> AI Analysis
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={handleAIAnalysis}
+                                            disabled={isAnalyzing || rates.length === 0}
+                                        >
+                                            <i className="fas fa-robot"></i> {isAnalyzing ? 'Analyzing...' : 'AI Analysis'}
                                         </button>
                                     </div>
                                 </div>
                             </div>
+
+                            {/* AI Analysis Result - Moved to top */}
+                            {analysisResult && (
+                                <div className="ai-analysis-content mb-4">
+                                    <div className="card">
+                                        <div className="card-header bg-primary text-white">
+                                            <h5 className="mb-0"><i className="fas fa-robot me-2"></i>AI Analysis</h5>
+                                        </div>
+                                        <div className="card-body">
+                                            {analysisResult}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {analysisError && (
+                                <div className="alert alert-danger mb-4">
+                                    <i className="fas fa-exclamation-circle me-2"></i>
+                                    {analysisError}
+                                </div>
+                            )}
 
                             <div className="row g-3">
                                 {filteredRates.map((rate) => (
