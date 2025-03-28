@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton } from '@mui/material';
+import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link } from '@mui/material';
 import { CircularProgress, Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -630,7 +630,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     };
 
     // Add AI Analysis handler
-    const handleAIAnalysis = async () => {
+    const handleAnalyzeRates = async () => {
         if (!rates || rates.length === 0) {
             setAnalysisError('No rates available for analysis. Please calculate rates first.');
             return;
@@ -729,7 +729,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                         </button>
                                         <button
                                             className="btn btn-primary"
-                                            onClick={handleAIAnalysis}
+                                            onClick={handleAnalyzeRates}
                                             disabled={isAnalyzing || rates.length === 0}
                                         >
                                             <i className="fas fa-robot"></i> {isAnalyzing ? 'Analyzing...' : 'AI Analysis'}
@@ -807,8 +807,22 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                                 </Typography>
                                             </Box>
                                         ) : (
-                                            <Typography color="text.secondary">
-                                                Select a rate to get AI-powered analysis and recommendations.
+                                            <Typography color="text.primary">
+                                                Activate Soluship AI Analysis to see our real-time recommendations.{' '}
+                                                <Link
+                                                    component="button"
+                                                    onClick={handleAnalyzeRates}
+                                                    sx={{
+                                                        color: '#1976d2',
+                                                        textDecoration: 'underline',
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            color: '#1565c0'
+                                                        }
+                                                    }}
+                                                >
+                                                    Click here
+                                                </Link>
                                             </Typography>
                                         )}
                                     </CardContent>
