@@ -28,6 +28,7 @@ app.use(express.json());
 const ai = genkit({
   plugins: [googleAI()],
   model: gemini20Flash,
+  stream: true // Enable streaming by default
 });
 
 // Input validation
@@ -454,16 +455,23 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
         return;
     }
 
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     console.log("Received request body:", JSON.stringify(req.body, null, 2));
 
     const ratesData = req.body.rates;
 
     if (!ratesData || !Array.isArray(ratesData) || ratesData.length === 0) {
         console.log("Invalid or empty rates data provided");
-        return res.status(400).json({ 
+        res.write(`data: ${JSON.stringify({ 
             success: false, 
             message: "Invalid or empty rates data provided for AI analysis." 
-        });
+        })}\n\n`);
+        res.end();
+        return;
     }
 
     try {
@@ -509,23 +517,35 @@ exports.analyzeRatesWithAI = functions.https.onRequest({
 
 Rates: ${JSON.stringify(transformedRates, null, 2)}`;
 
-        // Generate analysis using GenKit
-        const { text } = await ai.generate(prompt);
-
-        console.log("AI Analysis completed successfully");
-        
-        return res.json({
-            success: true,
-            analysis: text
+        // Generate analysis using GenKit with streaming
+        const { response, stream } = await ai.generateStream({
+            prompt: prompt,
+            stream: true
         });
+        
+        // Stream each chunk to the client
+        for await (const chunk of stream) {
+            res.write(`data: ${JSON.stringify({ 
+                success: true, 
+                chunk: chunk.text 
+            })}\n\n`);
+        }
+
+        // Send end of stream
+        res.write(`data: ${JSON.stringify({ 
+            success: true, 
+            done: true 
+        })}\n\n`);
+        res.end();
 
     } catch (error) {
         console.error("Error in AI analysis:", error);
-        return res.status(500).json({
+        res.write(`data: ${JSON.stringify({
             success: false,
             message: "Failed to analyze rates with AI",
             error: error.message
-        });
+        })}\n\n`);
+        res.end();
     }
 });
 

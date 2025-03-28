@@ -17,7 +17,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [loadingDots, setLoadingDots] = useState('');
     const [ratesLoaded, setRatesLoaded] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [analysisResult, setAnalysisResult] = useState(null);
+    const [analysisResult, setAnalysisResult] = useState('');
     const [analysisError, setAnalysisError] = useState(null);
     const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
 
@@ -623,9 +623,10 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
             setSelectedRate(null);
             onRateSelect(null);
         } else {
-            // Select the new rate
+            // Select the new rate and move to next step
             setSelectedRate(rate);
             onRateSelect(rate);
+            onNext(); // Automatically move to next step
         }
     };
 
@@ -638,6 +639,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
         setIsAnalyzing(true);
         setAnalysisError(null);
+        setAnalysisResult(''); // Clear previous result
 
         try {
             const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/analyzeRatesWithAI', {
@@ -652,16 +654,51 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                 throw new Error(`Failed to analyze rates: ${response.status}`);
             }
 
-            const data = await response.json();
-            if (data.success) {
-                setAnalysisResult(data.analysis);
-            } else {
-                throw new Error(data.message || 'Analysis failed');
+            // Create a reader for the streaming response
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                // Process the stream data
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(5));
+
+                            if (!data.success) {
+                                throw new Error(data.message || 'Analysis failed');
+                            }
+
+                            if (data.chunk) {
+                                // Append the new chunk to the existing analysis
+                                setAnalysisResult(prev => {
+                                    const newResult = prev + data.chunk;
+                                    // Force a re-render of the markdown component
+                                    return newResult;
+                                });
+                            }
+
+                            if (data.done) {
+                                // Analysis is complete
+                                setIsAnalyzing(false);
+                                break;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing stream data:', e);
+                            setAnalysisError('Error processing AI analysis response');
+                        }
+                    }
+                }
             }
         } catch (error) {
             console.error('AI Analysis Error:', error);
             setAnalysisError(error.message);
-        } finally {
             setIsAnalyzing(false);
         }
     };
@@ -929,16 +966,6 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                     >
                         <i className="bi bi-arrow-left"></i> Previous
                     </button>
-                    {ratesLoaded && (
-                        <button
-                            type="button"
-                            className="btn btn-success btn-navigation"
-                            onClick={handleSubmit}
-                            disabled={!selectedRate}
-                        >
-                            <i className="bi bi-check-circle"></i> Continue to Review
-                        </button>
-                    )}
                 </div>
             </div>
         </div>
