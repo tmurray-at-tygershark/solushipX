@@ -1,5 +1,8 @@
 .billing-container {
-    padding: 24px;
+    margin: 0 auto;
+    max-width: 1300px;
+    width: 100%;
+    padding: 20px;
     min-height: calc(100vh - 64px);
     background-color: #f5f5f5;
 }

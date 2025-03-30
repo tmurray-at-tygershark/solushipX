@@ -1,5 +1,8 @@
 .shipments-container {
-    padding: 24px;
+    margin: 0 auto;
+    max-width: 1300px;
+    width: 100%;
+    padding: 20px;
 }
 
 .shipments-header {
@@ -354,12 +357,6 @@
 
 .shipment-link:hover {
     text-decoration: underline !important;
-}
-
-.shipments-container {
-    margin: 0 auto;
-    max-width: 1300px;
-    width: 100%;
 }
 
 .breadcrumb-container {

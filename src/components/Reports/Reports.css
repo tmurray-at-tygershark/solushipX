@@ -1,5 +1,42 @@
 /* Reports Component Styles */
 
+/* Breadcrumb styles */
+.breadcrumb-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+    color: #666;
+    font-size: 14px;
+}
+
+.breadcrumb-link {
+    display: flex;
+    align-items: center;
+    color: #666;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.breadcrumb-link:hover {
+    color: #1976d2;
+}
+
+.breadcrumb-icon {
+    font-size: 20px;
+    margin-right: 4px;
+}
+
+.breadcrumb-separator {
+    font-size: 20px;
+    margin: 0 8px;
+    color: #999;
+}
+
+.breadcrumb-current {
+    color: #333;
+    font-weight: 500;
+}
+
 /* Paper Components */
 .MuiPaper-root {
     border: 1px solid #e2e8f0;
