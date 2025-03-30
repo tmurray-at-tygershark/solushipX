@@ -31,7 +31,8 @@ import {
     TableRow,
     TablePagination,
     Tooltip,
-    Alert
+    Alert,
+    Link
 } from '@mui/material';
 import {
     FilterList as FilterIcon,
@@ -55,7 +56,9 @@ import {
     Category as CategoryIcon,
     Schedule as ScheduleIcon,
     CheckCircle as CheckCircleIcon,
-    MoreVert as MoreVertIcon
+    MoreVert as MoreVertIcon,
+    Home as HomeIcon,
+    NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -68,6 +71,7 @@ import { CSVLink } from 'react-csv';
 import './Reports.css';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { Link as RouterLink } from 'react-router-dom';
 
 // Generate dummy data for the last 7 days
 const generateDummyData = () => {
@@ -568,7 +572,17 @@ const Reports = () => {
 
     return (
         <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-            <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
+            <Box sx={{ maxWidth: '1300px', margin: '0 auto' }}>
+                {/* Breadcrumb */}
+                <Box className="breadcrumb-container">
+                    <Link to="/admin/dashboard" className="breadcrumb-link">
+                        <HomeIcon className="breadcrumb-icon" />
+                        <span>Home</span>
+                    </Link>
+                    <NavigateNextIcon className="breadcrumb-separator" />
+                    <span className="breadcrumb-current">Reports</span>
+                </Box>
+
                 {/* Header Section */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>

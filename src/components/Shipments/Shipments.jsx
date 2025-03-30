@@ -31,7 +31,8 @@ import {
     Tab,
     Checkbox,
     CircularProgress,
-    ListItemIcon
+    ListItemIcon,
+    Grid
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -63,6 +64,8 @@ const Shipments = () => {
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [shipmentNumber, setShipmentNumber] = useState('');
+    const [selectedCustomer, setSelectedCustomer] = useState('');
     const [filterAnchorEl, setFilterAnchorEl] = useState(null);
     const [sortAnchorEl, setSortAnchorEl] = useState(null);
     const [selectedTab, setSelectedTab] = useState('all');
@@ -92,6 +95,9 @@ const Shipments = () => {
         delivered: shipments.filter(s => s.status === 'Delivered').length,
         awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length
     };
+
+    // Get unique customers from shipments
+    const customers = [...new Set(shipments.map(shipment => shipment.customer))];
 
     // Mock data generation
     const generateMockShipments = (count) => {
@@ -187,7 +193,21 @@ const Shipments = () => {
             console.log('Sample shipment:', mockData[0]);
             let filteredData = [...mockData];
 
-            // Apply filters
+            // Apply shipment number filter
+            if (shipmentNumber) {
+                filteredData = filteredData.filter(shipment =>
+                    shipment.id.toLowerCase().includes(shipmentNumber.toLowerCase())
+                );
+            }
+
+            // Apply customer filter
+            if (selectedCustomer) {
+                filteredData = filteredData.filter(shipment =>
+                    shipment.customer === selectedCustomer
+                );
+            }
+
+            // Apply general search filter
             if (searchTerm) {
                 console.log('Applying search filter:', searchTerm);
                 filteredData = filteredData.filter(shipment =>
@@ -449,108 +469,180 @@ const Shipments = () => {
 
                         {/* Main Content */}
                         <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                            <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
+                            <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Tabs value={selectedTab} onChange={handleTabChange}>
                                     <Tab label={`All (${stats.total})`} value="all" />
                                     <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
                                     <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
                                     <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
                                 </Tabs>
-                                <Box sx={{ flexGrow: 1 }} />
-                                {/* Search Section */}
-                                <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
-                                    <Paper
-                                        component="div"
-                                        sx={{
-                                            p: '2px 4px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            width: '300px',
-                                            boxShadow: 'none',
-                                            border: '1px solid #e2e8f0',
-                                            bgcolor: '#f8fafc'
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <TextField
+                                        size="small"
+                                        placeholder="Search shipments..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        InputProps={{
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <SearchIcon sx={{ color: '#64748b' }} />
+                                                </InputAdornment>
+                                            ),
+                                            endAdornment: searchTerm && (
+                                                <InputAdornment position="end">
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => setSearchTerm('')}
+                                                        sx={{ color: '#64748b' }}
+                                                    >
+                                                        <ClearIcon />
+                                                    </IconButton>
+                                                </InputAdornment>
+                                            )
                                         }}
-                                    >
-                                        <SearchIcon sx={{ p: 1, color: '#64748b' }} />
-                                        <InputBase
-                                            sx={{ ml: 1, flex: 1 }}
-                                            placeholder="Search shipments..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
-                                    </Paper>
+                                        sx={{ width: 300 }}
+                                    />
                                 </Box>
                             </Toolbar>
 
-                            {/* Smart Filters */}
-                            <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <FormControl sx={{ minWidth: 200 }}>
-                                    <InputLabel>Carrier</InputLabel>
-                                    <Select
-                                        value={filters.carrier}
-                                        onChange={(e) => setFilters(prev => ({
-                                            ...prev,
-                                            carrier: e.target.value
-                                        }))}
-                                        label="Carrier"
-                                    >
-                                        <MenuItem value="all">All Carriers</MenuItem>
-                                        <MenuItem value="FedEx">FedEx</MenuItem>
-                                        <MenuItem value="UPS">UPS</MenuItem>
-                                        <MenuItem value="DHL">DHL</MenuItem>
-                                        <MenuItem value="USPS">USPS</MenuItem>
-                                        <MenuItem value="Canada Post">Canada Post</MenuItem>
-                                        <MenuItem value="Purolator">Purolator</MenuItem>
-                                    </Select>
-                                </FormControl>
+                            {/* Search and Filter Section */}
+                            <Box sx={{ p: 3, bgcolor: '#ffffff', borderRadius: 2 }}>
+                                <Grid container spacing={2} alignItems="center">
+                                    {/* Shipment Number Search */}
+                                    <Grid item xs={12} sm={6} md={3}>
+                                        <TextField
+                                            fullWidth
+                                            label="Shipment #"
+                                            value={shipmentNumber}
+                                            onChange={(e) => setShipmentNumber(e.target.value)}
+                                            placeholder="Enter shipment number"
+                                            InputProps={{
+                                                startAdornment: (
+                                                    <InputAdornment position="start">
+                                                        <SearchIcon sx={{ color: '#64748b' }} />
+                                                    </InputAdornment>
+                                                ),
+                                                endAdornment: shipmentNumber && (
+                                                    <InputAdornment position="end">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => setShipmentNumber('')}
+                                                            sx={{ color: '#64748b' }}
+                                                        >
+                                                            <ClearIcon />
+                                                        </IconButton>
+                                                    </InputAdornment>
+                                                )
+                                            }}
+                                        />
+                                    </Grid>
 
-                                <FormControl sx={{ minWidth: 200 }}>
-                                    <InputLabel>Shipment Type</InputLabel>
-                                    <Select
-                                        value={filters.shipmentType || 'all'}
-                                        onChange={(e) => setFilters(prev => ({
-                                            ...prev,
-                                            shipmentType: e.target.value
-                                        }))}
-                                        label="Shipment Type"
-                                    >
-                                        <MenuItem value="all">All Types</MenuItem>
-                                        <MenuItem value="Courier">Courier</MenuItem>
-                                        <MenuItem value="Freight">Freight</MenuItem>
-                                    </Select>
-                                </FormControl>
+                                    {/* Customer Dropdown */}
+                                    <Grid item xs={12} sm={6} md={3}>
+                                        <FormControl fullWidth>
+                                            <InputLabel>Customer</InputLabel>
+                                            <Select
+                                                value={selectedCustomer}
+                                                onChange={(e) => setSelectedCustomer(e.target.value)}
+                                                label="Customer"
+                                                startAdornment={
+                                                    <InputAdornment position="start">
+                                                        <SearchIcon sx={{ color: '#64748b' }} />
+                                                    </InputAdornment>
+                                                }
+                                                endAdornment={selectedCustomer && (
+                                                    <InputAdornment position="end">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => setSelectedCustomer('')}
+                                                            sx={{ color: '#64748b' }}
+                                                        >
+                                                            <ClearIcon />
+                                                        </IconButton>
+                                                    </InputAdornment>
+                                                )}
+                                            >
+                                                <MenuItem value="">All Customers</MenuItem>
+                                                {customers.map((customer) => (
+                                                    <MenuItem key={customer} value={customer}>
+                                                        {customer}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
 
-                                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                    <DatePicker
-                                        label="From Date"
-                                        value={dateRange[0]}
-                                        onChange={(newValue) => setDateRange([newValue, dateRange[1]])}
-                                        renderInput={(params) => <TextField {...params} />}
-                                        sx={{ minWidth: 200 }}
-                                    />
-                                    <DatePicker
-                                        label="To Date"
-                                        value={dateRange[1]}
-                                        onChange={(newValue) => setDateRange([dateRange[0], newValue])}
-                                        renderInput={(params) => <TextField {...params} />}
-                                        sx={{ minWidth: 200 }}
-                                    />
-                                </LocalizationProvider>
+                                    {/* Carrier Filter */}
+                                    <Grid item xs={12} sm={6} md={2}>
+                                        <FormControl fullWidth>
+                                            <InputLabel>Carrier</InputLabel>
+                                            <Select
+                                                value={filters.carrier}
+                                                onChange={(e) => setFilters(prev => ({
+                                                    ...prev,
+                                                    carrier: e.target.value
+                                                }))}
+                                                label="Carrier"
+                                            >
+                                                <MenuItem value="all">All Carriers</MenuItem>
+                                                <MenuItem value="FedEx">FedEx</MenuItem>
+                                                <MenuItem value="UPS">UPS</MenuItem>
+                                                <MenuItem value="DHL">DHL</MenuItem>
+                                                <MenuItem value="USPS">USPS</MenuItem>
+                                                <MenuItem value="Canada Post">Canada Post</MenuItem>
+                                                <MenuItem value="Purolator">Purolator</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
 
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => {
-                                        setDateRange([null, null]);
-                                        setFilters(prev => ({
-                                            ...prev,
-                                            carrier: 'all',
-                                            shipmentType: 'all'
-                                        }));
-                                    }}
-                                    startIcon={<ClearIcon />}
-                                >
-                                    Clear Filters
-                                </Button>
+                                    {/* Shipment Type Filter */}
+                                    <Grid item xs={12} sm={6} md={2}>
+                                        <FormControl fullWidth>
+                                            <InputLabel>Type</InputLabel>
+                                            <Select
+                                                value={filters.shipmentType || 'all'}
+                                                onChange={(e) => setFilters(prev => ({
+                                                    ...prev,
+                                                    shipmentType: e.target.value
+                                                }))}
+                                                label="Type"
+                                            >
+                                                <MenuItem value="all">All Types</MenuItem>
+                                                <MenuItem value="Courier">Courier</MenuItem>
+                                                <MenuItem value="Freight">Freight</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
+
+                                    {/* Date Range Filter */}
+                                    <Grid item xs={12} sm={6} md={2}>
+                                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                            <DatePicker
+                                                label="Date Range"
+                                                value={dateRange[0]}
+                                                onChange={(newValue) => setDateRange([newValue, dateRange[1]])}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        InputProps={{
+                                                            ...params.InputProps,
+                                                            startAdornment: (
+                                                                <InputAdornment position="start">
+                                                                    <CalendarIcon sx={{ color: '#64748b' }} />
+                                                                </InputAdornment>
+                                                            ),
+                                                        }}
+                                                    />
+                                                )}
+                                                slotProps={{
+                                                    actionBar: {
+                                                        actions: ['clear', 'today', 'accept'],
+                                                    },
+                                                }}
+                                            />
+                                        </LocalizationProvider>
+                                    </Grid>
+                                </Grid>
                             </Box>
 
                             {/* Shipments Table */}
