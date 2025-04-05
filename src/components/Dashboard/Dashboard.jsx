@@ -96,6 +96,76 @@ const StatusBox = React.memo(({ title, count, icon: Icon, color, bgColor }) => (
     </Paper>
 ));
 
+// Extract StatusChip component for reusability
+const StatusChip = React.memo(({ status }) => {
+    const getStatusConfig = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'pending':
+                return {
+                    color: '#F59E0B',
+                    bgcolor: '#FEF3C7',
+                    label: 'Pending'
+                };
+            case 'awaiting shipment':
+                return {
+                    color: '#3B82F6',
+                    bgcolor: '#EFF6FF',
+                    label: 'Awaiting Shipment'
+                };
+            case 'in transit':
+                return {
+                    color: '#6366F1',
+                    bgcolor: '#EEF2FF',
+                    label: 'In Transit'
+                };
+            case 'on hold':
+                return {
+                    color: '#7C3AED',
+                    bgcolor: '#F5F3FF',
+                    label: 'On Hold'
+                };
+            case 'delivered':
+                return {
+                    color: '#10B981',
+                    bgcolor: '#ECFDF5',
+                    label: 'Delivered'
+                };
+            case 'cancelled':
+                return {
+                    color: '#EF4444',
+                    bgcolor: '#FEE2E2',
+                    label: 'Cancelled'
+                };
+            default:
+                return {
+                    color: '#6B7280',
+                    bgcolor: '#F3F4F6',
+                    label: status || 'Unknown'
+                };
+        }
+    };
+
+    const { color, bgcolor, label } = getStatusConfig(status);
+
+    return (
+        <Chip
+            label={label}
+            sx={{
+                color: color,
+                bgcolor: bgcolor,
+                borderRadius: '16px',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                height: '24px',
+                '& .MuiChip-label': {
+                    px: 2
+                }
+            }}
+            size="small"
+        />
+    );
+});
+
 // Extract ShipmentRow component for reusability
 const ShipmentRow = React.memo(({ shipment, onPrint }) => {
     const [anchorEl, setAnchorEl] = useState(null);
@@ -144,19 +214,7 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.carrier}</TableCell>
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.shipmentType}</TableCell>
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>
-                <Chip
-                    label={shipment.status}
-                    color={
-                        shipment.status === 'Delivered'
-                            ? 'success'
-                            : shipment.status === 'In Transit'
-                                ? 'primary'
-                                : shipment.status === 'Delayed'
-                                    ? 'error'
-                                    : 'default'
-                    }
-                    size="small"
-                />
+                <StatusChip status={shipment.status} />
             </TableCell>
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>
                 <IconButton
@@ -249,16 +307,34 @@ const Dashboard = () => {
             total: shipments.length,
             inTransit: 0,
             delivered: 0,
-            delayed: 0,
-            processing: 0,
+            onHold: 0,
+            pending: 0,
+            awaitingShipment: 0,
+            cancelled: 0,
             totalValue: 0
         };
 
         shipments.forEach(shipment => {
-            if (shipment.status === 'processing') stats.processing++;
-            else if (shipment.status === 'delivered') stats.delivered++;
-            else if (shipment.status === 'shipped') stats.inTransit++;
-            else if (shipment.status === 'draft') stats.delayed++;
+            switch (shipment.status?.toLowerCase()) {
+                case 'pending':
+                    stats.pending++;
+                    break;
+                case 'awaiting shipment':
+                    stats.awaitingShipment++;
+                    break;
+                case 'in transit':
+                    stats.inTransit++;
+                    break;
+                case 'on hold':
+                    stats.onHold++;
+                    break;
+                case 'delivered':
+                    stats.delivered++;
+                    break;
+                case 'cancelled':
+                    stats.cancelled++;
+                    break;
+            }
 
             if (shipment.value) stats.totalValue += shipment.value;
         });
@@ -343,12 +419,12 @@ const Dashboard = () => {
 
     // Calculate delivery performance
     const deliveryPerformance = useMemo(() => {
-        const { total, delivered, inTransit, delayed } = shipmentStats;
+        const { total, delivered, inTransit, onHold } = shipmentStats;
 
         return {
             delivered: total > 0 ? (delivered / total) * 100 : 0,
             inTransit: total > 0 ? (inTransit / total) * 100 : 0,
-            delayed: total > 0 ? (delayed / total) * 100 : 0
+            onHold: total > 0 ? (onHold / total) * 100 : 0
         };
     }, [shipmentStats]);
 
@@ -357,11 +433,17 @@ const Dashboard = () => {
         return shipments.filter(shipment => {
             switch (selectedTab) {
                 case 'in-transit':
-                    return shipment.status === 'In Transit';
+                    return shipment.status?.toLowerCase() === 'in transit';
                 case 'delivered':
-                    return shipment.status === 'Delivered';
+                    return shipment.status?.toLowerCase() === 'delivered';
                 case 'awaiting':
-                    return shipment.status === 'Awaiting Shipment';
+                    return shipment.status?.toLowerCase() === 'awaiting shipment';
+                case 'pending':
+                    return shipment.status?.toLowerCase() === 'pending';
+                case 'on-hold':
+                    return shipment.status?.toLowerCase() === 'on hold';
+                case 'cancelled':
+                    return shipment.status?.toLowerCase() === 'cancelled';
                 default:
                     return true;
             }
