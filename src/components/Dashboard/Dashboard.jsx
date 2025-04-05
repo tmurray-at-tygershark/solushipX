@@ -131,7 +131,7 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                     to={`/shipment/${shipment.id}`}
                     style={{ textDecoration: 'none', color: '#3b82f6' }}
                 >
-                    {shipment.id}
+                    {shipment.shipmentID}
                 </Link>
             </TableCell>
             <TableCell>{shipment.customer}</TableCell>
@@ -193,7 +193,8 @@ const Dashboard = () => {
         const unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
             const customersData = {};
             snapshot.docs.forEach(doc => {
-                customersData[doc.id] = doc.data();
+                const data = doc.data();
+                customersData[data.customerID] = data;
             });
             setCustomers(customersData);
         }, (error) => {
@@ -217,6 +218,7 @@ const Dashboard = () => {
                 const customerData = customers[data.customerId] || {};
                 return {
                     id: doc.id,
+                    shipmentID: data.shipmentID || 'N/A',
                     date: formatDate(data.createdAt),
                     customer: customerData.name || 'Unknown Customer',
                     origin: formatAddress(data.from),
@@ -224,8 +226,7 @@ const Dashboard = () => {
                     carrier: data.carrier?.name || '',
                     shipmentType: data.carrier?.serviceLevel || '',
                     status: data.status,
-                    value: data.packages?.[0]?.insuranceAmount || 0,
-                    shipmentNumber: data.shipmentNumber
+                    value: data.packages?.[0]?.insuranceAmount || 0
                 };
             });
             setShipments(shipmentsData);
@@ -625,7 +626,7 @@ const Dashboard = () => {
                             <Table>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>ID</TableCell>
+                                        <TableCell>SHIPMENT ID</TableCell>
                                         <TableCell>CUSTOMER</TableCell>
                                         <TableCell>ORIGIN</TableCell>
                                         <TableCell>DESTINATION</TableCell>
