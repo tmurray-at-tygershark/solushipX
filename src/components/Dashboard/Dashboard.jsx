@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -15,7 +15,8 @@ import {
     Menu,
     MenuItem,
     Grid,
-    ListItemIcon
+    ListItemIcon,
+    CircularProgress
 } from '@mui/material';
 import {
     MoreVert as MoreVertIcon,
@@ -35,185 +36,28 @@ import { Link, useNavigate } from 'react-router-dom';
 import { LineChart } from '@mui/x-charts/LineChart';
 import './Dashboard.css';
 import dayjs from 'dayjs';
+import { collection, query, orderBy, limit, onSnapshot, getDocs, where } from 'firebase/firestore';
+import { db } from '../../firebase';
 
-// Move dummy data outside the component to prevent recreation on each render
-const DUMMY_SHIPMENTS = [
-    {
-        id: 'SHIP001',
-        date: '2024-03-20',
-        customer: 'Acme Corporation',
-        origin: '123 Main St, New York, NY 10001',
-        destination: '456 Market St, San Francisco, CA 94105',
-        carrier: 'FedEx',
-        shipmentType: 'Courier',
-        status: 'Delivered',
-        value: 120.00
-    },
-    {
-        id: 'SHIP002',
-        date: '2024-03-19',
-        customer: 'Tech Solutions Inc',
-        origin: '789 Lake Ave, Chicago, IL 60601',
-        destination: '321 Pine St, Boston, MA 02108',
-        carrier: 'UPS',
-        shipmentType: 'Freight',
-        status: 'In Transit',
-        value: 450.00
-    },
-    {
-        id: 'SHIP003',
-        date: '2024-03-18',
-        customer: 'Global Industries',
-        origin: '654 Oak Rd, Houston, TX 77001',
-        destination: '987 Maple Dr, Seattle, WA 98101',
-        carrier: 'DHL',
-        shipmentType: 'Freight',
-        status: 'Delayed',
-        value: 780.00
-    },
-    {
-        id: 'SHIP004',
-        date: '2024-03-17',
-        customer: 'Retail Plus',
-        origin: '147 Cedar Ln, Miami, FL 33101',
-        destination: '258 Birch St, Denver, CO 80201',
-        carrier: 'FedEx',
-        shipmentType: 'Courier',
-        status: 'Delivered',
-        value: 320.00
-    },
-    {
-        id: 'SHIP005',
-        date: '2024-03-16',
-        customer: 'Manufacturing Co',
-        origin: '369 Elm Ave, Atlanta, GA 30301',
-        destination: '741 Spruce Rd, Portland, OR 97201',
-        carrier: 'UPS',
-        shipmentType: 'Freight',
-        status: 'In Transit',
-        value: 950.00
-    },
-    {
-        id: 'SHIP006',
-        date: '2024-03-15',
-        customer: 'E-commerce Solutions',
-        origin: 'Atlanta, GA',
-        destination: 'Denver, CO',
-        status: 'Delivered',
-        carrier: 'USPS',
-        items: 'Consumer Goods',
-        value: 280.00,
-        cost: '$280.00'
-    },
-    {
-        id: 'SHIP007',
-        date: '2024-03-14',
-        customer: 'Healthcare Systems',
-        origin: 'Philadelphia, PA',
-        destination: 'San Diego, CA',
-        status: 'In Transit',
-        carrier: 'FedEx',
-        items: 'Medical Supplies',
-        value: 650.00,
-        cost: '$650.00'
-    },
-    {
-        id: 'SHIP008',
-        date: '2024-03-13',
-        customer: 'Construction Corp',
-        origin: 'Dallas, TX',
-        destination: 'Portland, OR',
-        status: 'Delayed',
-        carrier: 'DHL',
-        items: 'Construction Materials',
-        value: 950.00,
-        cost: '$950.00'
-    },
-    {
-        id: 'SHIP009',
-        date: '2024-03-12',
-        customer: 'Food Distribution',
-        origin: 'New Orleans, LA',
-        destination: 'Minneapolis, MN',
-        status: 'Delivered',
-        carrier: 'UPS',
-        items: 'Food Products',
-        value: 380.00,
-        cost: '$380.00'
-    },
-    {
-        id: 'SHIP010',
-        date: '2024-03-11',
-        customer: 'Fashion Retail',
-        origin: 'Las Vegas, NV',
-        destination: 'Cleveland, OH',
-        status: 'In Transit',
-        carrier: 'FedEx',
-        items: 'Clothing',
-        value: 220.00,
-        cost: '$220.00'
-    },
-    {
-        id: 'SHIP011',
-        date: '2024-03-10',
-        customer: 'Tech Gadgets',
-        origin: 'San Jose, CA',
-        destination: 'Miami, FL',
-        status: 'Delivered',
-        carrier: 'DHL',
-        items: 'Electronics',
-        value: 480.00,
-        cost: '$480.00'
-    },
-    {
-        id: 'SHIP012',
-        date: '2024-03-09',
-        customer: 'Home Goods',
-        origin: 'Seattle, WA',
-        destination: 'Boston, MA',
-        status: 'In Transit',
-        carrier: 'UPS',
-        items: 'Furniture',
-        value: 720.00,
-        cost: '$720.00'
-    },
-    {
-        id: 'SHIP013',
-        date: '2024-03-08',
-        customer: 'Sports Equipment',
-        origin: 'Portland, OR',
-        destination: 'Chicago, IL',
-        status: 'Delivered',
-        carrier: 'FedEx',
-        items: 'Sports Gear',
-        value: 310.00,
-        cost: '$310.00'
-    },
-    {
-        id: 'SHIP014',
-        date: '2024-03-07',
-        customer: 'Auto Parts',
-        origin: 'Detroit, MI',
-        destination: 'Houston, TX',
-        status: 'Delayed',
-        carrier: 'DHL',
-        items: 'Auto Components',
-        value: 920.00,
-        cost: '$920.00'
-    },
-    {
-        id: 'SHIP015',
-        date: '2024-03-06',
-        customer: 'Pharmaceuticals',
-        origin: 'New York, NY',
-        destination: 'San Francisco, CA',
-        status: 'In Transit',
-        carrier: 'FedEx',
-        items: 'Medical Supplies',
-        value: 880.00,
-        cost: '$880.00'
-    }
-];
+// Helper function to format Firestore timestamp
+const formatDate = (timestamp) => {
+    if (!timestamp) return '';
+    return new Date(timestamp.seconds * 1000).toISOString().split('T')[0];
+};
+
+// Helper function to format address
+const formatAddress = (addressObj) => {
+    if (!addressObj) return '';
+    const parts = [
+        addressObj.street,
+        addressObj.street2,
+        addressObj.city,
+        addressObj.state,
+        addressObj.zip,
+        addressObj.country
+    ].filter(Boolean);
+    return parts.join(', ');
+};
 
 // Extract StatusBox component for reusability
 const StatusBox = React.memo(({ title, count, icon: Icon, color, bgColor }) => (
@@ -338,10 +182,61 @@ const Dashboard = () => {
     const [selectedTab, setSelectedTab] = useState('all');
     const [startDate, setStartDate] = useState(dayjs());
     const [endDate, setEndDate] = useState(dayjs());
+    const [shipments, setShipments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [customers, setCustomers] = useState({});
     const navigate = useNavigate();
 
-    // Use the dummy data
-    const shipments = DUMMY_SHIPMENTS;
+    // Fetch customers data
+    useEffect(() => {
+        const customersQuery = query(collection(db, 'customers'));
+        const unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
+            const customersData = {};
+            snapshot.docs.forEach(doc => {
+                customersData[doc.id] = doc.data();
+            });
+            setCustomers(customersData);
+        }, (error) => {
+            console.error('Error fetching customers:', error);
+        });
+
+        return () => unsubscribeCustomers();
+    }, []);
+
+    // Fetch shipments from Firestore
+    useEffect(() => {
+        const shipmentsQuery = query(
+            collection(db, 'shipments'),
+            orderBy('createdAt', 'desc'),
+            limit(100)
+        );
+
+        const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
+            const shipmentsData = snapshot.docs.map(doc => {
+                const data = doc.data();
+                const customerData = customers[data.customerId] || {};
+                return {
+                    id: doc.id,
+                    date: formatDate(data.createdAt),
+                    customer: customerData.name || 'Unknown Customer',
+                    origin: formatAddress(data.from),
+                    destination: formatAddress(data.to),
+                    carrier: data.carrier?.name || '',
+                    shipmentType: data.carrier?.serviceLevel || '',
+                    status: data.status,
+                    value: data.packages?.[0]?.insuranceAmount || 0,
+                    shipmentNumber: data.shipmentNumber
+                };
+            });
+            setShipments(shipmentsData);
+            setLoading(false);
+        }, (error) => {
+            console.error('Error fetching shipments:', error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [customers]); // Add customers as a dependency
 
     // Calculate all shipment stats in a single pass
     const shipmentStats = useMemo(() => {
@@ -350,15 +245,15 @@ const Dashboard = () => {
             inTransit: 0,
             delivered: 0,
             delayed: 0,
-            awaitingShipment: 0,
+            processing: 0,
             totalValue: 0
         };
 
         shipments.forEach(shipment => {
-            if (shipment.status === 'In Transit') stats.inTransit++;
-            else if (shipment.status === 'Delivered') stats.delivered++;
-            else if (shipment.status === 'Delayed') stats.delayed++;
-            else if (shipment.status === 'Awaiting Shipment') stats.awaitingShipment++;
+            if (shipment.status === 'processing') stats.processing++;
+            else if (shipment.status === 'delivered') stats.delivered++;
+            else if (shipment.status === 'shipped') stats.inTransit++;
+            else if (shipment.status === 'draft') stats.delayed++;
 
             if (shipment.value) stats.totalValue += shipment.value;
         });
@@ -570,7 +465,7 @@ const Dashboard = () => {
                     <Grid item xs={12} sm={6} md={3}>
                         <StatusBox
                             title="Active Shipments"
-                            count={shipmentStats.inTransit + shipmentStats.awaitingShipment}
+                            count={shipmentStats.processing + shipmentStats.inTransit}
                             icon={ShippingIcon}
                             color="#000000"
                             bgColor="rgba(0, 0, 0, 0.1)"
@@ -580,7 +475,7 @@ const Dashboard = () => {
                     <Grid item xs={12} sm={6} md={3}>
                         <StatusBox
                             title="Waiting for Pickup"
-                            count={shipmentStats.awaitingShipment}
+                            count={shipmentStats.processing}
                             icon={ScheduleIcon}
                             color="#f59e0b"
                             bgColor="rgba(245, 158, 11, 0.1)"
@@ -722,29 +617,35 @@ const Dashboard = () => {
                         </Button>
                     </Box>
                     <TableContainer>
-                        <Table>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell>ID</TableCell>
-                                    <TableCell>CUSTOMER</TableCell>
-                                    <TableCell>ORIGIN</TableCell>
-                                    <TableCell>DESTINATION</TableCell>
-                                    <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
-                                    <TableCell>TYPE</TableCell>
-                                    <TableCell>STATUS</TableCell>
-                                    <TableCell>ACTIONS</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {shipments.slice(0, 20).map((shipment) => (
-                                    <ShipmentRow
-                                        key={shipment.id}
-                                        shipment={shipment}
-                                        onPrint={handlePrintLabel}
-                                    />
-                                ))}
-                            </TableBody>
-                        </Table>
+                        {loading ? (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                                <CircularProgress />
+                            </Box>
+                        ) : (
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>ID</TableCell>
+                                        <TableCell>CUSTOMER</TableCell>
+                                        <TableCell>ORIGIN</TableCell>
+                                        <TableCell>DESTINATION</TableCell>
+                                        <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
+                                        <TableCell>TYPE</TableCell>
+                                        <TableCell>STATUS</TableCell>
+                                        <TableCell>ACTIONS</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {shipments.slice(0, 20).map((shipment) => (
+                                        <ShipmentRow
+                                            key={shipment.id}
+                                            shipment={shipment}
+                                            onPrint={handlePrintLabel}
+                                        />
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
                     </TableContainer>
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
                         <Button
