@@ -2,7 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
-import Navigation from './components/Navigation';
+import Navigation from './components/Navigation/Header';
 import Logout from './components/Auth/Logout';
 import { Box, CircularProgress } from '@mui/material';
 

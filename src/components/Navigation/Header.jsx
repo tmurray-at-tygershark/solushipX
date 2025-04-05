@@ -269,8 +269,11 @@ const Navigation = () => {
             <nav className="navbar navbar-expand-lg">
                 <div className="container">
                     <Link className="navbar-brand" to={isAuthenticated ? "/dashboard" : "/homepage"}>
-                        <i className="fas fa-shipping-fast me-2"></i>
-                        SolushipX
+                        <img
+                            src="/images/solushipx_logo_white.png"
+                            alt="SolushipX Logo"
+                            style={{ height: '30px' }}
+                        />
                     </Link>
 
                     <button
