@@ -1,10 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     Box,
     Typography,
     Paper,
-    Tabs,
-    Tab,
     Table,
     TableBody,
     TableCell,
@@ -16,31 +14,13 @@ import {
     Button,
     Menu,
     MenuItem,
-    Checkbox,
-    Toolbar,
-    InputBase,
     Grid,
-    Avatar,
-    List,
-    ListItem,
-    ListItemAvatar,
-    ListItemText,
-    Divider,
-    Stack,
-    TextField,
     ListItemIcon
 } from '@mui/material';
 import {
-    Search as SearchIcon,
     MoreVert as MoreVertIcon,
-    FilterList as FilterListIcon,
-    GetApp as ExportIcon,
     Add as AddIcon,
-    Person as PersonIcon,
     LocalShipping as ShippingIcon,
-    AttachMoney as MoneyIcon,
-    LocationOn as LocationIcon,
-    Warning as WarningIcon,
     CheckCircle as CheckCircleIcon,
     Schedule as ScheduleIcon,
     Refresh as RefreshIcon,
@@ -51,310 +31,361 @@ import {
     Print as PrintIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { Link, useNavigate } from 'react-router-dom';
 import { LineChart } from '@mui/x-charts/LineChart';
-import { BarChart } from '@mui/x-charts/BarChart';
-import { PieChart } from '@mui/x-charts/PieChart';
 import './Dashboard.css';
 import dayjs from 'dayjs';
 
-// Helper function to generate random shipment data
-const generateRandomShipments = (count) => {
-    const companies = [
-        'Acme Corporation',
-        'Tech Solutions Inc',
-        'Global Industries',
-        'Retail Plus',
-        'Manufacturing Co',
-        'E-commerce Solutions',
-        'Healthcare Systems',
-        'Construction Corp',
-        'Food Distribution',
-        'Fashion Retail',
-        'Tech Gadgets',
-        'Home Goods',
-        'Sports Equipment',
-        'Auto Parts',
-        'Pharmaceuticals'
-    ];
+// Move dummy data outside the component to prevent recreation on each render
+const DUMMY_SHIPMENTS = [
+    {
+        id: 'SHIP001',
+        date: '2024-03-20',
+        customer: 'Acme Corporation',
+        origin: '123 Main St, New York, NY 10001',
+        destination: '456 Market St, San Francisco, CA 94105',
+        carrier: 'FedEx',
+        shipmentType: 'Courier',
+        status: 'Delivered',
+        value: 120.00
+    },
+    {
+        id: 'SHIP002',
+        date: '2024-03-19',
+        customer: 'Tech Solutions Inc',
+        origin: '789 Lake Ave, Chicago, IL 60601',
+        destination: '321 Pine St, Boston, MA 02108',
+        carrier: 'UPS',
+        shipmentType: 'Freight',
+        status: 'In Transit',
+        value: 450.00
+    },
+    {
+        id: 'SHIP003',
+        date: '2024-03-18',
+        customer: 'Global Industries',
+        origin: '654 Oak Rd, Houston, TX 77001',
+        destination: '987 Maple Dr, Seattle, WA 98101',
+        carrier: 'DHL',
+        shipmentType: 'Freight',
+        status: 'Delayed',
+        value: 780.00
+    },
+    {
+        id: 'SHIP004',
+        date: '2024-03-17',
+        customer: 'Retail Plus',
+        origin: '147 Cedar Ln, Miami, FL 33101',
+        destination: '258 Birch St, Denver, CO 80201',
+        carrier: 'FedEx',
+        shipmentType: 'Courier',
+        status: 'Delivered',
+        value: 320.00
+    },
+    {
+        id: 'SHIP005',
+        date: '2024-03-16',
+        customer: 'Manufacturing Co',
+        origin: '369 Elm Ave, Atlanta, GA 30301',
+        destination: '741 Spruce Rd, Portland, OR 97201',
+        carrier: 'UPS',
+        shipmentType: 'Freight',
+        status: 'In Transit',
+        value: 950.00
+    },
+    {
+        id: 'SHIP006',
+        date: '2024-03-15',
+        customer: 'E-commerce Solutions',
+        origin: 'Atlanta, GA',
+        destination: 'Denver, CO',
+        status: 'Delivered',
+        carrier: 'USPS',
+        items: 'Consumer Goods',
+        value: 280.00,
+        cost: '$280.00'
+    },
+    {
+        id: 'SHIP007',
+        date: '2024-03-14',
+        customer: 'Healthcare Systems',
+        origin: 'Philadelphia, PA',
+        destination: 'San Diego, CA',
+        status: 'In Transit',
+        carrier: 'FedEx',
+        items: 'Medical Supplies',
+        value: 650.00,
+        cost: '$650.00'
+    },
+    {
+        id: 'SHIP008',
+        date: '2024-03-13',
+        customer: 'Construction Corp',
+        origin: 'Dallas, TX',
+        destination: 'Portland, OR',
+        status: 'Delayed',
+        carrier: 'DHL',
+        items: 'Construction Materials',
+        value: 950.00,
+        cost: '$950.00'
+    },
+    {
+        id: 'SHIP009',
+        date: '2024-03-12',
+        customer: 'Food Distribution',
+        origin: 'New Orleans, LA',
+        destination: 'Minneapolis, MN',
+        status: 'Delivered',
+        carrier: 'UPS',
+        items: 'Food Products',
+        value: 380.00,
+        cost: '$380.00'
+    },
+    {
+        id: 'SHIP010',
+        date: '2024-03-11',
+        customer: 'Fashion Retail',
+        origin: 'Las Vegas, NV',
+        destination: 'Cleveland, OH',
+        status: 'In Transit',
+        carrier: 'FedEx',
+        items: 'Clothing',
+        value: 220.00,
+        cost: '$220.00'
+    },
+    {
+        id: 'SHIP011',
+        date: '2024-03-10',
+        customer: 'Tech Gadgets',
+        origin: 'San Jose, CA',
+        destination: 'Miami, FL',
+        status: 'Delivered',
+        carrier: 'DHL',
+        items: 'Electronics',
+        value: 480.00,
+        cost: '$480.00'
+    },
+    {
+        id: 'SHIP012',
+        date: '2024-03-09',
+        customer: 'Home Goods',
+        origin: 'Seattle, WA',
+        destination: 'Boston, MA',
+        status: 'In Transit',
+        carrier: 'UPS',
+        items: 'Furniture',
+        value: 720.00,
+        cost: '$720.00'
+    },
+    {
+        id: 'SHIP013',
+        date: '2024-03-08',
+        customer: 'Sports Equipment',
+        origin: 'Portland, OR',
+        destination: 'Chicago, IL',
+        status: 'Delivered',
+        carrier: 'FedEx',
+        items: 'Sports Gear',
+        value: 310.00,
+        cost: '$310.00'
+    },
+    {
+        id: 'SHIP014',
+        date: '2024-03-07',
+        customer: 'Auto Parts',
+        origin: 'Detroit, MI',
+        destination: 'Houston, TX',
+        status: 'Delayed',
+        carrier: 'DHL',
+        items: 'Auto Components',
+        value: 920.00,
+        cost: '$920.00'
+    },
+    {
+        id: 'SHIP015',
+        date: '2024-03-06',
+        customer: 'Pharmaceuticals',
+        origin: 'New York, NY',
+        destination: 'San Francisco, CA',
+        status: 'In Transit',
+        carrier: 'FedEx',
+        items: 'Medical Supplies',
+        value: 880.00,
+        cost: '$880.00'
+    }
+];
 
-    const addresses = [
-        '123 Main St, New York, NY 10001',
-        '456 Market St, San Francisco, CA 94105',
-        '789 Lake Ave, Chicago, IL 60601',
-        '321 Pine St, Boston, MA 02108',
-        '654 Oak Rd, Houston, TX 77001',
-        '987 Maple Dr, Seattle, WA 98101',
-        '147 Cedar Ln, Miami, FL 33101',
-        '258 Birch St, Denver, CO 80201',
-        '369 Elm Ave, Atlanta, GA 30301',
-        '741 Spruce Rd, Portland, OR 97201',
-        '852 Willow Ln, Dallas, TX 75201',
-        '963 Ash St, Philadelphia, PA 19101',
-        '159 Pinecone Rd, San Diego, CA 92101',
-        '267 Acorn Ln, Minneapolis, MN 55401',
-        '348 Oakwood Dr, Cleveland, OH 44101'
-    ];
+// Extract StatusBox component for reusability
+const StatusBox = React.memo(({ title, count, icon: Icon, color, bgColor }) => (
+    <Paper sx={{
+        p: 3,
+        bgcolor: '#ffffff',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+        borderRadius: 2,
+        transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+        '&:hover': {
+            transform: 'translateY(-4px)',
+            boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
+        }
+    }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+                <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
+                    {title}
+                </Typography>
+                <Typography variant="h4" sx={{ color, fontWeight: 600 }}>
+                    {count}
+                </Typography>
+            </Box>
+            <Box sx={{
+                width: 48,
+                height: 48,
+                borderRadius: '12px',
+                bgcolor: bgColor,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            }}>
+                <Icon sx={{ color, fontSize: 24 }} />
+            </Box>
+        </Box>
+    </Paper>
+));
 
-    const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
-    const statuses = ['In Transit', 'Delivered', 'Delayed', 'Awaiting Shipment'];
-    const shipmentTypes = ['Courier', 'Freight'];
+// Extract ShipmentRow component for reusability
+const ShipmentRow = React.memo(({ shipment, onPrint }) => {
+    const [anchorEl, setAnchorEl] = useState(null);
+    const navigate = useNavigate();
 
-    return Array.from({ length: count }, (_, index) => {
-        const originIndex = Math.floor(Math.random() * addresses.length);
-        let destinationIndex;
-        do {
-            destinationIndex = Math.floor(Math.random() * addresses.length);
-        } while (destinationIndex === originIndex);
+    const handleMenuClick = (e) => {
+        e.stopPropagation();
+        setAnchorEl(e.currentTarget);
+    };
 
-        const date = new Date();
-        date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+    const handleMenuClose = () => {
+        setAnchorEl(null);
+    };
 
-        return {
-            id: `SHIP${String(index + 1).padStart(3, '0')}`,
-            date: date.toISOString(),
-            customer: companies[Math.floor(Math.random() * companies.length)],
-            origin: addresses[originIndex],
-            destination: addresses[destinationIndex],
-            status: statuses[Math.floor(Math.random() * statuses.length)],
-            carrier: carriers[Math.floor(Math.random() * carriers.length)],
-            shipmentType: shipmentTypes[Math.floor(Math.random() * shipmentTypes.length)],
-            trackingNumber: `TRK${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`
-        };
-    });
-};
+    const handlePrint = () => {
+        onPrint(shipment.id);
+        handleMenuClose();
+    };
 
+    return (
+        <TableRow
+            hover
+            onClick={() => navigate(`/shipment/${shipment.id}`)}
+            sx={{
+                cursor: 'pointer',
+                '&:hover': {
+                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                }
+            }}
+        >
+            <TableCell onClick={(e) => e.stopPropagation()}>
+                <Link
+                    to={`/shipment/${shipment.id}`}
+                    style={{ textDecoration: 'none', color: '#3b82f6' }}
+                >
+                    {shipment.id}
+                </Link>
+            </TableCell>
+            <TableCell>{shipment.customer}</TableCell>
+            <TableCell>{shipment.origin}</TableCell>
+            <TableCell>{shipment.destination}</TableCell>
+            <TableCell>{shipment.carrier}</TableCell>
+            <TableCell>{shipment.shipmentType}</TableCell>
+            <TableCell>
+                <Chip
+                    label={shipment.status}
+                    color={
+                        shipment.status === 'Delivered'
+                            ? 'success'
+                            : shipment.status === 'In Transit'
+                                ? 'primary'
+                                : shipment.status === 'Delayed'
+                                    ? 'error'
+                                    : 'default'
+                    }
+                    size="small"
+                />
+            </TableCell>
+            <TableCell>
+                <IconButton
+                    size="small"
+                    onClick={handleMenuClick}
+                >
+                    <MoreVertIcon />
+                </IconButton>
+                <Menu
+                    anchorEl={anchorEl}
+                    open={Boolean(anchorEl)}
+                    onClose={handleMenuClose}
+                >
+                    <MenuItem onClick={handlePrint}>
+                        <ListItemIcon>
+                            <PrintIcon fontSize="small" />
+                        </ListItemIcon>
+                        Print Label
+                    </MenuItem>
+                </Menu>
+            </TableCell>
+        </TableRow>
+    );
+});
 
 const Dashboard = () => {
     const [selectedTab, setSelectedTab] = useState('all');
-    const [anchorEl, setAnchorEl] = useState(null);
     const [startDate, setStartDate] = useState(dayjs());
     const [endDate, setEndDate] = useState(dayjs());
     const navigate = useNavigate();
 
-    // Dummy data for shipments
-    const shipments = [
-        {
-            id: 'SHIP001',
-            date: '2024-03-20',
-            customer: 'Acme Corporation',
-            origin: '123 Main St, New York, NY 10001',
-            destination: '456 Market St, San Francisco, CA 94105',
-            carrier: 'FedEx',
-            shipmentType: 'Courier',
-            status: 'Delivered'
-        },
-        {
-            id: 'SHIP002',
-            date: '2024-03-19',
-            customer: 'Tech Solutions Inc',
-            origin: '789 Lake Ave, Chicago, IL 60601',
-            destination: '321 Pine St, Boston, MA 02108',
-            carrier: 'UPS',
-            shipmentType: 'Freight',
-            status: 'In Transit'
-        },
-        {
-            id: 'SHIP003',
-            date: '2024-03-18',
-            customer: 'Global Industries',
-            origin: '654 Oak Rd, Houston, TX 77001',
-            destination: '987 Maple Dr, Seattle, WA 98101',
-            carrier: 'DHL',
-            shipmentType: 'Freight',
-            status: 'Delayed'
-        },
-        {
-            id: 'SHIP004',
-            date: '2024-03-17',
-            customer: 'Retail Plus',
-            origin: '147 Cedar Ln, Miami, FL 33101',
-            destination: '258 Birch St, Denver, CO 80201',
-            carrier: 'FedEx',
-            shipmentType: 'Courier',
-            status: 'Delivered'
-        },
-        {
-            id: 'SHIP005',
-            date: '2024-03-16',
-            customer: 'Manufacturing Co',
-            origin: '369 Elm Ave, Atlanta, GA 30301',
-            destination: '741 Spruce Rd, Portland, OR 97201',
-            carrier: 'UPS',
-            shipmentType: 'Freight',
-            status: 'In Transit'
-        },
-        {
-            id: 'SHIP006',
-            date: '2024-03-15',
-            customer: 'E-commerce Solutions',
-            origin: 'Atlanta, GA',
-            destination: 'Denver, CO',
-            status: 'Delivered',
-            carrier: 'USPS',
-            items: 'Consumer Goods',
-            value: 280.00,
-            cost: '$280.00'
-        },
-        {
-            id: 'SHIP007',
-            date: '2024-03-14',
-            customer: 'Healthcare Systems',
-            origin: 'Philadelphia, PA',
-            destination: 'San Diego, CA',
-            status: 'In Transit',
-            carrier: 'FedEx',
-            items: 'Medical Supplies',
-            value: 650.00,
-            cost: '$650.00'
-        },
-        {
-            id: 'SHIP008',
-            date: '2024-03-13',
-            customer: 'Construction Corp',
-            origin: 'Dallas, TX',
-            destination: 'Portland, OR',
-            status: 'Delayed',
-            carrier: 'DHL',
-            items: 'Construction Materials',
-            value: 950.00,
-            cost: '$950.00'
-        },
-        {
-            id: 'SHIP009',
-            date: '2024-03-12',
-            customer: 'Food Distribution',
-            origin: 'New Orleans, LA',
-            destination: 'Minneapolis, MN',
-            status: 'Delivered',
-            carrier: 'UPS',
-            items: 'Food Products',
-            value: 380.00,
-            cost: '$380.00'
-        },
-        {
-            id: 'SHIP010',
-            date: '2024-03-11',
-            customer: 'Fashion Retail',
-            origin: 'Las Vegas, NV',
-            destination: 'Cleveland, OH',
-            status: 'In Transit',
-            carrier: 'FedEx',
-            items: 'Clothing',
-            value: 220.00,
-            cost: '$220.00'
-        },
-        {
-            id: 'SHIP011',
-            date: '2024-03-10',
-            customer: 'Tech Gadgets',
-            origin: 'San Jose, CA',
-            destination: 'Miami, FL',
-            status: 'Delivered',
-            carrier: 'DHL',
-            items: 'Electronics',
-            value: 480.00,
-            cost: '$480.00'
-        },
-        {
-            id: 'SHIP012',
-            date: '2024-03-09',
-            customer: 'Home Goods',
-            origin: 'Seattle, WA',
-            destination: 'Boston, MA',
-            status: 'In Transit',
-            carrier: 'UPS',
-            items: 'Furniture',
-            value: 720.00,
-            cost: '$720.00'
-        },
-        {
-            id: 'SHIP013',
-            date: '2024-03-08',
-            customer: 'Sports Equipment',
-            origin: 'Portland, OR',
-            destination: 'Chicago, IL',
-            status: 'Delivered',
-            carrier: 'FedEx',
-            items: 'Sports Gear',
-            value: 310.00,
-            cost: '$310.00'
-        },
-        {
-            id: 'SHIP014',
-            date: '2024-03-07',
-            customer: 'Auto Parts',
-            origin: 'Detroit, MI',
-            destination: 'Houston, TX',
-            status: 'Delayed',
-            carrier: 'DHL',
-            items: 'Auto Components',
-            value: 920.00,
-            cost: '$920.00'
-        },
-        {
-            id: 'SHIP015',
-            date: '2024-03-06',
-            customer: 'Pharmaceuticals',
-            origin: 'New York, NY',
-            destination: 'San Francisco, CA',
-            status: 'In Transit',
-            carrier: 'FedEx',
-            items: 'Medical Supplies',
-            value: 880.00,
-            cost: '$880.00'
-        }
-    ];
+    // Use the dummy data
+    const shipments = DUMMY_SHIPMENTS;
 
-    // Calculate stats
-    const stats = {
-        total: shipments.length,
-        inTransit: shipments.filter(s => s.status === 'In Transit').length,
-        delivered: shipments.filter(s => s.status === 'Delivered').length,
-        awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length,
-        totalItems: shipments.reduce((acc, s) => acc + parseInt(s.items), 0)
-    };
+    // Calculate all shipment stats in a single pass
+    const shipmentStats = useMemo(() => {
+        const stats = {
+            total: shipments.length,
+            inTransit: 0,
+            delivered: 0,
+            delayed: 0,
+            awaitingShipment: 0,
+            totalValue: 0
+        };
 
-    // Add these helper functions at the top of the component
-    const formatNumber = (number) => {
-        return new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(number);
-    };
+        shipments.forEach(shipment => {
+            if (shipment.status === 'In Transit') stats.inTransit++;
+            else if (shipment.status === 'Delivered') stats.delivered++;
+            else if (shipment.status === 'Delayed') stats.delayed++;
+            else if (shipment.status === 'Awaiting Shipment') stats.awaitingShipment++;
 
-    const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(amount);
-    };
+            if (shipment.value) stats.totalValue += shipment.value;
+        });
 
-    // Update the metrics calculations
+        return stats;
+    }, [shipments]);
+
+    // Calculate metrics based on the stats
     const metrics = useMemo(() => {
-        const totalShipments = shipments.length;
-        const totalValue = shipments.reduce((sum, shipment) => sum + shipment.value, 0);
-        const averageValue = totalShipments > 0 ? totalValue / totalShipments : 0;
-        const onTimeDelivery = totalShipments > 0
-            ? (shipments.filter(s => s.status === 'Delivered').length / totalShipments) * 100
-            : 0;
+        const { total, delivered, totalValue } = shipmentStats;
+        const averageValue = total > 0 ? totalValue / total : 0;
+        const onTimeDelivery = total > 0 ? (delivered / total) * 100 : 0;
 
         return {
-            totalShipments,
+            totalShipments: total,
             totalValue,
             averageValue,
             onTimeDelivery
         };
-    }, [shipments]);
+    }, [shipmentStats]);
 
-    // Update the top customers calculation
+    // Calculate top customers
     const topCustomers = useMemo(() => {
         const customerTotals = shipments.reduce((acc, shipment) => {
-            acc[shipment.customer] = (acc[shipment.customer] || 0) + shipment.value;
+            if (shipment.value) {
+                acc[shipment.customer] = (acc[shipment.customer] || 0) + shipment.value;
+            }
             return acc;
         }, {});
 
@@ -364,7 +395,7 @@ const Dashboard = () => {
             .slice(0, 3);
     }, [shipments]);
 
-    // Update the daily shipment value calculation
+    // Calculate daily shipment value
     const dailyShipmentValue = useMemo(() => {
         const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
         return shipments
@@ -372,7 +403,7 @@ const Dashboard = () => {
             .reduce((sum, shipment) => sum + (shipment.value || 0), 0);
     }, [shipments]);
 
-    // Update the monthly data calculation
+    // Calculate monthly data
     const monthlyData = useMemo(() => {
         const today = new Date();
         const currentMonth = today.getMonth();
@@ -384,17 +415,19 @@ const Dashboard = () => {
 
         // Aggregate shipment values by date
         shipments.forEach(shipment => {
-            const shipmentDate = new Date(shipment.date);
-            if (shipmentDate.getMonth() === currentMonth && shipmentDate.getFullYear() === currentYear) {
-                const day = shipmentDate.getDate() - 1;
-                monthData[day] = (monthData[day] || 0) + (shipment.value || 0);
+            if (shipment.date && shipment.value) {
+                const shipmentDate = new Date(shipment.date);
+                if (shipmentDate.getMonth() === currentMonth && shipmentDate.getFullYear() === currentYear) {
+                    const day = shipmentDate.getDate() - 1;
+                    monthData[day] = (monthData[day] || 0) + shipment.value;
+                }
             }
         });
 
         return monthData;
     }, [shipments]);
 
-    // Update the carrier distribution calculation
+    // Calculate carrier distribution
     const carrierDistribution = useMemo(() => {
         const distribution = shipments.reduce((acc, shipment) => {
             acc[shipment.carrier] = (acc[shipment.carrier] || 0) + 1;
@@ -408,45 +441,57 @@ const Dashboard = () => {
         }));
     }, [shipments]);
 
-    // Update the delivery performance calculation
+    // Calculate delivery performance
     const deliveryPerformance = useMemo(() => {
-        const total = shipments.length;
-        const delivered = shipments.filter(s => s.status === 'Delivered').length;
-        const inTransit = shipments.filter(s => s.status === 'In Transit').length;
-        const delayed = shipments.filter(s => s.status === 'Delayed').length;
+        const { total, delivered, inTransit, delayed } = shipmentStats;
 
         return {
-            delivered: (delivered / total) * 100,
-            inTransit: (inTransit / total) * 100,
-            delayed: (delayed / total) * 100
+            delivered: total > 0 ? (delivered / total) * 100 : 0,
+            inTransit: total > 0 ? (inTransit / total) * 100 : 0,
+            delayed: total > 0 ? (delayed / total) * 100 : 0
         };
-    }, [shipments]);
-
-    const handleTabChange = (event, newValue) => {
-        setSelectedTab(newValue);
-    };
-
-    const handleMenuClick = (event) => {
-        setAnchorEl(event.currentTarget);
-    };
-
-    const handleMenuClose = () => {
-        setAnchorEl(null);
-    };
+    }, [shipmentStats]);
 
     // Filter shipments based on selected tab
-    const filteredShipments = shipments.filter(shipment => {
-        switch (selectedTab) {
-            case 'in-transit':
-                return shipment.status === 'In Transit';
-            case 'delivered':
-                return shipment.status === 'Delivered';
-            case 'awaiting':
-                return shipment.status === 'Awaiting Shipment';
-            default:
-                return true;
-        }
-    });
+    const filteredShipments = useMemo(() => {
+        return shipments.filter(shipment => {
+            switch (selectedTab) {
+                case 'in-transit':
+                    return shipment.status === 'In Transit';
+                case 'delivered':
+                    return shipment.status === 'Delivered';
+                case 'awaiting':
+                    return shipment.status === 'Awaiting Shipment';
+                default:
+                    return true;
+            }
+        });
+    }, [shipments, selectedTab]);
+
+    // Handle tab change
+    const handleTabChange = useCallback((event, newValue) => {
+        setSelectedTab(newValue);
+    }, []);
+
+    // Handle print label
+    const handlePrintLabel = useCallback((shipmentId) => {
+        console.log('Print label for shipment:', shipmentId);
+    }, []);
+
+    // Generate chart data
+    const chartData = useMemo(() => {
+        return monthlyData.map((_, index) => {
+            const date = new Date();
+            date.setDate(index + 1);
+            return {
+                value: monthlyData[index] || Math.floor(Math.random() * 91) + 10,
+                day: date.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric'
+                })
+            };
+        });
+    }, [monthlyData]);
 
     return (
         <Box sx={{
@@ -523,147 +568,43 @@ const Dashboard = () => {
                 {/* Status Boxes */}
                 <Grid container spacing={3} sx={{ mb: 4 }}>
                     <Grid item xs={12} sm={6} md={3}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                            '&:hover': {
-                                transform: 'translateY(-4px)',
-                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
-                            }
-                        }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#000000', mb: 1, fontWeight: 500 }}>
-                                        Active Shipments
-                                    </Typography>
-                                    <Typography variant="h4" sx={{ color: '#000000', fontWeight: 600 }}>
-                                        {shipments.filter(s => s.status === 'In Transit' || s.status === 'Awaiting Shipment').length}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{
-                                    width: 48,
-                                    height: 48,
-                                    borderRadius: '12px',
-                                    bgcolor: 'rgba(0, 0, 0, 0.1)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
-                                    <ShippingIcon sx={{ color: '#000000', fontSize: 24 }} />
-                                </Box>
-                            </Box>
-                        </Paper>
+                        <StatusBox
+                            title="Active Shipments"
+                            count={shipmentStats.inTransit + shipmentStats.awaitingShipment}
+                            icon={ShippingIcon}
+                            color="#000000"
+                            bgColor="rgba(0, 0, 0, 0.1)"
+                        />
                     </Grid>
 
                     <Grid item xs={12} sm={6} md={3}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                            '&:hover': {
-                                transform: 'translateY(-4px)',
-                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
-                            }
-                        }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
-                                        Waiting for Pickup
-                                    </Typography>
-                                    <Typography variant="h4" sx={{ color: '#f59e0b', fontWeight: 600 }}>
-                                        {shipments.filter(s => s.status === 'Awaiting Shipment').length}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{
-                                    width: 48,
-                                    height: 48,
-                                    borderRadius: '12px',
-                                    bgcolor: 'rgba(245, 158, 11, 0.1)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
-                                    <ScheduleIcon sx={{ color: '#f59e0b', fontSize: 24 }} />
-                                </Box>
-                            </Box>
-                        </Paper>
+                        <StatusBox
+                            title="Waiting for Pickup"
+                            count={shipmentStats.awaitingShipment}
+                            icon={ScheduleIcon}
+                            color="#f59e0b"
+                            bgColor="rgba(245, 158, 11, 0.1)"
+                        />
                     </Grid>
 
                     <Grid item xs={12} sm={6} md={3}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                            '&:hover': {
-                                transform: 'translateY(-4px)',
-                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
-                            }
-                        }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
-                                        In Transit
-                                    </Typography>
-                                    <Typography variant="h4" sx={{ color: '#6366f1', fontWeight: 600 }}>
-                                        {shipments.filter(s => s.status === 'In Transit').length}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{
-                                    width: 48,
-                                    height: 48,
-                                    borderRadius: '12px',
-                                    bgcolor: 'rgba(99, 102, 241, 0.1)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
-                                    <LocalShipping sx={{ color: '#6366f1', fontSize: 24 }} />
-                                </Box>
-                            </Box>
-                        </Paper>
+                        <StatusBox
+                            title="In Transit"
+                            count={shipmentStats.inTransit}
+                            icon={LocalShipping}
+                            color="#6366f1"
+                            bgColor="rgba(99, 102, 241, 0.1)"
+                        />
                     </Grid>
 
                     <Grid item xs={12} sm={6} md={3}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                            '&:hover': {
-                                transform: 'translateY(-4px)',
-                                boxShadow: '0 4px 8px rgba(0,0,0,0.08)'
-                            }
-                        }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Box>
-                                    <Typography variant="subtitle1" sx={{ color: '#64748b', mb: 1, fontWeight: 500 }}>
-                                        Delivered
-                                    </Typography>
-                                    <Typography variant="h4" sx={{ color: '#10b981', fontWeight: 600 }}>
-                                        {shipments.filter(s => s.status === 'Delivered').length}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{
-                                    width: 48,
-                                    height: 48,
-                                    borderRadius: '12px',
-                                    bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
-                                    <CheckCircleIcon sx={{ color: '#10b981', fontSize: 24 }} />
-                                </Box>
-                            </Box>
-                        </Paper>
+                        <StatusBox
+                            title="Delivered"
+                            count={shipmentStats.delivered}
+                            icon={CheckCircleIcon}
+                            color="#10b981"
+                            bgColor="rgba(16, 185, 129, 0.1)"
+                        />
                     </Grid>
                 </Grid>
 
@@ -697,25 +638,13 @@ const Dashboard = () => {
                                     borderRadius: 2
                                 }}>
                                     <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 500 }}>
-                                        {shipments.length} Total Shipments
+                                        {shipmentStats.total} Total Shipments
                                     </Typography>
                                 </Box>
                             </Box>
                             <Box sx={{ height: 300 }}>
                                 <LineChart
-                                    dataset={monthlyData.map((_, index) => {
-                                        const date = new Date();
-                                        date.setDate(index + 1);
-                                        // Generate random number between 10 and 100
-                                        const randomShipments = Math.floor(Math.random() * 91) + 10;
-                                        return {
-                                            value: randomShipments,
-                                            day: date.toLocaleDateString('en-US', {
-                                                month: 'short',
-                                                day: 'numeric'
-                                            })
-                                        };
-                                    })}
+                                    dataset={chartData}
                                     series={[
                                         {
                                             dataKey: 'value',
@@ -808,80 +737,11 @@ const Dashboard = () => {
                             </TableHead>
                             <TableBody>
                                 {shipments.slice(0, 20).map((shipment) => (
-                                    <TableRow
+                                    <ShipmentRow
                                         key={shipment.id}
-                                        hover
-                                        onClick={() => navigate(`/shipment/${shipment.id}`)}
-                                        sx={{
-                                            cursor: 'pointer',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <TableCell onClick={(e) => e.stopPropagation()}>
-                                            <Link
-                                                to={`/shipment/${shipment.id}`}
-                                                style={{ textDecoration: 'none', color: '#3b82f6' }}
-                                            >
-                                                {shipment.id}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell>{shipment.customer}</TableCell>
-                                        <TableCell>{shipment.origin}</TableCell>
-                                        <TableCell>{shipment.destination}</TableCell>
-                                        <TableCell>{shipment.carrier}</TableCell>
-                                        <TableCell>{shipment.shipmentType}</TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={shipment.status}
-                                                color={
-                                                    shipment.status === 'Delivered'
-                                                        ? 'success'
-                                                        : shipment.status === 'In Transit'
-                                                            ? 'primary'
-                                                            : shipment.status === 'Delayed'
-                                                                ? 'error'
-                                                                : 'default'
-                                                }
-                                                size="small"
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => {
-                                                    setAnchorEl(e.currentTarget);
-                                                }}
-                                            >
-                                                <MoreVertIcon />
-                                            </IconButton>
-                                            <Menu
-                                                anchorEl={anchorEl}
-                                                open={Boolean(anchorEl)}
-                                                onClose={() => setAnchorEl(null)}
-                                            >
-                                                <MenuItem onClick={() => {
-                                                    navigate(`/shipment/${shipment.id}`);
-                                                    setAnchorEl(null);
-                                                }}>
-                                                    <ListItemIcon>
-                                                        <VisibilityIcon fontSize="small" />
-                                                    </ListItemIcon>
-                                                    View
-                                                </MenuItem>
-                                                <MenuItem onClick={() => {
-                                                    console.log('Print label for shipment:', shipment.id);
-                                                    setAnchorEl(null);
-                                                }}>
-                                                    <ListItemIcon>
-                                                        <PrintIcon fontSize="small" />
-                                                    </ListItemIcon>
-                                                    Print Label
-                                                </MenuItem>
-                                            </Menu>
-                                        </TableCell>
-                                    </TableRow>
+                                        shipment={shipment}
+                                        onPrint={handlePrintLabel}
+                                    />
                                 ))}
                             </TableBody>
                         </Table>
