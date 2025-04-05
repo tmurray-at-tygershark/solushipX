@@ -82,19 +82,15 @@ const Footer = () => {
                             transition={{ duration: 0.5 }}
                         >
                             <Box sx={{ mb: 4 }}>
-                                <Typography
-                                    variant="h4"
-                                    component="div"
+                                <Box
+                                    component="img"
+                                    src="/images/solushipx_logo_white.png"
+                                    alt="SolushipX Logo"
                                     sx={{
-                                        fontWeight: 700,
-                                        mb: 2,
-                                        background: 'linear-gradient(45deg, #fff 30%, #f0f0f0 90%)',
-                                        WebkitBackgroundClip: 'text',
-                                        WebkitTextFillColor: 'transparent'
+                                        height: '30px',
+                                        mb: 2
                                     }}
-                                >
-                                    SolushipX
-                                </Typography>
+                                />
                                 <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 3 }}>
                                     Empowering businesses with intelligent shipping solutions for a connected world.
                                 </Typography>
