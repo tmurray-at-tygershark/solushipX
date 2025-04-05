@@ -552,7 +552,7 @@ const Dashboard = () => {
                     <Grid item xs={12} sm={6} md={3}>
                         <StatusBox
                             title="Active Shipments"
-                            count={shipmentStats.processing + shipmentStats.inTransit}
+                            count={shipmentStats.inTransit + shipmentStats.awaitingShipment + shipmentStats.pending}
                             icon={ShippingIcon}
                             color="#000000"
                             bgColor="rgba(0, 0, 0, 0.1)"
@@ -561,11 +561,11 @@ const Dashboard = () => {
 
                     <Grid item xs={12} sm={6} md={3}>
                         <StatusBox
-                            title="Waiting for Pickup"
-                            count={shipmentStats.processing}
+                            title="Awaiting Shipment"
+                            count={shipmentStats.awaitingShipment}
                             icon={ScheduleIcon}
-                            color="#f59e0b"
-                            bgColor="rgba(245, 158, 11, 0.1)"
+                            color="#3B82F6"
+                            bgColor="rgba(59, 130, 246, 0.1)"
                         />
                     </Grid>
 
