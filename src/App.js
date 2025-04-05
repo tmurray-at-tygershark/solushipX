@@ -4,7 +4,7 @@ import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { AuthProvider } from './contexts/AuthContext';
-import Navigation from './components/Navigation';
+import Navigation from './components/Navigation/Header';
 import Footer from './components/Footer/Footer';
 import NotificationBar from './components/NotificationBar/NotificationBar';
 import ErrorBoundary from './components/ErrorBoundary';
