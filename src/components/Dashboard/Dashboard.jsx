@@ -126,7 +126,11 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                 }
             }}
         >
-            <TableCell onClick={(e) => e.stopPropagation()}>
+            <TableCell
+                align="top"
+                onClick={(e) => e.stopPropagation()}
+                sx={{ verticalAlign: 'top', paddingTop: '16px' }}
+            >
                 <Link
                     to={`/shipment/${shipment.id}`}
                     style={{ textDecoration: 'none', color: '#3b82f6' }}
@@ -134,12 +138,12 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                     {shipment.shipmentID}
                 </Link>
             </TableCell>
-            <TableCell>{shipment.customer}</TableCell>
-            <TableCell>{shipment.origin}</TableCell>
-            <TableCell>{shipment.destination}</TableCell>
-            <TableCell>{shipment.carrier}</TableCell>
-            <TableCell>{shipment.shipmentType}</TableCell>
-            <TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.customer}</TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.origin}</TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.destination}</TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.carrier}</TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.shipmentType}</TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>
                 <Chip
                     label={shipment.status}
                     color={
@@ -154,7 +158,7 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                     size="small"
                 />
             </TableCell>
-            <TableCell>
+            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>
                 <IconButton
                     size="small"
                     onClick={handleMenuClick}
@@ -626,14 +630,14 @@ const Dashboard = () => {
                             <Table>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>SHIPMENT ID</TableCell>
-                                        <TableCell>CUSTOMER</TableCell>
-                                        <TableCell>ORIGIN</TableCell>
-                                        <TableCell>DESTINATION</TableCell>
-                                        <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
-                                        <TableCell>TYPE</TableCell>
-                                        <TableCell>STATUS</TableCell>
-                                        <TableCell>ACTIONS</TableCell>
+                                        <TableCell align="top">SHIPMENT ID</TableCell>
+                                        <TableCell align="top">CUSTOMER</TableCell>
+                                        <TableCell align="top">ORIGIN</TableCell>
+                                        <TableCell align="top">DESTINATION</TableCell>
+                                        <TableCell align="top" sx={{ minWidth: 120 }}>CARRIER</TableCell>
+                                        <TableCell align="top">TYPE</TableCell>
+                                        <TableCell align="top">STATUS</TableCell>
+                                        <TableCell align="top">ACTIONS</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
