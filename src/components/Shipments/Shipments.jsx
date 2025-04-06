@@ -391,7 +391,7 @@ const Shipments = () => {
     };
 
     const handleShipmentClick = (shipment) => {
-        navigate(`/shipment/${shipment.id}`, { state: { from: '/shipments' } });
+        navigate(`/shipment/${shipment.shipmentID}`, { state: { from: '/shipments' } });
     };
 
     const getStatusColor = (status) => {

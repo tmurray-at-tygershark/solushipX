@@ -268,7 +268,7 @@ const CustomerDetail = () => {
                                     <TableRow
                                         key={shipment.id}
                                         className="shipment-row"
-                                        onClick={() => navigate(`/shipments/${shipment.id}`)}
+                                        onClick={() => navigate(`/shipment/${shipment.shipmentID}`)}
                                     >
                                         <TableCell>{shipment.id}</TableCell>
                                         <TableCell>{shipment.origin}</TableCell>
@@ -289,7 +289,7 @@ const CustomerDetail = () => {
                                                 size="small"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    navigate(`/shipments/${shipment.id}`);
+                                                    navigate(`/shipment/${shipment.shipmentID}`);
                                                 }}
                                             >
                                                 View

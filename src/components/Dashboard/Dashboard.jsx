@@ -53,7 +53,7 @@ const formatAddress = (addressObj) => {
         addressObj.street2,
         addressObj.city,
         addressObj.state,
-        addressObj.zip,
+        addressObj.postalCode,
         addressObj.country
     ].filter(Boolean);
     return parts.join(', ');
@@ -188,7 +188,7 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
     return (
         <TableRow
             hover
-            onClick={() => navigate(`/shipment/${shipment.id}`)}
+            onClick={() => navigate(`/shipment/${shipment.shipmentId}`)}
             sx={{
                 cursor: 'pointer',
                 '&:hover': {
@@ -202,10 +202,10 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                 sx={{ verticalAlign: 'top', paddingTop: '16px' }}
             >
                 <Link
-                    to={`/shipment/${shipment.id}`}
+                    to={`/shipment/${shipment.shipmentId}`}
                     style={{ textDecoration: 'none', color: '#3b82f6' }}
                 >
-                    {shipment.shipmentID}
+                    {shipment.shipmentId}
                 </Link>
             </TableCell>
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.customer}</TableCell>
@@ -280,7 +280,7 @@ const Dashboard = () => {
                 const customerData = customers[data.customerId] || {};
                 return {
                     id: doc.id,
-                    shipmentID: data.shipmentID || 'N/A',
+                    shipmentId: data.shipmentId || 'N/A',
                     date: formatDate(data.createdAt),
                     customer: customerData.name || 'Unknown Customer',
                     origin: formatAddress(data.from),
@@ -317,21 +317,26 @@ const Dashboard = () => {
         shipments.forEach(shipment => {
             switch (shipment.status?.toLowerCase()) {
                 case 'pending':
+                case 'created':
                     stats.pending++;
                     break;
                 case 'awaiting shipment':
+                case 'label_created':
                     stats.awaitingShipment++;
                     break;
                 case 'in transit':
+                case 'in_transit':
                     stats.inTransit++;
                     break;
                 case 'on hold':
+                case 'on_hold':
                     stats.onHold++;
                     break;
                 case 'delivered':
                     stats.delivered++;
                     break;
                 case 'cancelled':
+                case 'canceled':
                     stats.cancelled++;
                     break;
             }
@@ -433,17 +438,22 @@ const Dashboard = () => {
         return shipments.filter(shipment => {
             switch (selectedTab) {
                 case 'in-transit':
-                    return shipment.status?.toLowerCase() === 'in transit';
+                    return shipment.status?.toLowerCase() === 'in transit' ||
+                        shipment.status?.toLowerCase() === 'in_transit';
                 case 'delivered':
                     return shipment.status?.toLowerCase() === 'delivered';
                 case 'awaiting':
-                    return shipment.status?.toLowerCase() === 'awaiting shipment';
+                    return shipment.status?.toLowerCase() === 'awaiting shipment' ||
+                        shipment.status?.toLowerCase() === 'label_created';
                 case 'pending':
-                    return shipment.status?.toLowerCase() === 'pending';
+                    return shipment.status?.toLowerCase() === 'pending' ||
+                        shipment.status?.toLowerCase() === 'created';
                 case 'on-hold':
-                    return shipment.status?.toLowerCase() === 'on hold';
+                    return shipment.status?.toLowerCase() === 'on hold' ||
+                        shipment.status?.toLowerCase() === 'on_hold';
                 case 'cancelled':
-                    return shipment.status?.toLowerCase() === 'cancelled';
+                    return shipment.status?.toLowerCase() === 'cancelled' ||
+                        shipment.status?.toLowerCase() === 'canceled';
                 default:
                     return true;
             }
