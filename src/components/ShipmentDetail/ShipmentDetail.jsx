@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Box,
     Typography,
@@ -9,7 +9,9 @@ import {
     Button,
     Chip,
     Grid,
-    useTheme
+    useTheme,
+    CircularProgress,
+    Skeleton
 } from '@mui/material';
 import {
     Timeline,
@@ -51,13 +53,68 @@ import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google
 import './ShipmentDetail.css';
 import { Link } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
 
-const SimpleMap = ({ address, title }) => {
+// Add at the top with other helper functions
+const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    });
+};
+
+// Add ErrorBoundary component at the top
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <Box sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: '#fff3f3',
+                    border: '1px solid #ffcdd2'
+                }}>
+                    <Typography color="error" variant="subtitle2" gutterBottom>
+                        Something went wrong loading this component
+                    </Typography>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        onClick={() => window.location.reload()}
+                    >
+                        Reload Page
+                    </Button>
+                </Box>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+// Optimize SimpleMap component
+const SimpleMap = React.memo(({ address, title }) => {
     const [position, setPosition] = useState(null);
     const [error, setError] = useState(null);
+    const mapRef = useRef(null);
 
     useEffect(() => {
         if (!window.google || !window.google.maps) {
@@ -65,9 +122,13 @@ const SimpleMap = ({ address, title }) => {
             return;
         }
 
-        // Simple geocoding
+        if (!address) {
+            setError('Address information is missing');
+            return;
+        }
+
         const geocoder = new window.google.maps.Geocoder();
-        const addressString = `${address.address1}${address.address2 ? ', ' + address.address2 : ''}, ${address.city}, ${address.state} ${address.postalCode}`;
+        const addressString = `${address.street || ''}${address.street2 ? ', ' + address.street2 : ''}, ${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}, ${address.country || ''}`;
 
         geocoder.geocode({ address: addressString }, (results, status) => {
             if (status === 'OK') {
@@ -76,12 +137,25 @@ const SimpleMap = ({ address, title }) => {
                     lat: location.lat(),
                     lng: location.lng()
                 });
+
+                // Fit bounds with padding
+                if (mapRef.current) {
+                    const bounds = new window.google.maps.LatLngBounds();
+                    bounds.extend(location);
+                    mapRef.current.fitBounds(bounds, {
+                        padding: { top: 50, right: 50, bottom: 50, left: 50 }
+                    });
+                }
             } else {
                 console.error('Geocoding failed:', status);
                 setError('Failed to geocode address');
             }
         });
     }, [address]);
+
+    const handleMapLoad = React.useCallback((map) => {
+        mapRef.current = map;
+    }, []);
 
     if (error) {
         return (
@@ -94,30 +168,20 @@ const SimpleMap = ({ address, title }) => {
                     borderRadius: '12px',
                     bgcolor: '#f5f5f5',
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    gap: 1
                 }}>
-                    <Typography color="text.secondary">{error}</Typography>
-                </Box>
-            </Box>
-        );
-    }
-
-    if (!position) {
-        return (
-            <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                    {title}
-                </Typography>
-                <Box sx={{
-                    height: '200px',
-                    borderRadius: '12px',
-                    bgcolor: '#f5f5f5',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}>
-                    <Typography color="text.secondary">Loading map...</Typography>
+                    <Typography color="error">{error}</Typography>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        onClick={() => window.location.reload()}
+                    >
+                        Retry
+                    </Button>
                 </Box>
             </Box>
         );
@@ -128,26 +192,213 @@ const SimpleMap = ({ address, title }) => {
             <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
                 {title}
             </Typography>
-            <GoogleMap
-                mapContainerStyle={{
-                    width: '100%',
-                    height: '200px',
-                    borderRadius: '12px'
-                }}
-                center={position}
-                zoom={15}
-            >
-                <Marker
-                    position={position}
-                    icon={{
-                        url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
-                        scaledSize: new window.google.maps.Size(30, 30)
-                    }}
-                />
-            </GoogleMap>
+            <Box sx={{
+                height: '200px',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                position: 'relative'
+            }}>
+                {position ? (
+                    <GoogleMap
+                        mapContainerStyle={{
+                            width: '100%',
+                            height: '100%'
+                        }}
+                        center={position}
+                        zoom={15}
+                        onLoad={handleMapLoad}
+                        options={{
+                            disableDefaultUI: false,
+                            zoomControl: true,
+                            streetViewControl: false,
+                            mapTypeControl: false,
+                            fullscreenControl: false,
+                            styles: [
+                                {
+                                    featureType: 'poi',
+                                    elementType: 'labels',
+                                    stylers: [{ visibility: 'off' }]
+                                },
+                                {
+                                    featureType: 'transit',
+                                    elementType: 'labels',
+                                    stylers: [{ visibility: 'off' }]
+                                }
+                            ]
+                        }}
+                    >
+                        <Marker
+                            position={position}
+                            icon={{
+                                url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+                                scaledSize: new window.google.maps.Size(30, 30)
+                            }}
+                        />
+                    </GoogleMap>
+                ) : (
+                    <Box sx={{
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        bgcolor: '#f5f5f5'
+                    }}>
+                        <CircularProgress size={24} />
+                    </Box>
+                )}
+            </Box>
         </Box>
     );
-};
+});
+
+// Add LoadingSkeleton component
+const LoadingSkeleton = () => (
+    <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
+        <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
+            {/* Header Skeleton */}
+            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Skeleton width={300} height={40} />
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Skeleton width={100} height={40} />
+                    <Skeleton width={100} height={40} />
+                </Box>
+            </Box>
+
+            {/* Shipment Info Skeleton */}
+            <Paper sx={{ mb: 3 }}>
+                <Box sx={{ p: 2 }}>
+                    <Skeleton width={200} height={32} />
+                </Box>
+                <Box sx={{ p: 3 }}>
+                    <Grid container spacing={2}>
+                        {[1, 2, 3].map((i) => (
+                            <Grid item xs={12} md={4} key={i}>
+                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                    <Skeleton width={150} height={24} />
+                                    <Skeleton width={200} height={24} />
+                                    <Skeleton width={180} height={24} />
+                                </Box>
+                            </Grid>
+                        ))}
+                    </Grid>
+                </Box>
+            </Paper>
+
+            {/* Locations and Rate Details Skeleton */}
+            <Grid container spacing={3}>
+                <Grid item xs={12} md={8}>
+                    <Paper sx={{ mb: 3 }}>
+                        <Box sx={{ p: 2 }}>
+                            <Skeleton width={200} height={32} />
+                        </Box>
+                        <Box sx={{ p: 3 }}>
+                            <Grid container spacing={3}>
+                                {[1, 2].map((i) => (
+                                    <Grid item xs={12} md={6} key={i}>
+                                        <Skeleton width={150} height={32} />
+                                        <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2, my: 2 }} />
+                                        <Box sx={{ display: 'grid', gap: 2 }}>
+                                            <Skeleton width={200} height={24} />
+                                            <Skeleton width={180} height={24} />
+                                            <Skeleton width={160} height={24} />
+                                        </Box>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </Box>
+                    </Paper>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <Paper>
+                        <Box sx={{ p: 2 }}>
+                            <Skeleton width={150} height={32} />
+                        </Box>
+                        <Box sx={{ p: 3 }}>
+                            <Box sx={{ display: 'grid', gap: 2 }}>
+                                {[1, 2, 3, 4].map((i) => (
+                                    <Skeleton key={i} width={200} height={24} />
+                                ))}
+                            </Box>
+                        </Box>
+                    </Paper>
+                </Grid>
+            </Grid>
+        </Box>
+    </Box>
+);
+
+// Add optimized Timeline component
+const ShipmentTimeline = React.memo(({ events }) => (
+    <Timeline
+        sx={{
+            [`& .MuiTimelineItem-root`]: {
+                minHeight: 'auto',
+                '&:before': {
+                    display: 'none',
+                },
+            },
+            [`& .MuiTimelineDot-root`]: {
+                margin: 0,
+                padding: 1,
+                borderWidth: 0,
+            },
+            [`& .MuiTimelineConnector-root`]: {
+                width: 2,
+                backgroundColor: '#e0e0e0',
+            },
+            [`& .MuiTimelineContent-root`]: {
+                padding: '0 16px 24px',
+            },
+        }}
+    >
+        {events.map((event, index) => (
+            <TimelineItem key={event.id}>
+                <TimelineSeparator>
+                    <TimelineDot
+                        sx={{
+                            bgcolor: event.color,
+                            boxShadow: 'none',
+                            margin: 0,
+                        }}
+                    >
+                        {event.icon}
+                    </TimelineDot>
+                    {index < events.length - 1 && <TimelineConnector />}
+                </TimelineSeparator>
+                <TimelineContent>
+                    <Box
+                        sx={{
+                            bgcolor: 'background.paper',
+                            p: 2,
+                            borderRadius: 2,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                            '&:hover': {
+                                transform: 'translateY(-2px)',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                            },
+                        }}
+                    >
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
+                            {event.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            {event.location.city}, {event.location.state} {event.location.postalCode}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                            {formatTimestamp(event.timestamp)}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            {event.description}
+                        </Typography>
+                    </Box>
+                </TimelineContent>
+            </TimelineItem>
+        ))}
+    </Timeline>
+));
 
 const ShipmentDetail = () => {
     const { id } = useParams();
@@ -173,6 +424,10 @@ const ShipmentDetail = () => {
     const [mapBounds, setMapBounds] = useState(null);
     const [map, setMap] = useState(null);
     const [useMetric, setUseMetric] = useState(false);
+    const [shipment, setShipment] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [trackingRecords, setTrackingRecords] = useState([]);
 
     const mapStyles = [
         {
@@ -202,220 +457,96 @@ const ShipmentDetail = () => {
     // Get the previous path from location state or default to dashboard
     const previousPath = location.state?.from || '/dashboard';
 
-    // Mock data generation for a single shipment
-    const shipment = React.useMemo(() => {
-        const mockData = {
-            id: id,
-            status: 'Awaiting Shipment',
-            date: new Date().toLocaleString(),
-            shipmentInfo: {
-                shipmentType: 'Courier',
-                shipmentDate: new Date().toISOString().split('T')[0],
-                earliestPickup: '09:00',
-                latestPickup: '17:00',
-                earliestDelivery: '09:00',
-                latestDelivery: '17:00',
-                referenceNumber: 'REF-' + id.toUpperCase()
-            },
-            shipFrom: {
-                company: 'Tech Solutions Inc.',
-                contactName: 'John Smith',
-                contactPhone: '(555) 123-4567',
-                contactEmail: 'john@techsolutions.com',
-                address1: '55 Scollard St',
-                address2: '',
-                city: 'Toronto',
-                state: 'ON',
-                postalCode: 'M5R 0A1',
-                country: 'CA'
-            },
-            shipTo: {
-                company: 'Global Enterprises',
-                contactName: 'Emma Wilson',
-                contactPhone: '(555) 987-6543',
-                contactEmail: 'emma@globalent.com',
-                address1: '4 Plunkett Court',
-                address2: '',
-                city: 'Barrie',
-                state: 'ON',
-                postalCode: 'L4N 6M3',
-                country: 'CA'
-            },
-            packages: [
-                {
-                    description: 'Electronics Equipment',
-                    quantity: 2,
-                    weight: '15.5',
-                    dimensions: {
-                        length: '24',
-                        width: '18',
-                        height: '12'
-                    },
-                    freightClass: '60',
-                    value: 1200.00
-                },
-                {
-                    description: 'Office Supplies',
-                    quantity: 1,
-                    weight: '8.2',
-                    dimensions: {
-                        length: '15',
-                        width: '12',
-                        height: '10'
-                    },
-                    freightClass: '50',
-                    value: 450.00
-                },
-                {
-                    description: 'Industrial Parts',
-                    quantity: 3,
-                    weight: '25.0',
-                    dimensions: {
-                        length: '30',
-                        width: '20',
-                        height: '15'
-                    },
-                    freightClass: '70',
-                    value: 2800.00
-                },
-                {
-                    description: 'Safety Equipment',
-                    quantity: 1,
-                    weight: '12.5',
-                    dimensions: {
-                        length: '20',
-                        width: '15',
-                        height: '10'
-                    },
-                    freightClass: '55',
-                    value: 850.00
-                },
-                {
-                    description: 'Tools and Equipment',
-                    quantity: 2,
-                    weight: '18.0',
-                    dimensions: {
-                        length: '25',
-                        width: '15',
-                        height: '12'
-                    },
-                    freightClass: '65',
-                    value: 1500.00
-                },
-                {
-                    description: 'Spare Parts',
-                    quantity: 1,
-                    weight: '10.0',
-                    dimensions: {
-                        length: '18',
-                        width: '12',
-                        height: '8'
-                    },
-                    freightClass: '50',
-                    value: 600.00
-                },
-                {
-                    description: 'Maintenance Supplies',
-                    quantity: 2,
-                    weight: '14.5',
-                    dimensions: {
-                        length: '22',
-                        width: '16',
-                        height: '10'
-                    },
-                    freightClass: '55',
-                    value: 950.00
+    useEffect(() => {
+        const fetchShipment = async () => {
+            try {
+                setLoading(true);
+                // Query by shipmentId
+                const shipmentsRef = collection(db, 'shipments');
+                const q = query(shipmentsRef, where('shipmentId', '==', id));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const shipmentDoc = querySnapshot.docs[0];
+                    const shipmentData = { id: shipmentDoc.id, ...shipmentDoc.data() };
+
+                    // Fetch tracking data
+                    const trackingRef = collection(db, 'tracking');
+                    const trackingQuery = query(trackingRef, where('shipmentId', '==', id));
+                    const trackingSnapshot = await getDocs(trackingQuery);
+
+                    if (!trackingSnapshot.empty) {
+                        const trackingDoc = trackingSnapshot.docs[0];
+                        const trackingData = trackingDoc.data();
+
+                        // Process tracking events and sort by timestamp
+                        const processedEvents = trackingData.events
+                            .map(event => ({
+                                id: Math.random().toString(36).substr(2, 9),
+                                status: event.status,
+                                description: event.description,
+                                location: event.location,
+                                timestamp: event.timestamp?.toDate() || new Date(),
+                                color: getStatusColor(event.status),
+                                icon: getStatusIcon(event.status)
+                            }))
+                            .sort((a, b) => b.timestamp - a.timestamp);
+
+                        setTrackingRecords(processedEvents);
+
+                        // Update shipment data with tracking info
+                        shipmentData.tracking = {
+                            carrier: trackingData.carrier,
+                            trackingNumber: trackingData.trackingNumber,
+                            estimatedDeliveryDate: trackingData.estimatedDeliveryDate?.toDate(),
+                            status: trackingData.status,
+                            lastUpdated: trackingData.lastUpdated?.toDate()
+                        };
+                    }
+
+                    // Fetch rates from the subcollection
+                    const ratesRef = collection(db, 'shipments', shipmentDoc.id, 'rates');
+                    const ratesSnapshot = await getDocs(ratesRef);
+
+                    if (!ratesSnapshot.empty) {
+                        const rates = ratesSnapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }));
+                        shipmentData.rates = rates;
+                        shipmentData.selectedRate = rates[0];
+                    }
+
+                    // Fetch packages from the subcollection
+                    const packagesRef = collection(db, 'shipments', shipmentDoc.id, 'packages');
+                    const packagesSnapshot = await getDocs(packagesRef);
+
+                    if (!packagesSnapshot.empty) {
+                        const packages = packagesSnapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }));
+                        shipmentData.packages = packages;
+                    }
+
+                    console.log('Processed shipment data:', shipmentData);
+                    setShipment(shipmentData);
+                } else {
+                    setError('Shipment not found');
                 }
-            ],
-            rate: {
-                carrier: 'FedEx',
-                service: 'Express',
-                transitDays: 2,
-                deliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                freightCharges: 175.50,
-                fuelCharges: 25.30,
-                serviceCharges: 15.00,
-                totalCharges: 215.80,
-                currency: 'CAD',
-                guaranteed: true,
-                guaranteeCharge: 25.00
+            } catch (err) {
+                console.error('Error fetching shipment:', err);
+                setError('Error loading shipment details');
+                setTrackingRecords([]); // Ensure trackingRecords is initialized even on error
+            } finally {
+                setLoading(false);
             }
         };
 
-        return mockData;
+        if (id) {
+            fetchShipment();
+        }
     }, [id]);
-
-    // Add mock shipment history data
-    const shipmentHistory = React.useMemo(() => {
-        const now = new Date();
-        return [
-            {
-                id: 1,
-                status: 'Order Created',
-                location: 'Online System',
-                timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-                description: 'Shipment order created in the system',
-                icon: <ScheduleIcon />,
-                color: 'grey.500'
-            },
-            {
-                id: 2,
-                status: 'Pickup Scheduled',
-                location: 'Sender Location',
-                timestamp: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-                description: 'Pickup scheduled with carrier',
-                icon: <AccessTimeIcon />,
-                color: 'info.main'
-            },
-            {
-                id: 3,
-                status: 'Picked Up',
-                location: 'Sender Warehouse',
-                timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-                description: 'Package picked up by carrier',
-                icon: <LocalShipping />,
-                color: 'primary.main'
-            },
-            {
-                id: 4,
-                status: 'In Transit',
-                location: 'Distribution Center',
-                timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-                description: 'Package in transit to destination',
-                icon: <LocationOnIcon />,
-                color: 'secondary.main'
-            },
-            {
-                id: 5,
-                status: 'Out for Delivery',
-                location: 'Local Delivery Center',
-                timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-                description: 'Package out for final delivery',
-                icon: <LocalShipping />,
-                color: 'warning.main'
-            },
-            {
-                id: 6,
-                status: 'Delivered',
-                location: 'Recipient Address',
-                timestamp: new Date().toISOString(),
-                description: 'Package successfully delivered',
-                icon: <CheckCircleIcon />,
-                color: 'success.main'
-            }
-        ];
-    }, []);
-
-    const formatTimestamp = (timestamp) => {
-        const date = new Date(timestamp);
-        return date.toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
 
     useEffect(() => {
         const fetchMapsApiKey = async () => {
@@ -436,14 +567,16 @@ const ShipmentDetail = () => {
 
     useEffect(() => {
         const calculateRoute = async () => {
-            if (!shipment.shipFrom || !shipment.shipTo || !window.google || !window.google.maps || !isGoogleMapsLoaded) {
+            if (!shipment?.from || !shipment?.to || !window.google || !window.google.maps || !isGoogleMapsLoaded) {
+                console.log('Missing required data for route calculation');
                 return;
             }
 
             try {
                 const geocoder = new window.google.maps.Geocoder();
-                const fromAddress = `${shipment.shipFrom.address1}, ${shipment.shipFrom.city}, ${shipment.shipFrom.state} ${shipment.shipFrom.postalCode}`;
-                const toAddress = `${shipment.shipTo.address1}, ${shipment.shipTo.city}, ${shipment.shipTo.state} ${shipment.shipTo.postalCode}`;
+
+                const fromAddress = `${shipment.from.street}${shipment.from.street2 ? ', ' + shipment.from.street2 : ''}, ${shipment.from.city}, ${shipment.from.state} ${shipment.from.postalCode}`;
+                const toAddress = `${shipment.to.street}${shipment.to.street2 ? ', ' + shipment.to.street2 : ''}, ${shipment.to.city}, ${shipment.to.state} ${shipment.to.postalCode}`;
 
                 const [originResult, destinationResult] = await Promise.all([
                     new Promise((resolve, reject) => {
@@ -460,7 +593,6 @@ const ShipmentDetail = () => {
                     })
                 ]);
 
-                // Create bounds from origin and destination
                 const bounds = new window.google.maps.LatLngBounds();
                 bounds.extend(originResult.geometry.location);
                 bounds.extend(destinationResult.geometry.location);
@@ -470,8 +602,8 @@ const ShipmentDetail = () => {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Goog-Api-Key': 'AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw',
-                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps'
+                        'X-Goog-Api-Key': mapsApiKey,
+                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
                     },
                     body: JSON.stringify({
                         origin: {
@@ -493,13 +625,8 @@ const ShipmentDetail = () => {
                         travelMode: "DRIVE",
                         routingPreference: "TRAFFIC_AWARE",
                         computeAlternativeRoutes: false,
-                        routeModifiers: {
-                            avoidTolls: false,
-                            avoidHighways: false,
-                            avoidFerries: false
-                        },
                         languageCode: "en-US",
-                        units: "IMPERIAL"
+                        units: useMetric ? "METRIC" : "IMPERIAL"
                     })
                 });
 
@@ -508,56 +635,24 @@ const ShipmentDetail = () => {
                 }
 
                 const routeData = await response.json();
-
-                if (!routeData.routes || routeData.routes.length === 0) {
-                    throw new Error('No routes found');
-                }
-
                 const route = routeData.routes[0];
                 const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
-
-                // Create steps from the decoded path
-                const steps = [];
-                for (let i = 0; i < decodedPath.length - 1; i++) {
-                    const start = decodedPath[i];
-                    const end = decodedPath[i + 1];
-                    const distance = window.google.maps.geometry.spherical.computeDistanceBetween(start, end);
-                    const duration = Math.round(distance / 20); // Assuming average speed of 20 m/s
-
-                    steps.push({
-                        path: [start, end],
-                        start_location: start,
-                        end_location: end,
-                        travel_mode: "DRIVING",
-                        distance: { text: `${Math.round(distance / 1609.34)} mi`, value: distance },
-                        duration: { text: `${Math.round(duration / 60)} mins`, value: duration },
-                        instructions: `Continue on route`
-                    });
-                }
 
                 const directionsResult = {
                     routes: [{
                         legs: [{
-                            steps: steps,
-                            start_location: decodedPath[0],
-                            end_location: decodedPath[decodedPath.length - 1],
-                            distance: { text: `${Math.round(route.distanceMeters / 1609.34)} mi`, value: route.distanceMeters },
-                            duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 60)} mins`, value: parseInt(route.duration.replace('s', '')) },
-                            via_waypoints: []
+                            start_location: originResult.geometry.location,
+                            end_location: destinationResult.geometry.location,
+                            distance: { text: useMetric ? `${Math.round(route.distanceMeters / 1000)} km` : `${Math.round(route.distanceMeters / 1609.34)} mi`, value: route.distanceMeters },
+                            duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 60)} mins`, value: parseInt(route.duration.replace('s', '')) }
                         }],
-                        overview_path: decodedPath,
-                        warnings: [],
-                        bounds: bounds,
-                        copyrights: "Map data ©2024 Google",
-                        summary: "Fastest route",
-                        waypoint_order: []
+                        overview_path: decodedPath
                     }],
                     request: {
                         origin: originResult.geometry.location,
                         destination: destinationResult.geometry.location,
                         travelMode: "DRIVING"
-                    },
-                    status: "OK"
+                    }
                 };
 
                 setDirections(directionsResult);
@@ -568,7 +663,7 @@ const ShipmentDetail = () => {
         };
 
         calculateRoute();
-    }, [shipment.shipFrom, shipment.shipTo, isGoogleMapsLoaded]);
+    }, [shipment, isGoogleMapsLoaded, useMetric, mapsApiKey]);
 
     // Handle map load and bounds
     const handleMapLoad = React.useCallback((map) => {
@@ -616,14 +711,19 @@ const ShipmentDetail = () => {
     };
 
     const formatAddress = (address) => {
-        return `${address.address1}${address.address2 ? ', ' + address.address2 : ''}\n${address.city}, ${address.state} ${address.postalCode}\n${address.country}`;
+        if (!address) return 'N/A';
+        return `${address.street}${address.street2 ? ', ' + address.street2 : ''}\n${address.city}, ${address.state} ${address.postalCode}\n${address.country}`;
     };
 
     const formatPhone = (phone) => {
+        if (!phone) return 'N/A';
         return phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
     };
 
-    const displayedPackages = showAllPackages ? shipment.packages : shipment.packages.slice(0, 3);
+    // Update the displayedPackages variable to handle potential null values
+    const displayedPackages = shipment?.packages ?
+        (showAllPackages ? shipment.packages : shipment.packages.slice(0, 3)) :
+        [];
 
     // Add conversion function for distance
     const convertDistance = (distanceInMeters) => {
@@ -663,6 +763,42 @@ const ShipmentDetail = () => {
         }
     };
 
+    // Add a function to handle rate selection
+    const handleRateSelect = (rate) => {
+        if (shipment) {
+            setShipment({
+                ...shipment,
+                selectedRate: rate
+            });
+        }
+    };
+
+    // Add this helper function to safely get history
+    const getShipmentHistory = (shipment) => {
+        if (!shipment) return [];
+        return shipment.history || [];
+    };
+
+    if (loading) {
+        return <LoadingSkeleton />;
+    }
+
+    if (error) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                <Typography color="error">{error}</Typography>
+            </Box>
+        );
+    }
+
+    if (!shipment) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                <Typography>No shipment data available</Typography>
+            </Box>
+        );
+    }
+
     return (
         <LoadScript
             googleMapsApiKey={mapsApiKey}
@@ -673,848 +809,799 @@ const ShipmentDetail = () => {
                 setMapError('Failed to load Google Maps');
             }}
         >
-            <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-                <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                    {/* Breadcrumb Navigation and Action Buttons */}
-                    <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        {/* Breadcrumb */}
-                        <Box sx={{
-                            width: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                        }}>
-                            <IconButton
-                                onClick={() => navigate('/dashboard')}
-                                sx={{ p: 0.5 }}
-                            >
-                                <HomeIcon />
-                            </IconButton>
-                            <NavigateNextIcon />
-                            <Typography
-                                variant="body2"
-                                onClick={() => navigate('/shipments')}
-                                sx={{
-                                    cursor: 'pointer',
-                                    color: '#2196f3',
-                                    textDecoration: 'underline',
-                                    '&:hover': {
-                                        color: '#1976d2'
-                                    }
-                                }}
-                            >
-                                Shipments
-                            </Typography>
-                            <NavigateNextIcon />
-                            <Typography variant="body2">
-                                Shipment #{shipment?.id || 'Loading...'}
-                            </Typography>
-                        </Box>
-                        {/* Action Buttons */}
-                        <Box sx={{ display: 'flex', gap: 2 }}>
-                            <Button
-                                variant="outlined"
-                                startIcon={<DownloadIcon />}
-                                onClick={handleDownload}
-                                sx={{
-                                    color: '#000',
-                                    borderColor: '#000',
-                                    '&:hover': {
-                                        borderColor: '#000',
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                Export
-                            </Button>
-                            <Button
-                                variant="outlined"
-                                startIcon={<PrintIcon />}
-                                onClick={handlePrint}
-                                sx={{
-                                    color: '#000',
-                                    borderColor: '#000',
-                                    '&:hover': {
-                                        borderColor: '#000',
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                Print
-                            </Button>
-                        </Box>
-                    </Box>
-
-                    {/* Add id to the main content container */}
-                    <Box id="shipment-detail-content">
-                        {/* Shipment Information Section - Full Width */}
-                        <Paper sx={{ mb: 3 }}>
-                            <Box
-                                sx={{
-                                    p: 2,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    borderBottom: '1px solid #e0e0e0'
-                                }}
-                            >
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <ShippingIcon sx={{ color: '#000' }} />
-                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                        Shipment Information
-                                    </Typography>
-                                </Box>
-                                <IconButton onClick={() => toggleSection('shipment')}>
-                                    <ExpandMoreIcon
-                                        sx={{
-                                            transform: expandedSections.shipment ? 'rotate(180deg)' : 'none',
-                                            transition: 'transform 0.3s',
-                                            color: '#666'
-                                        }}
-                                    />
+            <ErrorBoundary>
+                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
+                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
+                        {/* Breadcrumb Navigation and Action Buttons */}
+                        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            {/* Breadcrumb */}
+                            <Box sx={{
+                                width: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 1
+                            }}>
+                                <IconButton
+                                    onClick={() => navigate('/dashboard')}
+                                    sx={{ p: 0.5 }}
+                                >
+                                    <HomeIcon />
                                 </IconButton>
+                                <NavigateNextIcon />
+                                <Typography
+                                    variant="body2"
+                                    onClick={() => navigate('/shipments')}
+                                    sx={{
+                                        cursor: 'pointer',
+                                        color: '#2196f3',
+                                        textDecoration: 'underline',
+                                        '&:hover': {
+                                            color: '#1976d2'
+                                        }
+                                    }}
+                                >
+                                    Shipments
+                                </Typography>
+                                <NavigateNextIcon />
+                                <Typography variant="body2">
+                                    Shipment #{shipment?.id || 'Loading...'}
+                                </Typography>
                             </Box>
-                            <Collapse in={expandedSections.shipment}>
-                                <Box sx={{ p: 3 }}>
-                                    <Grid container spacing={2}>
-                                        {/* Left Column - Basic Info */}
-                                        <Grid item xs={12} md={4}>
-                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Shipment Type
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.shipmentInfo.shipmentType}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Reference Number
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.shipmentInfo.referenceNumber}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Shipment Date
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.shipmentInfo.shipmentDate}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        </Grid>
+                            {/* Action Buttons */}
+                            <Box sx={{ display: 'flex', gap: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<DownloadIcon />}
+                                    onClick={handleDownload}
+                                    sx={{
+                                        color: '#000',
+                                        borderColor: '#000',
+                                        '&:hover': {
+                                            borderColor: '#000',
+                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                        }
+                                    }}
+                                >
+                                    Export
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<PrintIcon />}
+                                    onClick={handlePrint}
+                                    sx={{
+                                        color: '#000',
+                                        borderColor: '#000',
+                                        '&:hover': {
+                                            borderColor: '#000',
+                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                        }
+                                    }}
+                                >
+                                    Print
+                                </Button>
+                            </Box>
+                        </Box>
 
-                                        {/* Middle Column - Timing Info */}
-                                        <Grid item xs={12} md={4}>
-                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Pickup Window
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.shipmentInfo.earliestPickup} - {shipment.shipmentInfo.latestPickup}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Dropoff Window
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.shipmentInfo.earliestDelivery} - {shipment.shipmentInfo.latestDelivery}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        </Grid>
-
-                                        {/* Right Column - Status & Tracking */}
-                                        <Grid item xs={12} md={4}>
-                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Status
-                                                    </Typography>
-                                                    <Chip
-                                                        label={shipment.status}
-                                                        color={
-                                                            shipment.status === 'Delivered' ? 'success' :
-                                                                shipment.status === 'In Transit' ? 'primary' :
-                                                                    shipment.status === 'Awaiting Shipment' ? 'info' : 'default'
-                                                        }
-                                                        size="small"
-                                                        sx={{
-                                                            mt: 0.5,
-                                                            '& .MuiChip-label': {
-                                                                fontWeight: 500
-                                                            }
-                                                        }}
-                                                    />
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Carrier
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.rate.carrier}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Tracking Number
-                                                    </Typography>
-                                                    <Typography
-                                                        variant="body1"
-                                                        component={Link}
-                                                        to={`/tracking/${shipment.id}`}
-                                                        sx={{
-                                                            color: '#2196f3',
-                                                            textDecoration: 'none',
-                                                            '&:hover': {
-                                                                textDecoration: 'underline'
-                                                            }
-                                                        }}
-                                                    >
-                                                        {shipment.id}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        </Grid>
-                                    </Grid>
+                        {/* Add id to the main content container */}
+                        <Box id="shipment-detail-content">
+                            {/* Shipment Information Section - Full Width */}
+                            <Paper sx={{ mb: 3 }}>
+                                <Box
+                                    sx={{
+                                        p: 2,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        borderBottom: '1px solid #e0e0e0'
+                                    }}
+                                >
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <ShippingIcon sx={{ color: '#000' }} />
+                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                            Shipment Information
+                                        </Typography>
+                                    </Box>
+                                    <IconButton onClick={() => toggleSection('shipment')}>
+                                        <ExpandMoreIcon
+                                            sx={{
+                                                transform: expandedSections.shipment ? 'rotate(180deg)' : 'none',
+                                                transition: 'transform 0.3s',
+                                                color: '#666'
+                                            }}
+                                        />
+                                    </IconButton>
                                 </Box>
-                            </Collapse>
-                        </Paper>
-
-                        {/* Main Content Grid - Two Columns */}
-                        <Grid container spacing={3}>
-                            {/* Left Column - Shipping Locations */}
-                            <Grid item xs={12} md={8}>
-                                {/* Shipping Locations Section */}
-                                <Paper sx={{ mb: 3 }}>
-                                    <Box
-                                        sx={{
-                                            p: 2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            borderBottom: '1px solid #e0e0e0'
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <LocationIcon sx={{ color: '#000' }} />
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                Shipping Locations
-                                            </Typography>
-                                        </Box>
-                                        <IconButton onClick={() => toggleSection('locations')}>
-                                            <ExpandMoreIcon
-                                                sx={{
-                                                    transform: expandedSections.locations ? 'rotate(180deg)' : 'none',
-                                                    transition: 'transform 0.3s',
-                                                    color: '#666'
-                                                }}
-                                            />
-                                        </IconButton>
-                                    </Box>
-                                    <Collapse in={expandedSections.locations}>
-                                        <Box sx={{ p: 3 }}>
-                                            <Grid container spacing={3}>
-                                                {/* Ship From */}
-                                                <Grid item xs={12} md={6}>
-                                                    <Box>
-                                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                                            Ship From
-                                                        </Typography>
-                                                        {isGoogleMapsLoaded ? (
-                                                            <SimpleMap address={shipment.shipFrom} title="Location Map" />
-                                                        ) : (
-                                                            <Box sx={{
-                                                                height: '200px',
-                                                                borderRadius: '12px',
-                                                                bgcolor: '#f5f5f5',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}>
-                                                                <Typography color="text.secondary">Loading map...</Typography>
-                                                            </Box>
-                                                        )}
-                                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                                                                    Company Details
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                                    <BusinessIcon sx={{ color: '#000' }} />
-                                                                    <Typography variant="body1">{shipment.shipFrom.company}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                                    <PhoneIcon sx={{ color: '#000' }} />
-                                                                    <Typography variant="body1">{formatPhone(shipment.shipFrom.contactPhone)}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <EmailIcon sx={{ color: '#000' }} />
-                                                                    <Typography variant="body1">{shipment.shipFrom.contactEmail}</Typography>
-                                                                </Box>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                                                                    Address
-                                                                </Typography>
-                                                                <Typography variant="body1" style={{ whiteSpace: 'pre-line' }}>
-                                                                    {formatAddress(shipment.shipFrom)}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </Box>
-                                                </Grid>
-
-                                                {/* Ship To */}
-                                                <Grid item xs={12} md={6}>
-                                                    <Box>
-                                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                                            Ship To
-                                                        </Typography>
-                                                        {isGoogleMapsLoaded ? (
-                                                            <SimpleMap address={shipment.shipTo} title="Location Map" />
-                                                        ) : (
-                                                            <Box sx={{
-                                                                height: '200px',
-                                                                borderRadius: '12px',
-                                                                bgcolor: '#f5f5f5',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}>
-                                                                <Typography color="text.secondary">Loading map...</Typography>
-                                                            </Box>
-                                                        )}
-                                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                                                                    Company Details
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                                    <BusinessIcon sx={{ color: '#000' }} />
-                                                                    <Typography variant="body1">{shipment.shipTo.company}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                                    <PhoneIcon sx={{ color: '#000' }} />
-                                                                    <Typography variant="body1">{formatPhone(shipment.shipTo.contactPhone)}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <EmailIcon sx={{ color: '#000' }} />
-                                                                    <Typography variant="body1">{shipment.shipTo.contactEmail}</Typography>
-                                                                </Box>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                                                                    Address
-                                                                </Typography>
-                                                                <Typography variant="body1" style={{ whiteSpace: 'pre-line' }}>
-                                                                    {formatAddress(shipment.shipTo)}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </Box>
-                                                </Grid>
-                                            </Grid>
-                                        </Box>
-                                    </Collapse>
-                                </Paper>
-                            </Grid>
-
-                            {/* Right Column - Rate Details */}
-                            <Grid item xs={12} md={4}>
-                                {/* Rate Details Section */}
-                                <Paper sx={{ mb: 3 }}>
-                                    <Box
-                                        sx={{
-                                            p: 2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            borderBottom: '1px solid #e0e0e0'
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <MoneyIcon sx={{ color: '#000' }} />
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                Rate Details
-                                            </Typography>
-                                        </Box>
-                                        <IconButton onClick={() => toggleSection('rate')}>
-                                            <ExpandMoreIcon
-                                                sx={{
-                                                    transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
-                                                    transition: 'transform 0.3s',
-                                                    color: '#666'
-                                                }}
-                                            />
-                                        </IconButton>
-                                    </Box>
-                                    <Collapse in={expandedSections.rate}>
-                                        <Box sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Carrier & Service
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.rate.carrier} - {shipment.rate.service}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Transit Time
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.rate.transitDays} {shipment.rate.transitDays === 1 ? 'day' : 'days'}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Delivery Date
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        {shipment.rate.deliveryDate}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                            <Divider sx={{ my: 2 }} />
-                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Freight Charges
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        ${shipment.rate.freightCharges.toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Fuel Charges
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        ${shipment.rate.fuelCharges.toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        Service Charges
-                                                    </Typography>
-                                                    <Typography variant="body1">
-                                                        ${shipment.rate.serviceCharges.toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                                {shipment.rate.guaranteed && (
+                                <Collapse in={expandedSections.shipment}>
+                                    <Box sx={{ p: 3 }}>
+                                        <Grid container spacing={2}>
+                                            {/* Left Column - Basic Info */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{ display: 'grid', gap: 2 }}>
                                                     <Box>
                                                         <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Guarantee Charge
+                                                            Shipment Type
                                                         </Typography>
                                                         <Typography variant="body1">
-                                                            ${shipment.rate.guaranteeCharge.toFixed(2)}
+                                                            {shipment?.shipmentInfo?.shipmentType || 'N/A'}
                                                         </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Reference Number
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment?.shipmentInfo?.referenceNumber || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Shipment Date
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment?.shipmentInfo?.shipmentDate || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            </Grid>
+
+                                            {/* Middle Column - Timing Info */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Pickup Window
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment.shipmentInfo.earliestPickup} - {shipment.shipmentInfo.latestPickup}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Dropoff Window
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment.shipmentInfo.earliestDelivery} - {shipment.shipmentInfo.latestDelivery}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            </Grid>
+
+                                            {/* Right Column - Status & Tracking */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Status
+                                                        </Typography>
+                                                        <Chip
+                                                            label={shipment.status}
+                                                            color={
+                                                                shipment.status === 'Delivered' ? 'success' :
+                                                                    shipment.status === 'In Transit' ? 'primary' :
+                                                                        shipment.status === 'Awaiting Shipment' ? 'info' : 'default'
+                                                            }
+                                                            size="small"
+                                                            sx={{
+                                                                mt: 0.5,
+                                                                '& .MuiChip-label': {
+                                                                    fontWeight: 500
+                                                                }
+                                                            }}
+                                                        />
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Carrier
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment?.selectedRate?.carrier || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Tracking Number
+                                                        </Typography>
+                                                        <Typography
+                                                            variant="body1"
+                                                            component={Link}
+                                                            to={`/tracking/${shipment.id}`}
+                                                            sx={{
+                                                                color: '#2196f3',
+                                                                textDecoration: 'none',
+                                                                '&:hover': {
+                                                                    textDecoration: 'underline'
+                                                                }
+                                                            }}
+                                                        >
+                                                            {shipment.id}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            </Grid>
+                                        </Grid>
+                                    </Box>
+                                </Collapse>
+                            </Paper>
+
+                            {/* Main Content Grid - Two Columns */}
+                            <Grid container spacing={3}>
+                                {/* Left Column - Shipping Locations */}
+                                <Grid item xs={12} md={8}>
+                                    {/* Shipping Locations Section */}
+                                    <Paper sx={{ mb: 3 }}>
+                                        <Box
+                                            sx={{
+                                                p: 2,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                borderBottom: '1px solid #e0e0e0'
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <LocationIcon sx={{ color: '#000' }} />
+                                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                    Shipping Locations
+                                                </Typography>
+                                            </Box>
+                                            <IconButton onClick={() => toggleSection('locations')}>
+                                                <ExpandMoreIcon
+                                                    sx={{
+                                                        transform: expandedSections.locations ? 'rotate(180deg)' : 'none',
+                                                        transition: 'transform 0.3s',
+                                                        color: '#666'
+                                                    }}
+                                                />
+                                            </IconButton>
+                                        </Box>
+                                        <Collapse in={expandedSections.locations}>
+                                            <Box sx={{ p: 3 }}>
+                                                <Grid container spacing={3}>
+                                                    {/* Ship From Address */}
+                                                    <Grid item xs={12} md={6}>
+                                                        <Box sx={{ mb: 2 }}>
+                                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
+                                                                Ship From
+                                                            </Typography>
+                                                            <Paper sx={{ p: 2, borderRadius: '12px' }}>
+                                                                <Typography variant="body1" sx={{ mb: 1 }}>
+                                                                    {shipment?.shipFrom?.company || 'N/A'}
+                                                                </Typography>
+                                                                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
+                                                                    {formatAddress(shipment?.shipFrom)}
+                                                                </Typography>
+                                                                {isGoogleMapsLoaded && shipment?.shipFrom && (
+                                                                    <SimpleMap
+                                                                        address={shipment.shipFrom}
+                                                                        title="Ship From Location"
+                                                                    />
+                                                                )}
+                                                            </Paper>
+                                                        </Box>
+                                                    </Grid>
+
+                                                    {/* Ship To Address */}
+                                                    <Grid item xs={12} md={6}>
+                                                        <Box sx={{ mb: 2 }}>
+                                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
+                                                                Ship To
+                                                            </Typography>
+                                                            <Paper sx={{ p: 2, borderRadius: '12px' }}>
+                                                                <Typography variant="body1" sx={{ mb: 1 }}>
+                                                                    {shipment?.shipTo?.company || 'N/A'}
+                                                                </Typography>
+                                                                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
+                                                                    {formatAddress(shipment?.shipTo)}
+                                                                </Typography>
+                                                                {isGoogleMapsLoaded && shipment?.shipTo && (
+                                                                    <SimpleMap
+                                                                        address={shipment.shipTo}
+                                                                        title="Ship To Location"
+                                                                    />
+                                                                )}
+                                                            </Paper>
+                                                        </Box>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        </Collapse>
+                                    </Paper>
+                                </Grid>
+
+                                {/* Right Column - Rate Details */}
+                                <Grid item xs={12} md={4}>
+                                    {/* Rate Details Section */}
+                                    <Paper sx={{ mb: 3 }}>
+                                        <Box
+                                            sx={{
+                                                p: 2,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                borderBottom: '1px solid #e0e0e0'
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <MoneyIcon sx={{ color: '#000' }} />
+                                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                    Rate Details
+                                                </Typography>
+                                            </Box>
+                                            <IconButton onClick={() => toggleSection('rate')}>
+                                                <ExpandMoreIcon
+                                                    sx={{
+                                                        transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
+                                                        transition: 'transform 0.3s',
+                                                        color: '#666'
+                                                    }}
+                                                />
+                                            </IconButton>
+                                        </Box>
+                                        <Collapse in={expandedSections.rate}>
+                                            <Box sx={{ p: 3 }}>
+                                                {/* Rate Selection UI */}
+                                                {shipment?.rates && shipment.rates.length > 1 && (
+                                                    <Box sx={{ mb: 3 }}>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500, mb: 1 }}>
+                                                            Available Rates
+                                                        </Typography>
+                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                            {shipment.rates.map((rate) => (
+                                                                <Chip
+                                                                    key={rate.id}
+                                                                    label={`${rate.carrier} - ${rate.service} - $${rate.totalCharges.toFixed(2)}`}
+                                                                    onClick={() => handleRateSelect(rate)}
+                                                                    color={shipment.selectedRate?.id === rate.id ? 'primary' : 'default'}
+                                                                    variant={shipment.selectedRate?.id === rate.id ? 'filled' : 'outlined'}
+                                                                    sx={{ mb: 1 }}
+                                                                />
+                                                            ))}
+                                                        </Box>
+                                                    </Box>
+                                                )}
+
+                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Carrier & Service
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment?.selectedRate?.carrier || 'N/A'} - {shipment?.selectedRate?.service || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Transit Time
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment?.selectedRate?.transitDays || 0} {shipment?.selectedRate?.transitDays === 1 ? 'day' : 'days'}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Delivery Date
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            {shipment?.selectedRate?.deliveryDate || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                                <Divider sx={{ my: 2 }} />
+                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Freight Charges
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            ${(shipment?.selectedRate?.freightCharges || 0).toFixed(2)}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Fuel Charges
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            ${(shipment?.selectedRate?.fuelCharges || 0).toFixed(2)}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                            Service Charges
+                                                        </Typography>
+                                                        <Typography variant="body1">
+                                                            ${(shipment?.selectedRate?.serviceCharges || 0).toFixed(2)}
+                                                        </Typography>
+                                                    </Box>
+                                                    {shipment?.selectedRate?.guaranteed && (
+                                                        <Box>
+                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                Guarantee Charge
+                                                            </Typography>
+                                                            <Typography variant="body1">
+                                                                ${(shipment?.selectedRate?.guaranteeCharge || 0).toFixed(2)}
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                                <Divider sx={{ my: 2 }} />
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                                        Total Charges
+                                                    </Typography>
+                                                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#000' }}>
+                                                        ${(shipment?.selectedRate?.totalCharges || 0).toFixed(2)} {shipment?.selectedRate?.currency || 'USD'}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </Collapse>
+                                    </Paper>
+                                </Grid>
+
+                                {/* Full Width Sections */}
+                                {/* Packages Section */}
+                                <Grid item xs={12}>
+                                    <Paper sx={{ mb: 3 }}>
+                                        <Box
+                                            sx={{
+                                                p: 2,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                borderBottom: '1px solid #e0e0e0'
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <BoxIcon sx={{ color: '#000' }} />
+                                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                    Packages
+                                                </Typography>
+                                            </Box>
+                                            <IconButton onClick={() => toggleSection('packages')}>
+                                                <ExpandMoreIcon
+                                                    sx={{
+                                                        transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
+                                                        transition: 'transform 0.3s',
+                                                        color: '#666'
+                                                    }}
+                                                />
+                                            </IconButton>
+                                        </Box>
+                                        <Collapse in={expandedSections.packages}>
+                                            <Box sx={{ p: 3 }}>
+                                                <Grid container spacing={2}>
+                                                    {displayedPackages.map((pkg, index) => (
+                                                        <Grid item xs={12} sm={6} md={4} key={index}>
+                                                            <Paper
+                                                                elevation={0}
+                                                                sx={{
+                                                                    p: 2,
+                                                                    borderRadius: 2,
+                                                                    border: '1px solid #e0e0e0',
+                                                                    bgcolor: 'background.default'
+                                                                }}
+                                                            >
+                                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                                                                    Package {index + 1}
+                                                                </Typography>
+                                                                <Box sx={{ display: 'grid', gap: 1 }}>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Description
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.description}</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Quantity
+                                                                        </Typography>
+                                                                        <Typography variant="body1">
+                                                                            {pkg.quantity} {parseInt(pkg.quantity) > 1 ? 'pieces' : 'piece'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Weight
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.weight} lbs</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Dimensions
+                                                                        </Typography>
+                                                                        <Typography variant="body1">
+                                                                            {pkg.dimensions ?
+                                                                                `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
+                                                                                'N/A'
+                                                                            }
+                                                                        </Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Freight Class
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.freightClass}</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Declared Value
+                                                                        </Typography>
+                                                                        <Typography variant="body1">
+                                                                            ${(pkg.value || 0).toFixed(2)}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Box>
+                                                            </Paper>
+                                                        </Grid>
+                                                    ))}
+                                                </Grid>
+                                                {shipment && shipment.packages && shipment.packages.length > 3 && (
+                                                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                                                        <Button
+                                                            onClick={() => setShowAllPackages(!showAllPackages)}
+                                                            sx={{
+                                                                color: '#000',
+                                                                '&:hover': {
+                                                                    bgcolor: 'rgba(0, 0, 0, 0.04)'
+                                                                }
+                                                            }}
+                                                        >
+                                                            {showAllPackages ? 'Show Less' : `Show ${shipment.packages.length - 3} More Packages`}
+                                                        </Button>
                                                     </Box>
                                                 )}
                                             </Box>
-                                            <Divider sx={{ my: 2 }} />
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                    Total Charges
-                                                </Typography>
-                                                <Typography variant="h5" sx={{ fontWeight: 700, color: '#000' }}>
-                                                    ${shipment.rate.totalCharges.toFixed(2)} {shipment.rate.currency}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    </Collapse>
-                                </Paper>
-                            </Grid>
+                                        </Collapse>
+                                    </Paper>
 
-                            {/* Full Width Sections */}
-                            {/* Packages Section */}
-                            <Grid item xs={12}>
-                                <Paper sx={{ mb: 3 }}>
-                                    <Box
-                                        sx={{
-                                            p: 2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            borderBottom: '1px solid #e0e0e0'
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <BoxIcon sx={{ color: '#000' }} />
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                Packages
-                                            </Typography>
-                                        </Box>
-                                        <IconButton onClick={() => toggleSection('packages')}>
-                                            <ExpandMoreIcon
-                                                sx={{
-                                                    transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
-                                                    transition: 'transform 0.3s',
-                                                    color: '#666'
-                                                }}
-                                            />
-                                        </IconButton>
-                                    </Box>
-                                    <Collapse in={expandedSections.packages}>
-                                        <Box sx={{ p: 3 }}>
-                                            <Grid container spacing={2}>
-                                                {displayedPackages.map((pkg, index) => (
-                                                    <Grid item xs={12} sm={6} md={4} key={index}>
-                                                        <Paper
-                                                            elevation={0}
-                                                            sx={{
-                                                                p: 2,
-                                                                borderRadius: 2,
-                                                                border: '1px solid #e0e0e0',
-                                                                bgcolor: 'background.default'
-                                                            }}
-                                                        >
-                                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                                                Package {index + 1}
-                                                            </Typography>
-                                                            <Box sx={{ display: 'grid', gap: 1 }}>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Description
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.description}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Quantity
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {pkg.quantity} {parseInt(pkg.quantity) > 1 ? 'pieces' : 'piece'}
-                                                                    </Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Weight
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.weight} lbs</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Dimensions
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {pkg.dimensions.length}" × {pkg.dimensions.width}" × {pkg.dimensions.height}"
-                                                                    </Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Freight Class
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.freightClass}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Declared Value
-                                                                    </Typography>
-                                                                    <Typography variant="body1">${pkg.value.toFixed(2)}</Typography>
-                                                                </Box>
-                                                            </Box>
-                                                        </Paper>
-                                                    </Grid>
-                                                ))}
-                                            </Grid>
-                                            {shipment.packages.length > 3 && (
-                                                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                                                    <Button
-                                                        onClick={() => setShowAllPackages(!showAllPackages)}
-                                                        sx={{
-                                                            color: '#000',
-                                                            '&:hover': {
-                                                                bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                                            }
-                                                        }}
-                                                    >
-                                                        {showAllPackages ? 'Show Less' : `Show ${shipment.packages.length - 3} More Packages`}
-                                                    </Button>
+                                    {/* Route Map and Shipment History in one row */}
+                                    <Grid container spacing={3}>
+                                        {/* Route Map Section - Left Column */}
+                                        <Grid item xs={12} md={6}>
+                                            <Paper>
+                                                <Box
+                                                    sx={{
+                                                        p: 2,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        borderBottom: '1px solid #e0e0e0'
+                                                    }}
+                                                >
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <MapIcon sx={{ color: '#000' }} />
+                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                            Route Map
+                                                        </Typography>
+                                                    </Box>
                                                 </Box>
-                                            )}
-                                        </Box>
-                                    </Collapse>
-                                </Paper>
-
-                                {/* Route Map and Shipment History in one row */}
-                                <Grid container spacing={3}>
-                                    {/* Route Map Section - Left Column */}
-                                    <Grid item xs={12} md={6}>
-                                        <Paper>
-                                            <Box
-                                                sx={{
-                                                    p: 2,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    borderBottom: '1px solid #e0e0e0'
-                                                }}
-                                            >
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <MapIcon sx={{ color: '#000' }} />
-                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                        Route Map
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                            <Box sx={{ p: 3 }}>
-                                                {isGoogleMapsLoaded ? (
-                                                    <Box>
-                                                        <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
-                                                            <GoogleMap
-                                                                mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                                center={directions?.request?.origin || mapCenter}
-                                                                zoom={8}
-                                                                onLoad={handleMapLoad}
-                                                                options={mapOptions}
-                                                            >
-                                                                {directions && (
-                                                                    <DirectionsRenderer
-                                                                        directions={directions}
-                                                                        options={{
-                                                                            suppressMarkers: true,
-                                                                            preserveViewport: true,
-                                                                            polylineOptions: {
-                                                                                strokeColor: '#2196f3',
-                                                                                strokeWeight: 4
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                                {directions?.request?.origin && (
-                                                                    <Marker
-                                                                        position={directions.request.origin}
-                                                                        icon={{
-                                                                            path: window.google.maps.SymbolPath.CIRCLE,
-                                                                            scale: 12,
-                                                                            fillColor: '#2196f3',
-                                                                            fillOpacity: 1,
-                                                                            strokeColor: '#ffffff',
-                                                                            strokeWeight: 2
-                                                                        }}
-                                                                        label={{
-                                                                            text: 'A',
-                                                                            color: '#ffffff',
-                                                                            fontSize: '14px',
-                                                                            fontWeight: 'bold'
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                                {directions?.request?.destination && (
-                                                                    <Marker
-                                                                        position={directions.request.destination}
-                                                                        icon={{
-                                                                            path: window.google.maps.SymbolPath.CIRCLE,
-                                                                            scale: 12,
-                                                                            fillColor: '#f44336',
-                                                                            fillOpacity: 1,
-                                                                            strokeColor: '#ffffff',
-                                                                            strokeWeight: 2
-                                                                        }}
-                                                                        label={{
-                                                                            text: 'B',
-                                                                            color: '#ffffff',
-                                                                            fontSize: '14px',
-                                                                            fontWeight: 'bold'
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                            </GoogleMap>
-                                                            {/* Route Summary Overlay */}
-                                                            <Box sx={{
-                                                                position: 'absolute',
-                                                                top: 16,
-                                                                right: 16,
-                                                                background: 'rgba(255, 255, 255, 0.95)',
-                                                                backdropFilter: 'blur(10px)',
-                                                                borderRadius: '16px',
-                                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-                                                                p: 2,
-                                                                zIndex: 1,
-                                                                minWidth: '200px'
-                                                            }}>
+                                                <Box sx={{ p: 3 }}>
+                                                    {isGoogleMapsLoaded ? (
+                                                        <Box>
+                                                            <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
+                                                                <GoogleMap
+                                                                    mapContainerStyle={{ width: '100%', height: '100%' }}
+                                                                    center={directions?.request?.origin || mapCenter}
+                                                                    zoom={8}
+                                                                    onLoad={handleMapLoad}
+                                                                    options={mapOptions}
+                                                                >
+                                                                    {directions && (
+                                                                        <DirectionsRenderer
+                                                                            directions={directions}
+                                                                            options={{
+                                                                                suppressMarkers: true,
+                                                                                preserveViewport: true,
+                                                                                polylineOptions: {
+                                                                                    strokeColor: '#2196f3',
+                                                                                    strokeWeight: 4
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                    {directions?.request?.origin && (
+                                                                        <Marker
+                                                                            position={directions.request.origin}
+                                                                            icon={{
+                                                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                                                scale: 12,
+                                                                                fillColor: '#2196f3',
+                                                                                fillOpacity: 1,
+                                                                                strokeColor: '#ffffff',
+                                                                                strokeWeight: 2
+                                                                            }}
+                                                                            label={{
+                                                                                text: 'A',
+                                                                                color: '#ffffff',
+                                                                                fontSize: '14px',
+                                                                                fontWeight: 'bold'
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                    {directions?.request?.destination && (
+                                                                        <Marker
+                                                                            position={directions.request.destination}
+                                                                            icon={{
+                                                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                                                scale: 12,
+                                                                                fillColor: '#f44336',
+                                                                                fillOpacity: 1,
+                                                                                strokeColor: '#ffffff',
+                                                                                strokeWeight: 2
+                                                                            }}
+                                                                            label={{
+                                                                                text: 'B',
+                                                                                color: '#ffffff',
+                                                                                fontSize: '14px',
+                                                                                fontWeight: 'bold'
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                </GoogleMap>
+                                                                {/* Route Summary Overlay */}
                                                                 <Box sx={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: 2,
-                                                                    p: 1.5,
-                                                                    borderRadius: '12px',
-                                                                    background: 'rgba(25, 118, 210, 0.04)'
+                                                                    position: 'absolute',
+                                                                    top: 16,
+                                                                    right: 16,
+                                                                    background: 'rgba(255, 255, 255, 0.95)',
+                                                                    backdropFilter: 'blur(10px)',
+                                                                    borderRadius: '16px',
+                                                                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                                                                    p: 2,
+                                                                    zIndex: 1,
+                                                                    minWidth: '200px'
                                                                 }}>
-                                                                    <LocationIcon sx={{
-                                                                        color: 'primary.main',
-                                                                        fontSize: 28,
-                                                                        opacity: 0.9
-                                                                    }} />
-                                                                    <Box sx={{ flex: 1 }}>
-                                                                        <Typography variant="subtitle2" sx={{
-                                                                            color: 'text.secondary',
-                                                                            fontSize: '0.75rem',
-                                                                            fontWeight: 500,
-                                                                            textTransform: 'uppercase',
-                                                                            letterSpacing: '0.5px'
-                                                                        }}>
-                                                                            Total Distance
-                                                                        </Typography>
-                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                            <Typography variant="h6" sx={{
-                                                                                color: 'primary.main',
-                                                                                fontWeight: 700,
-                                                                                fontSize: '1.25rem',
-                                                                                lineHeight: 1.2
+                                                                    <Box sx={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 2,
+                                                                        p: 1.5,
+                                                                        borderRadius: '12px',
+                                                                        background: 'rgba(25, 118, 210, 0.04)'
+                                                                    }}>
+                                                                        <LocationIcon sx={{
+                                                                            color: 'primary.main',
+                                                                            fontSize: 28,
+                                                                            opacity: 0.9
+                                                                        }} />
+                                                                        <Box sx={{ flex: 1 }}>
+                                                                            <Typography variant="subtitle2" sx={{
+                                                                                color: 'text.secondary',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 500,
+                                                                                textTransform: 'uppercase',
+                                                                                letterSpacing: '0.5px'
                                                                             }}>
-                                                                                {directions?.routes[0]?.legs[0]?.distance?.value &&
-                                                                                    convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                                                Total Distance
                                                                             </Typography>
                                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                <Typography component="span" sx={{
-                                                                                    fontSize: '0.875rem',
-                                                                                    fontWeight: 500,
-                                                                                    color: 'text.secondary'
+                                                                                <Typography variant="h6" sx={{
+                                                                                    color: 'primary.main',
+                                                                                    fontWeight: 700,
+                                                                                    fontSize: '1.25rem',
+                                                                                    lineHeight: 1.2
                                                                                 }}>
-                                                                                    {useMetric ? 'km' : 'mi'}
+                                                                                    {directions?.routes[0]?.legs[0]?.distance?.value &&
+                                                                                        convertDistance(directions.routes[0].legs[0].distance.value)}
                                                                                 </Typography>
-                                                                                <Button
-                                                                                    onClick={() => setUseMetric(!useMetric)}
-                                                                                    sx={{
-                                                                                        minWidth: 'auto',
-                                                                                        p: 1,
-                                                                                        borderRadius: '8px',
-                                                                                        background: 'rgba(25, 118, 210, 0.08)',
-                                                                                        color: 'primary.main',
-                                                                                        '&:hover': {
-                                                                                            background: 'rgba(25, 118, 210, 0.12)'
-                                                                                        }
-                                                                                    }}
-                                                                                >
-                                                                                    <SwapHorizIcon sx={{ fontSize: 20 }} />
-                                                                                </Button>
+                                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                    <Typography component="span" sx={{
+                                                                                        fontSize: '0.875rem',
+                                                                                        fontWeight: 500,
+                                                                                        color: 'text.secondary'
+                                                                                    }}>
+                                                                                        {useMetric ? 'km' : 'mi'}
+                                                                                    </Typography>
+                                                                                    <Button
+                                                                                        onClick={() => setUseMetric(!useMetric)}
+                                                                                        sx={{
+                                                                                            minWidth: 'auto',
+                                                                                            p: 1,
+                                                                                            borderRadius: '8px',
+                                                                                            background: 'rgba(25, 118, 210, 0.08)',
+                                                                                            color: 'primary.main',
+                                                                                            '&:hover': {
+                                                                                                background: 'rgba(25, 118, 210, 0.12)'
+                                                                                            }
+                                                                                        }}
+                                                                                    >
+                                                                                        <SwapHorizIcon sx={{ fontSize: 20 }} />
+                                                                                    </Button>
+                                                                                </Box>
                                                                             </Box>
                                                                         </Box>
                                                                     </Box>
+
+                                                                    {/* Selected Rate Info */}
+                                                                    {shipment?.selectedRate && (
+                                                                        <Box sx={{
+                                                                            mt: 1,
+                                                                            p: 1.5,
+                                                                            borderRadius: '12px',
+                                                                            background: 'rgba(76, 175, 80, 0.04)',
+                                                                            border: '1px solid rgba(76, 175, 80, 0.1)'
+                                                                        }}>
+                                                                            <Typography variant="subtitle2" sx={{
+                                                                                color: 'text.secondary',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 500,
+                                                                                textTransform: 'uppercase',
+                                                                                letterSpacing: '0.5px',
+                                                                                mb: 0.5
+                                                                            }}>
+                                                                                Selected Rate
+                                                                            </Typography>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                                                {shipment.selectedRate.carrier} - {shipment.selectedRate.service}
+                                                                            </Typography>
+                                                                            <Typography variant="body2" color="text.secondary">
+                                                                                Transit: {shipment.selectedRate.transitDays} {shipment.selectedRate.transitDays === 1 ? 'day' : 'days'}
+                                                                            </Typography>
+                                                                            <Typography variant="body2" color="text.secondary">
+                                                                                Delivery: {shipment.selectedRate.deliveryDate}
+                                                                            </Typography>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.5 }}>
+                                                                                ${shipment.selectedRate.totalCharges.toFixed(2)} {shipment.selectedRate.currency}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    )}
                                                                 </Box>
                                                             </Box>
                                                         </Box>
-                                                    </Box>
-                                                ) : (
-                                                    <Box sx={{
-                                                        height: '600px',
-                                                        borderRadius: '12px',
-                                                        bgcolor: '#f5f5f5',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center'
-                                                    }}>
-                                                        <Typography color="text.secondary">Loading map...</Typography>
-                                                    </Box>
-                                                )}
-                                            </Box>
-                                        </Paper>
-                                    </Grid>
+                                                    ) : (
+                                                        <Box sx={{
+                                                            height: '600px',
+                                                            borderRadius: '12px',
+                                                            bgcolor: '#f5f5f5',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <Typography color="text.secondary">Loading map...</Typography>
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
 
-                                    {/* Shipment History Section - Right Column */}
-                                    <Grid item xs={12} md={6}>
-                                        <Paper sx={{ height: '100%' }} elevation={1}>
-                                            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                                                <Typography variant="h6" component="h2">
-                                                    Shipment History
-                                                </Typography>
-                                            </Box>
-                                            <Box sx={{
-                                                p: 2,
-                                                height: '600px',
-                                                overflowY: 'auto',
-                                                '&::-webkit-scrollbar': {
-                                                    width: '8px',
-                                                },
-                                                '&::-webkit-scrollbar-track': {
-                                                    background: '#f1f1f1',
-                                                    borderRadius: '4px',
-                                                },
-                                                '&::-webkit-scrollbar-thumb': {
-                                                    background: '#888',
-                                                    borderRadius: '4px',
-                                                    '&:hover': {
-                                                        background: '#555',
+                                        {/* Shipment History Section - Right Column */}
+                                        <Grid item xs={12} md={6}>
+                                            <Paper sx={{ height: '100%' }} elevation={1}>
+                                                <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                                                    <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <AccessTimeIcon />
+                                                        Shipment History
+                                                    </Typography>
+                                                </Box>
+                                                <Box sx={{
+                                                    p: 2,
+                                                    height: '600px',
+                                                    overflowY: 'auto',
+                                                    '&::-webkit-scrollbar': {
+                                                        width: '8px',
                                                     },
-                                                },
-                                            }}>
-                                                <Timeline
-                                                    position="right"
-                                                    sx={{
-                                                        '& .MuiTimelineItem-root': {
-                                                            minHeight: '80px',
-                                                            '&:last-child': {
-                                                                minHeight: 'auto',
-                                                            },
-                                                            pl: 0,
-                                                            '&::before': {
-                                                                display: 'none'
-                                                            }
+                                                    '&::-webkit-scrollbar-track': {
+                                                        background: '#f1f1f1',
+                                                        borderRadius: '4px',
+                                                    },
+                                                    '&::-webkit-scrollbar-thumb': {
+                                                        background: '#888',
+                                                        borderRadius: '4px',
+                                                        '&:hover': {
+                                                            background: '#555',
                                                         },
-                                                        '& .MuiTimelineContent-root': {
-                                                            py: 1,
-                                                            textAlign: 'left',
-                                                            pl: 2,
-                                                        },
-                                                        '& .MuiTimelineDot-root': {
-                                                            p: 1,
-                                                            boxShadow: 'none',
-                                                        },
-                                                        '& .MuiTimelineConnector-root': {
-                                                            backgroundColor: '#e0e0e0',
-                                                        },
-                                                        '& .MuiTimelineSeparator-root': {
-                                                            marginLeft: 0,
-                                                            paddingLeft: 0,
-                                                        },
-                                                        pl: 0,
-                                                    }}
-                                                >
-                                                    {shipmentHistory.map((event) => (
-                                                        <TimelineItem key={event.id}>
-                                                            <TimelineSeparator>
-                                                                <TimelineDot sx={{ bgcolor: event.color }}>
-                                                                    {event.icon}
-                                                                </TimelineDot>
-                                                                <TimelineConnector />
-                                                            </TimelineSeparator>
-                                                            <TimelineContent>
-                                                                <Typography variant="subtitle1" component="span" sx={{ fontWeight: 600 }}>
-                                                                    {event.status}
-                                                                </Typography>
-                                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                                    {event.location}
-                                                                </Typography>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                                                                    {formatTimestamp(event.timestamp)}
-                                                                </Typography>
-                                                                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
-                                                                    {event.description}
-                                                                </Typography>
-                                                            </TimelineContent>
-                                                        </TimelineItem>
-                                                    ))}
-                                                </Timeline>
-                                            </Box>
-                                        </Paper>
+                                                    },
+                                                }}>
+                                                    <ShipmentTimeline events={trackingRecords} />
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
                                     </Grid>
                                 </Grid>
                             </Grid>
-                        </Grid>
+                        </Box>
                     </Box>
                 </Box>
-            </Box>
-
-            {/* Add print styles */}
+            </ErrorBoundary>
             <style>
                 {`
                     @media print {
@@ -1525,10 +1612,12 @@ const ShipmentDetail = () => {
                         body {
                             -webkit-print-color-adjust: exact;
                             print-color-adjust: exact;
+                            color-adjust: exact;
                         }
                         .MuiPaper-root {
                             box-shadow: none !important;
                             border: 1px solid #e0e0e0 !important;
+                            break-inside: avoid !important;
                         }
                         .MuiCollapse-root {
                             height: auto !important;
@@ -1536,7 +1625,7 @@ const ShipmentDetail = () => {
                         .MuiIconButton-root {
                             display: none !important;
                         }
-                        .MuiButton-root {
+                        .MuiButton-root:not(.print-visible) {
                             display: none !important;
                         }
                         .MuiChip-root {
@@ -1562,21 +1651,66 @@ const ShipmentDetail = () => {
                             width: 100% !important;
                             max-width: 100% !important;
                             flex-basis: 100% !important;
+                            page-break-inside: avoid !important;
                         }
                         .MuiBox-root {
-                            break-inside: avoid;
+                            break-inside: avoid !important;
                         }
-                        .MuiPaper-root {
-                            break-inside: avoid;
+                        .MuiTimelineItem-root {
+                            break-inside: avoid !important;
                         }
-                        .MuiGrid-root {
-                            break-inside: avoid;
+                        .google-map {
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                        }
+                        .no-print {
+                            display: none !important;
+                        }
+                        .print-only {
+                            display: block !important;
+                        }
+                        @supports (-webkit-appearance:none) {
+                            .MuiTimelineDot-root {
+                                print-color-adjust: exact;
+                                -webkit-print-color-adjust: exact;
+                            }
                         }
                     }
                 `}
             </style>
         </LoadScript>
     );
+};
+
+// Add helper functions at the end of the file, before the export
+const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+        case 'delivered':
+            return '#4caf50';  // Green
+        case 'out_for_delivery':
+            return '#ff9800';  // Orange
+        case 'in_transit':
+            return '#2196f3';  // Blue
+        case 'picked_up':
+            return '#9c27b0';  // Purple
+        default:
+            return '#9e9e9e';  // Grey
+    }
+};
+
+const getStatusIcon = (status) => {
+    switch (status?.toLowerCase()) {
+        case 'delivered':
+            return <CheckCircleIcon />;
+        case 'out_for_delivery':
+            return <LocalShipping />;
+        case 'in_transit':
+            return <SwapHorizIcon />;
+        case 'picked_up':
+            return <AssignmentIcon />;
+        default:
+            return <ScheduleIcon />;
+    }
 };
 
 export default ShipmentDetail; 

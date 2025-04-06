@@ -24,9 +24,41 @@ import {
     Email as EmailIcon,
     Map as MapIcon
 } from '@mui/icons-material';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
+
+// Function to save rate to Firebase
+const saveRateToFirebase = async (rate, shipmentId) => {
+    try {
+        const rateData = {
+            shipmentId,
+            quoteId: rate.id,
+            carrier: rate.carrier,
+            service: rate.service,
+            freightCharges: rate.freightCharges,
+            fuelCharges: rate.fuelCharges,
+            serviceCharges: rate.serviceCharges,
+            accessorialCharges: rate.accessorialCharges || 0,
+            guaranteeCharge: rate.guaranteeCharge || 0,
+            totalCharges: rate.rate,
+            currency: rate.currency,
+            transitDays: rate.transitDays,
+            deliveryDate: rate.deliveryDate,
+            guaranteed: rate.guaranteed,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        };
+
+        const shipmentRatesRef = collection(db, 'shipmentRates');
+        await addDoc(shipmentRatesRef, rateData);
+        console.log('Rate saved to Firebase');
+    } catch (error) {
+        console.error('Error saving rate to Firebase:', error);
+    }
+};
 
 const SimpleMap = ({ address }) => {
     const [position, setPosition] = useState(null);
@@ -72,7 +104,7 @@ const SimpleMap = ({ address }) => {
     );
 };
 
-const Review = ({ formData, selectedRate, onPrevious }) => {
+const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNext, onRateSelect }) => {
     const theme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
     const [rates, setRates] = useState([]);
@@ -101,6 +133,7 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
         packages: true,
         rate: true
     });
+    const [selectedRate, setSelectedRate] = useState(initialSelectedRate);
 
     useEffect(() => {
         const fetchMapsApiKey = async () => {
@@ -424,21 +457,21 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                             }
 
                             return {
-                                id: rate.carrierKey,
-                                carrier: rate.carrierName,
-                                service: rate.serviceMode,
-                                rate: parseFloat(rate.totalCharges),
-                                freightCharges: parseFloat(rate.freightCharges || 0),
-                                fuelCharges: parseFloat(rate.fuelCharges || 0),
-                                serviceCharges: parseFloat(rate.serviceCharges || 0),
-                                accessorialCharges: parseFloat(rate.accessorialCharges || 0),
-                                currency: rate.currency || 'USD',
-                                transitDays: parseInt(rate.transitTime) || 0,
-                                deliveryDate: rate.estimatedDeliveryDate?.split('T')[0] || '',
-                                serviceLevel: rate.serviceMode,
-                                guaranteed: rate.guaranteedService || false,
-                                guaranteeCharge: parseFloat(rate.guaranteeCharge || 0),
-                                express: (rate.serviceMode || '').toLowerCase().includes('express'),
+                                id: rate.QuoteId || rate.quoteId,
+                                carrier: rate.CarrierName || rate.carrierName,
+                                service: rate.ServiceMode || rate.serviceMode,
+                                rate: parseFloat(rate.TotalCharges || rate.totalCharges),
+                                freightCharges: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
+                                fuelCharges: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
+                                serviceCharges: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
+                                accessorialCharges: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
+                                currency: rate.Currency || rate.currency || 'USD',
+                                transitDays: parseInt(rate.TransitTime || rate.transitTime) || 0,
+                                deliveryDate: (rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate)?.split('T')[0] || '',
+                                serviceLevel: rate.ServiceMode || rate.serviceMode,
+                                guaranteed: rate.GuaranteedService || rate.guaranteedService || false,
+                                guaranteeCharge: parseFloat(rate.GuaranteeCharge || rate.guaranteeCharge || 0),
+                                express: (rate.ServiceMode || rate.serviceMode || '').toLowerCase().includes('express'),
                                 surcharges: [
                                     {
                                         name: 'Freight Charges',
@@ -469,7 +502,10 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
                             };
                         });
 
-                        console.log('Transformed Rates:', transformedRates);
+                        // Save the selected rate to Firebase
+                        // Function moved outside the component for better scope access
+
+                        console.log('Transformed rates:', transformedRates);
                         setRates(transformedRates);
                         setFilteredRates(transformedRates);
                     } catch (err) {
@@ -543,16 +579,47 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
     };
 
     const formatPhone = (phone) => {
+        if (!phone) return 'N/A';
         return phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (!selectedRate) {
             alert('Please select a rate before submitting');
             return;
         }
-        console.log('Final form data:', { ...formData, selectedRate });
+
+        try {
+            // Create the shipment document
+            const shipmentData = {
+                ...formData.shipmentInfo,
+                shipFrom: formData.shipFrom,
+                shipTo: formData.shipTo,
+                selectedRate: selectedRate,
+                status: 'pending',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+
+            // Add the shipment document
+            const shipmentRef = await addDoc(collection(db, 'shipments'), shipmentData);
+            const shipmentId = shipmentRef.id;
+
+            // Save packages to the subcollection
+            const packagesRef = collection(db, 'shipments', shipmentId, 'packages');
+            const packagePromises = formData.packages.map(pkg => addDoc(packagesRef, pkg));
+            await Promise.all(packagePromises);
+
+            // Save the selected rate
+            await saveRateToFirebase(selectedRate, shipmentId);
+
+            // Redirect to the shipment detail page
+            window.location.href = `/shipment/${shipmentId}`;
+        } catch (error) {
+            console.error('Error saving shipment:', error);
+            alert('Failed to save shipment. Please try again.');
+        }
     };
 
     const handleGuaranteeChange = (rate, checked) => {
@@ -579,6 +646,25 @@ const Review = ({ formData, selectedRate, onPrevious }) => {
         }
         return () => clearInterval(interval);
     }, [isLoading]);
+
+    const handleRateSelect = async (rate) => {
+        if (selectedRate?.id === rate.id) {
+            // If clicking the same rate, deselect it
+            setSelectedRate(null);
+            onRateSelect(null);
+        } else {
+            // Select the new rate and save to Firebase
+            setSelectedRate(rate);
+            onRateSelect(rate);
+
+            // Save the rate to Firebase if we have a shipment ID
+            if (formData.shipmentId) {
+                await saveRateToFirebase(rate, formData.shipmentId);
+            }
+
+            onNext(); // Automatically move to next step
+        }
+    };
 
     return (
         <Box sx={{ width: '100%', p: 0 }}>
