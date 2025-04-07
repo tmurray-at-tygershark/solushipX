@@ -46,7 +46,9 @@ import {
     Schedule as ScheduleIcon,
     Assignment as AssignmentIcon,
     Edit as EditIcon,
-    Delete as DeleteIcon
+    Delete as DeleteIcon,
+    Fullscreen as FullscreenIcon,
+    FullscreenExit as FullscreenExitIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google-maps/api';
@@ -231,8 +233,18 @@ const SimpleMap = React.memo(({ address, title }) => {
                         <Marker
                             position={position}
                             icon={{
-                                url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
-                                scaledSize: new window.google.maps.Size(30, 30)
+                                path: window.google.maps.SymbolPath.CIRCLE,
+                                scale: 12,
+                                fillColor: title.includes('From') ? '#2196f3' : '#f44336',
+                                fillOpacity: 1,
+                                strokeColor: '#ffffff',
+                                strokeWeight: 2
+                            }}
+                            label={{
+                                text: title.includes('From') ? 'A' : 'B',
+                                color: '#ffffff',
+                                fontSize: '14px',
+                                fontWeight: 'bold'
                             }}
                         />
                     </GoogleMap>
@@ -433,9 +445,91 @@ const ShipmentDetail = () => {
 
     const mapStyles = [
         {
-            featureType: 'all',
-            elementType: 'labels.text.fill',
-            stylers: [{ color: '#000000' }]
+            "elementType": "geometry",
+            "stylers": [{ "color": "#242f3e" }]
+        },
+        {
+            "elementType": "labels.text.stroke",
+            "stylers": [{ "color": "#242f3e" }]
+        },
+        {
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "administrative.locality",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "poi",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "poi.park",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#263c3f" }]
+        },
+        {
+            "featureType": "poi.park",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "road",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#38414e" }]
+        },
+        {
+            "featureType": "road",
+            "elementType": "geometry.stroke",
+            "stylers": [{ "color": "#212a37" }]
+        },
+        {
+            "featureType": "road",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "road.highway",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#746855" }]
+        },
+        {
+            "featureType": "road.highway",
+            "elementType": "geometry.stroke",
+            "stylers": [{ "color": "#1f2835" }]
+        },
+        {
+            "featureType": "road.highway",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "transit",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#2f3948" }]
+        },
+        {
+            "featureType": "transit.station",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "water",
+            "elementType": "geometry",
+            "stylers": [{ "color": "#17263c" }]
+        },
+        {
+            "featureType": "water",
+            "elementType": "labels.text.fill",
+            "stylers": [{ "color": "#ffffff" }]
+        },
+        {
+            "featureType": "water",
+            "elementType": "labels.text.stroke",
+            "stylers": [{ "color": "#17263c" }]
         }
     ];
 
@@ -446,7 +540,7 @@ const ShipmentDetail = () => {
         zoomControl: true,
         streetViewControl: false,
         mapTypeControl: false,
-        fullscreenControl: false,
+        fullscreenControl: true,
         maxZoom: 20,
         minZoom: 5,
         gestureHandling: 'greedy',
@@ -780,9 +874,20 @@ const ShipmentDetail = () => {
                                 text: `${durationInMinutes} mins`,
                                 value: durationInSeconds
                             },
-                            steps: [],
-                            traffic_speed_entry: [],
-                            via_waypoint: []
+                            steps: [{
+                                distance: {
+                                    text: useMetric ? `${Math.round(route.distanceMeters / 1000)} km` : `${Math.round(route.distanceMeters / 1609.34)} mi`,
+                                    value: route.distanceMeters
+                                },
+                                duration: {
+                                    text: `${durationInMinutes} mins`,
+                                    value: durationInSeconds
+                                },
+                                start_location: originResult.geometry.location,
+                                end_location: destinationResult.geometry.location,
+                                instructions: "Follow the route",
+                                path: decodedPath
+                            }]
                         }],
                         overview_path: decodedPath,
                         bounds: new window.google.maps.LatLngBounds(originResult.geometry.location, destinationResult.geometry.location),
@@ -1531,7 +1636,12 @@ const ShipmentDetail = () => {
                                                 <Box sx={{ p: 3 }}>
                                                     {isGoogleMapsLoaded ? (
                                                         <Box>
-                                                            <Box sx={{ height: '600px', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
+                                                            <Box sx={{
+                                                                height: '600px',
+                                                                borderRadius: '12px',
+                                                                overflow: 'hidden',
+                                                                position: 'relative'
+                                                            }}>
                                                                 <GoogleMap
                                                                     mapContainerStyle={{ width: '100%', height: '100%' }}
                                                                     center={directions?.request?.origin || mapCenter}
@@ -1546,9 +1656,13 @@ const ShipmentDetail = () => {
                                                                                 suppressMarkers: true,
                                                                                 preserveViewport: true,
                                                                                 polylineOptions: {
-                                                                                    strokeColor: '#2196f3',
-                                                                                    strokeWeight: 4
-                                                                                }
+                                                                                    strokeWeight: 10,
+                                                                                    strokeOpacity: 1.0,
+                                                                                    geodesic: true,
+                                                                                    clickable: false
+                                                                                },
+                                                                                routeIndex: 0,
+                                                                                draggable: false
                                                                             }}
                                                                         />
                                                                     )}
@@ -1595,7 +1709,7 @@ const ShipmentDetail = () => {
                                                                 <Box sx={{
                                                                     position: 'absolute',
                                                                     top: 16,
-                                                                    right: 16,
+                                                                    left: 16,
                                                                     background: 'rgba(255, 255, 255, 0.95)',
                                                                     backdropFilter: 'blur(10px)',
                                                                     borderRadius: '16px',
@@ -1664,40 +1778,6 @@ const ShipmentDetail = () => {
                                                                             </Box>
                                                                         </Box>
                                                                     </Box>
-
-                                                                    {/* Selected Rate Info */}
-                                                                    {shipment?.selectedRate && (
-                                                                        <Box sx={{
-                                                                            mt: 1,
-                                                                            p: 1.5,
-                                                                            borderRadius: '12px',
-                                                                            background: 'rgba(76, 175, 80, 0.04)',
-                                                                            border: '1px solid rgba(76, 175, 80, 0.1)'
-                                                                        }}>
-                                                                            <Typography variant="subtitle2" sx={{
-                                                                                color: 'text.secondary',
-                                                                                fontSize: '0.75rem',
-                                                                                fontWeight: 500,
-                                                                                textTransform: 'uppercase',
-                                                                                letterSpacing: '0.5px',
-                                                                                mb: 0.5
-                                                                            }}>
-                                                                                Selected Rate
-                                                                            </Typography>
-                                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                                                {shipment.selectedRate.carrier} - {shipment.selectedRate.service}
-                                                                            </Typography>
-                                                                            <Typography variant="body2" color="text.secondary">
-                                                                                Transit: {shipment.selectedRate.transitDays} {shipment.selectedRate.transitDays === 1 ? 'day' : 'days'}
-                                                                            </Typography>
-                                                                            <Typography variant="body2" color="text.secondary">
-                                                                                Delivery: {shipment.selectedRate.deliveryDate}
-                                                                            </Typography>
-                                                                            <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.5 }}>
-                                                                                ${shipment.selectedRate.totalCharges.toFixed(2)} {shipment.selectedRate.currency}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                    )}
                                                                 </Box>
                                                             </Box>
                                                         </Box>
