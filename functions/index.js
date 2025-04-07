@@ -559,24 +559,59 @@ exports.getShippingRates = functions.https.onRequest({
     cors: ['https://solushipx.web.app', 'http://localhost:3000']
 }, app);
 
-exports.getMapsApiKey = functions.https.onRequest({
-    region: 'us-central1',
-    memory: '128MiB',
-    timeoutSeconds: 10,
-    minInstances: 0,
-    maxInstances: 5,
-    cors: ['https://solushipx.web.app', 'http://localhost:3000']
-}, async (req, res) => {
-    try {
-        const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-        if (!apiKey) {
-            console.error('Google Maps API key not found in environment variables');
-            return res.status(500).json({ error: 'Google Maps API key not configured' });
-        }
-        res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
-        res.json({ key: apiKey });
-    } catch (error) {
-        console.error('Error serving Google Maps API key:', error);
-        res.status(500).json({ error: 'Internal server error' });
+exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  try {
+    // Fetch API key from Firestore
+    const admin = require('firebase-admin');
+    if (!admin.apps.length) {
+      admin.initializeApp();
     }
+    
+    const db = admin.firestore();
+    const keysRef = db.collection('keys');
+    const keysSnapshot = await keysRef.limit(1).get();
+    
+    if (keysSnapshot.empty) {
+      console.error('No documents found in keys collection');
+      res.status(500).json({
+        error: 'Google Maps API key not configured in Firestore'
+      });
+      return;
+    }
+    
+    const firstDoc = keysSnapshot.docs[0];
+    const apiKey = firstDoc.data().googleAPI;
+    
+    if (!apiKey) {
+      console.error('Google Maps API key is empty in Firestore');
+      res.status(500).json({
+        error: 'Google Maps API key is empty in Firestore'
+      });
+      return;
+    }
+    
+    console.log('Retrieved Google Maps API key from Firestore');
+    
+    // Return the API key with cache headers
+    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+    res.json({
+      key: apiKey
+    });
+  } catch (error) {
+    console.error('Error in getMapsApiKey:', error);
+    res.status(500).json({
+      error: error.message || 'Internal server error'
+    });
+  }
 });

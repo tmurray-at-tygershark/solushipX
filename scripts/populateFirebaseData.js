@@ -1,6 +1,6 @@
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, addDoc, Timestamp } = require('firebase/firestore');
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config();
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -15,25 +15,6 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
-// Helper function to convert all numbers to strings in an object
-function convertNumbersToStrings(obj) {
-  if (obj === null || typeof obj !== 'object') return obj;
-  
-  const newObj = Array.isArray(obj) ? [] : {};
-  
-  for (const key in obj) {
-    if (typeof obj[key] === 'number' && !['freightCharges', 'fuelCharges', 'serviceCharges', 'guaranteeCharge', 'totalCharges', 'value'].includes(key)) {
-      newObj[key] = String(obj[key]);
-    } else if (typeof obj[key] === 'object') {
-      newObj[key] = convertNumbersToStrings(obj[key]);
-    } else {
-      newObj[key] = obj[key];
-    }
-  }
-  
-  return newObj;
-}
 
 // Sample data for shipments
 const shipments = [
@@ -196,7 +177,7 @@ const shipmentRates = [
     shipmentId: 'SHIP001',
     carrier: 'FedEx',
     service: 'Freight Priority',
-    transitDays: '3',
+    transitDays: 3,
     deliveryDate: '2024-03-18',
     freightCharges: 850.00,
     fuelCharges: 127.50,
@@ -206,14 +187,14 @@ const shipmentRates = [
     currency: 'CAD',
     guaranteed: true,
     quoteId: 'QUOTE001',
-    createdAt: new Date('2024-03-15T10:00:00Z'),
-    updatedAt: new Date('2024-03-15T10:00:00Z')
+    createdAt: Timestamp.fromDate(new Date('2024-03-15T10:00:00')),
+    updatedAt: Timestamp.fromDate(new Date('2024-03-15T10:00:00'))
   },
   {
     shipmentId: 'SHIP002',
     carrier: 'UPS',
     service: 'Express Freight',
-    transitDays: '1',
+    transitDays: 1,
     deliveryDate: '2024-03-15',
     freightCharges: 625.00,
     fuelCharges: 93.75,
@@ -223,27 +204,29 @@ const shipmentRates = [
     currency: 'CAD',
     guaranteed: true,
     quoteId: 'QUOTE002',
-    createdAt: new Date('2024-03-14T08:30:00Z'),
-    updatedAt: new Date('2024-03-14T08:30:00Z')
+    createdAt: Timestamp.fromDate(new Date('2024-03-14T08:30:00')),
+    updatedAt: Timestamp.fromDate(new Date('2024-03-14T08:30:00'))
   }
 ];
 
 async function populateFirebase() {
   try {
-    // Convert numbers to strings in the data
-    const processedShipments = shipments.map(shipment => convertNumbersToStrings(shipment));
-    const processedRates = shipmentRates.map(rate => convertNumbersToStrings(rate));
-
     // Add shipments
     console.log('Adding shipments...');
-    for (const shipment of processedShipments) {
+    for (const shipment of shipments) {
       const docRef = await addDoc(collection(db, 'shipments'), shipment);
       console.log('Added shipment with ID:', docRef.id);
+      
+      // Update the shipmentId in the rates collection to match the Firestore document ID
+      const matchingRate = shipmentRates.find(rate => rate.shipmentId === shipment.shipmentID);
+      if (matchingRate) {
+        matchingRate.shipmentId = docRef.id;
+      }
     }
 
     // Add shipment rates
     console.log('Adding shipment rates...');
-    for (const rate of processedRates) {
+    for (const rate of shipmentRates) {
       const docRef = await addDoc(collection(db, 'shipmentRates'), rate);
       console.log('Added shipment rate with ID:', docRef.id);
     }

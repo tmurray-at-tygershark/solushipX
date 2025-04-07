@@ -55,6 +55,7 @@ import { Link } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { getMapsApiKey } from '../../utils/maps';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
@@ -414,7 +415,7 @@ const ShipmentDetail = () => {
         documents: true
     });
     const [showAllPackages, setShowAllPackages] = useState(false);
-    const [mapsApiKey, setMapsApiKey] = useState('AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw');
+    const [mapsApiKey, setMapsApiKey] = useState(null);
     const [directions, setDirections] = useState(null);
     const [mapError, setMapError] = useState(null);
     const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
@@ -551,14 +552,26 @@ const ShipmentDetail = () => {
     useEffect(() => {
         const fetchMapsApiKey = async () => {
             try {
-                const response = await fetch('https://getmapsapikey-xedyh5vw7a-uc.a.run.app');
-                const data = await response.json();
-                if (data.key) {
-                    setMapsApiKey(data.key);
+                setMapError(null);
+                // Fetch API key from Firestore
+                const keysRef = collection(db, 'keys');
+                const keysSnapshot = await getDocs(keysRef);
+
+                if (!keysSnapshot.empty) {
+                    const firstDoc = keysSnapshot.docs[0];
+                    const key = firstDoc.data().googleAPI;
+                    if (!key) {
+                        throw new Error('No API key found in Firestore');
+                    }
+                    setMapsApiKey(key);
+                    setIsGoogleMapsLoaded(true);
+                } else {
+                    throw new Error('API key document not found in Firestore');
                 }
             } catch (error) {
                 console.error('Error fetching Maps API key:', error);
-                setMapError('Failed to fetch Maps API key');
+                setMapError('Failed to load Google Maps. Please try refreshing the page.');
+                setIsGoogleMapsLoaded(false);
             }
         };
 
@@ -567,30 +580,101 @@ const ShipmentDetail = () => {
 
     useEffect(() => {
         const calculateRoute = async () => {
-            if (!shipment?.from || !shipment?.to || !window.google || !window.google.maps || !isGoogleMapsLoaded) {
-                console.log('Missing required data for route calculation');
+            if (!shipment?.shipFrom || !shipment?.shipTo || !window.google || !window.google.maps || !isGoogleMapsLoaded) {
+                console.log('Missing required data for route calculation:', {
+                    hasShipFrom: !!shipment?.shipFrom,
+                    hasShipTo: !!shipment?.shipTo,
+                    hasGoogleMaps: !!window.google?.maps,
+                    isGoogleMapsLoaded
+                });
                 return;
             }
 
             try {
-                const geocoder = new window.google.maps.Geocoder();
+                const formatAddress = (address) => {
+                    if (!address) return '';
 
-                const fromAddress = `${shipment.from.street}${shipment.from.street2 ? ', ' + shipment.from.street2 : ''}, ${shipment.from.city}, ${shipment.from.state} ${shipment.from.postalCode}`;
-                const toAddress = `${shipment.to.street}${shipment.to.street2 ? ', ' + shipment.to.street2 : ''}, ${shipment.to.city}, ${shipment.to.state} ${shipment.to.postalCode}`;
+                    const components = [];
+
+                    // Add company name if available
+                    if (address.company) {
+                        components.push(address.company);
+                    }
+
+                    // Add street address
+                    if (address.street) {
+                        components.push(address.street);
+                    }
+
+                    // Add street2 if available
+                    if (address.street2) {
+                        components.push(address.street2);
+                    }
+
+                    // Add city, state, and postal code
+                    const cityStateZip = [];
+                    if (address.city) cityStateZip.push(address.city);
+                    if (address.state) cityStateZip.push(address.state);
+                    if (address.postalCode) cityStateZip.push(address.postalCode);
+
+                    if (cityStateZip.length > 0) {
+                        components.push(cityStateZip.join(', '));
+                    }
+
+                    // Add country
+                    if (address.country) {
+                        components.push(address.country);
+                    }
+
+                    return components.join(', ');
+                };
+
+                const geocodeAddress = async (address, type) => {
+                    return new Promise((resolve, reject) => {
+                        const geocoder = new window.google.maps.Geocoder();
+                        const formattedAddress = formatAddress(address);
+
+                        console.log(`Attempting to geocode ${type} address:`, {
+                            address: formattedAddress,
+                            originalAddress: address
+                        });
+
+                        geocoder.geocode({
+                            address: formattedAddress,
+                            region: address.country?.toLowerCase() || 'us'
+                        }, (results, status) => {
+                            if (status === 'OK' && results && results.length > 0) {
+                                console.log(`${type} geocoding successful:`, {
+                                    address: results[0].formatted_address,
+                                    location: results[0].geometry.location.toJSON()
+                                });
+                                resolve(results[0]);
+                            } else {
+                                console.error(`${type} geocoding failed:`, {
+                                    status,
+                                    address: formattedAddress,
+                                    error: status === 'ZERO_RESULTS' ? 'No results found' : `Geocoding error: ${status}`
+                                });
+                                reject(new Error(`Geocoding failed for ${type}: ${status}`));
+                            }
+                        });
+                    });
+                };
+
+                const geocodeWithRetry = async (address, type, maxRetries = 3) => {
+                    for (let i = 0; i < maxRetries; i++) {
+                        try {
+                            return await geocodeAddress(address, type);
+                        } catch (error) {
+                            if (i === maxRetries - 1) throw error;
+                            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+                        }
+                    }
+                };
 
                 const [originResult, destinationResult] = await Promise.all([
-                    new Promise((resolve, reject) => {
-                        geocoder.geocode({ address: fromAddress }, (results, status) => {
-                            if (status === 'OK') resolve(results[0]);
-                            else reject(new Error(`Geocoding failed for origin: ${status}`));
-                        });
-                    }),
-                    new Promise((resolve, reject) => {
-                        geocoder.geocode({ address: toAddress }, (results, status) => {
-                            if (status === 'OK') resolve(results[0]);
-                            else reject(new Error(`Geocoding failed for destination: ${status}`));
-                        });
-                    })
+                    geocodeWithRetry(shipment.shipFrom, 'origin'),
+                    geocodeWithRetry(shipment.shipTo, 'destination')
                 ]);
 
                 const bounds = new window.google.maps.LatLngBounds();
