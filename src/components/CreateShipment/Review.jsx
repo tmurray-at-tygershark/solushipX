@@ -26,6 +26,7 @@ import {
 } from '@mui/icons-material';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { getMapsApiKey } from '../../utils/maps';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
@@ -122,7 +123,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
     const [isMapLoaded, setIsMapLoaded] = useState(false);
     const [distance, setDistance] = useState('');
     const [duration, setDuration] = useState('');
-    const [mapsApiKey, setMapsApiKey] = useState('AIzaSyCf3rYCEhFA2ed0VIhLfJxerIlQqsbC4Gw');
+    const [mapsApiKey, setMapsApiKey] = useState(null);
     const [mapError, setMapError] = useState(null);
     const [routeError, setRouteError] = useState(null);
     const [fromMarkerPosition, setFromMarkerPosition] = useState(null);
@@ -135,22 +136,18 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
     });
     const [selectedRate, setSelectedRate] = useState(initialSelectedRate);
 
-    useEffect(() => {
-        const fetchMapsApiKey = async () => {
-            try {
-                const response = await fetch('https://getmapsapikey-xedyh5vw7a-uc.a.run.app');
-                const data = await response.json();
-                if (data.key) {
-                    setMapsApiKey(data.key);
-                    console.log('Maps API Key fetched successfully');
-                } else {
-                    console.error('No API key in response');
-                }
-            } catch (error) {
-                console.error('Error fetching Maps API key:', error);
-            }
-        };
+    const fetchMapsApiKey = async () => {
+        try {
+            const key = await getMapsApiKey();
+            setMapsApiKey(key);
+            setIsMapLoaded(true);
+        } catch (error) {
+            console.error('Error fetching Maps API key:', error);
+            setMapError('Failed to load Google Maps API key');
+        }
+    };
 
+    useEffect(() => {
         fetchMapsApiKey();
     }, []);
 
