@@ -1284,93 +1284,86 @@ const ShipmentDetail = () => {
 
                             {/* Main Content Grid - Two Columns */}
                             <Grid container spacing={3}>
-                                {/* Left Column - Shipping Locations */}
-                                <Grid item xs={12} md={8}>
-                                    {/* Shipping Locations Section */}
-                                    <Paper sx={{ mb: 3 }}>
-                                        <Box
-                                            sx={{
-                                                p: 2,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                borderBottom: '1px solid #e0e0e0'
-                                            }}
-                                        >
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <LocationIcon sx={{ color: '#000' }} />
-                                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                    Shipping Locations
-                                                </Typography>
-                                            </Box>
-                                            <IconButton onClick={() => toggleSection('locations')}>
-                                                <ExpandMoreIcon
+                                {/* Maps Row */}
+                                <Grid item xs={12}>
+                                    <Grid container spacing={3}>
+                                        {/* Ship From Map */}
+                                        <Grid item xs={12} md={6}>
+                                            <Paper>
+                                                <Box
                                                     sx={{
-                                                        transform: expandedSections.locations ? 'rotate(180deg)' : 'none',
-                                                        transition: 'transform 0.3s',
-                                                        color: '#666'
+                                                        p: 2,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        borderBottom: '1px solid #e0e0e0'
                                                     }}
-                                                />
-                                            </IconButton>
-                                        </Box>
-                                        <Collapse in={expandedSections.locations}>
-                                            <Box sx={{ p: 3 }}>
-                                                <Grid container spacing={3}>
-                                                    {/* Ship From Address */}
-                                                    <Grid item xs={12} md={6}>
-                                                        <Box sx={{ mb: 2 }}>
-                                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                                                                Ship From
-                                                            </Typography>
-                                                            <Paper sx={{ p: 2, borderRadius: '12px' }}>
-                                                                <Typography variant="body1" sx={{ mb: 1 }}>
-                                                                    {shipment?.shipFrom?.company || 'N/A'}
-                                                                </Typography>
-                                                                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
-                                                                    {formatAddress(shipment?.shipFrom)}
-                                                                </Typography>
-                                                                {isGoogleMapsLoaded && shipment?.shipFrom && (
-                                                                    <SimpleMap
-                                                                        address={shipment.shipFrom}
-                                                                        title="Ship From Location"
-                                                                    />
-                                                                )}
-                                                            </Paper>
-                                                        </Box>
-                                                    </Grid>
+                                                >
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <LocationOnIcon sx={{ color: '#000' }} />
+                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                            Ship From Location
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                                <Box sx={{ p: 2 }}>
+                                                    <Typography variant="body1" sx={{ mb: 1 }}>
+                                                        {shipment?.shipFrom?.company || 'N/A'}
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
+                                                        {formatAddress(shipment?.shipFrom)}
+                                                    </Typography>
+                                                    {isGoogleMapsLoaded && shipment?.shipFrom && (
+                                                        <SimpleMap
+                                                            address={shipment.shipFrom}
+                                                            title="Ship From Location"
+                                                        />
+                                                    )}
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
 
-                                                    {/* Ship To Address */}
-                                                    <Grid item xs={12} md={6}>
-                                                        <Box sx={{ mb: 2 }}>
-                                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>
-                                                                Ship To
-                                                            </Typography>
-                                                            <Paper sx={{ p: 2, borderRadius: '12px' }}>
-                                                                <Typography variant="body1" sx={{ mb: 1 }}>
-                                                                    {shipment?.shipTo?.company || 'N/A'}
-                                                                </Typography>
-                                                                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
-                                                                    {formatAddress(shipment?.shipTo)}
-                                                                </Typography>
-                                                                {isGoogleMapsLoaded && shipment?.shipTo && (
-                                                                    <SimpleMap
-                                                                        address={shipment.shipTo}
-                                                                        title="Ship To Location"
-                                                                    />
-                                                                )}
-                                                            </Paper>
-                                                        </Box>
-                                                    </Grid>
-                                                </Grid>
-                                            </Box>
-                                        </Collapse>
-                                    </Paper>
+                                        {/* Ship To Map */}
+                                        <Grid item xs={12} md={6}>
+                                            <Paper>
+                                                <Box
+                                                    sx={{
+                                                        p: 2,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        borderBottom: '1px solid #e0e0e0'
+                                                    }}
+                                                >
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <LocationOnIcon sx={{ color: '#000' }} />
+                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                            Ship To Location
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                                <Box sx={{ p: 2 }}>
+                                                    <Typography variant="body1" sx={{ mb: 1 }}>
+                                                        {shipment?.shipTo?.company || 'N/A'}
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
+                                                        {formatAddress(shipment?.shipTo)}
+                                                    </Typography>
+                                                    {isGoogleMapsLoaded && shipment?.shipTo && (
+                                                        <SimpleMap
+                                                            address={shipment.shipTo}
+                                                            title="Ship To Location"
+                                                        />
+                                                    )}
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
+                                    </Grid>
                                 </Grid>
 
-                                {/* Right Column - Rate Details */}
-                                <Grid item xs={12} md={4}>
-                                    {/* Rate Details Section */}
-                                    <Paper sx={{ mb: 3 }}>
+                                {/* Rates Row */}
+                                <Grid item xs={12}>
+                                    <Paper>
                                         <Box
                                             sx={{
                                                 p: 2,
@@ -1398,108 +1391,231 @@ const ShipmentDetail = () => {
                                         </Box>
                                         <Collapse in={expandedSections.rate}>
                                             <Box sx={{ p: 3 }}>
-                                                {/* Rate Selection UI */}
-                                                {shipment?.rates && shipment.rates.length > 1 && (
-                                                    <Box sx={{ mb: 3 }}>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500, mb: 1 }}>
-                                                            Available Rates
-                                                        </Typography>
-                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                                            {shipment.rates.map((rate) => (
-                                                                <Chip
-                                                                    key={rate.id}
-                                                                    label={`${rate.carrier} - ${rate.service} - $${rate.totalCharges.toFixed(2)}`}
-                                                                    onClick={() => handleRateSelect(rate)}
-                                                                    color={shipment.selectedRate?.id === rate.id ? 'primary' : 'default'}
-                                                                    variant={shipment.selectedRate?.id === rate.id ? 'filled' : 'outlined'}
-                                                                    sx={{ mb: 1 }}
-                                                                />
-                                                            ))}
+                                                <Grid container spacing={3}>
+                                                    {/* Left Column - Service Details */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Box sx={{ display: 'grid', gap: 2 }}>
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                    Carrier & Service
+                                                                </Typography>
+                                                                <Typography variant="body1">
+                                                                    {shipment?.selectedRate?.carrier || 'N/A'} - {shipment?.selectedRate?.service || 'N/A'}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                    Transit Time
+                                                                </Typography>
+                                                                <Typography variant="body1">
+                                                                    {shipment?.selectedRate?.transitDays || 0} {shipment?.selectedRate?.transitDays === 1 ? 'day' : 'days'}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                    Delivery Date
+                                                                </Typography>
+                                                                <Typography variant="body1">
+                                                                    {shipment?.selectedRate?.deliveryDate || 'N/A'}
+                                                                </Typography>
+                                                            </Box>
                                                         </Box>
-                                                    </Box>
-                                                )}
+                                                    </Grid>
 
-                                                <Box sx={{ display: 'grid', gap: 2 }}>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Carrier & Service
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.selectedRate?.carrier || 'N/A'} - {shipment?.selectedRate?.service || 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Transit Time
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.selectedRate?.transitDays || 0} {shipment?.selectedRate?.transitDays === 1 ? 'day' : 'days'}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Delivery Date
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.selectedRate?.deliveryDate || 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                                <Divider sx={{ my: 2 }} />
-                                                <Box sx={{ display: 'grid', gap: 2 }}>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Freight Charges
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            ${(shipment?.selectedRate?.freightCharges || 0).toFixed(2)}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Fuel Charges
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            ${(shipment?.selectedRate?.fuelCharges || 0).toFixed(2)}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Service Charges
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            ${(shipment?.selectedRate?.serviceCharges || 0).toFixed(2)}
-                                                        </Typography>
-                                                    </Box>
-                                                    {shipment?.selectedRate?.guaranteed && (
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                Guarantee Charge
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                ${(shipment?.selectedRate?.guaranteeCharge || 0).toFixed(2)}
-                                                            </Typography>
+                                                    {/* Middle Column - Charges */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Box sx={{ display: 'grid', gap: 2 }}>
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                    Freight Charges
+                                                                </Typography>
+                                                                <Typography variant="body1">
+                                                                    ${(shipment?.selectedRate?.freightCharges || 0).toFixed(2)}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                    Fuel Charges
+                                                                </Typography>
+                                                                <Typography variant="body1">
+                                                                    ${(shipment?.selectedRate?.fuelCharges || 0).toFixed(2)}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                    Service Charges
+                                                                </Typography>
+                                                                <Typography variant="body1">
+                                                                    ${(shipment?.selectedRate?.serviceCharges || 0).toFixed(2)}
+                                                                </Typography>
+                                                            </Box>
+                                                            {shipment?.selectedRate?.guaranteed && (
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Guarantee Charge
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(shipment?.selectedRate?.guaranteeCharge || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
                                                         </Box>
-                                                    )}
-                                                </Box>
-                                                <Divider sx={{ my: 2 }} />
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                        Total Charges
-                                                    </Typography>
-                                                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#000' }}>
-                                                        ${(shipment?.selectedRate?.totalCharges || 0).toFixed(2)} {shipment?.selectedRate?.currency || 'USD'}
-                                                    </Typography>
-                                                </Box>
+                                                    </Grid>
+
+                                                    {/* Right Column - Total */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Paper
+                                                            elevation={0}
+                                                            sx={{
+                                                                p: 2,
+                                                                borderRadius: 2,
+                                                                border: '1px solid #e0e0e0',
+                                                                bgcolor: 'background.default',
+                                                                height: '100%',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                        >
+                                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
+                                                                Total Charges
+                                                            </Typography>
+                                                            <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
+                                                                ${(shipment?.selectedRate?.totalCharges || 0).toFixed(2)}
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                                                                {shipment?.selectedRate?.currency || 'USD'}
+                                                            </Typography>
+                                                        </Paper>
+                                                    </Grid>
+                                                </Grid>
                                             </Box>
                                         </Collapse>
                                     </Paper>
                                 </Grid>
+                            </Grid>
 
-                                {/* Full Width Sections */}
-                                {/* Packages Section */}
-                                <Grid item xs={12}>
-                                    <Paper sx={{ mb: 3 }}>
+                            {/* Packages Section */}
+                            <Grid item xs={12}>
+                                <Paper sx={{ mb: 3 }}>
+                                    <Box
+                                        sx={{
+                                            p: 2,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            borderBottom: '1px solid #e0e0e0'
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <BoxIcon sx={{ color: '#000' }} />
+                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                Packages
+                                            </Typography>
+                                        </Box>
+                                        <IconButton onClick={() => toggleSection('packages')}>
+                                            <ExpandMoreIcon
+                                                sx={{
+                                                    transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
+                                                    transition: 'transform 0.3s',
+                                                    color: '#666'
+                                                }}
+                                            />
+                                        </IconButton>
+                                    </Box>
+                                    <Collapse in={expandedSections.packages}>
+                                        <Box sx={{ p: 3 }}>
+                                            <Grid container spacing={2}>
+                                                {displayedPackages.map((pkg, index) => (
+                                                    <Grid item xs={12} sm={6} md={4} key={index}>
+                                                        <Paper
+                                                            elevation={0}
+                                                            sx={{
+                                                                p: 2,
+                                                                borderRadius: 2,
+                                                                border: '1px solid #e0e0e0',
+                                                                bgcolor: 'background.default'
+                                                            }}
+                                                        >
+                                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                                                                Package {index + 1}
+                                                            </Typography>
+                                                            <Box sx={{ display: 'grid', gap: 1 }}>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Description
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.description}</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Quantity
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        {pkg.quantity} {parseInt(pkg.quantity) > 1 ? 'pieces' : 'piece'}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Weight
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.weight} lbs</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Dimensions
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        {pkg.dimensions ?
+                                                                            `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
+                                                                            'N/A'
+                                                                        }
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Freight Class
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.freightClass}</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Declared Value
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(pkg.value || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        </Paper>
+                                                    </Grid>
+                                                ))}
+                                            </Grid>
+                                            {shipment && shipment.packages && shipment.packages.length > 3 && (
+                                                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                                                    <Button
+                                                        onClick={() => setShowAllPackages(!showAllPackages)}
+                                                        sx={{
+                                                            color: '#000',
+                                                            '&:hover': {
+                                                                bgcolor: 'rgba(0, 0, 0, 0.04)'
+                                                            }
+                                                        }}
+                                                    >
+                                                        {showAllPackages ? 'Show Less' : `Show ${shipment.packages.length - 3} More Packages`}
+                                                    </Button>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    </Collapse>
+                                </Paper>
+                            </Grid>
+
+                            {/* Route Map and Shipment History in one row */}
+                            <Grid container spacing={3}>
+                                {/* Route Map Section - Left Column */}
+                                <Grid item xs={12} md={6}>
+                                    <Paper>
                                         <Box
                                             sx={{
                                                 p: 2,
@@ -1510,326 +1626,207 @@ const ShipmentDetail = () => {
                                             }}
                                         >
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <BoxIcon sx={{ color: '#000' }} />
+                                                <MapIcon sx={{ color: '#000' }} />
                                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                    Packages
+                                                    Route Map
                                                 </Typography>
                                             </Box>
-                                            <IconButton onClick={() => toggleSection('packages')}>
-                                                <ExpandMoreIcon
-                                                    sx={{
-                                                        transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
-                                                        transition: 'transform 0.3s',
-                                                        color: '#666'
-                                                    }}
-                                                />
-                                            </IconButton>
                                         </Box>
-                                        <Collapse in={expandedSections.packages}>
-                                            <Box sx={{ p: 3 }}>
-                                                <Grid container spacing={2}>
-                                                    {displayedPackages.map((pkg, index) => (
-                                                        <Grid item xs={12} sm={6} md={4} key={index}>
-                                                            <Paper
-                                                                elevation={0}
-                                                                sx={{
-                                                                    p: 2,
-                                                                    borderRadius: 2,
-                                                                    border: '1px solid #e0e0e0',
-                                                                    bgcolor: 'background.default'
-                                                                }}
-                                                            >
-                                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                                                    Package {index + 1}
-                                                                </Typography>
-                                                                <Box sx={{ display: 'grid', gap: 1 }}>
-                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Description
-                                                                        </Typography>
-                                                                        <Typography variant="body1">{pkg.description}</Typography>
-                                                                    </Box>
-                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Quantity
-                                                                        </Typography>
-                                                                        <Typography variant="body1">
-                                                                            {pkg.quantity} {parseInt(pkg.quantity) > 1 ? 'pieces' : 'piece'}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Weight
-                                                                        </Typography>
-                                                                        <Typography variant="body1">{pkg.weight} lbs</Typography>
-                                                                    </Box>
-                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Dimensions
-                                                                        </Typography>
-                                                                        <Typography variant="body1">
-                                                                            {pkg.dimensions ?
-                                                                                `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
-                                                                                'N/A'
-                                                                            }
-                                                                        </Typography>
-                                                                    </Box>
-                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Freight Class
-                                                                        </Typography>
-                                                                        <Typography variant="body1">{pkg.freightClass}</Typography>
-                                                                    </Box>
-                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Declared Value
-                                                                        </Typography>
-                                                                        <Typography variant="body1">
-                                                                            ${(pkg.value || 0).toFixed(2)}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                </Box>
-                                                            </Paper>
-                                                        </Grid>
-                                                    ))}
-                                                </Grid>
-                                                {shipment && shipment.packages && shipment.packages.length > 3 && (
-                                                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                                                        <Button
-                                                            onClick={() => setShowAllPackages(!showAllPackages)}
-                                                            sx={{
-                                                                color: '#000',
-                                                                '&:hover': {
-                                                                    bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                                                }
-                                                            }}
+                                        <Box sx={{ p: 3 }}>
+                                            {isGoogleMapsLoaded ? (
+                                                <Box>
+                                                    <Box sx={{
+                                                        height: '600px',
+                                                        borderRadius: '12px',
+                                                        overflow: 'hidden',
+                                                        position: 'relative'
+                                                    }}>
+                                                        <GoogleMap
+                                                            mapContainerStyle={{ width: '100%', height: '100%' }}
+                                                            center={directions?.request?.origin || mapCenter}
+                                                            zoom={8}
+                                                            onLoad={handleMapLoad}
+                                                            options={mapOptions}
                                                         >
-                                                            {showAllPackages ? 'Show Less' : `Show ${shipment.packages.length - 3} More Packages`}
-                                                        </Button>
-                                                    </Box>
-                                                )}
-                                            </Box>
-                                        </Collapse>
-                                    </Paper>
-
-                                    {/* Route Map and Shipment History in one row */}
-                                    <Grid container spacing={3}>
-                                        {/* Route Map Section - Left Column */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper>
-                                                <Box
-                                                    sx={{
-                                                        p: 2,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        borderBottom: '1px solid #e0e0e0'
-                                                    }}
-                                                >
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <MapIcon sx={{ color: '#000' }} />
-                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                            Route Map
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                                <Box sx={{ p: 3 }}>
-                                                    {isGoogleMapsLoaded ? (
-                                                        <Box>
+                                                            {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
+                                                                <DirectionsRenderer
+                                                                    directions={directions}
+                                                                    options={{
+                                                                        suppressMarkers: true,
+                                                                        preserveViewport: true,
+                                                                        polylineOptions: {
+                                                                            strokeWeight: 10,
+                                                                            strokeOpacity: 1.0,
+                                                                            geodesic: true,
+                                                                            clickable: false
+                                                                        },
+                                                                        routeIndex: 0,
+                                                                        draggable: false
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {directions?.request?.origin && (
+                                                                <Marker
+                                                                    position={directions.request.origin}
+                                                                    icon={{
+                                                                        path: window.google.maps.SymbolPath.CIRCLE,
+                                                                        scale: 12,
+                                                                        fillColor: '#2196f3',
+                                                                        fillOpacity: 1,
+                                                                        strokeColor: '#ffffff',
+                                                                        strokeWeight: 2
+                                                                    }}
+                                                                    label={{
+                                                                        text: 'A',
+                                                                        color: '#ffffff',
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 'bold'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {directions?.request?.destination && (
+                                                                <Marker
+                                                                    position={directions.request.destination}
+                                                                    icon={{
+                                                                        path: window.google.maps.SymbolPath.CIRCLE,
+                                                                        scale: 12,
+                                                                        fillColor: '#f44336',
+                                                                        fillOpacity: 1,
+                                                                        strokeColor: '#ffffff',
+                                                                        strokeWeight: 2
+                                                                    }}
+                                                                    label={{
+                                                                        text: 'B',
+                                                                        color: '#ffffff',
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 'bold'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </GoogleMap>
+                                                        {/* Route Summary Overlay */}
+                                                        <Box sx={{
+                                                            position: 'absolute',
+                                                            top: 16,
+                                                            left: 16,
+                                                            background: 'rgba(255, 255, 255, 0.95)',
+                                                            backdropFilter: 'blur(10px)',
+                                                            borderRadius: '16px',
+                                                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                                                            p: 2,
+                                                            zIndex: 1,
+                                                            minWidth: '200px'
+                                                        }}>
                                                             <Box sx={{
-                                                                height: '600px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 2,
+                                                                p: 1.5,
                                                                 borderRadius: '12px',
-                                                                overflow: 'hidden',
-                                                                position: 'relative'
+                                                                background: 'rgba(25, 118, 210, 0.04)'
                                                             }}>
-                                                                <GoogleMap
-                                                                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                                    center={directions?.request?.origin || mapCenter}
-                                                                    zoom={8}
-                                                                    onLoad={handleMapLoad}
-                                                                    options={mapOptions}
-                                                                >
-                                                                    {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
-                                                                        <DirectionsRenderer
-                                                                            directions={directions}
-                                                                            options={{
-                                                                                suppressMarkers: true,
-                                                                                preserveViewport: true,
-                                                                                polylineOptions: {
-                                                                                    strokeWeight: 10,
-                                                                                    strokeOpacity: 1.0,
-                                                                                    geodesic: true,
-                                                                                    clickable: false
-                                                                                },
-                                                                                routeIndex: 0,
-                                                                                draggable: false
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                    {directions?.request?.origin && (
-                                                                        <Marker
-                                                                            position={directions.request.origin}
-                                                                            icon={{
-                                                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                                                scale: 12,
-                                                                                fillColor: '#2196f3',
-                                                                                fillOpacity: 1,
-                                                                                strokeColor: '#ffffff',
-                                                                                strokeWeight: 2
-                                                                            }}
-                                                                            label={{
-                                                                                text: 'A',
-                                                                                color: '#ffffff',
-                                                                                fontSize: '14px',
-                                                                                fontWeight: 'bold'
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                    {directions?.request?.destination && (
-                                                                        <Marker
-                                                                            position={directions.request.destination}
-                                                                            icon={{
-                                                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                                                scale: 12,
-                                                                                fillColor: '#f44336',
-                                                                                fillOpacity: 1,
-                                                                                strokeColor: '#ffffff',
-                                                                                strokeWeight: 2
-                                                                            }}
-                                                                            label={{
-                                                                                text: 'B',
-                                                                                color: '#ffffff',
-                                                                                fontSize: '14px',
-                                                                                fontWeight: 'bold'
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                </GoogleMap>
-                                                                {/* Route Summary Overlay */}
-                                                                <Box sx={{
-                                                                    position: 'absolute',
-                                                                    top: 16,
-                                                                    left: 16,
-                                                                    background: 'rgba(255, 255, 255, 0.95)',
-                                                                    backdropFilter: 'blur(10px)',
-                                                                    borderRadius: '16px',
-                                                                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-                                                                    p: 2,
-                                                                    zIndex: 1,
-                                                                    minWidth: '200px'
-                                                                }}>
-                                                                    <Box sx={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 2,
-                                                                        p: 1.5,
-                                                                        borderRadius: '12px',
-                                                                        background: 'rgba(25, 118, 210, 0.04)'
+                                                                <LocationIcon sx={{
+                                                                    color: 'primary.main',
+                                                                    fontSize: 28,
+                                                                    opacity: 0.9
+                                                                }} />
+                                                                <Box sx={{ flex: 1 }}>
+                                                                    <Typography variant="subtitle2" sx={{
+                                                                        color: 'text.secondary',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 500,
+                                                                        textTransform: 'uppercase',
+                                                                        letterSpacing: '0.5px'
                                                                     }}>
-                                                                        <LocationIcon sx={{
+                                                                        Total Distance
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <Typography variant="h6" sx={{
                                                                             color: 'primary.main',
-                                                                            fontSize: 28,
-                                                                            opacity: 0.9
-                                                                        }} />
-                                                                        <Box sx={{ flex: 1 }}>
-                                                                            <Typography variant="subtitle2" sx={{
-                                                                                color: 'text.secondary',
-                                                                                fontSize: '0.75rem',
+                                                                            fontWeight: 700,
+                                                                            fontSize: '1.25rem',
+                                                                            lineHeight: 1.2
+                                                                        }}>
+                                                                            {directions?.routes[0]?.legs[0]?.distance?.value &&
+                                                                                convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                                        </Typography>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                            <Typography component="span" sx={{
+                                                                                fontSize: '0.875rem',
                                                                                 fontWeight: 500,
-                                                                                textTransform: 'uppercase',
-                                                                                letterSpacing: '0.5px'
+                                                                                color: 'text.secondary'
                                                                             }}>
-                                                                                Total Distance
+                                                                                {useMetric ? 'km' : 'mi'}
                                                                             </Typography>
-                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                <Typography variant="h6" sx={{
+                                                                            <Button
+                                                                                onClick={() => setUseMetric(!useMetric)}
+                                                                                sx={{
+                                                                                    minWidth: 'auto',
+                                                                                    p: 1,
+                                                                                    borderRadius: '8px',
+                                                                                    background: 'rgba(25, 118, 210, 0.08)',
                                                                                     color: 'primary.main',
-                                                                                    fontWeight: 700,
-                                                                                    fontSize: '1.25rem',
-                                                                                    lineHeight: 1.2
-                                                                                }}>
-                                                                                    {directions?.routes[0]?.legs[0]?.distance?.value &&
-                                                                                        convertDistance(directions.routes[0].legs[0].distance.value)}
-                                                                                </Typography>
-                                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                    <Typography component="span" sx={{
-                                                                                        fontSize: '0.875rem',
-                                                                                        fontWeight: 500,
-                                                                                        color: 'text.secondary'
-                                                                                    }}>
-                                                                                        {useMetric ? 'km' : 'mi'}
-                                                                                    </Typography>
-                                                                                    <Button
-                                                                                        onClick={() => setUseMetric(!useMetric)}
-                                                                                        sx={{
-                                                                                            minWidth: 'auto',
-                                                                                            p: 1,
-                                                                                            borderRadius: '8px',
-                                                                                            background: 'rgba(25, 118, 210, 0.08)',
-                                                                                            color: 'primary.main',
-                                                                                            '&:hover': {
-                                                                                                background: 'rgba(25, 118, 210, 0.12)'
-                                                                                            }
-                                                                                        }}
-                                                                                    >
-                                                                                        <SwapHorizIcon sx={{ fontSize: 20 }} />
-                                                                                    </Button>
-                                                                                </Box>
-                                                                            </Box>
+                                                                                    '&:hover': {
+                                                                                        background: 'rgba(25, 118, 210, 0.12)'
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <SwapHorizIcon sx={{ fontSize: 20 }} />
+                                                                            </Button>
                                                                         </Box>
                                                                     </Box>
                                                                 </Box>
                                                             </Box>
                                                         </Box>
-                                                    ) : (
-                                                        <Box sx={{
-                                                            height: '600px',
-                                                            borderRadius: '12px',
-                                                            bgcolor: '#f5f5f5',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <Typography color="text.secondary">Loading map...</Typography>
-                                                        </Box>
-                                                    )}
+                                                    </Box>
                                                 </Box>
-                                            </Paper>
-                                        </Grid>
-
-                                        {/* Shipment History Section - Right Column */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper sx={{ height: '100%' }} elevation={1}>
-                                                <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                                                    <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <AccessTimeIcon />
-                                                        Shipment History
-                                                    </Typography>
-                                                </Box>
+                                            ) : (
                                                 <Box sx={{
-                                                    p: 2,
                                                     height: '600px',
-                                                    overflowY: 'auto',
-                                                    '&::-webkit-scrollbar': {
-                                                        width: '8px',
-                                                    },
-                                                    '&::-webkit-scrollbar-track': {
-                                                        background: '#f1f1f1',
-                                                        borderRadius: '4px',
-                                                    },
-                                                    '&::-webkit-scrollbar-thumb': {
-                                                        background: '#888',
-                                                        borderRadius: '4px',
-                                                        '&:hover': {
-                                                            background: '#555',
-                                                        },
-                                                    },
+                                                    borderRadius: '12px',
+                                                    bgcolor: '#f5f5f5',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
                                                 }}>
-                                                    <ShipmentTimeline events={trackingRecords} />
+                                                    <Typography color="text.secondary">Loading map...</Typography>
                                                 </Box>
-                                            </Paper>
-                                        </Grid>
-                                    </Grid>
+                                            )}
+                                        </Box>
+                                    </Paper>
+                                </Grid>
+
+                                {/* Shipment History Section - Right Column */}
+                                <Grid item xs={12} md={6}>
+                                    <Paper sx={{ height: '100%' }} elevation={1}>
+                                        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                                            <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <AccessTimeIcon />
+                                                Shipment History
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{
+                                            p: 2,
+                                            height: '600px',
+                                            overflowY: 'auto',
+                                            '&::-webkit-scrollbar': {
+                                                width: '8px',
+                                            },
+                                            '&::-webkit-scrollbar-track': {
+                                                background: '#f1f1f1',
+                                                borderRadius: '4px',
+                                            },
+                                            '&::-webkit-scrollbar-thumb': {
+                                                background: '#888',
+                                                borderRadius: '4px',
+                                                '&:hover': {
+                                                    background: '#555',
+                                                },
+                                            },
+                                        }}>
+                                            <ShipmentTimeline events={trackingRecords} />
+                                        </Box>
+                                    </Paper>
                                 </Grid>
                             </Grid>
                         </Box>
