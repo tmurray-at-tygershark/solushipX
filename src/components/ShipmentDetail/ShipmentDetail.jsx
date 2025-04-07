@@ -58,7 +58,7 @@ import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
 
 // Define libraries array as a static constant outside the component
-const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
+const GOOGLE_MAPS_LIBRARIES = ["places", "geometry", "routes"];
 
 // Add at the top with other helper functions
 const formatTimestamp = (timestamp) => {
@@ -429,6 +429,7 @@ const ShipmentDetail = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [trackingRecords, setTrackingRecords] = useState([]);
+    const [isMapReady, setIsMapReady] = useState(false);
 
     const mapStyles = [
         {
@@ -646,7 +647,8 @@ const ShipmentDetail = () => {
                             if (status === 'OK' && results && results.length > 0) {
                                 console.log(`${type} geocoding successful:`, {
                                     address: results[0].formatted_address,
-                                    location: results[0].geometry.location.toJSON()
+                                    location: results[0].geometry.location.toJSON(),
+                                    placeId: results[0].place_id
                                 });
                                 resolve(results[0]);
                             } else {
@@ -677,20 +679,25 @@ const ShipmentDetail = () => {
                     geocodeWithRetry(shipment.shipTo, 'destination')
                 ]);
 
+                // Validate geocoding results
+                if (!originResult || !originResult.geometry || !originResult.geometry.location) {
+                    throw new Error('Invalid origin location data');
+                }
+
+                if (!destinationResult || !destinationResult.geometry || !destinationResult.geometry.location) {
+                    throw new Error('Invalid destination location data');
+                }
+
                 const bounds = new window.google.maps.LatLngBounds();
                 bounds.extend(originResult.geometry.location);
                 bounds.extend(destinationResult.geometry.location);
                 setMapBounds(bounds);
 
-                const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Goog-Api-Key': mapsApiKey,
-                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
-                    },
-                    body: JSON.stringify({
-                        origin: {
+                // Prepare the request body with place IDs if available
+                const requestBody = {
+                    origin: originResult.place_id ?
+                        { placeId: originResult.place_id } :
+                        {
                             location: {
                                 latLng: {
                                     latitude: originResult.geometry.location.lat(),
@@ -698,7 +705,9 @@ const ShipmentDetail = () => {
                                 }
                             }
                         },
-                        destination: {
+                    destination: destinationResult.place_id ?
+                        { placeId: destinationResult.place_id } :
+                        {
                             location: {
                                 latLng: {
                                     latitude: destinationResult.geometry.location.lat(),
@@ -706,37 +715,94 @@ const ShipmentDetail = () => {
                                 }
                             }
                         },
-                        travelMode: "DRIVE",
-                        routingPreference: "TRAFFIC_AWARE",
-                        computeAlternativeRoutes: false,
-                        languageCode: "en-US",
-                        units: useMetric ? "METRIC" : "IMPERIAL"
-                    })
+                    travelMode: "DRIVE",
+                    routingPreference: "TRAFFIC_UNAWARE",
+                    computeAlternativeRoutes: false,
+                    languageCode: "en-US",
+                    units: useMetric ? "METRIC" : "IMPERIAL"
+                };
+
+                // Add region code if country is available
+                if (shipment.shipFrom.country) {
+                    const countryCode = shipment.shipFrom.country.toLowerCase();
+                    if (countryCode.length === 2) {
+                        requestBody.regionCode = countryCode;
+                    }
+                }
+
+                const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Goog-Api-Key': mapsApiKey,
+                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.legs.duration,routes.legs.distanceMeters,routes.legs.startLocation,routes.legs.endLocation'
+                    },
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
-                    throw new Error(`Route calculation failed: ${response.statusText}`);
+                    const errorData = await response.json();
+                    console.error('Route calculation API error:', errorData);
+                    throw new Error(`Route calculation failed: ${errorData.error?.message || response.statusText}`);
                 }
 
                 const routeData = await response.json();
+
+                // Check if route data is valid
+                if (!routeData.routes || routeData.routes.length === 0) {
+                    throw new Error('No routes found in the response');
+                }
+
                 const route = routeData.routes[0];
+
+                // Check if the route has the required polyline data
+                if (!route.polyline || !route.polyline.encodedPolyline) {
+                    throw new Error('Route polyline data is missing');
+                }
+
                 const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
 
+                // Parse duration safely
+                const durationInSeconds = parseInt(route.duration);
+                const durationInMinutes = Math.round(durationInSeconds / 60);
+
+                // Create a properly structured directions object that matches what DirectionsRenderer expects
                 const directionsResult = {
                     routes: [{
                         legs: [{
                             start_location: originResult.geometry.location,
                             end_location: destinationResult.geometry.location,
-                            distance: { text: useMetric ? `${Math.round(route.distanceMeters / 1000)} km` : `${Math.round(route.distanceMeters / 1609.34)} mi`, value: route.distanceMeters },
-                            duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 60)} mins`, value: parseInt(route.duration.replace('s', '')) }
+                            distance: {
+                                text: useMetric ? `${Math.round(route.distanceMeters / 1000)} km` : `${Math.round(route.distanceMeters / 1609.34)} mi`,
+                                value: route.distanceMeters
+                            },
+                            duration: {
+                                text: `${durationInMinutes} mins`,
+                                value: durationInSeconds
+                            },
+                            steps: [],
+                            traffic_speed_entry: [],
+                            via_waypoint: []
                         }],
-                        overview_path: decodedPath
+                        overview_path: decodedPath,
+                        bounds: new window.google.maps.LatLngBounds(originResult.geometry.location, destinationResult.geometry.location),
+                        copyrights: "© Google Maps",
+                        warnings: [],
+                        waypoint_order: [],
+                        overview_polyline: {
+                            points: route.polyline.encodedPolyline
+                        }
                     }],
                     request: {
                         origin: originResult.geometry.location,
                         destination: destinationResult.geometry.location,
                         travelMode: "DRIVING"
-                    }
+                    },
+                    status: "OK",
+                    geocoded_waypoints: [
+                        { status: "OK", place_id: originResult.place_id },
+                        { status: "OK", place_id: destinationResult.place_id }
+                    ]
                 };
 
                 setDirections(directionsResult);
@@ -746,13 +812,17 @@ const ShipmentDetail = () => {
             }
         };
 
-        calculateRoute();
-    }, [shipment, isGoogleMapsLoaded, useMetric, mapsApiKey]);
+        // Only calculate route when all required components are ready
+        if (shipment && isGoogleMapsLoaded && mapsApiKey && isMapReady) {
+            calculateRoute();
+        }
+    }, [shipment, isGoogleMapsLoaded, mapsApiKey, useMetric, isMapReady]);
 
     // Handle map load and bounds
     const handleMapLoad = React.useCallback((map) => {
         setMap(map);
         setIsMapLoaded(true);
+        setIsMapReady(true); // Set map as ready when it's fully loaded
 
         if (directions?.request?.origin && directions?.request?.destination) {
             // Create bounds that include both markers
@@ -1469,7 +1539,7 @@ const ShipmentDetail = () => {
                                                                     onLoad={handleMapLoad}
                                                                     options={mapOptions}
                                                                 >
-                                                                    {directions && (
+                                                                    {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
                                                                         <DirectionsRenderer
                                                                             directions={directions}
                                                                             options={{
