@@ -11,7 +11,8 @@ import {
     Grid,
     useTheme,
     CircularProgress,
-    Skeleton
+    Skeleton,
+    Stack
 } from '@mui/material';
 import {
     Timeline,
@@ -412,6 +413,81 @@ const ShipmentTimeline = React.memo(({ events }) => (
         ))}
     </Timeline>
 ));
+
+// Extract StatusChip component for reusability
+const StatusChip = React.memo(({ status }) => {
+    const getStatusConfig = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'pending':
+            case 'created':
+                return {
+                    color: '#F59E0B',
+                    bgcolor: '#FEF3C7',
+                    label: 'Pending'
+                };
+            case 'awaiting shipment':
+            case 'label_created':
+                return {
+                    color: '#3B82F6',
+                    bgcolor: '#EFF6FF',
+                    label: 'Awaiting Shipment'
+                };
+            case 'in transit':
+            case 'in_transit':
+                return {
+                    color: '#6366F1',
+                    bgcolor: '#EEF2FF',
+                    label: 'In Transit'
+                };
+            case 'on hold':
+            case 'on_hold':
+                return {
+                    color: '#7C3AED',
+                    bgcolor: '#F5F3FF',
+                    label: 'On Hold'
+                };
+            case 'delivered':
+                return {
+                    color: '#10B981',
+                    bgcolor: '#ECFDF5',
+                    label: 'Delivered'
+                };
+            case 'cancelled':
+            case 'canceled':
+                return {
+                    color: '#EF4444',
+                    bgcolor: '#FEE2E2',
+                    label: 'Cancelled'
+                };
+            default:
+                return {
+                    color: '#6B7280',
+                    bgcolor: '#F3F4F6',
+                    label: status || 'Unknown'
+                };
+        }
+    };
+
+    const { color, bgcolor, label } = getStatusConfig(status);
+
+    return (
+        <Chip
+            label={label}
+            sx={{
+                color: color,
+                bgcolor: bgcolor,
+                borderRadius: '16px',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                height: '24px',
+                '& .MuiChip-label': {
+                    px: 2
+                }
+            }}
+            size="small"
+        />
+    );
+});
 
 const ShipmentDetail = () => {
     const { id } = useParams();
@@ -1143,149 +1219,270 @@ const ShipmentDetail = () => {
 
                         {/* Add id to the main content container */}
                         <Box id="shipment-detail-content">
-                            {/* Shipment Information Section - Full Width */}
-                            <Paper sx={{ mb: 3 }}>
-                                <Box
-                                    sx={{
-                                        p: 2,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        borderBottom: '1px solid #e0e0e0'
-                                    }}
-                                >
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <ShippingIcon sx={{ color: '#000' }} />
-                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                            Shipment Information
-                                        </Typography>
+                            {/* Shipment Information Section */}
+                            <Grid item xs={12}>
+                                <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                                        <ShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                        <Typography variant="h6">Shipment Information</Typography>
                                     </Box>
-                                    <IconButton onClick={() => toggleSection('shipment')}>
-                                        <ExpandMoreIcon
-                                            sx={{
-                                                transform: expandedSections.shipment ? 'rotate(180deg)' : 'none',
-                                                transition: 'transform 0.3s',
-                                                color: '#666'
-                                            }}
-                                        />
-                                    </IconButton>
-                                </Box>
-                                <Collapse in={expandedSections.shipment}>
-                                    <Box sx={{ p: 3 }}>
-                                        <Grid container spacing={2}>
-                                            {/* Left Column - Basic Info */}
-                                            <Grid item xs={12} md={4}>
-                                                <Box sx={{ display: 'grid', gap: 2 }}>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Shipment Type
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.shipmentInfo?.shipmentType || 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Reference Number
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.shipmentInfo?.referenceNumber || 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Shipment Date
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.shipmentInfo?.shipmentDate || 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                            </Grid>
 
-                                            {/* Middle Column - Timing Info */}
-                                            <Grid item xs={12} md={4}>
-                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                    <Grid container spacing={3}>
+                                        {/* Basic Information */}
+                                        <Grid item xs={12} md={4}>
+                                            <Box sx={{
+                                                p: 2,
+                                                bgcolor: 'background.default',
+                                                borderRadius: 1,
+                                                border: '1px solid',
+                                                borderColor: 'divider'
+                                            }}>
+                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                    Basic Information
+                                                </Typography>
+                                                <Stack spacing={2}>
                                                     <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Pickup Window
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment.shipmentInfo.earliestPickup} - {shipment.shipmentInfo.latestPickup}
-                                                        </Typography>
+                                                        <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
+                                                        <Typography variant="body2">{shipment?.shipmentInfo?.shipmentType || 'N/A'}</Typography>
                                                     </Box>
                                                     <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Dropoff Window
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment.shipmentInfo.earliestDelivery} - {shipment.shipmentInfo.latestDelivery}
+                                                        <Typography variant="caption" color="text.secondary">Reference Number</Typography>
+                                                        <Typography variant="body2">{shipment?.shipmentInfo?.shipperReferenceNumber || 'N/A'}</Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="caption" color="text.secondary">Bill Type</Typography>
+                                                        <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                                                            {shipment?.shipmentInfo?.shipmentBillType?.toLowerCase() || 'N/A'}
                                                         </Typography>
                                                     </Box>
-                                                </Box>
-                                            </Grid>
+                                                </Stack>
+                                            </Box>
+                                        </Grid>
 
-                                            {/* Right Column - Status & Tracking */}
-                                            <Grid item xs={12} md={4}>
-                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                        {/* Timing Information */}
+                                        <Grid item xs={12} md={4}>
+                                            <Box sx={{
+                                                p: 2,
+                                                bgcolor: 'background.default',
+                                                borderRadius: 1,
+                                                border: '1px solid',
+                                                borderColor: 'divider'
+                                            }}>
+                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                    Timing Information
+                                                </Typography>
+                                                <Stack spacing={2}>
                                                     <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Status
+                                                        <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
+                                                        <Typography variant="body2">
+                                                            {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
                                                         </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
+                                                        <Typography variant="body2">
+                                                            {shipment?.shipmentInfo?.earliestPickupTime && shipment?.shipmentInfo?.latestPickupTime
+                                                                ? `${shipment.shipmentInfo.earliestPickupTime} - ${shipment.shipmentInfo.latestPickupTime}`
+                                                                : '09:00 - 17:00'}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box>
+                                                        <Typography variant="caption" color="text.secondary">Delivery Window</Typography>
+                                                        <Typography variant="body2">
+                                                            {shipment?.shipmentInfo?.earliestDeliveryTime && shipment?.shipmentInfo?.latestDeliveryTime
+                                                                ? `${shipment.shipmentInfo.earliestDeliveryTime} - ${shipment.shipmentInfo.latestDeliveryTime}`
+                                                                : '09:00 - 17:00'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Stack>
+                                            </Box>
+                                        </Grid>
+
+                                        {/* Service Options */}
+                                        <Grid item xs={12} md={4}>
+                                            <Box sx={{
+                                                p: 2,
+                                                bgcolor: 'background.default',
+                                                borderRadius: 1,
+                                                border: '1px solid',
+                                                borderColor: 'divider'
+                                            }}>
+                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                    Service Options
+                                                </Typography>
+                                                <Stack spacing={2}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                        <Typography variant="caption" color="text.secondary">Hold for Pickup</Typography>
                                                         <Chip
-                                                            label={shipment.status}
-                                                            color={
-                                                                shipment.status === 'Delivered' ? 'success' :
-                                                                    shipment.status === 'In Transit' ? 'primary' :
-                                                                        shipment.status === 'Awaiting Shipment' ? 'info' : 'default'
-                                                            }
                                                             size="small"
-                                                            sx={{
-                                                                mt: 0.5,
-                                                                '& .MuiChip-label': {
-                                                                    fontWeight: 500
-                                                                }
-                                                            }}
+                                                            label={shipment?.shipmentInfo?.holdForPickup ? "Yes" : "No"}
+                                                            color={shipment?.shipmentInfo?.holdForPickup ? "primary" : "default"}
+                                                            variant="outlined"
                                                         />
                                                     </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Carrier
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment?.selectedRate?.carrier || 'N/A'}
-                                                        </Typography>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                        <Typography variant="caption" color="text.secondary">International</Typography>
+                                                        <Chip
+                                                            size="small"
+                                                            label={shipment?.shipmentInfo?.internationalShipment ? "Yes" : "No"}
+                                                            color={shipment?.shipmentInfo?.internationalShipment ? "primary" : "default"}
+                                                            variant="outlined"
+                                                        />
                                                     </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            Tracking Number
-                                                        </Typography>
-                                                        <Typography
-                                                            variant="body1"
-                                                            component={Link}
-                                                            to={`/tracking/${shipment.id}`}
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                        <Typography variant="caption" color="text.secondary">Saturday Delivery</Typography>
+                                                        <Chip
+                                                            size="small"
+                                                            label={shipment?.shipmentInfo?.saturdayDelivery ? "Yes" : "No"}
+                                                            color={shipment?.shipmentInfo?.saturdayDelivery ? "primary" : "default"}
+                                                            variant="outlined"
+                                                        />
+                                                    </Box>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                        <Typography variant="caption" color="text.secondary">Signature Required</Typography>
+                                                        <Chip
+                                                            size="small"
+                                                            label={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "Yes" : "No"}
+                                                            color={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "primary" : "default"}
+                                                            variant="outlined"
+                                                        />
+                                                    </Box>
+                                                </Stack>
+                                            </Box>
+                                        </Grid>
+
+                                        {/* Status & Tracking */}
+                                        <Grid item xs={12}>
+                                            <Box sx={{
+                                                p: 3,
+                                                bgcolor: 'background.default',
+                                                borderRadius: 2,
+                                                border: '1px solid',
+                                                borderColor: 'divider',
+                                                mt: 2
+                                            }}>
+                                                <Grid container spacing={3}>
+                                                    {/* Left Column - Status and Carrier */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: 2,
+                                                            height: '100%',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <Box>
+                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                    Current Status
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <StatusChip status={shipment?.status} />
+                                                                </Box>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                    Carrier
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <LocalShipping sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
+                                                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                        {shipment?.selectedRate?.carrier || 'N/A'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        </Box>
+                                                    </Grid>
+
+                                                    {/* Middle Column - Tracking and Dates */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: 2,
+                                                            height: '100%',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <Box>
+                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                    Tracking Number
+                                                                </Typography>
+                                                                <Link
+                                                                    to={`/tracking/${shipment?.trackingNumber || shipment?.id}`}
+                                                                    style={{ textDecoration: 'none' }}
+                                                                >
+                                                                    <Box sx={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 1,
+                                                                        '&:hover': { color: 'primary.dark' }
+                                                                    }}>
+                                                                        <AssignmentIcon sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
+                                                                        <Typography
+                                                                            variant="body1"
+                                                                            sx={{
+                                                                                fontWeight: 500,
+                                                                                color: 'primary.main',
+                                                                                '&:hover': { textDecoration: 'underline' }
+                                                                            }}
+                                                                        >
+                                                                            {shipment?.trackingNumber || shipment?.id || 'N/A'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Link>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                    Last Updated
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '1.2rem' }} />
+                                                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                        {shipment?.tracking?.lastUpdated ?
+                                                                            formatTimestamp(shipment.tracking.lastUpdated) : 'N/A'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        </Box>
+                                                    </Grid>
+
+                                                    {/* Right Column - Estimated Delivery */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Paper
+                                                            elevation={0}
                                                             sx={{
-                                                                color: '#2196f3',
-                                                                textDecoration: 'none',
-                                                                '&:hover': {
-                                                                    textDecoration: 'underline'
-                                                                }
+                                                                p: 2,
+                                                                height: '100%',
+                                                                bgcolor: 'primary.main',
+                                                                color: 'primary.contrastText',
+                                                                borderRadius: 2,
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                justifyContent: 'center'
                                                             }}
                                                         >
-                                                            {shipment.id}
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                            </Grid>
+                                                            <Typography variant="caption" sx={{ mb: 1, opacity: 0.9 }}>
+                                                                Estimated Delivery
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <LocalShipping sx={{ fontSize: '1.5rem' }} />
+                                                                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                                                    {shipment?.tracking?.estimatedDeliveryDate ?
+                                                                        formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available'}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Paper>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
                                         </Grid>
-                                    </Box>
-                                </Collapse>
-                            </Paper>
+                                    </Grid>
+                                </Paper>
+                            </Grid>
 
                             {/* Main Content Grid - Two Columns */}
-                            <Grid container spacing={3}>
+                            <Grid container spacing={3} sx={{ mt: 2 }}>
                                 {/* Maps Row */}
-                                <Grid item xs={12}>
+                                <Grid item xs={12} sx={{ mb: 3 }}>
                                     <Grid container spacing={3}>
                                         {/* Ship From Map */}
                                         <Grid item xs={12} md={6}>
@@ -1362,7 +1559,7 @@ const ShipmentDetail = () => {
                                 </Grid>
 
                                 {/* Rates Row */}
-                                <Grid item xs={12}>
+                                <Grid item xs={12} sx={{ mb: 3 }}>
                                     <Paper>
                                         <Box
                                             sx={{
