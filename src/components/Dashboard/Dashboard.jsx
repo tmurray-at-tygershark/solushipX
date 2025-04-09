@@ -29,7 +29,9 @@ import {
     LocalShipping as LocalShipping,
     ArrowForward as ArrowForwardIcon,
     Visibility as VisibilityIcon,
-    Print as PrintIcon
+    Print as PrintIcon,
+    Home as HomeIcon,
+    NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { Link, useNavigate } from 'react-router-dom';
@@ -486,273 +488,241 @@ const Dashboard = () => {
     }, [monthlyData]);
 
     return (
-        <Box sx={{
-            maxWidth: '1536px',
-            margin: '0 auto',
-            padding: '1.5rem',
-            '@media (max-width: 1536px)': {
-                maxWidth: '1280px'
-            },
-            '@media (max-width: 1280px)': {
-                maxWidth: '1024px'
-            },
-            '@media (max-width: 1024px)': {
-                maxWidth: '768px'
-            },
-            '@media (max-width: 768px)': {
-                padding: '1rem'
-            }
-        }}>
-            {/* Header Section */}
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 3,
-                flexWrap: 'wrap',
-                gap: 2
-            }}>
-                <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                    Dashboard
-                </Typography>
-                <Box sx={{
-                    display: 'flex',
-                    gap: 2,
-                    alignItems: 'center',
-                    flexWrap: 'wrap'
-                }}>
-                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                        <DatePicker
-                            label="Start Date"
-                            value={startDate}
-                            onChange={(newValue) => setStartDate(newValue)}
-                            sx={{ width: '200px' }}
-                        />
-                        <DatePicker
-                            label="End Date"
-                            value={endDate}
-                            onChange={(newValue) => setEndDate(newValue)}
-                            minDate={startDate}
-                            sx={{ width: '200px' }}
-                        />
-                    </Box>
-                    <Button
-                        variant="outlined"
-                        startIcon={<RefreshIcon />}
-                        onClick={() => window.location.reload()}
-                        sx={{
-                            color: '#64748b',
-                            borderColor: '#e2e8f0',
-                            bgcolor: '#ffffff',
-                            '&:hover': {
-                                borderColor: '#cbd5e1',
-                                bgcolor: '#f8fafc'
-                            }
-                        }}
+        <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
+            <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
+                {/* Breadcrumb Navigation */}
+                <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <IconButton
+                        component={Link}
+                        to="/"
+                        sx={{ p: 0.5 }}
                     >
-                        Refresh
-                    </Button>
+                        <HomeIcon />
+                    </IconButton>
+                    <NavigateNextIcon />
+                    <Typography variant="body2" sx={{ color: '#1e293b' }}>
+                        Dashboard
+                    </Typography>
                 </Box>
-            </Box>
 
-            {/* Rest of the dashboard content */}
-            <Box sx={{ width: '100%', bgcolor: '#f8fafc' }}>
-                {/* Status Boxes */}
-                <Grid container spacing={3} sx={{ mb: 4 }}>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatusBox
-                            title="Active Shipments"
-                            count={shipmentStats.inTransit + shipmentStats.awaitingShipment + shipmentStats.pending}
-                            icon={ShippingIcon}
-                            color="#000000"
-                            bgColor="rgba(0, 0, 0, 0.1)"
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatusBox
-                            title="Awaiting Shipment"
-                            count={shipmentStats.awaitingShipment}
-                            icon={ScheduleIcon}
-                            color="#3B82F6"
-                            bgColor="rgba(59, 130, 246, 0.1)"
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatusBox
-                            title="In Transit"
-                            count={shipmentStats.inTransit}
-                            icon={LocalShipping}
-                            color="#6366f1"
-                            bgColor="rgba(99, 102, 241, 0.1)"
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6} md={3}>
-                        <StatusBox
-                            title="Delivered"
-                            count={shipmentStats.delivered}
-                            icon={CheckCircleIcon}
-                            color="#10b981"
-                            bgColor="rgba(16, 185, 129, 0.1)"
-                        />
-                    </Grid>
-                </Grid>
-
-                {/* Monthly Shipment Volume Chart */}
-                <Grid container spacing={3}>
-                    <Grid item xs={12}>
-                        <Paper sx={{
-                            p: 3,
-                            bgcolor: '#ffffff',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                            borderRadius: 2,
-                            position: 'relative',
-                            overflow: 'hidden'
-                        }}>
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                mb: 3
-                            }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                    Total Shipments
-                                </Typography>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 1,
-                                    bgcolor: 'rgba(59, 130, 246, 0.1)',
-                                    px: 2,
-                                    py: 1,
-                                    borderRadius: 2
-                                }}>
-                                    <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 500 }}>
-                                        {shipmentStats.total} Total Shipments
-                                    </Typography>
-                                </Box>
-                            </Box>
-                            <Box sx={{ height: 300 }}>
-                                <LineChart
-                                    dataset={chartData}
-                                    series={[
-                                        {
-                                            dataKey: 'value',
-                                            valueFormatter: (value) => value.toString(),
-                                            color: '#3b82f6',
-                                            area: true,
-                                            showMark: false,
-                                            curve: "monotoneX"
-                                        }
-                                    ]}
-                                    xAxis={[{
-                                        dataKey: 'day',
-                                        scaleType: 'point',
-                                        tickLabelStyle: {
-                                            angle: 0,
-                                            textAnchor: 'middle',
-                                            fontSize: 12,
-                                            fill: '#64748b'
-                                        },
-                                        position: 'bottom',
-                                        tickSize: 0,
-                                        axisLine: { stroke: '#e2e8f0' }
-                                    }]}
-                                    yAxis={[{
-                                        min: 0,
-                                        max: 100,
-                                        tickMinStep: 20,
-                                        tickLabelStyle: {
-                                            fontSize: 12,
-                                            fill: '#64748b'
-                                        },
-                                        position: 'left',
-                                        tickSize: 0,
-                                        axisLine: { stroke: '#e2e8f0' }
-                                    }]}
-                                    sx={{
-                                        '.MuiLineElement-root': {
-                                            strokeWidth: 2,
-                                            transition: 'all 0.2s ease-in-out',
-                                        },
-                                        '.MuiAreaElement-root': {
-                                            fillOpacity: 0.15,
-                                        },
-                                        '.MuiChartsAxis-line': {
-                                            stroke: '#e2e8f0'
-                                        },
-                                        '.MuiChartsAxis-tick': {
-                                            stroke: '#e2e8f0'
-                                        },
-                                        '.MuiChartsAxis-grid': {
-                                            stroke: '#f1f5f9'
-                                        }
-                                    }}
-                                    height={300}
-                                    margin={{ left: 60, right: 20, top: 20, bottom: 40 }}
-                                    tooltip={{
-                                        trigger: 'axis'
-                                    }}
-                                />
-                            </Box>
-                        </Paper>
-                    </Grid>
-                </Grid>
-
-                {/* Recent Shipments Table */}
-                <Paper sx={{ p: 2, mb: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Typography variant="h6">Recent Shipments</Typography>
+                {/* Header Section */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                        Dashboard
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2 }}>
                         <Button
                             variant="outlined"
-                            startIcon={<AddIcon />}
-                            onClick={() => navigate('/create-shipment')}
+                            startIcon={<RefreshIcon />}
+                            onClick={() => window.location.reload()}
+                            sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
                         >
-                            New Shipment
+                            Refresh
                         </Button>
-                    </Box>
-                    <TableContainer>
-                        {loading ? (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                                <CircularProgress />
-                            </Box>
-                        ) : (
-                            <Table>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell align="top">SHIPMENT ID</TableCell>
-                                        <TableCell align="top">CUSTOMER</TableCell>
-                                        <TableCell align="top">ORIGIN</TableCell>
-                                        <TableCell align="top">DESTINATION</TableCell>
-                                        <TableCell align="top" sx={{ minWidth: 120 }}>CARRIER</TableCell>
-                                        <TableCell align="top">TYPE</TableCell>
-                                        <TableCell align="top">STATUS</TableCell>
-                                        <TableCell align="top">ACTIONS</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {shipments.slice(0, 20).map((shipment) => (
-                                        <ShipmentRow
-                                            key={shipment.id}
-                                            shipment={shipment}
-                                            onPrint={handlePrintLabel}
-                                        />
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </TableContainer>
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
                         <Button
-                            variant="text"
-                            endIcon={<ArrowForwardIcon />}
-                            onClick={() => navigate('/shipments')}
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            component={Link}
+                            to="/create-shipment"
+                            sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
                         >
-                            View All
+                            Create shipment
                         </Button>
                     </Box>
+                </Box>
+
+                {/* Main Content */}
+                <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)', p: 3, mb: 3 }}>
+                    {/* Status Boxes */}
+                    <Grid container spacing={3} sx={{ mb: 4 }}>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatusBox
+                                title="Active Shipments"
+                                count={shipmentStats.inTransit + shipmentStats.awaitingShipment + shipmentStats.pending}
+                                icon={ShippingIcon}
+                                color="#000000"
+                                bgColor="rgba(0, 0, 0, 0.1)"
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatusBox
+                                title="Awaiting Shipment"
+                                count={shipmentStats.awaitingShipment}
+                                icon={ScheduleIcon}
+                                color="#3B82F6"
+                                bgColor="rgba(59, 130, 246, 0.1)"
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatusBox
+                                title="In Transit"
+                                count={shipmentStats.inTransit}
+                                icon={LocalShipping}
+                                color="#6366f1"
+                                bgColor="rgba(99, 102, 241, 0.1)"
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatusBox
+                                title="Delivered"
+                                count={shipmentStats.delivered}
+                                icon={CheckCircleIcon}
+                                color="#10b981"
+                                bgColor="rgba(16, 185, 129, 0.1)"
+                            />
+                        </Grid>
+                    </Grid>
+
+                    {/* Monthly Shipment Volume Chart */}
+                    <Grid container spacing={3}>
+                        <Grid item xs={12}>
+                            <Paper sx={{
+                                p: 3,
+                                bgcolor: '#ffffff',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                                borderRadius: 2,
+                                position: 'relative',
+                                overflow: 'hidden'
+                            }}>
+                                <Box sx={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    mb: 3
+                                }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                        Total Shipments
+                                    </Typography>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 1,
+                                        bgcolor: 'rgba(59, 130, 246, 0.1)',
+                                        px: 2,
+                                        py: 1,
+                                        borderRadius: 2
+                                    }}>
+                                        <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 500 }}>
+                                            {shipmentStats.total} Total Shipments
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                                <Box sx={{ height: 300 }}>
+                                    <LineChart
+                                        dataset={chartData}
+                                        series={[
+                                            {
+                                                dataKey: 'value',
+                                                valueFormatter: (value) => value.toString(),
+                                                color: '#3b82f6',
+                                                area: true,
+                                                showMark: false,
+                                                curve: "monotoneX"
+                                            }
+                                        ]}
+                                        xAxis={[{
+                                            dataKey: 'day',
+                                            scaleType: 'point',
+                                            tickLabelStyle: {
+                                                angle: 0,
+                                                textAnchor: 'middle',
+                                                fontSize: 12,
+                                                fill: '#64748b'
+                                            },
+                                            position: 'bottom',
+                                            tickSize: 0,
+                                            axisLine: { stroke: '#e2e8f0' }
+                                        }]}
+                                        yAxis={[{
+                                            min: 0,
+                                            max: 100,
+                                            tickMinStep: 20,
+                                            tickLabelStyle: {
+                                                fontSize: 12,
+                                                fill: '#64748b'
+                                            },
+                                            position: 'left',
+                                            tickSize: 0,
+                                            axisLine: { stroke: '#e2e8f0' }
+                                        }]}
+                                        sx={{
+                                            '.MuiLineElement-root': {
+                                                strokeWidth: 2,
+                                                transition: 'all 0.2s ease-in-out',
+                                            },
+                                            '.MuiAreaElement-root': {
+                                                fillOpacity: 0.15,
+                                            },
+                                            '.MuiChartsAxis-line': {
+                                                stroke: '#e2e8f0'
+                                            },
+                                            '.MuiChartsAxis-tick': {
+                                                stroke: '#e2e8f0'
+                                            },
+                                            '.MuiChartsAxis-grid': {
+                                                stroke: '#f1f5f9'
+                                            }
+                                        }}
+                                        height={300}
+                                        margin={{ left: 60, right: 20, top: 20, bottom: 40 }}
+                                        tooltip={{
+                                            trigger: 'axis'
+                                        }}
+                                    />
+                                </Box>
+                            </Paper>
+                        </Grid>
+                    </Grid>
+
+                    {/* Recent Shipments Table */}
+                    <Paper sx={{ p: 2, mb: 3 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                            <Typography variant="h6">Recent Shipments</Typography>
+                        </Box>
+                        <TableContainer>
+                            {loading ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                                    <CircularProgress />
+                                </Box>
+                            ) : (
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell align="top">SHIPMENT ID</TableCell>
+                                            <TableCell align="top">CUSTOMER</TableCell>
+                                            <TableCell align="top">ORIGIN</TableCell>
+                                            <TableCell align="top">DESTINATION</TableCell>
+                                            <TableCell align="top" sx={{ minWidth: 120 }}>CARRIER</TableCell>
+                                            <TableCell align="top">TYPE</TableCell>
+                                            <TableCell align="top">STATUS</TableCell>
+                                            <TableCell align="top">ACTIONS</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {shipments.slice(0, 20).map((shipment) => (
+                                            <ShipmentRow
+                                                key={shipment.id}
+                                                shipment={shipment}
+                                                onPrint={handlePrintLabel}
+                                            />
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </TableContainer>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                            <Button
+                                variant="text"
+                                endIcon={<ArrowForwardIcon />}
+                                onClick={() => navigate('/shipments')}
+                            >
+                                View All
+                            </Button>
+                        </Box>
+                    </Paper>
                 </Paper>
             </Box>
         </Box>
