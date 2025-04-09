@@ -285,10 +285,10 @@ const Dashboard = () => {
                     shipmentId: data.shipmentId || 'N/A',
                     date: formatDate(data.createdAt),
                     customer: customerData.name || 'Unknown Customer',
-                    origin: formatAddress(data.from),
-                    destination: formatAddress(data.to),
-                    carrier: data.carrier?.name || '',
-                    shipmentType: data.carrier?.serviceLevel || '',
+                    origin: formatAddress(data.shipFrom),
+                    destination: formatAddress(data.shipTo),
+                    carrier: data.carrier || '',
+                    shipmentType: data.shipmentInfo?.shipmentType || '',
                     status: data.status,
                     value: data.packages?.[0]?.insuranceAmount || 0
                 };
