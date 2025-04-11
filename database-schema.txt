@@ -1,0 +1,302 @@
+# SolushipX Database Schema
+
+## Collections
+
+### 1. shipments
+Main collection for shipment information
+```javascript
+{
+  // Core Metadata
+  id: string,                    // Firestore document ID
+  companyId: string,             // Reference to company
+  customerId: string,            // Reference to customer
+  status: string,                // 'pending', 'in_transit', 'delivered', 'cancelled'
+  createdAt: timestamp,          // Server timestamp
+  updatedAt: timestamp,          // Server timestamp
+
+  // Shipment Information
+  shipmentInfo: {
+    shipmentType: string,        // 'courier' or 'freight'
+    internationalShipment: boolean,
+    shipperReferenceNumber: string,
+    bookingReferenceNumber: string,
+    bookingReferenceType: string, // 'STANDARD'
+    shipmentBillType: string,    // 'PREPAID'
+    shipmentDate: string,        // ISO date string
+    earliestPickupTime: string,  // HH:mm format
+    latestPickupTime: string,    // HH:mm format
+    earliestDeliveryTime: string, // HH:mm format
+    latestDeliveryTime: string,  // HH:mm format
+    dangerousGoodsType: string,  // 'HAZMAT' or 'none'
+    signatureServiceType: string, // 'SIGNATURE_REQUIRED' or 'none'
+    holdForPickup: boolean,
+    saturdayDelivery: boolean
+  },
+
+  // Addresses
+  shipFrom: {
+    company: string,
+    street: string,
+    street2: string,
+    postalCode: string,
+    city: string,
+    state: string,
+    country: string,
+    contactName: string,
+    contactPhone: string,
+    contactEmail: string,
+    contactFax: string,
+    specialInstructions: string
+  },
+
+  shipTo: {
+    // Same structure as shipFrom
+  },
+
+  // Tracking Information
+  trackingNumber: string,
+  carrier: string,               // 'FedEx', 'UPS', etc.
+  service: string,               // 'Express', 'Ground', etc.
+
+  // Rate Information
+  selectedRate: {
+    carrier: string,
+    service: string,
+    transitDays: number,
+    deliveryDate: string,        // ISO date string
+    freightCharges: number,
+    fuelCharges: number,
+    serviceCharges: number,
+    guaranteeCharge: number,
+    totalCharges: number,
+    currency: string,            // 'USD', 'CAD'
+    guaranteed: boolean
+  },
+
+  // History
+  history: [
+    {
+      status: string,
+      timestamp: timestamp,
+      location: string,
+      notes: string
+    }
+  ]
+}
+```
+
+### 2. packages (subcollection of shipments)
+```javascript
+{
+  measurementUnits: string,      // 'imperial' or 'metric'
+  packageQuantity: number,
+  freightclass: string,
+  declaredValue: number,
+  declaredValueCurrency: string, // 'USD' or 'CAD'
+  stackable: boolean,
+  packageReferenceNumber: string // Optional
+}
+```
+
+### 3. rates (subcollection of shipments)
+```javascript
+{
+  shipmentId: string,
+  quoteId: string,
+  carrier: string,
+  service: string,
+  freightCharges: number,
+  fuelCharges: number,
+  serviceCharges: number,
+  accessorialCharges: number,
+  guaranteeCharge: number,
+  totalCharges: number,
+  currency: string,
+  transitDays: number,
+  deliveryDate: timestamp,
+  guaranteed: boolean,
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
+```
+
+### 4. companies
+```javascript
+{
+  id: string,                    // Firestore document ID
+  companyID: string,             // Business identifier
+  name: string,
+  type: string,                  // 'shipper', 'carrier', '3pl'
+  status: string,                // 'active', 'inactive', 'pending'
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  
+  // Contact Information
+  contact: {
+    name: string,
+    email: string,
+    phone: string,
+    position: string
+  },
+  
+  // Address
+  address: {
+    street: string,
+    street2: string,
+    city: string,
+    state: string,
+    postalCode: string,
+    country: string
+  },
+  
+  // Business Details
+  businessDetails: {
+    taxId: string,
+    registrationNumber: string,
+    industry: string,
+    size: string                  // 'small', 'medium', 'large'
+  }
+}
+```
+
+### 5. customers
+```javascript
+{
+  id: string,                    // Firestore document ID
+  customerId: string,            // Business identifier
+  companyId: string,             // Reference to parent company
+  name: string,
+  type: string,                  // 'business', 'individual'
+  status: string,                // 'active', 'inactive'
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  
+  // Contact Information
+  contact: {
+    name: string,
+    email: string,
+    phone: string,
+    position: string
+  },
+  
+  // Address
+  address: {
+    street: string,
+    street2: string,
+    city: string,
+    state: string,
+    postalCode: string,
+    country: string
+  },
+  
+  // Account Details
+  accountDetails: {
+    creditLimit: number,
+    paymentTerms: string,
+    preferredCarrier: string,
+    specialInstructions: string
+  }
+}
+```
+
+### 6. tracking
+```javascript
+{
+  id: string,                    // Firestore document ID
+  shipmentId: string,            // Reference to shipment
+  carrier: string,
+  trackingNumber: string,
+  status: string,
+  estimatedDeliveryDate: timestamp,
+  lastUpdated: timestamp,
+  
+  // Tracking Events
+  events: [
+    {
+      status: string,
+      description: string,
+      location: string,
+      timestamp: timestamp
+    }
+  ]
+}
+```
+
+### 7. users
+```javascript
+{
+  id: string,                    // Firestore document ID
+  email: string,
+  displayName: string,
+  role: string,                  // 'admin', 'user', 'manager'
+  companyId: string,             // Reference to company
+  status: string,                // 'active', 'inactive'
+  createdAt: timestamp,
+  lastLogin: timestamp,
+  
+  // Profile Information
+  profile: {
+    firstName: string,
+    lastName: string,
+    phone: string,
+    position: string,
+    department: string
+  },
+  
+  // Preferences
+  preferences: {
+    language: string,
+    timezone: string,
+    notifications: {
+      email: boolean,
+      push: boolean,
+      sms: boolean
+    }
+  }
+}
+```
+
+### 8. carrierKeys
+```javascript
+{
+  id: string,                    // Firestore document ID
+  companyId: string,             // Reference to company
+  carrier: string,               // 'FedEx', 'UPS', etc.
+  apiKey: string,
+  apiSecret: string,
+  accountNumber: string,
+  status: string,                // 'active', 'inactive'
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  
+  // Additional Settings
+  settings: {
+    testMode: boolean,
+    defaultService: string,
+    defaultPackaging: string
+  }
+}
+```
+
+## Indexes
+
+### Composite Indexes
+1. shipments
+   - companyId + createdAt (descending)
+   - customerId + createdAt (descending)
+   - status + createdAt (descending)
+
+2. tracking
+   - shipmentId + timestamp (descending)
+
+3. rates
+   - shipmentId + createdAt (descending)
+
+## Security Rules
+- Users can only access data related to their company
+- Admin users have full access to all data
+- Carrier keys are encrypted at rest
+- API keys are only visible to admin users
+- Shipment data is immutable after creation
+- Rate data can be updated by authorized users
+- Tracking data is read-only for regular users 
