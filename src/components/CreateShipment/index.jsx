@@ -95,22 +95,37 @@ const CreateShipment = () => {
     }, []);
 
     const handleNext = () => {
-        setCurrentStep(prev => Math.min(prev + 1, 6));
+        console.log('Moving to next step from:', currentStep);
+        setCurrentStep(prev => {
+            const nextStep = Math.min(prev + 1, 6);
+            console.log('Next step will be:', nextStep);
+            return nextStep;
+        });
         // Scroll to the top of the form container
         document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const handlePrevious = () => {
-        setCurrentStep(prev => Math.max(prev - 1, 1));
+        console.log('Moving to previous step from:', currentStep);
+        setCurrentStep(prev => {
+            const prevStep = Math.max(prev - 1, 1);
+            console.log('Previous step will be:', prevStep);
+            return prevStep;
+        });
         // Scroll to the top of the form container
         document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const handleFormDataChange = (section, data) => {
-        setFormData(prev => ({
-            ...prev,
-            [section]: data
-        }));
+        console.log('Form data changed for section:', section, data);
+        setFormData(prev => {
+            const newData = {
+                ...prev,
+                [section]: data
+            };
+            console.log('Updated form data:', newData);
+            return newData;
+        });
     };
 
     const handleRateSelect = (rate) => {
@@ -128,10 +143,12 @@ const CreateShipment = () => {
     };
 
     const renderStep = () => {
+        console.log('Rendering step:', currentStep, 'with form data:', formData);
         switch (currentStep) {
             case 1:
                 return (
                     <ShipmentInfo
+                        key="shipment-info"
                         data={formData.shipmentInfo}
                         onDataChange={(data) => handleFormDataChange('shipmentInfo', data)}
                         onNext={handleNext}
@@ -140,6 +157,7 @@ const CreateShipment = () => {
             case 2:
                 return (
                     <ShipFrom
+                        key="ship-from"
                         data={formData.shipFrom}
                         onDataChange={(data) => handleFormDataChange('shipFrom', data)}
                         onNext={handleNext}
@@ -149,6 +167,7 @@ const CreateShipment = () => {
             case 3:
                 return (
                     <ShipTo
+                        key="ship-to"
                         data={formData.shipTo}
                         onDataChange={(data) => handleFormDataChange('shipTo', data)}
                         onNext={handleNext}
@@ -158,6 +177,7 @@ const CreateShipment = () => {
             case 4:
                 return (
                     <Packages
+                        key="packages"
                         data={formData.packages}
                         onDataChange={(data) => handleFormDataChange('packages', data)}
                         onNext={handleNext}
@@ -167,17 +187,20 @@ const CreateShipment = () => {
             case 5:
                 return (
                     <Rates
+                        key="rates"
                         formData={formData}
-                        onPrevious={handlePrevious}
                         onRateSelect={handleRateSelect}
                         onNext={handleNext}
+                        onPrevious={handlePrevious}
                     />
                 );
             case 6:
                 return (
                     <Review
+                        key="review"
                         formData={formData}
                         selectedRate={selectedRate}
+                        onSubmit={handleSubmit}
                         onPrevious={handlePrevious}
                     />
                 );

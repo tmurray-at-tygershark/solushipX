@@ -1,0 +1,190 @@
+/* ShipmentInfo.css */
+.form-section {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.form-section-title {
+  color: #1976d2;
+  font-weight: 600;
+  margin-bottom: 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.small-label {
+  font-size: 0.75rem;
+  color: #666;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.form-control {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-control:focus {
+  border-color: #1976d2;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.form-check {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.form-check-input {
+  margin-right: 8px;
+}
+
+.form-check-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.navigation-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background-color: #1976d2;
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: #1565c0;
+}
+
+.btn-outline-secondary {
+  background-color: transparent;
+  color: #666;
+  border: 1px solid #666;
+}
+
+.btn-outline-secondary:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Shipment type cards */
+.shipment-type-card {
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: #fff;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.shipment-type-card:hover {
+  border-color: #1976d2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.shipment-type-card.selected {
+  border-color: #1976d2;
+  background-color: rgba(25, 118, 210, 0.04);
+}
+
+.shipment-type-card.error {
+  border-color: #d32f2f;
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes shake {
+  10%, 90% {
+    transform: translate3d(-1px, 0, 0);
+  }
+  20%, 80% {
+    transform: translate3d(2px, 0, 0);
+  }
+  30%, 50%, 70% {
+    transform: translate3d(-4px, 0, 0);
+  }
+  40%, 60% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .form-section {
+    padding: 15px;
+  }
+  
+  .navigation-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Error state styles */
+.MuiTextField-root.error .MuiOutlinedInput-root {
+  border-color: #d32f2f;
+}
+
+.MuiFormHelperText-root.error {
+  color: #d32f2f;
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* Required field indicator */
+.required-field::after {
+  content: '*';
+  color: #d32f2f;
+  margin-left: 4px;
+} 
