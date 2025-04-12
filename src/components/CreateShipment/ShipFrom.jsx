@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../../contexts/AuthContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
+import './ShipFrom.css';
 
 const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
     const { currentUser } = useAuth();
@@ -27,8 +28,9 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
-    const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+    const [showAddAddressForm, setShowAddAddressForm] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [currentStep, setCurrentStep] = useState(1);
     const [newAddress, setNewAddress] = useState({
         name: '',
         company: '',
@@ -156,6 +158,52 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
         );
     }, [companyAddresses]);
 
+    const nextStep = () => {
+        setCurrentStep(prev => Math.min(prev + 1, 3));
+    };
+
+    const prevStep = () => {
+        setCurrentStep(prev => Math.max(prev - 1, 1));
+    };
+
+    const resetForm = () => {
+        setNewAddress({
+            name: '',
+            company: '',
+            attention: '',
+            street: '',
+            street2: '',
+            city: '',
+            state: '',
+            postalCode: '',
+            country: 'US',
+            contactName: '',
+            contactPhone: '',
+            contactEmail: '',
+            isDefault: false
+        });
+        setCurrentStep(1);
+    };
+
+    const handleCloseForm = () => {
+        setShowAddAddressForm(false);
+        setNewAddress({
+            name: '',
+            company: '',
+            attention: '',
+            street: '',
+            street2: '',
+            city: '',
+            state: '',
+            postalCode: '',
+            country: 'US',
+            contactName: '',
+            contactPhone: '',
+            contactEmail: '',
+            isDefault: false
+        });
+    };
+
     const handleAddAddress = useCallback(async () => {
         try {
             setIsSubmitting(true);
@@ -209,22 +257,8 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                 setCompanyAddresses(prev => [...prev, addressToAdd]);
             }
 
-            setShowAddAddressModal(false);
-            setNewAddress({
-                name: '',
-                company: '',
-                attention: '',
-                street: '',
-                street2: '',
-                city: '',
-                state: '',
-                postalCode: '',
-                country: 'US',
-                contactName: '',
-                contactPhone: '',
-                contactEmail: '',
-                isDefault: false
-            });
+            setShowAddAddressForm(false);
+            resetForm();
             setSuccess('Address added successfully');
             setTimeout(() => setSuccess(null), 3000);
         } catch (err) {
@@ -275,61 +309,307 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                     <div className="address-selection mb-4">
                         <div className="d-flex justify-content-between align-items-center mb-3">
                             <label className="form-label mb-0">Saved Addresses</label>
-                            <button
-                                type="button"
-                                className="btn btn-outline-primary btn-sm"
-                                onClick={() => setShowAddAddressModal(true)}
-                            >
-                                <i className="bi bi-plus-lg me-1"></i> Add New Address
-                            </button>
+                            {!showAddAddressForm && (
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-primary btn-sm"
+                                    onClick={() => setShowAddAddressForm(true)}
+                                >
+                                    <i className="bi bi-plus-lg me-1"></i> Add New Address
+                                </button>
+                            )}
                         </div>
 
-                        <div className="address-list">
-                            {companyAddresses.length === 0 ? (
-                                <div className="text-center py-4">
-                                    <p className="text-muted mb-3">No saved addresses found</p>
-                                    <button
-                                        type="button"
-                                        className="btn btn-primary"
-                                        onClick={() => setShowAddAddressModal(true)}
-                                    >
-                                        <i className="bi bi-plus-lg me-1"></i> Add Your First Address
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="row g-3">
-                                    {companyAddresses.map((address) => (
-                                        <div key={address.id} className="col-md-6">
-                                            <div
-                                                className={`card h-100 ${selectedAddressId === address.id ? 'border-primary' : ''}`}
-                                                style={{ cursor: 'pointer' }}
-                                                onClick={() => handleAddressChange(address.id)}
-                                            >
-                                                <div className="card-body">
-                                                    <div className="d-flex justify-content-between align-items-start mb-2">
-                                                        <h6 className="card-title mb-0">{address.name}</h6>
-                                                        {address.isDefault && (
-                                                            <span className="badge bg-primary">Default</span>
-                                                        )}
-                                                    </div>
-                                                    <p className="card-text small mb-1">{address.company}</p>
-                                                    <p className="card-text small mb-1">
-                                                        {address.street}
-                                                        {address.street2 && <>, {address.street2}</>}
-                                                    </p>
-                                                    <p className="card-text small mb-1">
-                                                        {address.city}, {address.state} {address.postalCode}
-                                                    </p>
-                                                    <p className="card-text small mb-0">
-                                                        {address.contactName} • {address.contactPhone}
-                                                    </p>
+                        {showAddAddressForm ? (
+                            <div className="add-address-form mb-4">
+                                <div className="card border-primary">
+                                    <div className="card-header bg-light d-flex justify-content-between align-items-center">
+                                        <h6 className="mb-0">Add New Shipping Origin</h6>
+                                        <button
+                                            type="button"
+                                            className="btn-close"
+                                            onClick={handleCloseForm}
+                                            disabled={isSubmitting}
+                                        ></button>
+                                    </div>
+                                    <div className="card-body p-4">
+                                        {error && (
+                                            <div className="alert alert-danger" role="alert">
+                                                {error}
+                                            </div>
+                                        )}
+
+                                        <div className="row g-3">
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newName">Address Name*</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newName"
+                                                        name="name"
+                                                        className="form-control"
+                                                        value={newAddress.name}
+                                                        onChange={handleNewAddressChange}
+                                                        placeholder="e.g., Main Office, Warehouse"
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newCompany">Company Name*</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newCompany"
+                                                        name="company"
+                                                        className="form-control"
+                                                        value={newAddress.company}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-12">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newAttention">Attention</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newAttention"
+                                                        name="attention"
+                                                        className="form-control"
+                                                        value={newAddress.attention}
+                                                        onChange={handleNewAddressChange}
+                                                        placeholder="Contact person or department"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-12">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newStreet">Street Address*</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newStreet"
+                                                        name="street"
+                                                        className="form-control"
+                                                        value={newAddress.street}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-12">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newStreet2">Suite/Unit (Optional)</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newStreet2"
+                                                        name="street2"
+                                                        className="form-control"
+                                                        value={newAddress.street2}
+                                                        onChange={handleNewAddressChange}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newCity">City*</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newCity"
+                                                        name="city"
+                                                        className="form-control"
+                                                        value={newAddress.city}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newState">{getStateLabel(newAddress.country)}*</label>
+                                                    <select
+                                                        id="newState"
+                                                        name="state"
+                                                        className="form-control"
+                                                        value={newAddress.state}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    >
+                                                        <option value="">Select {getStateLabel(newAddress.country)}</option>
+                                                        {getStateOptions(newAddress.country).map(({ value, label }) => (
+                                                            <option key={value} value={value}>{label}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newPostalCode">Postal Code*</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newPostalCode"
+                                                        name="postalCode"
+                                                        className="form-control"
+                                                        value={newAddress.postalCode}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newCountry">Country*</label>
+                                                    <select
+                                                        id="newCountry"
+                                                        name="country"
+                                                        className="form-control"
+                                                        value={newAddress.country}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    >
+                                                        <option value="US">United States</option>
+                                                        <option value="CA">Canada</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="col-md-12">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newContactName">Contact Name*</label>
+                                                    <input
+                                                        type="text"
+                                                        id="newContactName"
+                                                        name="contactName"
+                                                        className="form-control"
+                                                        value={newAddress.contactName}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newContactPhone">Contact Phone*</label>
+                                                    <input
+                                                        type="tel"
+                                                        id="newContactPhone"
+                                                        name="contactPhone"
+                                                        className="form-control"
+                                                        value={newAddress.contactPhone}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="form-group">
+                                                    <label className="form-label" htmlFor="newContactEmail">Contact Email*</label>
+                                                    <input
+                                                        type="email"
+                                                        id="newContactEmail"
+                                                        name="contactEmail"
+                                                        className="form-control"
+                                                        value={newAddress.contactEmail}
+                                                        onChange={handleNewAddressChange}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="col-12 mt-3">
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="newIsDefault"
+                                                        name="isDefault"
+                                                        className="form-check-input"
+                                                        checked={newAddress.isDefault}
+                                                        onChange={handleNewAddressChange}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="newIsDefault">
+                                                        Set as default address
+                                                    </label>
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
+                                    </div>
+                                    <div className="card-footer bg-light">
+                                        <div className="d-flex justify-content-between">
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                onClick={handleCloseForm}
+                                                disabled={isSubmitting}
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn btn-success"
+                                                onClick={handleAddAddress}
+                                                disabled={isSubmitting}
+                                            >
+                                                {isSubmitting ? (
+                                                    <>
+                                                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                                        Adding...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <i className="bi bi-check-lg me-1"></i> Add Address
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        ) : (
+                            <div className="address-list">
+                                {companyAddresses.length === 0 ? (
+                                    <div className="text-center py-4">
+                                        <p className="text-muted mb-3">No saved addresses found</p>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary"
+                                            onClick={() => setShowAddAddressForm(true)}
+                                        >
+                                            <i className="bi bi-plus-lg me-1"></i> Add Your First Address
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="row g-3">
+                                        {companyAddresses.map((address) => (
+                                            <div key={address.id} className="col-md-6">
+                                                <div
+                                                    className={`card h-100 address-card ${selectedAddressId === address.id ? 'selected' : ''}`}
+                                                    style={{ cursor: 'pointer' }}
+                                                    onClick={() => handleAddressChange(address.id)}
+                                                >
+                                                    <div className="card-body">
+                                                        <div className="d-flex justify-content-between align-items-start mb-2">
+                                                            <h6 className="card-title mb-0">{address.name}</h6>
+                                                            {address.isDefault && (
+                                                                <span className="badge bg-primary">Default</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="card-text small mb-1">{address.company}</p>
+                                                        <p className="card-text small mb-1">
+                                                            {address.street}
+                                                            {address.street2 && <>, {address.street2}</>}
+                                                        </p>
+                                                        <p className="card-text small mb-1">
+                                                            {address.city}, {address.state} {address.postalCode}
+                                                        </p>
+                                                        <p className="card-text small mb-0">
+                                                            {address.contactName} • {address.contactPhone}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <div className="special-instructions mt-4">
@@ -345,249 +625,6 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                     </div>
                 </div>
             </div>
-
-            {/* Add Address Modal */}
-            {showAddAddressModal && (
-                <div className="modal show d-block" tabIndex="-1" style={{ zIndex: 1050 }}>
-                    <div className="modal-dialog modal-lg" style={{ zIndex: 1051 }}>
-                        <div className="modal-content">
-                            <div className="modal-header">
-                                <h5 className="modal-title">Add New Shipping Origin</h5>
-                                <button
-                                    type="button"
-                                    className="btn-close"
-                                    onClick={() => setShowAddAddressModal(false)}
-                                    disabled={isSubmitting}
-                                ></button>
-                            </div>
-                            <div className="modal-body">
-                                {error && (
-                                    <div className="alert alert-danger" role="alert">
-                                        {error}
-                                    </div>
-                                )}
-                                <div className="row g-3">
-                                    <div className="col-md-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newName">Address Name*</label>
-                                            <input
-                                                type="text"
-                                                id="newName"
-                                                name="name"
-                                                className="form-control"
-                                                value={newAddress.name}
-                                                onChange={handleNewAddressChange}
-                                                placeholder="e.g., Main Office, Warehouse"
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newCompany">Company Name*</label>
-                                            <input
-                                                type="text"
-                                                id="newCompany"
-                                                name="company"
-                                                className="form-control"
-                                                value={newAddress.company}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-12">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newAttention">Attention</label>
-                                            <input
-                                                type="text"
-                                                id="newAttention"
-                                                name="attention"
-                                                className="form-control"
-                                                value={newAddress.attention}
-                                                onChange={handleNewAddressChange}
-                                                placeholder="Contact person or department"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-12">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newStreet">Street Address*</label>
-                                            <input
-                                                type="text"
-                                                id="newStreet"
-                                                name="street"
-                                                className="form-control"
-                                                value={newAddress.street}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-12">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newStreet2">Suite/Unit (Optional)</label>
-                                            <input
-                                                type="text"
-                                                id="newStreet2"
-                                                name="street2"
-                                                className="form-control"
-                                                value={newAddress.street2}
-                                                onChange={handleNewAddressChange}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newCity">City*</label>
-                                            <input
-                                                type="text"
-                                                id="newCity"
-                                                name="city"
-                                                className="form-control"
-                                                value={newAddress.city}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newState">{getStateLabel(newAddress.country)}*</label>
-                                            <select
-                                                id="newState"
-                                                name="state"
-                                                className="form-control"
-                                                value={newAddress.state}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            >
-                                                <option value="">Select {getStateLabel(newAddress.country)}</option>
-                                                {getStateOptions(newAddress.country).map(({ value, label }) => (
-                                                    <option key={value} value={value}>{label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="col-md-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newPostalCode">Postal Code*</label>
-                                            <input
-                                                type="text"
-                                                id="newPostalCode"
-                                                name="postalCode"
-                                                className="form-control"
-                                                value={newAddress.postalCode}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-md-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newCountry">Country*</label>
-                                            <select
-                                                id="newCountry"
-                                                name="country"
-                                                className="form-control"
-                                                value={newAddress.country}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            >
-                                                <option value="US">United States</option>
-                                                <option value="CA">Canada</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="col-md-12">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newContactName">Contact Name*</label>
-                                            <input
-                                                type="text"
-                                                id="newContactName"
-                                                name="contactName"
-                                                className="form-control"
-                                                value={newAddress.contactName}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newContactPhone">Contact Phone*</label>
-                                            <input
-                                                type="tel"
-                                                id="newContactPhone"
-                                                name="contactPhone"
-                                                className="form-control"
-                                                value={newAddress.contactPhone}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-6">
-                                        <div className="form-group">
-                                            <label className="form-label" htmlFor="newContactEmail">Contact Email*</label>
-                                            <input
-                                                type="email"
-                                                id="newContactEmail"
-                                                name="contactEmail"
-                                                className="form-control"
-                                                value={newAddress.contactEmail}
-                                                onChange={handleNewAddressChange}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="col-12">
-                                        <div className="form-check">
-                                            <input
-                                                type="checkbox"
-                                                id="newIsDefault"
-                                                name="isDefault"
-                                                className="form-check-input"
-                                                checked={newAddress.isDefault}
-                                                onChange={handleNewAddressChange}
-                                            />
-                                            <label className="form-check-label" htmlFor="newIsDefault">
-                                                Set as default address
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => setShowAddAddressModal(false)}
-                                    disabled={isSubmitting}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn btn-primary"
-                                    onClick={handleAddAddress}
-                                    disabled={isSubmitting}
-                                >
-                                    {isSubmitting ? (
-                                        <>
-                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                            Adding...
-                                        </>
-                                    ) : (
-                                        'Add Address'
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="modal-backdrop show" style={{ zIndex: 1049 }}></div>
-                </div>
-            )}
 
             <div className="navigation-buttons d-flex justify-content-between mt-4">
                 <button

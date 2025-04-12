@@ -1,0 +1,91 @@
+/* ShipFrom Component Styles */
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  font-weight: 500;
+  color: #495057;
+}
+
+.form-control:focus {
+  border-color: #000;
+  box-shadow: 0 0 0 0.25rem rgba(0, 0, 0, 0.25);
+}
+
+/* Inline Form Styles */
+.add-address-form {
+  animation: slideDown 0.3s ease;
+}
+
+.add-address-form .card {
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.add-address-form .card-header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.add-address-form .card-footer {
+  border-top: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+/* Address Card Styles */
+.address-card {
+  transition: all 0.2s ease;
+  border: 1px solid #e9ecef;
+}
+
+.address-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
+}
+
+.address-card.selected {
+  border-color: #000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+  background-color: #000;
+  border-color: #000;
+}
+
+.btn-primary:hover {
+  background-color: #333;
+  border-color: #333;
+}
+
+.btn-success {
+  background-color: #10B981;
+  border-color: #10B981;
+}
+
+.btn-success:hover {
+  background-color: #059669;
+  border-color: #059669;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+} 
