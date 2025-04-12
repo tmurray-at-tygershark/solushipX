@@ -302,12 +302,28 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             setError('Please select a customer');
             return;
         }
-        if (!selectedAddressId) {
+
+        // Check if we have a selected address or if we're using form data
+        if (!selectedAddressId && !formData.street) {
             setError('Please select or add a shipping address');
             return;
         }
+
+        // Validate required fields in formData
+        const requiredFields = ['street', 'city', 'state', 'postalCode', 'country'];
+        const missingFields = requiredFields.filter(field => !formData[field]);
+
+        if (missingFields.length > 0) {
+            setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
+            return;
+        }
+
+        // Ensure form data is passed to parent before proceeding
+        onDataChange(formData);
+
+        // If all validations pass, proceed to next step
         onNext();
-    }, [selectedCustomer, selectedAddressId, onNext]);
+    }, [selectedCustomer, selectedAddressId, formData, onNext, onDataChange]);
 
     if (loading) {
         return (
@@ -823,11 +839,13 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                                         <span className="badge bg-primary">Default</span>
                                                                     )}
                                                                 </div>
+                                                                {address.street2 && (
+                                                                    <p className="card-text small mb-1">
+                                                                        {address.street2}
+                                                                    </p>
+                                                                )}
                                                                 <p className="card-text small mb-1">
                                                                     {address.city}, {address.state} {address.zip}
-                                                                </p>
-                                                                <p className="card-text small mb-1">
-                                                                    {address.country}
                                                                 </p>
                                                                 <div className="mt-2 pt-2 border-top">
                                                                     {address.attention && (
