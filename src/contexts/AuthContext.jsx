@@ -33,15 +33,21 @@ export const AuthProvider = ({ children }) => {
             console.log('=== Auth State Changed ===');
             console.log('User:', user?.email);
 
-            setUser(user);
             if (user) {
                 try {
-                    // Fetch user role from Firestore
+                    // Fetch user data from Firestore
                     const userDoc = await getDoc(doc(db, 'users', user.uid));
                     if (userDoc.exists()) {
                         const userData = userDoc.data();
                         console.log('User data from Firestore:', userData);
                         console.log('Setting user role to:', userData.role);
+
+                        // Set user with additional data from Firestore
+                        setUser({
+                            ...user,
+                            companyId: userData.companyId,
+                            role: userData.role
+                        });
                         setUserRole(userData.role);
                     } else {
                         console.log('No user document found, creating new one');
@@ -53,14 +59,17 @@ export const AuthProvider = ({ children }) => {
                             lastLogin: new Date(),
                             updatedAt: new Date()
                         });
+                        setUser(user);
                         setUserRole('user');
                     }
                 } catch (error) {
-                    console.error('Error fetching user role:', error);
+                    console.error('Error fetching user data:', error);
+                    setUser(user);
                     setUserRole(null);
                 }
             } else {
                 console.log('No user, clearing role');
+                setUser(null);
                 setUserRole(null);
             }
             setLoading(false);
@@ -83,11 +92,18 @@ export const AuthProvider = ({ children }) => {
             setLoading(true);
             const result = await signInWithEmailAndPassword(auth, email, password);
 
-            // Fetch user role from Firestore
+            // Fetch user data from Firestore
             const userDoc = await getDoc(doc(db, 'users', result.user.uid));
             if (userDoc.exists()) {
                 const userData = userDoc.data();
                 console.log('Login - User data from Firestore:', userData);
+
+                // Set user with additional data from Firestore
+                setUser({
+                    ...result.user,
+                    companyId: userData.companyId,
+                    role: userData.role
+                });
                 setUserRole(userData.role);
 
                 // Update lastLogin
@@ -105,6 +121,7 @@ export const AuthProvider = ({ children }) => {
                     lastLogin: new Date(),
                     updatedAt: new Date()
                 });
+                setUser(result.user);
                 setUserRole('user');
             }
 

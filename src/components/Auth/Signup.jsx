@@ -22,6 +22,8 @@ import {
 } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
 import { saveCustomerData } from '../../firebase/db';
+import { db } from '../../firebase';
+import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 
 const steps = ['Account Details', 'Business Information', 'Review & Confirm'];
 
@@ -111,49 +113,49 @@ const SignUp = () => {
         }));
     };
 
-    const handleSubmit = async (e) => {
-        if (e) {
-            e.preventDefault();
-        }
-        setLoading(true);
-        setError('');
-
+    const handleSubmit = async () => {
         try {
-            // Create the user account
-            const { user } = await signup(formData.email, formData.password);
+            setLoading(true);
+            setError(null);
 
-            if (!user) {
-                throw new Error('Failed to create user account');
-            }
+            // Create user account
+            const userCredential = await signup(formData.email, formData.password);
+            const user = userCredential;
 
-            // Prepare customer data
-            const customerData = {
-                firstName: formData.firstName,
-                lastName: formData.lastName,
+            // Create company record
+            const companyRef = await addDoc(collection(db, 'companies'), {
+                name: formData.companyName,
                 email: formData.email,
+                phone: formData.phoneNumber,
+                address: formData.address,
+                city: formData.city,
+                state: formData.state,
+                zipCode: formData.zipCode,
                 country: formData.country,
                 monthlyShipments: formData.monthlyShipments,
-                company: formData.companyName || '',
-                phone: formData.phoneNumber || '',
-                address: formData.address || '',
-                city: formData.city || '',
-                state: formData.state || '',
-                zipCode: formData.zipCode || ''
-            };
+                status: 'active',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                shipFromAddresses: []
+            });
 
-            // Save customer data to Firestore
-            const { success, error: dbError } = await saveCustomerData(user.uid, customerData);
+            // Update user record with company ID
+            await updateDoc(doc(db, 'users', user.uid), {
+                companyId: companyRef.id,
+                companyName: formData.companyName
+            });
 
-            if (!success) {
-                throw new Error(dbError || 'Failed to save customer data');
-            }
+            // Save additional user data
+            await saveCustomerData({
+                userId: user.uid,
+                companyId: companyRef.id,
+                ...formData
+            });
 
-            // Navigate to dashboard on success
             navigate('/dashboard');
-        } catch (error) {
-            console.error('Signup error:', error);
-            setError(error.message || 'Failed to create account');
-        } finally {
+        } catch (err) {
+            console.error('Signup error:', err);
+            setError(err.message || 'Failed to create account');
             setLoading(false);
         }
     };
