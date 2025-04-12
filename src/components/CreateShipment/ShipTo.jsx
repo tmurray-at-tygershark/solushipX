@@ -33,6 +33,9 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(50);
     const [newAddress, setNewAddress] = useState({
         name: '',
         company: '',
@@ -136,6 +139,20 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             )
         );
     });
+
+    // Pagination logic
+    const indexOfLastItem = currentPage * itemsPerPage;
+    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+    const currentItems = filteredCustomers.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
+
+    const handlePageChange = (pageNumber) => {
+        setCurrentPage(pageNumber);
+    };
+
+    const toggleViewMode = () => {
+        setViewMode(viewMode === 'grid' ? 'list' : 'grid');
+    };
 
     const handleCustomerSelect = (customer) => {
         setSelectedCustomer(customer);
@@ -421,47 +438,152 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                             </div>
                         ) : (
                             <div className="customer-list mt-4">
-                                <div className="row g-3">
-                                    {customers.map((customer) => (
-                                        <div key={customer.id} className="col-md-6">
-                                            <div
-                                                className="card h-100 customer-card"
-                                                onClick={() => handleCustomerSelect(customer)}
-                                            >
-                                                <div className="card-body">
-                                                    <div className="d-flex align-items-center mb-3">
-                                                        <div className="customer-avatar me-3">
-                                                            {customer.name?.charAt(0) || 'C'}
+                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 className="mb-0">Customer List</h6>
+                                    <div className="d-flex align-items-center">
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-secondary me-2"
+                                            onClick={toggleViewMode}
+                                            style={{
+                                                backgroundColor: viewMode === 'list' ? '#f8f9fa' : 'transparent',
+                                                color: '#212529',
+                                                borderColor: '#dee2e6'
+                                            }}
+                                        >
+                                            <i className={`bi ${viewMode === 'grid' ? 'bi-list' : 'bi-grid'}`}></i>
+                                            {viewMode === 'grid' ? ' List View' : ' Grid View'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {viewMode === 'grid' ? (
+                                    <div className="row g-3">
+                                        {currentItems.map((customer) => (
+                                            <div key={customer.id} className="col-md-6">
+                                                <div
+                                                    className="card h-100 customer-card"
+                                                    onClick={() => handleCustomerSelect(customer)}
+                                                >
+                                                    <div className="card-body">
+                                                        <div className="d-flex align-items-center mb-3">
+                                                            <div className="customer-avatar me-3">
+                                                                {customer.name?.charAt(0) || 'C'}
+                                                            </div>
+                                                            <div>
+                                                                <h6 className="card-title mb-1 text-dark">{customer.name}</h6>
+                                                                <p className="card-text small text-muted mb-0">
+                                                                    {customer.addresses?.length || 0} address{customer.addresses?.length !== 1 ? 'es' : ''}
+                                                                </p>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <h6 className="card-title mb-1 text-dark">{customer.name}</h6>
-                                                            <p className="card-text small text-muted mb-0">
-                                                                {customer.addresses?.length || 0} address{customer.addresses?.length !== 1 ? 'es' : ''}
-                                                            </p>
+                                                        <div className="customer-details">
+                                                            {customer.contacts?.[0] && (
+                                                                <div className="small mb-1">
+                                                                    <i className="bi bi-person me-1"></i> {customer.contacts[0].name}
+                                                                </div>
+                                                            )}
+                                                            {customer.contacts?.[0]?.email && (
+                                                                <div className="small mb-1">
+                                                                    <i className="bi bi-envelope me-1"></i> {customer.contacts[0].email}
+                                                                </div>
+                                                            )}
+                                                            {customer.contacts?.[0]?.phone && (
+                                                                <div className="small">
+                                                                    <i className="bi bi-telephone me-1"></i> {customer.contacts[0].phone}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                    <div className="customer-details">
-                                                        {customer.contacts?.[0] && (
-                                                            <div className="small mb-1">
-                                                                <i className="bi bi-person me-1"></i> {customer.contacts[0].name}
-                                                            </div>
-                                                        )}
-                                                        {customer.contacts?.[0]?.email && (
-                                                            <div className="small mb-1">
-                                                                <i className="bi bi-envelope me-1"></i> {customer.contacts[0].email}
-                                                            </div>
-                                                        )}
-                                                        {customer.contacts?.[0]?.phone && (
-                                                            <div className="small">
-                                                                <i className="bi bi-telephone me-1"></i> {customer.contacts[0].phone}
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="list-view">
+                                        <div className="list-group">
+                                            {currentItems.map((customer) => (
+                                                <div
+                                                    key={customer.id}
+                                                    className="list-group-item list-group-item-action"
+                                                    onClick={() => handleCustomerSelect(customer)}
+                                                >
+                                                    <div className="d-flex align-items-center">
+                                                        <div className="customer-avatar me-3">
+                                                            {customer.name?.charAt(0) || 'C'}
+                                                        </div>
+                                                        <div className="flex-grow-1">
+                                                            <h6 className="mb-1 text-dark">{customer.name}</h6>
+                                                            <div className="d-flex flex-wrap">
+                                                                {customer.contacts?.[0] && (
+                                                                    <span className="me-3 small">
+                                                                        <i className="bi bi-person me-1"></i> {customer.contacts[0].name}
+                                                                    </span>
+                                                                )}
+                                                                {customer.contacts?.[0]?.email && (
+                                                                    <span className="me-3 small">
+                                                                        <i className="bi bi-envelope me-1"></i> {customer.contacts[0].email}
+                                                                    </span>
+                                                                )}
+                                                                {customer.contacts?.[0]?.phone && (
+                                                                    <span className="me-3 small">
+                                                                        <i className="bi bi-telephone me-1"></i> {customer.contacts[0].phone}
+                                                                    </span>
+                                                                )}
+                                                                <span className="small text-muted">
+                                                                    {customer.addresses?.length || 0} address{customer.addresses?.length !== 1 ? 'es' : ''}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <i className="bi bi-chevron-right text-muted"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                </div>
+                                    </div>
+                                )}
+
+                                {filteredCustomers.length > itemsPerPage && (
+                                    <div className="d-flex justify-content-center mt-4">
+                                        <nav aria-label="Customer pagination">
+                                            <ul className="pagination">
+                                                <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                                                    <button
+                                                        className="page-link"
+                                                        onClick={() => handlePageChange(currentPage - 1)}
+                                                        disabled={currentPage === 1}
+                                                    >
+                                                        Previous
+                                                    </button>
+                                                </li>
+                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(number => (
+                                                    <li
+                                                        key={number}
+                                                        className={`page-item ${currentPage === number ? 'active' : ''}`}
+                                                    >
+                                                        <button
+                                                            className="page-link"
+                                                            onClick={() => handlePageChange(number)}
+                                                        >
+                                                            {number}
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                                <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                                                    <button
+                                                        className="page-link"
+                                                        onClick={() => handlePageChange(currentPage + 1)}
+                                                        disabled={currentPage === totalPages}
+                                                    >
+                                                        Next
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </nav>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
