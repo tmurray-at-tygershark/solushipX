@@ -139,8 +139,23 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
     const handleCustomerSelect = (customer) => {
         setSelectedCustomer(customer);
-        setCustomerAddresses(customer.addresses?.filter(addr => addr.type === 'shipping') || []);
-        setSelectedAddressId(null);
+        const shippingAddresses = customer.addresses?.filter(addr => addr.type === 'shipping') || [];
+        setCustomerAddresses(shippingAddresses);
+
+        // Find the default/primary address
+        const defaultAddressIndex = shippingAddresses.findIndex(addr => addr.default === true);
+
+        // If there's a default address, select it; otherwise, select the first address if available
+        if (defaultAddressIndex !== -1) {
+            setSelectedAddressId(defaultAddressIndex);
+            handleAddressChange(defaultAddressIndex);
+        } else if (shippingAddresses.length > 0) {
+            setSelectedAddressId(0);
+            handleAddressChange(0);
+        } else {
+            setSelectedAddressId(null);
+        }
+
         setFormData({
             name: '',
             company: customer.name || '',
@@ -159,11 +174,12 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         setSearchFocused(false);
     };
 
-    const handleAddressChange = useCallback((addressId) => {
-        const selectedAddress = customerAddresses.find(addr => addr.id === addressId);
+    const handleAddressChange = useCallback((addressIndex) => {
+        // Find the address by index instead of ID
+        const selectedAddress = customerAddresses[addressIndex];
         if (selectedAddress) {
-            setSelectedAddressId(addressId);
-            setFormData({
+            setSelectedAddressId(addressIndex);
+            const updatedFormData = {
                 name: selectedAddress.name || '',
                 company: selectedCustomer.name || '',
                 attention: selectedAddress.attention || '',
@@ -177,8 +193,9 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 contactPhone: selectedAddress.contactPhone || '',
                 contactEmail: selectedAddress.contactEmail || '',
                 specialInstructions: selectedAddress.specialInstructions || ''
-            });
-            setTimeout(() => onDataChange(selectedAddress), 0);
+            };
+            setFormData(updatedFormData);
+            onDataChange(updatedFormData);
         }
     }, [customerAddresses, selectedCustomer, onDataChange]);
 
@@ -246,7 +263,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
             // If this is the first address or marked as default, select it
             if (updatedAddresses.length === 1 || newAddress.isDefault) {
-                handleAddressChange(addressData.id);
+                handleAddressChange(0);
             }
 
             // Close form and reset
@@ -406,7 +423,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                             <div className="customer-list mt-4">
                                 <div className="row g-3">
                                     {customers.map((customer) => (
-                                        <div key={customer.id} className="col-md-6 col-lg-4">
+                                        <div key={customer.id} className="col-md-6">
                                             <div
                                                 className="card h-100 customer-card"
                                                 onClick={() => handleCustomerSelect(customer)}
@@ -417,7 +434,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                             {customer.name?.charAt(0) || 'C'}
                                                         </div>
                                                         <div>
-                                                            <h6 className="card-title mb-1">{customer.name}</h6>
+                                                            <h6 className="card-title mb-1 text-dark">{customer.name}</h6>
                                                             <p className="card-text small text-muted mb-0">
                                                                 {customer.addresses?.length || 0} address{customer.addresses?.length !== 1 ? 'es' : ''}
                                                             </p>
@@ -487,49 +504,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                 )}
 
                                                 <div className="row g-3">
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newName">Address Name*</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newName"
-                                                                name="name"
-                                                                className="form-control"
-                                                                value={newAddress.name}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., Main Office, Warehouse"
-                                                                required
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newCompany">Company Name*</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newCompany"
-                                                                name="company"
-                                                                className="form-control"
-                                                                value={newAddress.company}
-                                                                onChange={handleNewAddressChange}
-                                                                required
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-12">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newAttention">Attention</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newAttention"
-                                                                name="attention"
-                                                                className="form-control"
-                                                                value={newAddress.attention}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="Contact person or department"
-                                                            />
-                                                        </div>
-                                                    </div>
                                                     <div className="col-md-12">
                                                         <div className="form-group">
                                                             <label className="form-label" htmlFor="newStreet">Street Address*</label>
@@ -540,6 +514,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                                 className="form-control"
                                                                 value={newAddress.street}
                                                                 onChange={handleNewAddressChange}
+                                                                placeholder="e.g., 3850 Oak St"
                                                                 required
                                                             />
                                                         </div>
@@ -554,6 +529,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                                 className="form-control"
                                                                 value={newAddress.street2}
                                                                 onChange={handleNewAddressChange}
+                                                                placeholder="e.g., Suite 100"
                                                             />
                                                         </div>
                                                     </div>
@@ -567,6 +543,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                                 className="form-control"
                                                                 value={newAddress.city}
                                                                 onChange={handleNewAddressChange}
+                                                                placeholder="e.g., New York"
                                                                 required
                                                             />
                                                         </div>
@@ -599,6 +576,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                                 className="form-control"
                                                                 value={newAddress.postalCode}
                                                                 onChange={handleNewAddressChange}
+                                                                placeholder="e.g., 11340"
                                                                 required
                                                             />
                                                         </div>
@@ -621,44 +599,30 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                     </div>
                                                     <div className="col-md-12">
                                                         <div className="form-group">
-                                                            <label className="form-label" htmlFor="newContactName">Contact Name*</label>
+                                                            <label className="form-label" htmlFor="newAttention">Attention</label>
                                                             <input
                                                                 type="text"
-                                                                id="newContactName"
-                                                                name="contactName"
+                                                                id="newAttention"
+                                                                name="attention"
                                                                 className="form-control"
-                                                                value={newAddress.contactName}
+                                                                value={newAddress.attention}
                                                                 onChange={handleNewAddressChange}
-                                                                required
+                                                                placeholder="e.g., Shipping Dept"
                                                             />
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-6">
+                                                    <div className="col-md-12">
                                                         <div className="form-group">
-                                                            <label className="form-label" htmlFor="newContactPhone">Contact Phone*</label>
-                                                            <input
-                                                                type="tel"
-                                                                id="newContactPhone"
-                                                                name="contactPhone"
+                                                            <label className="form-label" htmlFor="newSpecialInstructions">Special Instructions</label>
+                                                            <textarea
+                                                                id="newSpecialInstructions"
+                                                                name="specialInstructions"
                                                                 className="form-control"
-                                                                value={newAddress.contactPhone}
+                                                                value={newAddress.specialInstructions}
                                                                 onChange={handleNewAddressChange}
-                                                                required
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newContactEmail">Contact Email*</label>
-                                                            <input
-                                                                type="email"
-                                                                id="newContactEmail"
-                                                                name="contactEmail"
-                                                                className="form-control"
-                                                                value={newAddress.contactEmail}
-                                                                onChange={handleNewAddressChange}
-                                                                required
-                                                            />
+                                                                placeholder="e.g., Delivery entrance on side"
+                                                                rows="2"
+                                                            ></textarea>
                                                         </div>
                                                     </div>
                                                     <div className="col-12 mt-3">
@@ -732,22 +696,34 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                         >
                                                             <div className="card-body">
                                                                 <div className="d-flex justify-content-between align-items-start mb-2">
-                                                                    <h6 className="card-title mb-0">{address.name}</h6>
+                                                                    <h6 className="card-title mb-0">{address.street}</h6>
                                                                     {address.default && (
                                                                         <span className="badge bg-primary">Default</span>
                                                                     )}
                                                                 </div>
-                                                                <p className="card-text small mb-1">{address.company}</p>
-                                                                <p className="card-text small mb-1">
-                                                                    {address.street}
-                                                                    {address.street2 && <>, {address.street2}</>}
-                                                                </p>
                                                                 <p className="card-text small mb-1">
                                                                     {address.city}, {address.state} {address.zip}
                                                                 </p>
-                                                                <p className="card-text small mb-0">
-                                                                    {address.contactName} • {address.contactPhone}
+                                                                <p className="card-text small mb-1">
+                                                                    {address.country}
                                                                 </p>
+                                                                <div className="mt-2 pt-2 border-top">
+                                                                    {address.attention && (
+                                                                        <p className="card-text small mb-2">
+                                                                            <span className="text-muted">Attention:</span> {address.attention}
+                                                                        </p>
+                                                                    )}
+                                                                    {address.specialInstructions && (
+                                                                        <>
+                                                                            <p className="card-text small mb-0">
+                                                                                <span className="text-muted">Special Instructions:</span>
+                                                                            </p>
+                                                                            <p className="card-text small mb-0 fst-italic">
+                                                                                {address.specialInstructions}
+                                                                            </p>
+                                                                        </>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
