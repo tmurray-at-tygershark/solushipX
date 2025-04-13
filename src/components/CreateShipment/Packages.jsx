@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Switch, FormControlLabel, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, ToggleButton, ToggleButtonGroup, Divider, Tooltip, IconButton } from '@mui/material';
+import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
 
 const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
@@ -68,7 +68,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
 
             setPackages(updatedPackages);
             onDataChange(updatedPackages);
-            setUnitSystem(newUnitSystem);
+            setUnitSystem(event.target.checked ? 'metric' : 'imperial');
         }
     };
 
@@ -165,7 +165,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                         </Box>
 
                         <Grid container spacing={3}>
-                            <Grid item xs={12} md={7}>
+                            <Grid item xs={12} md={5}>
                                 <TextField
                                     fullWidth
                                     label="Item Description"
@@ -174,7 +174,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     required
                                 />
                             </Grid>
-                            <Grid item xs={12} md={5}>
+                            <Grid item xs={12} md={4}>
                                 <FormControl fullWidth required>
                                     <InputLabel>Packaging Type</InputLabel>
                                     <Select
@@ -189,7 +189,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     </Select>
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12} md={3}>
                                 <FormControl fullWidth required>
                                     <InputLabel>Qty</InputLabel>
                                     <Select
@@ -205,7 +205,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     </Select>
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12}>
                                 <TextField
                                     fullWidth
                                     label="Package Reference ID"
@@ -215,7 +215,9 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     helperText="Optional: Used to track individual packages within a shipment"
                                 />
                             </Grid>
-                            <Grid item xs={12} md={6}>
+
+                            {/* Unit Toggle and Dimensions Section */}
+                            <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
                                     label="Weight"
@@ -228,7 +230,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     }}
                                 />
                             </Grid>
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
                                     label="Length"
@@ -241,7 +243,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     }}
                                 />
                             </Grid>
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
                                     label="Width"
@@ -254,7 +256,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     }}
                                 />
                             </Grid>
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
                                     label="Height"
@@ -267,32 +269,26 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     }}
                                 />
                             </Grid>
-                            <Grid item xs={12} md={6}>
-                                <FormControl fullWidth required>
-                                    <InputLabel>Freight Class</InputLabel>
-                                    <Select
-                                        value={pkg.freightClass || ''}
-                                        onChange={(e) => updatePackage(index, 'freightClass', e.target.value)}
-                                        label="Freight Class"
-                                    >
-                                        {[50, 55, 60, 65, 70, 77.5, 85, 92.5, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500].map((value) => (
-                                            <MenuItem key={value} value={value.toString()}>{value}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Declared Value"
-                                    type="number"
-                                    value={pkg.declaredValue || ''}
-                                    onChange={(e) => updatePackage(index, 'declaredValue', e.target.value)}
-                                    required
-                                    InputProps={{
-                                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                                    }}
-                                />
+                            <Grid item xs={12} md={2.4} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography variant="body2" color="text.secondary">Imperial</Typography>
+                                    <Switch
+                                        checked={unitSystem === 'metric'}
+                                        onChange={handleUnitChange}
+                                        sx={{
+                                            '& .MuiSwitch-switchBase.Mui-checked': {
+                                                color: 'primary.main',
+                                                '&:hover': {
+                                                    backgroundColor: 'primary.light'
+                                                }
+                                            },
+                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                backgroundColor: 'primary.main'
+                                            }
+                                        }}
+                                    />
+                                    <Typography variant="body2" color="text.secondary">Metric</Typography>
+                                </Box>
                             </Grid>
                             <Grid item xs={12}>
                                 <FormControlLabel
@@ -300,6 +296,17 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                         <Switch
                                             checked={pkg.stackable || false}
                                             onChange={(e) => updatePackage(index, 'stackable', e.target.checked)}
+                                            sx={{
+                                                '& .MuiSwitch-switchBase.Mui-checked': {
+                                                    color: 'primary.main',
+                                                    '&:hover': {
+                                                        backgroundColor: 'primary.light'
+                                                    }
+                                                },
+                                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                    backgroundColor: 'primary.main'
+                                                }
+                                            }}
                                         />
                                     }
                                     label="Stackable"
