@@ -375,14 +375,14 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                         company: formData.shipFrom.company || "",
                         street: formData.shipFrom.street || "",
                         street2: formData.shipFrom.street2 || "",
-                        postalCode: formData.shipFrom.postalCode || "",
+                        postalCode: formData.shipFrom.zip || formData.shipFrom.postalCode || "",
                         city: formData.shipFrom.city || "",
                         state: formData.shipFrom.state || "",
                         country: formData.shipFrom.country || "US",
                         contactName: formData.shipFrom.contactName || "",
                         contactPhone: formData.shipFrom.contactPhone || "",
                         contactEmail: formData.shipFrom.contactEmail || "",
-                        specialInstructions: formData.shipFrom.specialInstructions || ""
+                        specialInstructions: formData.shipFrom.specialInstructions || "none"
                     },
                     toAddress: {
                         company: formData.shipTo.company || "",
@@ -395,7 +395,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                         contactName: formData.shipTo.contactName || "",
                         contactPhone: formData.shipTo.contactPhone || "",
                         contactEmail: formData.shipTo.contactEmail || "",
-                        specialInstructions: formData.shipTo.specialInstructions || ""
+                        specialInstructions: formData.shipTo.specialInstructions || "none"
                     },
                     items: formData.packages.map(pkg => ({
                         name: pkg.description || "Package",
@@ -409,6 +409,37 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                         stackable: pkg.stackable || false
                     }))
                 };
+
+                // Validate postal codes before making the API call
+                if (!rateRequestData.fromAddress.postalCode || rateRequestData.fromAddress.postalCode.trim() === '') {
+                    throw new Error('Missing or invalid postal code in origin address');
+                }
+
+                if (!rateRequestData.toAddress.postalCode || rateRequestData.toAddress.postalCode.trim() === '') {
+                    throw new Error('Missing or invalid postal code in destination address');
+                }
+
+                // Validate contact names before making the API call
+                if (!rateRequestData.fromAddress.contactName || rateRequestData.fromAddress.contactName.trim() === '') {
+                    throw new Error('Missing or invalid contact name in origin address');
+                }
+
+                if (!rateRequestData.toAddress.contactName || rateRequestData.toAddress.contactName.trim() === '') {
+                    throw new Error('Missing or invalid contact name in destination address');
+                }
+
+                // Validate special instructions before making the API call
+                if (!rateRequestData.fromAddress.specialInstructions ||
+                    (rateRequestData.fromAddress.specialInstructions.trim() === '' &&
+                        rateRequestData.fromAddress.specialInstructions !== 'none')) {
+                    throw new Error('Missing or invalid specialInstructions in origin address');
+                }
+
+                if (!rateRequestData.toAddress.specialInstructions ||
+                    (rateRequestData.toAddress.specialInstructions.trim() === '' &&
+                        rateRequestData.toAddress.specialInstructions !== 'none')) {
+                    throw new Error('Missing or invalid specialInstructions in destination address');
+                }
 
                 // Add detailed console logging
                 console.group('🚢 Rate Request Data');
