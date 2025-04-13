@@ -204,11 +204,11 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 street2: selectedAddress.street2 || '',
                 city: selectedAddress.city || '',
                 state: selectedAddress.state || '',
-                postalCode: selectedAddress.zip || '',
+                postalCode: selectedAddress.zip || selectedAddress.postalCode || '',
                 country: selectedAddress.country || 'US',
-                contactName: selectedAddress.contactName || '',
-                contactPhone: selectedAddress.contactPhone || '',
-                contactEmail: selectedAddress.contactEmail || '',
+                contactName: selectedCustomer.contacts?.[0]?.name || '',
+                contactPhone: selectedCustomer.contacts?.[0]?.phone || '',
+                contactEmail: selectedCustomer.contacts?.[0]?.email || '',
                 specialInstructions: selectedAddress.specialInstructions || ''
             };
             setFormData(updatedFormData);
