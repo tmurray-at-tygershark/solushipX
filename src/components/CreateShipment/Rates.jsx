@@ -410,7 +410,31 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                     }))
                 };
 
-                console.log('Rate Request Data:', rateRequestData);
+                // Add detailed console logging
+                console.group('🚢 Rate Request Data');
+                console.log('📅 Shipment Details:', {
+                    bookingReference: rateRequestData.bookingReferenceNumber,
+                    bookingReferenceType: rateRequestData.bookingReferenceNumberType,
+                    shipmentBillType: rateRequestData.shipmentBillType,
+                    shipmentDate: rateRequestData.shipmentDate,
+                    pickupWindow: rateRequestData.pickupWindow,
+                    deliveryWindow: rateRequestData.deliveryWindow
+                });
+
+                console.log('📍 From Address:', rateRequestData.fromAddress);
+                console.log('📍 To Address:', rateRequestData.toAddress);
+
+                console.log('📦 Packages:', rateRequestData.items.map(item => ({
+                    name: item.name,
+                    weight: item.weight,
+                    dimensions: `${item.length}x${item.width}x${item.height}`,
+                    quantity: item.quantity,
+                    freightClass: item.freightClass,
+                    value: item.value,
+                    stackable: item.stackable
+                })));
+
+                console.groupEnd();
 
                 const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
                     method: 'POST',
