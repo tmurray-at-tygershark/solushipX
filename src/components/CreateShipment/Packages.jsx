@@ -226,7 +226,22 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     onChange={(e) => updatePackage(index, 'weight', e.target.value)}
                                     required
                                     InputProps={{
-                                        endAdornment: <InputAdornment position="end">{unitSystem === 'metric' ? 'kg' : 'lbs'}</InputAdornment>,
+                                        endAdornment: (
+                                            <InputAdornment position="end">
+                                                <Box
+                                                    sx={{
+                                                        bgcolor: 'grey.800',
+                                                        color: 'white',
+                                                        px: 1,
+                                                        py: 0.5,
+                                                        borderRadius: 1,
+                                                        fontSize: '0.875rem'
+                                                    }}
+                                                >
+                                                    {unitSystem === 'metric' ? 'kg' : 'lbs'}
+                                                </Box>
+                                            </InputAdornment>
+                                        ),
                                     }}
                                 />
                             </Grid>
@@ -239,7 +254,22 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     onChange={(e) => updatePackage(index, 'length', e.target.value)}
                                     required
                                     InputProps={{
-                                        endAdornment: <InputAdornment position="end">{unitSystem === 'metric' ? 'cm' : 'in'}</InputAdornment>,
+                                        endAdornment: (
+                                            <InputAdornment position="end">
+                                                <Box
+                                                    sx={{
+                                                        bgcolor: 'grey.800',
+                                                        color: 'white',
+                                                        px: 1,
+                                                        py: 0.5,
+                                                        borderRadius: 1,
+                                                        fontSize: '0.875rem'
+                                                    }}
+                                                >
+                                                    {unitSystem === 'metric' ? 'cm' : 'in'}
+                                                </Box>
+                                            </InputAdornment>
+                                        ),
                                     }}
                                 />
                             </Grid>
@@ -252,7 +282,22 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     onChange={(e) => updatePackage(index, 'width', e.target.value)}
                                     required
                                     InputProps={{
-                                        endAdornment: <InputAdornment position="end">{unitSystem === 'metric' ? 'cm' : 'in'}</InputAdornment>,
+                                        endAdornment: (
+                                            <InputAdornment position="end">
+                                                <Box
+                                                    sx={{
+                                                        bgcolor: 'grey.800',
+                                                        color: 'white',
+                                                        px: 1,
+                                                        py: 0.5,
+                                                        borderRadius: 1,
+                                                        fontSize: '0.875rem'
+                                                    }}
+                                                >
+                                                    {unitSystem === 'metric' ? 'cm' : 'in'}
+                                                </Box>
+                                            </InputAdornment>
+                                        ),
                                     }}
                                 />
                             </Grid>
@@ -265,7 +310,22 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                     onChange={(e) => updatePackage(index, 'height', e.target.value)}
                                     required
                                     InputProps={{
-                                        endAdornment: <InputAdornment position="end">{unitSystem === 'metric' ? 'cm' : 'in'}</InputAdornment>,
+                                        endAdornment: (
+                                            <InputAdornment position="end">
+                                                <Box
+                                                    sx={{
+                                                        bgcolor: 'grey.800',
+                                                        color: 'white',
+                                                        px: 1,
+                                                        py: 0.5,
+                                                        borderRadius: 1,
+                                                        fontSize: '0.875rem'
+                                                    }}
+                                                >
+                                                    {unitSystem === 'metric' ? 'cm' : 'in'}
+                                                </Box>
+                                            </InputAdornment>
+                                        ),
                                     }}
                                 />
                             </Grid>
