@@ -72,7 +72,7 @@ const CreateShipment = () => {
             specialInstructions: "Deliver to Bay 3"
         },
         packages: [{
-            itemDescription: "metal shavings",
+            itemDescription: "Metal Shavings",
             packagingType: 258,
             packagingQuantity: 1,
             stackable: true,
