@@ -3,7 +3,22 @@ import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, Inpu
 import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
 
 const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
-    const [packages, setPackages] = useState(data || []);
+    const defaultPackage = {
+        itemDescription: '',
+        packagingType: 258,
+        packagingQuantity: 1,
+        packageReferenceID: '',
+        stackable: true,
+        weight: '',
+        height: '',
+        width: '',
+        length: '',
+        freightClass: "50",
+        declaredValue: 0.00,
+        currency: 'USD' // Default currency
+    };
+
+    const [packages, setPackages] = useState(data?.length ? data : [defaultPackage]);
     const [unitSystem, setUnitSystem] = useState('imperial'); // 'imperial' or 'metric'
     const [currencies] = useState([
         { code: 'USD', symbol: '$', name: 'US Dollar' },
@@ -14,6 +29,8 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
     useEffect(() => {
         if (data && data.length > 0) {
             setPackages(data);
+        } else if (packages.length === 0) {
+            setPackages([defaultPackage]);
         }
     }, [data]);
 

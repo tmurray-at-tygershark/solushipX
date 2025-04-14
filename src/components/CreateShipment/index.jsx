@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import StepperComponent from './Stepper';
 import ShipmentInfo from './ShipmentInfo';
 import ShipFrom from './ShipFrom';
@@ -8,8 +9,29 @@ import Rates from './Rates';
 import Review from './Review';
 import './CreateShipment.css';
 
+// Step mapping constants
+const STEPS = {
+    'shipment-info': 1,
+    'ship-from': 2,
+    'ship-to': 3,
+    'packages': 4,
+    'rates': 5,
+    'review': 6
+};
+
+const STEP_SLUGS = {
+    1: 'shipment-info',
+    2: 'ship-from',
+    3: 'ship-to',
+    4: 'packages',
+    5: 'rates',
+    6: 'review'
+};
+
 const CreateShipment = () => {
-    const [currentStep, setCurrentStep] = useState(1);
+    const { step: urlStep } = useParams();
+    const navigate = useNavigate();
+    const [currentStep, setCurrentStep] = useState(urlStep ? STEPS[urlStep] || 1 : 1);
     const [formData, setFormData] = useState({
         shipmentInfo: {},
         shipFrom: {},
@@ -18,76 +40,19 @@ const CreateShipment = () => {
     });
     const [selectedRate, setSelectedRate] = useState(null);
     const hasLogged = useRef(false);
+    const isNavigating = useRef(false);
 
-    // Sample draft data matching the original implementation
-    const sampleDraft = {
-        shipmentInfo: {
-            shipmentType: 'courier',
-            internationalShipment: false,
-            shipperReferenceNumber: 'TFM0228',
-            bookingReferenceNumber: 'TFM-0228',
-            bookingReferenceType: 'Shipment',
-            shipmentBillType: 'DefaultLogisticsPlus',
-            shipmentDate: new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0],
-            earliestPickupTime: '05:00',
-            latestPickupTime: '17:00',
-            earliestDeliveryTime: '09:00',
-            latestDeliveryTime: '22:00',
-            dangerousGoodsType: 'none',
-            signatureServiceType: 'none',
-            holdForPickup: false,
-            saturdayDelivery: false,
-            dutibleAmount: 0.00,
-            dutibleCurrency: 'CDN',
-            numberOfPackages: 1
-        },
-        shipFrom: {
-            company: "Tyger Shark Inc.",
-            attentionName: "Tyler Murray",
-            street: "123 Main Street",
-            street2: "Unit A",
-            postalCode: "53151",
-            city: "New Berlin",
-            state: "WI",
-            country: "US",
-            contactName: "Tyler Murray",
-            contactPhone: "647-262-1493",
-            contactEmail: "tyler@tygershark.com",
-            contactFax: "647-262-1493",
-            specialInstructions: "Pickup at Bay 1"
-        },
-        shipTo: {
-            company: "Fantom Inc.",
-            attentionName: "Tyler Murray",
-            street: "321 King Street",
-            street2: "Unit B",
-            postalCode: "L4W 1N7",
-            city: "Mississauga",
-            state: "ON",
-            country: "CA",
-            contactName: "Tyler Murray",
-            contactPhone: "647-262-1493",
-            contactEmail: "tyler@tygershark.com",
-            contactFax: "647-262-1493",
-            specialInstructions: "Deliver to Bay 3"
-        },
-        packages: [{
-            itemDescription: "Metal Shavings",
-            packagingType: 258,
-            packagingQuantity: 1,
-            stackable: true,
-            weight: 100.00,
-            height: 10,
-            width: 10,
-            length: 10,
-            freightClass: 50,
-            declaredValue: 0.00
-        }]
-    };
-
-    // Remove theme handling
+    // Only sync URL when it changes externally
     useEffect(() => {
-        // Only log once, even in StrictMode
+        if (urlStep && STEPS[urlStep] && !isNavigating.current) {
+            setCurrentStep(STEPS[urlStep]);
+        } else if (!urlStep) {
+            navigate('/create-shipment/shipment-info', { replace: true });
+        }
+    }, [urlStep, navigate]);
+
+    // Log version info once
+    useEffect(() => {
         if (!hasLogged.current) {
             console.log('🚀 SolushipX React App v0.3.0 - Shipment Creation Form');
             hasLogged.current = true;
@@ -95,25 +60,31 @@ const CreateShipment = () => {
     }, []);
 
     const handleNext = () => {
-        console.log('Moving to next step from:', currentStep);
-        setCurrentStep(prev => {
-            const nextStep = Math.min(prev + 1, 6);
-            console.log('Next step will be:', nextStep);
-            return nextStep;
-        });
-        // Scroll to the top of the form container
-        document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (currentStep < 6) {
+            const nextStep = currentStep + 1;
+            const nextStepSlug = STEP_SLUGS[nextStep];
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            isNavigating.current = true;
+            setCurrentStep(nextStep);
+            navigate(`/create-shipment/${nextStepSlug}`, { replace: true });
+            setTimeout(() => {
+                isNavigating.current = false;
+            }, 100);
+        }
     };
 
     const handlePrevious = () => {
-        console.log('Moving to previous step from:', currentStep);
-        setCurrentStep(prev => {
-            const prevStep = Math.max(prev - 1, 1);
-            console.log('Previous step will be:', prevStep);
-            return prevStep;
-        });
-        // Scroll to the top of the form container
-        document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (currentStep > 1) {
+            const prevStep = currentStep - 1;
+            const prevStepSlug = STEP_SLUGS[prevStep];
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            isNavigating.current = true;
+            setCurrentStep(prevStep);
+            navigate(`/create-shipment/${prevStepSlug}`, { replace: true });
+            setTimeout(() => {
+                isNavigating.current = false;
+            }, 100);
+        }
     };
 
     const handleFormDataChange = (section, data) => {
@@ -130,16 +101,13 @@ const CreateShipment = () => {
 
     const handleRateSelect = (rate) => {
         setSelectedRate(rate);
+        handleNext();
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
         // Handle final submission
         console.log('Final form data:', { ...formData, selectedRate });
-    };
-
-    const loadDraft = () => {
-        setFormData(sampleDraft);
     };
 
     const renderStep = () => {
@@ -216,25 +184,13 @@ const CreateShipment = () => {
                     <div className="container">
                         <div className="section-header">
                             <h2>Create New Shipment</h2>
-                            <div className="d-flex">
-                                {currentStep === 1 && (
-                                    <div>
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline-primary"
-                                            onClick={loadDraft}
-                                        >
-                                            <i className="bi bi-file-earmark-text me-2"></i> LOAD DRAFT
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
                         </div>
 
                         <StepperComponent
                             currentStep={currentStep}
                             onStepClick={(step) => {
-                                setCurrentStep(step);
+                                const stepSlug = STEP_SLUGS[step];
+                                navigate(`/create-shipment/${stepSlug}`);
                                 document.querySelector('.container').scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }}
                         />
