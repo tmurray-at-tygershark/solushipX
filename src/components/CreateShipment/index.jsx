@@ -7,6 +7,7 @@ import ShipTo from './ShipTo';
 import Packages from './Packages';
 import Rates from './Rates';
 import Review from './Review';
+import ChatBot from './ChatBot';
 import './CreateShipment.css';
 
 // Step mapping constants
@@ -201,6 +202,7 @@ const CreateShipment = () => {
                     </div>
                 </div>
             </div>
+            <ChatBot onShipmentComplete={handleSubmit} />
         </div>
     );
 };

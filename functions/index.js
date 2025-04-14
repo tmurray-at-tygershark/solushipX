@@ -615,3 +615,73 @@ exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
     });
   }
 });
+
+// Chat with Gemini function
+exports.chatWithGemini = functions.https.onRequest({
+    cors: ['https://solushipx.web.app', 'http://localhost:3000']
+}, async (req, res) => {
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const { message, context } = req.body;
+
+    if (!message) {
+        res.write(`data: ${JSON.stringify({ 
+            success: false, 
+            message: "No message provided for chat." 
+        })}\n\n`);
+        res.end();
+        return;
+    }
+
+    try {
+        console.log("🤖 Processing chat message with Gemini...");
+        
+        // Set up the prompt for chat
+        const prompt = `You are a helpful logistics assistant for SolushipX. 
+        
+Current context: ${JSON.stringify(context || {}, null, 2)}
+
+User message: ${message}
+
+Please provide a helpful response that guides the user through the shipment creation process.`;
+
+        // Generate response using GenKit with streaming
+        const { response, stream } = await ai.generateStream({
+            prompt: prompt,
+            stream: true
+        });
+        
+        // Stream each chunk to the client
+        for await (const chunk of stream) {
+            res.write(`data: ${JSON.stringify({ 
+                success: true, 
+                chunk: chunk.text 
+            })}\n\n`);
+        }
+
+        // Send end of stream
+        res.write(`data: ${JSON.stringify({ 
+            success: true, 
+            done: true 
+        })}\n\n`);
+        res.end();
+
+    } catch (error) {
+        console.error("Error in chat with Gemini:", error);
+        res.write(`data: ${JSON.stringify({
+            success: false,
+            message: "Failed to process chat message",
+            error: error.message
+        })}\n\n`);
+        res.end();
+    }
+});
