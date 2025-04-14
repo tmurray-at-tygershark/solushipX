@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GoogleMap, LoadScript, Marker } from '@react-google-maps/api';
+import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google-maps/api';
 import {
     Box,
     Typography,
@@ -10,7 +10,10 @@ import {
     Divider,
     Chip,
     Tooltip,
-    useTheme
+    useTheme,
+    CircularProgress,
+    Grid,
+    Container
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -22,9 +25,10 @@ import {
     Business as BusinessIcon,
     Phone as PhoneIcon,
     Email as EmailIcon,
-    Map as MapIcon
+    Map as MapIcon,
+    CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
 
@@ -61,13 +65,24 @@ const saveRateToFirebase = async (rate, shipmentId) => {
     }
 };
 
-const SimpleMap = ({ address }) => {
+const SimpleMap = React.memo(({ address, title }) => {
     const [position, setPosition] = useState(null);
+    const [error, setError] = useState(null);
+    const mapRef = useRef(null);
 
     useEffect(() => {
-        // Simple geocoding
+        if (!window.google || !window.google.maps) {
+            setError('Google Maps not loaded');
+            return;
+        }
+
+        if (!address) {
+            setError('Address information is missing');
+            return;
+        }
+
         const geocoder = new window.google.maps.Geocoder();
-        const addressString = `${address.street}, ${address.city}, ${address.state} ${address.postalCode}`;
+        const addressString = `${address.street || ''}${address.street2 ? ', ' + address.street2 : ''}, ${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}, ${address.country || ''}`;
 
         geocoder.geocode({ address: addressString }, (results, status) => {
             if (status === 'OK') {
@@ -76,23 +91,76 @@ const SimpleMap = ({ address }) => {
                     lat: location.lat(),
                     lng: location.lng()
                 });
+
+                // Fit bounds with padding
+                if (mapRef.current) {
+                    const bounds = new window.google.maps.LatLngBounds();
+                    bounds.extend(location);
+                    mapRef.current.fitBounds(bounds, {
+                        padding: { top: 50, right: 50, bottom: 50, left: 50 }
+                    });
+                }
             } else {
                 console.error('Geocoding failed:', status);
+                setError('Failed to geocode address');
             }
         });
     }, [address]);
 
-    if (!position) return null;
+    const handleMapLoad = React.useCallback((map) => {
+        mapRef.current = map;
+    }, []);
+
+    if (error) {
+        return (
+            <Box sx={{
+                height: '300px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#f5f5f5',
+                borderRadius: '8px',
+                p: 2
+            }}>
+                <Typography variant="body2" color="text.secondary" align="center">
+                    {error}
+                </Typography>
+            </Box>
+        );
+    }
+
+    if (!position) {
+        return (
+            <Box sx={{
+                height: '300px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#f5f5f5',
+                borderRadius: '8px'
+            }}>
+                <CircularProgress size={24} />
+            </Box>
+        );
+    }
 
     return (
         <GoogleMap
             mapContainerStyle={{
                 width: '100%',
                 height: '300px',
-                borderRadius: '12px'
+                borderRadius: '8px'
             }}
             center={position}
-            zoom={15}
+            zoom={17}
+            onLoad={handleMapLoad}
+            options={{
+                disableDefaultUI: false,
+                zoomControl: true,
+                mapTypeControl: false,
+                streetViewControl: true,
+                fullscreenControl: true
+            }}
         >
             <Marker
                 position={position}
@@ -103,7 +171,7 @@ const SimpleMap = ({ address }) => {
             />
         </GoogleMap>
     );
-};
+});
 
 const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNext, onRateSelect }) => {
     const theme = useTheme();
@@ -117,15 +185,11 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
     const [loadingDots, setLoadingDots] = useState('');
     const [ratesLoaded, setRatesLoaded] = useState(false);
     const [map, setMap] = useState(null);
-    const [directions, setDirections] = useState(null);
     const [mapCenter, setMapCenter] = useState({ lat: 41.8781, lng: -87.6298 });
     const [mapZoom, setMapZoom] = useState(15);
     const [isMapLoaded, setIsMapLoaded] = useState(false);
-    const [distance, setDistance] = useState('');
-    const [duration, setDuration] = useState('');
     const [mapsApiKey, setMapsApiKey] = useState(null);
     const [mapError, setMapError] = useState(null);
-    const [routeError, setRouteError] = useState(null);
     const [fromMarkerPosition, setFromMarkerPosition] = useState(null);
     const [toMarkerPosition, setToMarkerPosition] = useState(null);
     const [expandedSections, setExpandedSections] = useState({
@@ -135,201 +199,116 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
         rate: true
     });
     const [selectedRate, setSelectedRate] = useState(initialSelectedRate);
+    const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+    const [isMapReady, setIsMapReady] = useState(false);
 
-    const fetchMapsApiKey = async () => {
-        try {
-            const key = await getMapsApiKey();
-            setMapsApiKey(key);
-            setIsMapLoaded(true);
-        } catch (error) {
-            console.error('Error fetching Maps API key:', error);
-            setMapError('Failed to load Google Maps API key');
-        }
-    };
-
+    // Fetch Maps API key when component mounts
     useEffect(() => {
+        const fetchMapsApiKey = async () => {
+            try {
+                const keysRef = collection(db, 'keys');
+                const keysSnapshot = await getDocs(keysRef);
+
+                if (!keysSnapshot.empty) {
+                    const keyDoc = keysSnapshot.docs[0];
+                    const key = keyDoc.data().googleAPI;
+                    if (!key) {
+                        throw new Error('No API key found in Firestore');
+                    }
+                    console.log('Successfully loaded Maps API key');
+                    setMapsApiKey(key);
+                } else {
+                    throw new Error('No keys document found in Firestore');
+                }
+            } catch (error) {
+                console.error('Error fetching Maps API key:', error);
+                setMapError('Failed to load Google Maps API key');
+            }
+        };
+
         fetchMapsApiKey();
     }, []);
 
+    // Wait for Maps API to load
+    const handleGoogleMapsLoaded = useCallback(() => {
+        console.log('Google Maps API loaded');
+        setIsGoogleMapsLoaded(true);
+    }, []);
+
     useEffect(() => {
-        // Log the API key being used
-        console.log('Using Maps API Key:', mapsApiKey);
+        const geocodeAddress = async (address, type) => {
+            return new Promise((resolve, reject) => {
+                if (!window.google || !window.google.maps) {
+                    reject(new Error('Google Maps API not loaded'));
+                    return;
+                }
 
-        // Function to calculate route using Routes API
-        const calculateRoute = async () => {
-            if (!isMapLoaded || !formData.shipFrom || !formData.shipTo) return;
+                const geocoder = new window.google.maps.Geocoder();
+                const addressString = `${address.street}${address.street2 ? ', ' + address.street2 : ''}, ${address.city}, ${address.state} ${address.postalCode}, ${address.country}`;
 
-            setRouteError(null);
-            const fromAddress = `${formData.shipFrom.street}, ${formData.shipFrom.city}, ${formData.shipFrom.state} ${formData.shipFrom.postalCode}`;
-            const toAddress = `${formData.shipTo.street}, ${formData.shipTo.city}, ${formData.shipTo.state} ${formData.shipTo.postalCode}`;
+                console.log(`Attempting to geocode ${type} address:`, addressString);
+
+                geocoder.geocode(
+                    {
+                        address: addressString,
+                        region: address.country?.toLowerCase() || 'us',
+                        key: mapsApiKey // Include API key in the request
+                    },
+                    (results, status) => {
+                        if (status === 'OK' && results && results.length > 0) {
+                            console.log(`${type} geocoding successful:`, results[0].formatted_address);
+                            resolve(results[0]);
+                        } else {
+                            console.error(`${type} geocoding failed:`, {
+                                status,
+                                address: addressString,
+                                error: status === 'ZERO_RESULTS' ? 'No results found' : `Geocoding error: ${status}`
+                            });
+                            reject(new Error(`Geocoding failed for ${type}: ${status}`));
+                        }
+                    }
+                );
+            });
+        };
+
+        const updateGeocodedAddresses = async () => {
+            if (!isGoogleMapsLoaded || !mapsApiKey || !formData.shipFrom || !formData.shipTo) {
+                console.log('Waiting for dependencies:', {
+                    isGoogleMapsLoaded,
+                    hasMapsApiKey: !!mapsApiKey,
+                    hasShipFrom: !!formData.shipFrom,
+                    hasShipTo: !!formData.shipTo
+                });
+                return;
+            }
 
             try {
-                // First, geocode the addresses to get coordinates
-                const geocoder = new window.google.maps.Geocoder();
-
-                const [originResult, destinationResult] = await Promise.all([
-                    new Promise((resolve, reject) => {
-                        geocoder.geocode({ address: fromAddress }, (results, status) => {
-                            if (status === 'OK') resolve(results[0]);
-                            else reject(new Error(`Geocoding failed for origin: ${status}`));
-                        });
-                    }),
-                    new Promise((resolve, reject) => {
-                        geocoder.geocode({ address: toAddress }, (results, status) => {
-                            if (status === 'OK') resolve(results[0]);
-                            else reject(new Error(`Geocoding failed for destination: ${status}`));
-                        });
-                    })
+                const [fromResult, toResult] = await Promise.all([
+                    geocodeAddress(formData.shipFrom, 'origin'),
+                    geocodeAddress(formData.shipTo, 'destination')
                 ]);
 
-                // Call the Routes API through our backend
-                const response = await fetch('https://getmapsapikey-xedyh5vw7a-uc.a.run.app/route', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        origin: {
-                            location: {
-                                latLng: {
-                                    latitude: originResult.geometry.location.lat(),
-                                    longitude: originResult.geometry.location.lng()
-                                }
-                            }
-                        },
-                        destination: {
-                            location: {
-                                latLng: {
-                                    latitude: destinationResult.geometry.location.lat(),
-                                    longitude: destinationResult.geometry.location.lng()
-                                }
-                            }
-                        },
-                        travelMode: "DRIVE",
-                        routingPreference: "TRAFFIC_AWARE",
-                        computeAlternativeRoutes: false,
-                        languageCode: "en-US",
-                        units: "IMPERIAL"
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Route calculation failed: ${response.statusText}`);
-                }
-
-                const routeData = await response.json();
-
-                if (!routeData.routes || routeData.routes.length === 0) {
-                    throw new Error('No routes found');
-                }
-
-                const route = routeData.routes[0];
-
-                // Convert the encoded polyline to a DirectionsResult format that DirectionsRenderer can understand
-                const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
-                const directionsResult = {
-                    routes: [{
-                        legs: [{
-                            steps: decodedPath.map((point, index) => ({
-                                path: [point],
-                                start_location: point,
-                                end_location: decodedPath[index + 1] || point
-                            })),
-                            start_location: decodedPath[0],
-                            end_location: decodedPath[decodedPath.length - 1],
-                            distance: { text: `${Math.round(route.distanceMeters / 1609.34)} mi` },
-                            duration: { text: `${Math.round(parseInt(route.duration.replace('s', '')) / 3600)} hours` }
-                        }],
-                        overview_path: decodedPath
-                    }]
-                };
-
-                setDirections(directionsResult);
-                setDistance(directionsResult.routes[0].legs[0].distance.text);
-                setDuration(directionsResult.routes[0].legs[0].duration.text);
-
-                // Set map bounds to include the route
-                const bounds = new window.google.maps.LatLngBounds();
-                decodedPath.forEach(point => bounds.extend(point));
-                if (map) {
-                    map.fitBounds(bounds);
-                }
-
-            } catch (error) {
-                console.error('Error calculating route:', error);
-                setRouteError(error.message || 'Failed to calculate route. Please try again.');
-            }
-        };
-
-        if (isMapLoaded) {
-            calculateRoute();
-        }
-    }, [isMapLoaded, formData.shipFrom, formData.shipTo, mapsApiKey, map]);
-
-    useEffect(() => {
-        // Function to geocode the Ship From address
-        const geocodeAddress = async () => {
-            if (!formData.shipFrom || !window.google) return;
-
-            const geocoder = new window.google.maps.Geocoder();
-            const address = `${formData.shipFrom.street}, ${formData.shipFrom.city}, ${formData.shipFrom.state} ${formData.shipFrom.postalCode}`;
-
-            try {
-                const result = await new Promise((resolve, reject) => {
-                    geocoder.geocode({ address }, (results, status) => {
-                        if (status === 'OK') resolve(results[0]);
-                        else reject(new Error(`Geocoding failed: ${status}`));
+                if (fromResult) {
+                    setFromMarkerPosition({
+                        lat: fromResult.geometry.location.lat(),
+                        lng: fromResult.geometry.location.lng()
                     });
-                });
+                }
 
-                const location = result.geometry.location;
-                setFromMarkerPosition({
-                    lat: location.lat(),
-                    lng: location.lng()
-                });
-            } catch (error) {
-                console.error('Error geocoding address:', error);
-                setMapError('Failed to locate address on map');
-            }
-        };
-
-        if (isMapLoaded) {
-            geocodeAddress();
-        }
-    }, [isMapLoaded, formData.shipFrom]);
-
-    // Add new useEffect for Ship To map
-    useEffect(() => {
-        const geocodeShipToAddress = async () => {
-            if (!formData.shipTo || !window.google) return;
-
-            const geocoder = new window.google.maps.Geocoder();
-            const address = `${formData.shipTo.street}, ${formData.shipTo.city}, ${formData.shipTo.state} ${formData.shipTo.postalCode}`;
-
-            try {
-                const result = await new Promise((resolve, reject) => {
-                    geocoder.geocode({ address }, (results, status) => {
-                        if (status === 'OK') resolve(results[0]);
-                        else reject(new Error(`Geocoding failed: ${status}`));
+                if (toResult) {
+                    setToMarkerPosition({
+                        lat: toResult.geometry.location.lat(),
+                        lng: toResult.geometry.location.lng()
                     });
-                });
-
-                const location = result.geometry.location;
-                setToMarkerPosition({
-                    lat: location.lat(),
-                    lng: location.lng()
-                });
+                }
             } catch (error) {
-                console.error('Error geocoding Ship To address:', error);
-                setMapError('Failed to locate Ship To address on map');
+                console.error('Error geocoding addresses:', error);
+                setMapError('Failed to geocode addresses. Please try again.');
             }
         };
 
-        if (isMapLoaded) {
-            geocodeShipToAddress();
-        }
-    }, [isMapLoaded, formData.shipTo]);
+        updateGeocodedAddresses();
+    }, [formData.shipFrom, formData.shipTo, isGoogleMapsLoaded, mapsApiKey]);
 
     useEffect(() => {
         const fetchRates = async () => {
@@ -583,36 +562,28 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!selectedRate) {
-            alert('Please select a rate before submitting');
+            alert('Please select a rate before proceeding');
             return;
         }
 
         try {
-            // Create the shipment document
             const shipmentData = {
-                ...formData.shipmentInfo,
-                shipFrom: formData.shipFrom,
-                shipTo: formData.shipTo,
-                selectedRate: selectedRate,
+                ...formData,
+                selectedRate,
                 status: 'pending',
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
 
-            // Add the shipment document
             const shipmentRef = await addDoc(collection(db, 'shipments'), shipmentData);
             const shipmentId = shipmentRef.id;
 
-            // Save packages to the subcollection
-            const packagesRef = collection(db, 'shipments', shipmentId, 'packages');
-            const packagePromises = formData.packages.map(pkg => addDoc(packagesRef, pkg));
-            await Promise.all(packagePromises);
+            // Update the shipment with the ID
+            await updateDoc(doc(db, 'shipments', shipmentId), {
+                shipmentId
+            });
 
-            // Save the selected rate
-            await saveRateToFirebase(selectedRate, shipmentId);
-
-            // Redirect to the shipment detail page
-            window.location.href = `/shipment/${shipmentId}`;
+            onNext();
         } catch (error) {
             console.error('Error saving shipment:', error);
             alert('Failed to save shipment. Please try again.');
@@ -645,77 +616,56 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
     }, [isLoading]);
 
     const handleRateSelect = async (rate) => {
-        if (selectedRate?.id === rate.id) {
-            // If clicking the same rate, deselect it
-            setSelectedRate(null);
-            onRateSelect(null);
-        } else {
-            // Select the new rate and save to Firebase
-            setSelectedRate(rate);
-            onRateSelect(rate);
+        try {
+            if (selectedRate && selectedRate.id === rate.id) {
+                // If clicking the same rate, deselect it
+                onRateSelect(null);
+            } else {
+                // Select the new rate and save to Firebase
+                onRateSelect(rate);
 
-            // Save the rate to Firebase if we have a shipment ID
-            if (formData.shipmentId) {
-                await saveRateToFirebase(rate, formData.shipmentId);
+                // Save the rate to Firebase if we have a shipment ID
+                if (formData.shipmentId) {
+                    try {
+                        const shipmentRef = doc(db, 'shipments', formData.shipmentId);
+                        await updateDoc(shipmentRef, {
+                            selectedRate: rate,
+                            updatedAt: serverTimestamp()
+                        });
+                    } catch (error) {
+                        console.error('Error saving rate to Firebase:', error);
+                    }
+                }
+
+                // Automatically move to next step
+                onNext();
             }
-
-            onNext(); // Automatically move to next step
+        } catch (error) {
+            console.error('Error selecting rate:', error);
+            setError('Failed to select rate. Please try again.');
         }
     };
 
     return (
-        <Box sx={{ width: '100%', p: 0 }}>
-            <LoadScript
-                googleMapsApiKey={mapsApiKey}
-                libraries={GOOGLE_MAPS_LIBRARIES}
-                onLoad={() => {
-                    console.log('Maps API loaded successfully');
-                    setMapError(null);
-                }}
-                onError={(error) => {
-                    console.error('Maps API error:', error);
-                    setMapError('Failed to load Google Maps. Please try refreshing the page.');
-                }}
-            >
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5 }}
-                    style={{ width: '100%' }}
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+            {mapsApiKey ? (
+                <LoadScript
+                    googleMapsApiKey={mapsApiKey}
+                    libraries={GOOGLE_MAPS_LIBRARIES}
+                    onLoad={handleGoogleMapsLoaded}
                 >
-                    <Typography
-                        variant="h3"
-                        component="h2"
-                        gutterBottom
-                        sx={{
-                            fontWeight: 800,
-                            color: '#000',
-                            mb: 4,
-                            letterSpacing: '-0.02em',
-                            px: 3,
-                            pt: 3
-                        }}
-                    >
-                        Review Shipment Details
-                    </Typography>
+                    <Box sx={{ mb: 4 }}>
+                        <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
+                            Review Shipment Details
+                        </Typography>
+                    </Box>
 
-                    {/* Shipment Details Section */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            mb: 3,
-                            borderRadius: 0,
-                            border: '1px solid #e0e0e0',
-                            borderLeft: 0,
-                            borderRight: 0,
-                            overflow: 'hidden',
-                            transition: 'all 0.3s ease'
-                        }}
-                    >
+                    {/* Shipment Information */}
+                    <Paper sx={{ mb: 3, overflow: 'hidden' }}>
                         <Box
                             sx={{
                                 p: 2,
-                                bgcolor: '#000',
+                                bgcolor: '#000000',
                                 color: 'white',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -723,8 +673,8 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                             }}
                         >
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <i className="fas fa-truck" style={{ fontSize: '1.2rem' }}></i>
-                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Shipment Information</Typography>
+                                <ShippingIcon />
+                                <Typography variant="h6">Shipment Information</Typography>
                             </Box>
                             <IconButton
                                 onClick={() => toggleSection('shipment')}
@@ -740,338 +690,335 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                         </Box>
                         <Collapse in={expandedSections.shipment}>
                             <Box sx={{ p: 3 }}>
-                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Shipment Type</Typography>
-                                        <Typography variant="body1">{formData.shipmentInfo.shipmentType}</Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Shipment Date</Typography>
-                                        <Typography variant="body1">{formData.shipmentInfo.shipmentDate}</Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Pickup Window</Typography>
-                                        <Typography variant="body1">
-                                            {formData.shipmentInfo.earliestPickup} - {formData.shipmentInfo.latestPickup}
-                                        </Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Delivery Window</Typography>
-                                        <Typography variant="body1">
-                                            {formData.shipmentInfo.earliestDelivery} - {formData.shipmentInfo.latestDelivery}
-                                        </Typography>
-                                    </Box>
-                                </Box>
+                                <Grid container spacing={3}>
+                                    {/* Basic Information Card */}
+                                    <Grid item xs={12} md={4}>
+                                        <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
+                                            <Typography variant="h6" gutterBottom color="black" sx={{
+                                                pb: 1,
+                                                mb: 2
+                                            }}>
+                                                Basic Information
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                <Box>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Shipment Type
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {formData.shipmentInfo?.shipmentType || 'N/A'}
+                                                    </Typography>
+                                                </Box>
+                                                <Box>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Reference Number
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {formData.shipmentInfo?.referenceNumber || 'N/A'}
+                                                    </Typography>
+                                                </Box>
+                                                <Box>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Bill Type
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {formData.shipmentInfo?.billType || 'Prepaid'}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </Paper>
+                                    </Grid>
+
+                                    {/* Timing Information Card */}
+                                    <Grid item xs={12} md={4}>
+                                        <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
+                                            <Typography variant="h6" gutterBottom color="black" sx={{
+                                                pb: 1,
+                                                mb: 2
+                                            }}>
+                                                Timing Information
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                <Box>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Shipment Date
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {formData.shipmentInfo?.shipmentDate || 'N/A'}
+                                                    </Typography>
+                                                </Box>
+                                                <Box>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Pickup Window
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {formData.shipmentInfo?.earliestPickup || '09:00'} - {formData.shipmentInfo?.latestPickup || '17:00'}
+                                                    </Typography>
+                                                </Box>
+                                                <Box>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Delivery Window
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {formData.shipmentInfo?.earliestDelivery || '09:00'} - {formData.shipmentInfo?.latestDelivery || '17:00'}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </Paper>
+                                    </Grid>
+
+                                    {/* Service Options Card */}
+                                    <Grid item xs={12} md={4}>
+                                        <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
+                                            <Typography variant="h6" gutterBottom color="black" sx={{
+                                                pb: 1,
+                                                mb: 2
+                                            }}>
+                                                Service Options
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Hold for Pickup
+                                                    </Typography>
+                                                    <Chip
+                                                        label={formData.shipmentInfo?.holdForPickup ? "Yes" : "No"}
+                                                        color={formData.shipmentInfo?.holdForPickup ? "primary" : "default"}
+                                                        size="small"
+                                                        sx={{ minWidth: 60 }}
+                                                    />
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        International
+                                                    </Typography>
+                                                    <Chip
+                                                        label={formData.shipmentInfo?.international ? "Yes" : "No"}
+                                                        color={formData.shipmentInfo?.international ? "primary" : "default"}
+                                                        size="small"
+                                                        sx={{ minWidth: 60 }}
+                                                    />
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Saturday Delivery
+                                                    </Typography>
+                                                    <Chip
+                                                        label={formData.shipmentInfo?.saturdayDelivery ? "Yes" : "No"}
+                                                        color={formData.shipmentInfo?.saturdayDelivery ? "primary" : "default"}
+                                                        size="small"
+                                                        sx={{ minWidth: 60 }}
+                                                    />
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <Typography variant="subtitle2" color="text.secondary">
+                                                        Signature Required
+                                                    </Typography>
+                                                    <Chip
+                                                        label={formData.shipmentInfo?.signatureRequired ? "Yes" : "No"}
+                                                        color={formData.shipmentInfo?.signatureRequired ? "primary" : "default"}
+                                                        size="small"
+                                                        sx={{ minWidth: 60 }}
+                                                    />
+                                                </Box>
+                                            </Box>
+                                        </Paper>
+                                    </Grid>
+                                </Grid>
                             </Box>
                         </Collapse>
                     </Paper>
 
-                    {/* Shipping Locations Section */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            mb: 3,
-                            borderRadius: 0,
-                            border: '1px solid #e0e0e0',
-                            borderLeft: 0,
-                            borderRight: 0,
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                p: 2,
-                                bgcolor: '#000',
-                                color: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between'
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <i className="fas fa-map-marked-alt" style={{ fontSize: '1.2rem' }}></i>
-                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Shipping Locations</Typography>
-                            </Box>
-                            <IconButton
-                                onClick={() => toggleSection('locations')}
-                                sx={{ color: 'white' }}
-                            >
-                                <ExpandMoreIcon
-                                    sx={{
-                                        transform: expandedSections.locations ? 'rotate(180deg)' : 'none',
-                                        transition: 'transform 0.3s'
-                                    }}
-                                />
-                            </IconButton>
-                        </Box>
-                        <Collapse in={expandedSections.locations}>
-                            <Box sx={{ p: 3 }}>
-                                <Box sx={{
-                                    display: 'grid',
-                                    gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                                    gap: 3
-                                }}>
-                                    {/* Ship From Side */}
-                                    <Box>
-                                        <Typography variant="h6" gutterBottom sx={{
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1
-                                        }}>
-                                            <i className="fas fa-arrow-right" style={{ fontSize: '1rem', color: '#666' }}></i>
-                                            Ship From
-                                        </Typography>
-                                        <Box sx={{ mb: 2 }}>
-                                            <SimpleMap address={formData.shipFrom} />
-                                        </Box>
-                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                            <Box>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Company Details</Typography>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                    <i className="fas fa-building" style={{ color: '#000' }}></i>
-                                                    <Typography variant="body1">{formData.shipFrom.company}</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                    <i className="fas fa-phone" style={{ color: '#000' }}></i>
-                                                    <Typography variant="body1">{formatPhone(formData.shipFrom.contactPhone)}</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <i className="fas fa-envelope" style={{ color: '#000' }}></i>
-                                                    <Typography variant="body1">{formData.shipFrom.contactEmail}</Typography>
-                                                </Box>
-                                            </Box>
-                                            <Box>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Address</Typography>
-                                                <Typography variant="body1">{formatAddress(formData.shipFrom)}</Typography>
-                                            </Box>
-                                        </Box>
-                                    </Box>
-
-                                    {/* Ship To Side */}
-                                    <Box>
-                                        <Typography variant="h6" gutterBottom sx={{
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1
-                                        }}>
-                                            <i className="fas fa-arrow-left" style={{ fontSize: '1rem', color: '#666' }}></i>
-                                            Ship To
-                                        </Typography>
-                                        <Box sx={{ mb: 2 }}>
-                                            <SimpleMap address={formData.shipTo} />
-                                        </Box>
-                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                            <Box>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Company Details</Typography>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                    <i className="fas fa-building" style={{ color: '#000' }}></i>
-                                                    <Typography variant="body1">{formData.shipTo.company}</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                    <i className="fas fa-phone" style={{ color: '#000' }}></i>
-                                                    <Typography variant="body1">{formatPhone(formData.shipTo.contactPhone)}</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <i className="fas fa-envelope" style={{ color: '#000' }}></i>
-                                                    <Typography variant="body1">{formData.shipTo.contactEmail}</Typography>
-                                                </Box>
-                                            </Box>
-                                            <Box>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 500 }}>Address</Typography>
-                                                <Typography variant="body1">{formatAddress(formData.shipTo)}</Typography>
-                                            </Box>
-                                        </Box>
+                    {/* Locations */}
+                    <Grid container spacing={3} sx={{ mb: 3 }}>
+                        <Grid item xs={12} md={6}>
+                            <Paper sx={{ height: '100%' }}>
+                                <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
+                                    <Typography variant="h6">
+                                        <LocationIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                                        Ship From
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ p: 2 }}>
+                                    <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                                        {formData.shipFrom.company}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        {formatAddress(formData.shipFrom)}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Contact: {formData.shipFrom.contactName}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Phone: {formatPhone(formData.shipFrom.contactPhone)}
+                                    </Typography>
+                                    <Box sx={{ mt: 2 }}>
+                                        <SimpleMap address={formData.shipFrom} />
                                     </Box>
                                 </Box>
-                            </Box>
-                        </Collapse>
-                    </Paper>
+                            </Paper>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <Paper sx={{ height: '100%' }}>
+                                <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
+                                    <Typography variant="h6">
+                                        <LocationIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                                        Ship To
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ p: 2 }}>
+                                    <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                                        {formData.shipTo.company}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        {formatAddress(formData.shipTo)}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Contact: {formData.shipTo.contactName}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Phone: {formatPhone(formData.shipTo.contactPhone)}
+                                    </Typography>
+                                    <Box sx={{ mt: 2 }}>
+                                        <SimpleMap address={formData.shipTo} />
+                                    </Box>
+                                </Box>
+                            </Paper>
+                        </Grid>
+                    </Grid>
 
-                    {/* Packages Section */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            mb: 3,
-                            borderRadius: 0,
-                            border: '1px solid #e0e0e0',
-                            borderLeft: 0,
-                            borderRight: 0,
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                p: 2,
-                                bgcolor: '#000',
-                                color: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between'
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <i className="fas fa-box" style={{ fontSize: '1.2rem' }}></i>
-                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Packages</Typography>
-                            </Box>
-                            <IconButton
-                                onClick={() => toggleSection('packages')}
-                                sx={{ color: 'white' }}
-                            >
-                                <ExpandMoreIcon
-                                    sx={{
-                                        transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
-                                        transition: 'transform 0.3s'
-                                    }}
-                                />
-                            </IconButton>
+                    {/* Packages */}
+                    <Paper sx={{ mb: 3 }}>
+                        <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
+                            <Typography variant="h6">Package Details</Typography>
                         </Box>
-                        <Collapse in={expandedSections.packages}>
-                            <Box sx={{ p: 3 }}>
-                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2 }}>
-                                    {formData.packages.map((pkg, index) => (
+                        <Box sx={{ p: 2 }}>
+                            <Grid container spacing={3}>
+                                {formData.packages.map((pkg, index) => (
+                                    <Grid item xs={12} md={6} key={index}>
                                         <Paper
-                                            key={index}
                                             elevation={0}
                                             sx={{
                                                 p: 2,
-                                                borderRadius: 2,
                                                 border: '1px solid #e0e0e0',
-                                                bgcolor: 'background.default'
+                                                borderRadius: 1
                                             }}
                                         >
-                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>Package {index + 1}</Typography>
-                                            <Box sx={{ display: 'grid', gap: 1 }}>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Description</Typography>
-                                                    <Typography variant="body1">{pkg.itemDescription || 'No description'}</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Quantity</Typography>
-                                                    <Typography variant="body1">{pkg.quantity || 1} {parseInt(pkg.quantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Weight</Typography>
-                                                    <Typography variant="body1">{pkg.weight} lbs</Typography>
-                                                </Box>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Dimensions</Typography>
-                                                    <Typography variant="body1">{pkg.length}" × {pkg.width}" × {pkg.height}"</Typography>
-                                                </Box>
-                                                {pkg.freightClass && (
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Freight Class</Typography>
-                                                        <Typography variant="body1">{pkg.freightClass}</Typography>
-                                                    </Box>
-                                                )}
-                                                {pkg.value > 0 && (
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Declared Value</Typography>
-                                                        <Typography variant="body1">${pkg.value.toFixed(2)}</Typography>
-                                                    </Box>
-                                                )}
-                                            </Box>
+                                            <Typography variant="subtitle1" gutterBottom>
+                                                Package {index + 1}
+                                            </Typography>
+                                            <Grid container spacing={2}>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Description
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {pkg.itemDescription || 'N/A'}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Weight
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {pkg.weight} lbs
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Dimensions
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {pkg.length}" × {pkg.width}" × {pkg.height}"
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Freight Class
+                                                    </Typography>
+                                                    <Typography variant="body1">
+                                                        {pkg.freightClass || 'N/A'}
+                                                    </Typography>
+                                                </Grid>
+                                            </Grid>
                                         </Paper>
-                                    ))}
-                                </Box>
-                            </Box>
-                        </Collapse>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </Box>
                     </Paper>
 
-                    {/* Selected Rate Section */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            mb: 3,
-                            borderRadius: 0,
-                            border: '1px solid #e0e0e0',
-                            borderLeft: 0,
-                            borderRight: 0,
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                p: 2,
-                                bgcolor: '#000',
-                                color: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between'
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <i className="fas fa-dollar-sign" style={{ fontSize: '1.2rem' }}></i>
-                                <Typography variant="h6" sx={{ fontWeight: 600 }}>Selected Rate</Typography>
-                            </Box>
-                            <IconButton
-                                onClick={() => toggleSection('rate')}
-                                sx={{ color: 'white' }}
-                            >
-                                <ExpandMoreIcon
-                                    sx={{
-                                        transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
-                                        transition: 'transform 0.3s'
-                                    }}
-                                />
-                            </IconButton>
+                    {/* Selected Rate */}
+                    <Paper sx={{ mb: 4 }}>
+                        <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
+                            <Typography variant="h6">Rate Details</Typography>
                         </Box>
-                        <Collapse in={expandedSections.rate}>
-                            <Box sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#000' }}>
+                        <Box sx={{ p: 3 }}>
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="h5" gutterBottom>
                                         {selectedRate?.carrier}
                                     </Typography>
                                     <Chip
-                                        label={selectedRate?.serviceLevel}
-                                        sx={{
-                                            bgcolor: '#000',
-                                            color: 'white',
-                                            fontWeight: 500
-                                        }}
-                                        size="small"
+                                        label={selectedRate?.service}
+                                        color="primary"
+                                        sx={{ mb: 2 }}
                                     />
-                                </Box>
-                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Freight Charges</Typography>
-                                        <Typography variant="body1">${selectedRate?.freightCharges.toFixed(2)}</Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Fuel Charges</Typography>
-                                        <Typography variant="body1">${selectedRate?.fuelCharges.toFixed(2)}</Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Service Charges</Typography>
-                                        <Typography variant="body1">${selectedRate?.serviceCharges.toFixed(2)}</Typography>
-                                    </Box>
-                                    {selectedRate?.accessorialCharges > 0 && (
-                                        <Box>
-                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Accessorial Charges</Typography>
-                                            <Typography variant="body1">${selectedRate?.accessorialCharges.toFixed(2)}</Typography>
-                                        </Box>
-                                    )}
-                                    {selectedRate?.guaranteed && (
-                                        <Box>
-                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>Guarantee Charge</Typography>
-                                            <Typography variant="body1">${selectedRate?.guaranteeCharge.toFixed(2)}</Typography>
-                                        </Box>
-                                    )}
-                                </Box>
-                                <Divider sx={{ my: 2 }} />
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>Total Charges</Typography>
-                                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#000' }}>
-                                        ${selectedRate?.rate.toFixed(2)}
+                                    <Typography variant="body2" color="text.secondary">
+                                        Transit Time: {selectedRate?.transitDays} days
                                     </Typography>
-                                </Box>
-                            </Box>
-                        </Collapse>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ textAlign: 'right' }}>
+                                        <Typography variant="h4" color="primary" gutterBottom>
+                                            ${selectedRate?.rate.toFixed(2)}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Total Charges
+                                        </Typography>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                            <Divider sx={{ my: 2 }} />
+                            <Grid container spacing={2}>
+                                <Grid item xs={6} md={3}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Freight Charges
+                                    </Typography>
+                                    <Typography variant="body1">
+                                        ${selectedRate?.freightCharges.toFixed(2)}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={6} md={3}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Fuel Surcharge
+                                    </Typography>
+                                    <Typography variant="body1">
+                                        ${selectedRate?.fuelCharges.toFixed(2)}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={6} md={3}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Accessorial Charges
+                                    </Typography>
+                                    <Typography variant="body1">
+                                        ${selectedRate?.accessorialCharges.toFixed(2)}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={6} md={3}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Service Charges
+                                    </Typography>
+                                    <Typography variant="body1">
+                                        ${selectedRate?.serviceCharges.toFixed(2)}
+                                    </Typography>
+                                </Grid>
+                            </Grid>
+                        </Box>
                     </Paper>
 
                     {/* Navigation Buttons */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4, px: 3, pb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
                         <motion.button
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
@@ -1079,45 +1026,48 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                             style={{
                                 padding: '12px 24px',
                                 borderRadius: '8px',
-                                border: '2px solid #000',
+                                border: '2px solid #1a237e',
                                 background: 'transparent',
-                                color: '#000',
+                                color: '#1a237e',
                                 cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: 500,
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '8px',
-                                fontSize: '16px',
-                                fontWeight: 500
+                                gap: '8px'
                             }}
                         >
-                            <i className="fas fa-arrow-left"></i> Previous
+                            ← Previous
                         </motion.button>
                         <motion.button
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                             onClick={handleSubmit}
-                            disabled={!selectedRate || isLoading}
                             style={{
                                 padding: '12px 24px',
                                 borderRadius: '8px',
                                 border: 'none',
-                                background: '#000',
+                                background: '#1a237e',
                                 color: 'white',
-                                cursor: selectedRate && !isLoading ? 'pointer' : 'not-allowed',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
+                                cursor: 'pointer',
                                 fontSize: '16px',
                                 fontWeight: 500,
-                                opacity: selectedRate && !isLoading ? 1 : 0.7
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
                             }}
                         >
-                            <i className="fas fa-check-circle"></i> Book Shipment
+                            <CheckCircleIcon sx={{ fontSize: 20 }} />
+                            Book Shipment
                         </motion.button>
                     </Box>
-                </motion.div>
-            </LoadScript>
-        </Box>
+                </LoadScript>
+            ) : (
+                <Typography variant="body1" color="error">
+                    {mapError}
+                </Typography>
+            )}
+        </Container>
     );
 };
 

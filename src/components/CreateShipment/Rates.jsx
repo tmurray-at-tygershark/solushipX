@@ -362,7 +362,9 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                     bookingReferenceNumber: bookingRef,
                     bookingReferenceNumberType: bookingReferenceNumberType,
                     shipmentBillType: shipmentBillType,
-                    shipmentDate: formData.shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
+                    shipmentDate: formData.shipmentInfo.shipmentDate
+                        ? new Date(formData.shipmentInfo.shipmentDate).toISOString()
+                        : new Date().toISOString(),
                     pickupWindow: {
                         earliest: formData.shipmentInfo.earliestPickup || "09:00",
                         latest: formData.shipmentInfo.latestPickup || "17:00"
@@ -453,7 +455,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                 });
 
                 console.log('📍 From Address:', rateRequestData.fromAddress);
-                console.log('📍 To Address:', rateRequestData.toAddress);
+                console.log('�� To Address:', rateRequestData.toAddress);
 
                 console.log('📦 Packages:', rateRequestData.items.map(item => ({
                     name: item.name,

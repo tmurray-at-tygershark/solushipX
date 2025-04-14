@@ -75,6 +75,11 @@ function AppRoutes() {
                 } />
                 <Route path="/create-shipment" element={
                     <ProtectedRoute>
+                        <Navigate to="/create-shipment/shipment-info" replace />
+                    </ProtectedRoute>
+                } />
+                <Route path="/create-shipment/:step" element={
+                    <ProtectedRoute>
                         <CreateShipment />
                     </ProtectedRoute>
                 } />

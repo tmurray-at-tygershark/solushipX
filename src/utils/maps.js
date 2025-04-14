@@ -1,7 +1,9 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
 /**
- * Fetches the Google Maps API key from Firebase Functions
+ * Fetches the Google Maps API key from Firestore
  * @returns {Promise<string>} The Google Maps API key
  */
 export const getMapsApiKey = async () => {
@@ -10,28 +12,20 @@ export const getMapsApiKey = async () => {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/getMapsApiKey', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
+      // Fetch API key from Firestore
+      const keysRef = collection(db, 'keys');
+      const keysSnapshot = await getDocs(keysRef);
+
+      if (!keysSnapshot.empty) {
+        const firstDoc = keysSnapshot.docs[0];
+        const key = firstDoc.data().googleAPI;
+        if (!key) {
+          throw new Error('No API key found in Firestore');
         }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        return key;
+      } else {
+        throw new Error('API key document not found in Firestore');
       }
-
-      const data = await response.json();
-
-      if (!data || !data.key) {
-        throw new Error('Invalid API key response');
-      }
-
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Failed to get API key');
-      }
-
-      return data.key;
     } catch (error) {
       console.error(`Attempt ${attempt} failed:`, error);
       
