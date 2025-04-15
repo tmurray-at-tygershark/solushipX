@@ -634,6 +634,178 @@ exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
   }
 });
 
+// Helper function to check if an address is complete
+const isAddressComplete = (address) => {
+    return address && 
+           address.street && 
+           address.city && 
+           address.state && 
+           address.country &&
+           address.postalCode;
+};
+
+// Helper function to extract location information
+const extractLocationInfo = (text) => {
+    const locationInfo = {};
+    
+    // Skip if the text is too short or contains common phrases
+    if (text.length < 5 || 
+        text.toLowerCase().includes('need to ship') || 
+        text.toLowerCase().includes('want to ship') ||
+        text.toLowerCase().includes('would like to ship')) {
+        return locationInfo;
+    }
+    
+    // Extract postal/zip code first (various formats)
+    const postalCode = text.match(/([A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d)|(\d{5}(-\d{4})?)/i);
+    if (postalCode) {
+        locationInfo.postalCode = postalCode[0].trim().toUpperCase();
+    }
+
+    // Extract street address - look for patterns like "is my street" or "street address is"
+    const streetPatterns = [
+        /^([^,]+)\s+is\s+my\s+street/i,
+        /^([^,]+)\s+street\s+address\s+is/i,
+        /^([^,]+)\s+is\s+my\s+address/i,
+        /^([^,]+)\s+address\s+is/i,
+        /^([^,]+)$/i  // Fallback for just a street name
+    ];
+    
+    for (const pattern of streetPatterns) {
+        const streetMatch = text.match(pattern);
+        if (streetMatch && 
+            !streetMatch[1].toLowerCase().includes('ship') && 
+            !streetMatch[1].toLowerCase().includes('package') &&
+            !streetMatch[1].toLowerCase().includes('need') &&
+            !streetMatch[1].toLowerCase().includes('want')) {
+            locationInfo.street = streetMatch[1].trim();
+            break;
+        }
+    }
+
+    // Extract city, state/province, country
+    const cityStateCountry = text.match(/([^,]+),\s*([^,]+),\s*([^,]+)/i);
+    if (cityStateCountry) {
+        locationInfo.city = cityStateCountry[1].trim();
+        locationInfo.state = cityStateCountry[2].trim();
+        locationInfo.country = cityStateCountry[3].trim();
+    } else {
+        // Try to extract city and state/province without country
+        const cityState = text.match(/([^,]+),\s*([^,]+)/i);
+        if (cityState) {
+            locationInfo.city = cityState[1].trim();
+            locationInfo.state = cityState[2].trim();
+        } else {
+            // Try to extract just city - only if it looks like a city name
+            const city = text.match(/^([^,]+)$/i);
+            if (city && 
+                !city[1].toLowerCase().includes('ship') && 
+                !city[1].toLowerCase().includes('package') &&
+                !city[1].toLowerCase().includes('need') &&
+                !city[1].toLowerCase().includes('want') &&
+                !city[1].toLowerCase().includes('street') &&
+                !city[1].toLowerCase().includes('address')) {
+                locationInfo.city = city[1].trim();
+            }
+        }
+    }
+
+    return locationInfo;
+};
+
+// Helper function to determine what address field to ask for next
+const getNextAddressField = (address) => {
+    if (!address) return 'basic';
+    if (!address.street) return 'street';
+    if (!address.city || !address.state || !address.country) return 'location';
+    if (!address.postalCode) return 'postal';
+    return 'complete';
+};
+
+// Helper function to check if a shipment setup is complete
+const isShipmentSetupComplete = (context) => {
+    return context.bookingReference &&
+           context.bookingReferenceType &&
+           context.shipmentBillType &&
+           context.shipmentDate &&
+           context.pickupWindow &&
+           context.deliveryWindow;
+};
+
+// Helper function to get the next shipment setup field to ask for
+const getNextShipmentSetupField = (context) => {
+    if (!context.bookingReference) return 'bookingReference';
+    if (!context.bookingReferenceType) return 'bookingReferenceType';
+    if (!context.shipmentBillType) return 'shipmentBillType';
+    if (!context.shipmentDate) return 'shipmentDate';
+    if (!context.pickupWindow) return 'pickupWindow';
+    if (!context.deliveryWindow) return 'deliveryWindow';
+    return 'complete';
+};
+
+// Helper function to validate postal code
+const validatePostalCode = (postalCode, country) => {
+    if (!postalCode) return false;
+    
+    // Canadian postal code format: A1A 1A1
+    if (country === 'Canada' || country === 'CA') {
+        return /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(postalCode);
+    }
+    
+    // US ZIP code format: 12345 or 12345-6789
+    if (country === 'United States' || country === 'US') {
+        return /^\d{5}(-\d{4})?$/.test(postalCode);
+    }
+    
+    // For other countries, just check if it's not empty
+    return postalCode.length > 0;
+};
+
+// Helper function to format postal code
+const formatPostalCode = (postalCode, country) => {
+    if (!postalCode) return '';
+    
+    // Canadian postal code format: A1A 1A1
+    if (country === 'Canada' || country === 'CA') {
+        const cleaned = postalCode.replace(/\s+/g, '').toUpperCase();
+        if (cleaned.length === 6) {
+            return `${cleaned.substring(0, 3)} ${cleaned.substring(3)}`;
+        }
+        return postalCode.toUpperCase();
+    }
+    
+    // US ZIP code format: 12345 or 12345-6789
+    if (country === 'United States' || country === 'US') {
+        return postalCode.replace(/\s+/g, '');
+    }
+    
+    return postalCode;
+};
+
+// Helper function to validate weight
+const validateWeight = (weight) => {
+    if (!weight) return false;
+    
+    // Extract numeric value from string (e.g., "100lbs" -> 100)
+    const numericWeight = parseFloat(weight.replace(/[^\d.]/g, ''));
+    
+    // Check if it's a positive number
+    return !isNaN(numericWeight) && numericWeight > 0;
+};
+
+// Helper function to format weight
+const formatWeight = (weight) => {
+    if (!weight) return '';
+    
+    // Extract numeric value from string (e.g., "100lbs" -> 100)
+    const numericWeight = parseFloat(weight.replace(/[^\d.]/g, ''));
+    
+    // Extract unit if present
+    const unit = weight.replace(/[\d.]/g, '').trim() || 'lbs';
+    
+    return `${numericWeight} ${unit}`;
+};
+
 // Chat with Gemini function
 exports.chatWithGemini = functions.https.onCall(async (data, context) => {
     try {
@@ -646,13 +818,97 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
         const userContext = data.data.userContext || {};
         const previousMessages = data.data.previousMessages || [];
 
-        // Simple system prompt
-        const systemPrompt = `You are a helpful shipping assistant for SolushipX. 
+        // Build the system prompt
+        let systemPrompt = `You are a helpful shipping assistant for SolushipX. 
         Help users with their shipping needs by providing information about shipping options, 
-        rates, and best practices.`;
+        rates, and best practices.
+        
+        IMPORTANT INSTRUCTIONS:
+        1. NEVER reintroduce yourself if the user has already started a conversation
+        2. NEVER ask if they want to ship a package if they've already indicated they do
+        3. NEVER repeat questions you've already asked
+        4. Keep track of what information you've already collected
+        5. Be concise and direct in your responses
+        6. Focus on collecting ONE piece of information at a time
+        7. If you have partial information, acknowledge it and ask ONLY for what's missing
+        8. If the user provides information, acknowledge it and ask for the next missing piece
+        9. If the user repeats information, acknowledge that you already have it and ask for the next missing piece
+        10. Use AI to understand the context of the user's message and respond appropriately
+        11. NEVER repeat the entire context after each piece of information
+        12. If the user corrects information, acknowledge the correction and continue
+        13. If the user provides multiple pieces of information, acknowledge each one separately
+        14. If the user provides information in an unexpected format, ask for clarification`;
 
-        // Create the full prompt
-        const fullPrompt = `${systemPrompt}\n\nUser message: ${messageText}`;
+        // Determine the current step in the conversation
+        let currentStep = 'initial';
+        
+        // Check if we're in the address collection phase
+        if (userContext.fromAddress && !isAddressComplete(userContext.fromAddress)) {
+            currentStep = 'originAddress';
+        } else if (userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
+                  (!userContext.toAddress || !isAddressComplete(userContext.toAddress))) {
+            currentStep = 'destinationAddress';
+        } else if (userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
+                  userContext.toAddress && isAddressComplete(userContext.toAddress) && 
+                  !userContext.packageDetails) {
+            currentStep = 'packageDetails';
+        } else if (userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
+                  userContext.toAddress && isAddressComplete(userContext.toAddress) && 
+                  userContext.packageDetails && !isShipmentSetupComplete(userContext)) {
+            currentStep = 'shipmentSetup';
+        } else if (isShipmentSetupComplete(userContext) && 
+                  userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
+                  userContext.toAddress && isAddressComplete(userContext.toAddress) && 
+                  userContext.packageDetails) {
+            currentStep = 'complete';
+        }
+
+        // Add step-specific instructions
+        switch (currentStep) {
+            case 'initial':
+                systemPrompt += `\n\nCURRENT STEP: Initial greeting
+                - If the user mentions shipping a package, acknowledge it and ask for the origin address
+                - If the user just says hello or similar, ask what they would like to ship`;
+                break;
+            case 'originAddress':
+                systemPrompt += `\n\nCURRENT STEP: Collecting origin address
+                - Ask for the next missing piece of the origin address
+                - If the user provides multiple pieces of information, acknowledge each one
+                - If the user corrects information, acknowledge the correction
+                - If the user provides information in an unexpected format, ask for clarification`;
+                break;
+            case 'destinationAddress':
+                systemPrompt += `\n\nCURRENT STEP: Collecting destination address
+                - Ask for the next missing piece of the destination address
+                - If the user provides multiple pieces of information, acknowledge each one
+                - If the user corrects information, acknowledge the correction
+                - If the user provides information in an unexpected format, ask for clarification`;
+                break;
+            case 'packageDetails':
+                systemPrompt += `\n\nCURRENT STEP: Collecting package details
+                - Ask for the weight of the package
+                - If the user provides the weight, ask for dimensions (length, width, height)
+                - If the user provides dimensions, ask for the value of the package
+                - If the user provides the value, ask for any special handling requirements`;
+                break;
+            case 'shipmentSetup':
+                systemPrompt += `\n\nCURRENT STEP: Setting up shipment
+                - Ask for the next missing piece of shipment setup information
+                - If the user provides multiple pieces of information, acknowledge each one
+                - If the user corrects information, acknowledge the correction
+                - If the user provides information in an unexpected format, ask for clarification`;
+                break;
+            case 'complete':
+                systemPrompt += `\n\nCURRENT STEP: Confirming shipment details
+                - Summarize all collected information
+                - Ask if everything is correct
+                - If the user confirms, proceed to the next phase
+                - If the user wants to change anything, ask what needs to be changed`;
+                break;
+        }
+
+        // Create the full prompt with context and conversation history
+        const fullPrompt = `${systemPrompt}\n\nUser context: ${JSON.stringify(userContext)}\n\nPrevious messages: ${JSON.stringify(previousMessages)}\n\nUser message: ${messageText}`;
 
         // Call GenKit with the structured prompt
         const response = await ai.generate(fullPrompt);
@@ -661,9 +917,7 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
         let responseText = '';
         
         try {
-            // Handle different response formats
             if (response && response.message && response.message.content) {
-                // Extract text from the content array
                 responseText = response.message.content
                     .map(part => part.text || '')
                     .join('\n');
@@ -681,12 +935,177 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
             responseText = 'I apologize, but I encountered an error processing your message.';
         }
 
-        // Return simple response
+        // Extract any new information from the user's message
+        const locationInfo = extractLocationInfo(messageText);
+
+        // Update context with any new information
+        if (locationInfo.city || locationInfo.state || locationInfo.country || locationInfo.postalCode || locationInfo.street) {
+            // If we don't have an origin address yet, or if the user is providing origin information
+            if (!userContext.fromAddress || 
+                (userContext.fromAddress && 
+                 (!userContext.fromAddress.city || 
+                  !userContext.fromAddress.state || 
+                  !userContext.fromAddress.country || 
+                  !userContext.fromAddress.postalCode || 
+                  !userContext.fromAddress.street))) {
+                
+                // Check if the user is correcting information
+                if (messageText.toLowerCase().includes('street') || messageText.toLowerCase().includes('address')) {
+                    userContext.fromAddress = {
+                        ...userContext.fromAddress,
+                        street: locationInfo.street || userContext.fromAddress?.street
+                    };
+                } else if (messageText.toLowerCase().includes('city')) {
+                    userContext.fromAddress = {
+                        ...userContext.fromAddress,
+                        city: locationInfo.city || userContext.fromAddress?.city
+                    };
+                } else if (messageText.toLowerCase().includes('state') || messageText.toLowerCase().includes('province')) {
+                    userContext.fromAddress = {
+                        ...userContext.fromAddress,
+                        state: locationInfo.state || userContext.fromAddress?.state
+                    };
+                } else if (messageText.toLowerCase().includes('country')) {
+                    userContext.fromAddress = {
+                        ...userContext.fromAddress,
+                        country: locationInfo.country || userContext.fromAddress?.country
+                    };
+                } else if (messageText.toLowerCase().includes('postal') || messageText.toLowerCase().includes('zip')) {
+                    userContext.fromAddress = {
+                        ...userContext.fromAddress,
+                        postalCode: locationInfo.postalCode || userContext.fromAddress?.postalCode
+                    };
+                } else {
+                    // If no specific field is mentioned, update all provided fields
+                    userContext.fromAddress = {
+                        ...userContext.fromAddress,
+                        ...locationInfo
+                    };
+                }
+                
+                // Format postal code if present
+                if (userContext.fromAddress.postalCode && userContext.fromAddress.country) {
+                    userContext.fromAddress.postalCode = formatPostalCode(
+                        userContext.fromAddress.postalCode, 
+                        userContext.fromAddress.country
+                    );
+                }
+            } 
+            // If we have a complete origin address but no destination address yet
+            else if (isAddressComplete(userContext.fromAddress) && 
+                    (!userContext.toAddress || 
+                     (userContext.toAddress && 
+                      (!userContext.toAddress.city || 
+                       !userContext.toAddress.state || 
+                       !userContext.toAddress.country || 
+                       !userContext.toAddress.postalCode || 
+                       !userContext.toAddress.street)))) {
+                
+                // Check if the user is correcting information
+                if (messageText.toLowerCase().includes('street') || messageText.toLowerCase().includes('address')) {
+                    userContext.toAddress = {
+                        ...userContext.toAddress,
+                        street: locationInfo.street || userContext.toAddress?.street
+                    };
+                } else if (messageText.toLowerCase().includes('city')) {
+                    userContext.toAddress = {
+                        ...userContext.toAddress,
+                        city: locationInfo.city || userContext.toAddress?.city
+                    };
+                } else if (messageText.toLowerCase().includes('state') || messageText.toLowerCase().includes('province')) {
+                    userContext.toAddress = {
+                        ...userContext.toAddress,
+                        state: locationInfo.state || userContext.toAddress?.state
+                    };
+                } else if (messageText.toLowerCase().includes('country')) {
+                    userContext.toAddress = {
+                        ...userContext.toAddress,
+                        country: locationInfo.country || userContext.toAddress?.country
+                    };
+                } else if (messageText.toLowerCase().includes('postal') || messageText.toLowerCase().includes('zip')) {
+                    userContext.toAddress = {
+                        ...userContext.toAddress,
+                        postalCode: locationInfo.postalCode || userContext.toAddress?.postalCode
+                    };
+                } else {
+                    // If no specific field is mentioned, update all provided fields
+                    userContext.toAddress = {
+                        ...userContext.toAddress,
+                        ...locationInfo
+                    };
+                }
+                
+                // Format postal code if present
+                if (userContext.toAddress.postalCode && userContext.toAddress.country) {
+                    userContext.toAddress.postalCode = formatPostalCode(
+                        userContext.toAddress.postalCode, 
+                        userContext.toAddress.country
+                    );
+                }
+            }
+        }
+
+        // Extract package details
+        if (messageText.toLowerCase().includes('weight') || messageText.toLowerCase().includes('lbs') || messageText.toLowerCase().includes('kg')) {
+            const weightMatch = messageText.match(/(\d+(?:\.\d+)?)\s*(lbs|kg|pounds|kilograms)/i);
+            if (weightMatch && validateWeight(weightMatch[0])) {
+                userContext.packageDetails = {
+                    ...userContext.packageDetails,
+                    weight: formatWeight(weightMatch[0])
+                };
+            }
+        }
+
+        // Extract and update shipment setup information
+        if (messageText.toLowerCase().includes('reference') || messageText.toLowerCase().includes('shipment') || messageText.toLowerCase().includes('order')) {
+            const referenceMatch = messageText.match(/(?:reference|shipment|order)\s+(?:number|name|id)?\s*[:#]?\s*([^\s,]+)/i);
+            if (referenceMatch && !userContext.bookingReference) {
+                userContext.bookingReference = referenceMatch[1].trim();
+            }
+        }
+
+        if (messageText.toLowerCase().includes('type') || messageText.toLowerCase().includes('kind')) {
+            const typeMatch = messageText.match(/(?:type|kind)\s+(?:is|of)?\s*[:#]?\s*([^\s,]+)/i);
+            if (typeMatch && !userContext.bookingReferenceType) {
+                userContext.bookingReferenceType = typeMatch[1].trim();
+            }
+        }
+
+        if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('payment')) {
+            const billMatch = messageText.match(/(?:bill|payment)\s+(?:type|method)?\s*[:#]?\s*([^\s,]+)/i);
+            if (billMatch && !userContext.shipmentBillType) {
+                userContext.shipmentBillType = billMatch[1].trim();
+            }
+        }
+
+        if (messageText.toLowerCase().includes('date') || messageText.toLowerCase().includes('when')) {
+            const dateMatch = messageText.match(/(?:date|when)\s+(?:is|should)?\s*[:#]?\s*([^\s,]+)/i);
+            if (dateMatch && !userContext.shipmentDate) {
+                userContext.shipmentDate = dateMatch[1].trim();
+            }
+        }
+
+        if (messageText.toLowerCase().includes('pickup') || messageText.toLowerCase().includes('pick up')) {
+            const pickupMatch = messageText.match(/(?:pickup|pick up)\s+(?:window|time)?\s*[:#]?\s*([^\s,]+)/i);
+            if (pickupMatch && !userContext.pickupWindow) {
+                userContext.pickupWindow = pickupMatch[1].trim();
+            }
+        }
+
+        if (messageText.toLowerCase().includes('delivery') || messageText.toLowerCase().includes('drop off')) {
+            const deliveryMatch = messageText.match(/(?:delivery|drop off)\s+(?:window|time)?\s*[:#]?\s*([^\s,]+)/i);
+            if (deliveryMatch && !userContext.deliveryWindow) {
+                userContext.deliveryWindow = deliveryMatch[1].trim();
+            }
+        }
+
+        // Return response with updated context
         return {
             message: {
                 role: 'model',
                 content: responseText
-            }
+            },
+            userContext: userContext
         };
     } catch (error) {
         console.error('Error in chatWithGemini:', error);
