@@ -130,7 +130,9 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                         flexGrow: 1,
                         p: 3,
                         display: 'flex',
-                        gap: 3
+                        gap: 3,
+                        height: 'calc(100vh - 64px)', // Subtract header height
+                        overflow: 'hidden' // Prevent double scrollbars
                     }}>
                         {/* Chat and Input Area */}
                         <Box sx={{
@@ -146,7 +148,21 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                                 overflowY: 'auto',
                                 px: 2,
                                 display: 'flex',
-                                flexDirection: 'column'
+                                flexDirection: 'column',
+                                '&::-webkit-scrollbar': {
+                                    width: '8px',
+                                },
+                                '&::-webkit-scrollbar-track': {
+                                    background: '#f1f1f1',
+                                    borderRadius: '4px',
+                                },
+                                '&::-webkit-scrollbar-thumb': {
+                                    background: '#888',
+                                    borderRadius: '4px',
+                                    '&:hover': {
+                                        background: '#555',
+                                    },
+                                },
                             }}>
                                 {messages.length === 0 ? (
                                     <Box sx={{ textAlign: 'center', mt: 4 }}>
@@ -193,7 +209,14 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                             </Box>
 
                             {/* Input Area */}
-                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            <Box sx={{
+                                display: 'flex',
+                                gap: 1,
+                                alignItems: 'center',
+                                background: 'white',
+                                p: 2,
+                                borderTop: '1px solid rgba(0,0,0,0.05)'
+                            }}>
                                 <MessageInput
                                     fullWidth
                                     placeholder="Ask anything about shipping..."
