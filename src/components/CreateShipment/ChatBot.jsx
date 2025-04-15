@@ -1,193 +1,612 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, IconButton, Paper, Typography, CircularProgress, Button, Card, CardContent } from '@mui/material';
-import { Mic, MicOff, Send, Close, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { Box, IconButton, Paper, Typography, CircularProgress, Button, Card, CardContent, useTheme, Badge, Tooltip, Fade, Chip, TextField } from '@mui/material';
+import { Mic, MicOff, Send, Close, ExpandMore, ExpandLess, AttachFile, Undo, RestartAlt, CheckCircle, AccessTime, LocationOn, LocalShipping, Inventory, Payment, RateReview, TrendingUp, CompareArrows, Fullscreen, FullscreenExit } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { useLocation, useNavigate } from 'react-router-dom';
+import GeminiAgent from '../../services/GeminiAgent';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
-const ChatBot = ({ onShipmentComplete }) => {
+const STEPS = {
+    'shipment-info': {
+        number: 1,
+        label: 'Shipment Info',
+        icon: <LocalShipping />,
+        description: 'Basic information about your shipment',
+        questions: [
+            'What type of shipment are you creating? (e.g., courier, freight, express)',
+            'When do you need this shipment to be picked up?',
+            'Do you need any special handling for this shipment?'
+        ],
+        requiredFields: ['shipmentType', 'shipmentDate']
+    },
+    'ship-from': {
+        number: 2,
+        label: 'From Address',
+        icon: <LocationOn />,
+        description: 'Origin address details',
+        questions: [
+            'What is the company name at the origin? (or "none" if not applicable)',
+            'What is the street address you\'re shipping from?',
+            'Is there an apartment, suite, or unit number? (or "none" if not applicable)',
+            'What is the city you\'re shipping from?',
+            'What is the state/province you\'re shipping from?',
+            'What is the postal/zip code you\'re shipping from?',
+            'What is the country you\'re shipping from?',
+            'What is the contact name at the origin?',
+            'What is the contact phone number at the origin?',
+            'What is the contact email at the origin?',
+            'Are there any special instructions for pickup? (or "none" if not applicable)'
+        ],
+        requiredFields: ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName']
+    },
+    'ship-to': {
+        number: 3,
+        label: 'To Address',
+        icon: <LocationOn />,
+        description: 'Destination address details',
+        questions: [
+            'What is the company name at the destination? (or "none" if not applicable)',
+            'What is the street address you\'re shipping to?',
+            'Is there an apartment, suite, or unit number? (or "none" if not applicable)',
+            'What is the city you\'re shipping to?',
+            'What is the state/province you\'re shipping to?',
+            'What is the postal/zip code you\'re shipping to?',
+            'What is the country you\'re shipping to?',
+            'What is the contact name at the destination?',
+            'What is the contact phone number at the destination?',
+            'What is the contact email at the destination?',
+            'Are there any special instructions for delivery? (or "none" if not applicable)'
+        ],
+        requiredFields: ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName']
+    },
+    'packages': {
+        number: 4,
+        label: 'Packages',
+        icon: <Inventory />,
+        description: 'Package details and dimensions',
+        questions: [
+            'How many packages are you shipping?',
+            'What is the weight of your package(s) in pounds?',
+            'What is the length of your package(s) in inches?',
+            'What is the width of your package(s) in inches?',
+            'What is the height of your package(s) in inches?',
+            'What is the declared value of your package(s) in USD?',
+            'What is the freight class for your shipment? (or "50" if unsure)',
+            'Is your package stackable? (yes/no)',
+            'Do you have a description for your package(s)? (or "Package" if not applicable)'
+        ],
+        requiredFields: ['weight', 'length', 'width', 'height', 'quantity']
+    },
+    'rates': {
+        number: 5,
+        label: 'Rates',
+        icon: <Payment />,
+        description: 'Select shipping rate and service',
+        questions: [
+            'Would you like to see available shipping rates now?',
+            'Which rate would you like to select? (Enter the number)',
+            'Would you like me to analyze the rates for you?'
+        ],
+        actions: ['fetchRates', 'analyzeRates', 'selectRate']
+    },
+    'review': {
+        number: 6,
+        label: 'Review',
+        icon: <RateReview />,
+        description: 'Review and confirm shipment details',
+        questions: [
+            'Would you like to review all the shipment details?',
+            'Is all the information correct?',
+            'Would you like to make any changes?'
+        ]
+    }
+};
+
+const guidedQuestions = {
+    shipment_info: [
+        {
+            question: "What type of shipment are you creating? (e.g., courier, freight, express)",
+            field: "shipmentType",
+            validate: (value) => {
+                const validTypes = ['courier', 'freight', 'express'];
+                if (!validTypes.includes(value.toLowerCase())) {
+                    return "Please specify a valid shipment type: courier, freight, or express";
+                }
+                return null;
+            }
+        }
+    ],
+    ship_from: [
+        {
+            question: "What is the company name at the origin?",
+            field: "fromCompanyName",
+            validate: (value) => value.trim() ? null : "Company name is required"
+        },
+        {
+            question: "What is the street address for pickup?",
+            field: "fromStreet",
+            validate: (value) => value.trim() ? null : "Street address is required"
+        },
+        {
+            question: "What is the city for pickup?",
+            field: "fromCity",
+            validate: (value) => value.trim() ? null : "City is required"
+        },
+        {
+            question: "What is the state/province for pickup?",
+            field: "fromState",
+            validate: (value) => value.trim() ? null : "State/province is required"
+        },
+        {
+            question: "What is the postal code for pickup?",
+            field: "fromPostalCode",
+            validate: (value) => {
+                if (!value.trim()) return "Postal code is required";
+                if (!/^\d{5}(-\d{4})?$/.test(value)) {
+                    return "Please enter a valid postal code (e.g., 12345 or 12345-6789)";
+                }
+                return null;
+            }
+        },
+        {
+            question: "What is the contact name for pickup?",
+            field: "fromContactName",
+            validate: (value) => value.trim() ? null : "Contact name is required"
+        },
+        {
+            question: "What is the contact phone for pickup?",
+            field: "fromContactPhone",
+            validate: (value) => {
+                if (!value.trim()) return "Contact phone is required";
+                if (!/^\+?[\d\s-()]{10,}$/.test(value)) {
+                    return "Please enter a valid phone number";
+                }
+                return null;
+            }
+        },
+        {
+            question: "Are there any special instructions for pickup? (e.g., loading dock, appointment required)",
+            field: "fromSpecialInstructions",
+            validate: () => null // Optional field
+        }
+    ],
+    ship_to: [
+        {
+            question: "What is the company name at the destination?",
+            field: "toCompanyName",
+            validate: (value) => value.trim() ? null : "Company name is required"
+        },
+        {
+            question: "What is the street address for delivery?",
+            field: "toStreet",
+            validate: (value) => value.trim() ? null : "Street address is required"
+        },
+        {
+            question: "What is the city for delivery?",
+            field: "toCity",
+            validate: (value) => value.trim() ? null : "City is required"
+        },
+        {
+            question: "What is the state/province for delivery?",
+            field: "toState",
+            validate: (value) => value.trim() ? null : "State/province is required"
+        },
+        {
+            question: "What is the postal code for delivery?",
+            field: "toPostalCode",
+            validate: (value) => {
+                if (!value.trim()) return "Postal code is required";
+                if (!/^\d{5}(-\d{4})?$/.test(value)) {
+                    return "Please enter a valid postal code (e.g., 12345 or 12345-6789)";
+                }
+                return null;
+            }
+        },
+        {
+            question: "What is the contact name for delivery?",
+            field: "toContactName",
+            validate: (value) => value.trim() ? null : "Contact name is required"
+        },
+        {
+            question: "What is the contact phone for delivery?",
+            field: "toContactPhone",
+            validate: (value) => {
+                if (!value.trim()) return "Contact phone is required";
+                if (!/^\+?[\d\s-()]{10,}$/.test(value)) {
+                    return "Please enter a valid phone number";
+                }
+                return null;
+            }
+        },
+        {
+            question: "Are there any special instructions for delivery? (e.g., loading dock, appointment required)",
+            field: "toSpecialInstructions",
+            validate: () => null // Optional field
+        }
+    ],
+    packages: [
+        {
+            question: "How many packages are you shipping?",
+            field: "packageCount",
+            validate: (value) => {
+                const count = parseInt(value);
+                if (isNaN(count) || count < 1) {
+                    return "Please enter a valid number of packages (minimum 1)";
+                }
+                return null;
+            }
+        },
+        {
+            question: "What is the weight of the package(s) in pounds?",
+            field: "weight",
+            validate: (value) => {
+                const weight = parseFloat(value);
+                if (isNaN(weight) || weight <= 0) {
+                    return "Please enter a valid weight in pounds";
+                }
+                return null;
+            }
+        },
+        {
+            question: "What are the dimensions of the package(s)? (Format: LxWxH in inches)",
+            field: "dimensions",
+            validate: (value) => {
+                const dimensions = value.split('x').map(d => parseFloat(d.trim()));
+                if (dimensions.length !== 3 || dimensions.some(d => isNaN(d) || d <= 0)) {
+                    return "Please enter valid dimensions in the format: Length x Width x Height (in inches)";
+                }
+                return null;
+            }
+        },
+        {
+            question: "What type of package is it? (e.g., pallet, box, crate)",
+            field: "packageType",
+            validate: (value) => value.trim() ? null : "Package type is required"
+        },
+        {
+            question: "Are there any special handling requirements? (e.g., fragile, temperature controlled)",
+            field: "specialHandling",
+            validate: () => null // Optional field
+        }
+    ]
+};
+
+const ChatBot = ({ onShipmentComplete, formData }) => {
+    const theme = useTheme();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [conversationContext, setConversationContext] = useState({
-        origin: null,
-        destination: null,
-        packageDetails: null,
-        selectedRate: null
+        fromAddress: {},
+        toAddress: {},
+        items: [{}],
+        rates: [],
+        selectedRate: null,
+        currentStep: 'initial'
     });
     const [apiKeyError, setApiKeyError] = useState(null);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [isMinimized, setIsMinimized] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [isLoadingRates, setIsLoadingRates] = useState(false);
+    const [rateError, setRateError] = useState(null);
     const messagesEndRef = useRef(null);
     const recognition = useRef(null);
+    const chatContainerRef = useRef(null);
+    const [streamingMessage, setStreamingMessage] = useState('');
+    const functions = getFunctions();
+    const chatWithGemini = httpsCallable(functions, 'chatWithGemini');
 
-    // Initialize speech recognition
+    // Initialize chat with welcome message
     useEffect(() => {
-        if (window.webkitSpeechRecognition) {
-            recognition.current = new window.webkitSpeechRecognition();
-            recognition.current.continuous = false;
-            recognition.current.interimResults = false;
-
-            recognition.current.onresult = (event) => {
-                const transcript = event.results[0][0].transcript;
-                setInput(transcript);
-                setIsListening(false);
+        if (messages.length === 0) {
+            const welcomeMessage = {
+                role: 'assistant',
+                content: `Hi! I'm your SolushipX AI assistant. I'll help you create a shipment step by step. What would you like to ship today?`,
+                timestamp: new Date().toISOString()
             };
+            setMessages([welcomeMessage]);
 
-            recognition.current.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                setIsListening(false);
-            };
+            // Set initial suggestions based on the first step
+            setSuggestions([
+                "I need to ship a package",
+                "I have a freight shipment",
+                "What information do you need?"
+            ]);
         }
     }, []);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
+    // Auto-scroll to bottom when messages change
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages, streamingMessage]);
 
-    const startListening = () => {
-        if (recognition.current) {
-            recognition.current.start();
-            setIsListening(true);
+    // Update unread count when new messages arrive and chat is closed
+    useEffect(() => {
+        if (!isOpen && messages.length > 0) {
+            setUnreadCount(prev => prev + 1);
         }
+    }, [messages, isOpen]);
+
+    // Update chat interface based on current step
+    useEffect(() => {
+        updateSuggestionsForStep(conversationContext.currentStep);
+    }, [conversationContext.currentStep]);
+
+    const handleClose = () => {
+        setIsOpen(false);
     };
 
-    const stopListening = () => {
-        if (recognition.current) {
-            recognition.current.stop();
-            setIsListening(false);
-        }
+    const handleOpen = () => {
+        setIsOpen(true);
+        setUnreadCount(0);
+    };
+
+    const toggleFullscreen = () => {
+        setIsFullscreen(!isFullscreen);
     };
 
     const handleSend = async () => {
         if (!input.trim()) return;
 
-        const userMessage = { type: 'user', content: input };
+        const userMessage = {
+            role: 'user',
+            content: input.trim(),
+            timestamp: new Date().toISOString()
+        };
+
+        // Add message to UI immediately
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsProcessing(true);
+        setStreamingMessage('');
 
         try {
-            // Prepare context for the chat
-            const context = {
-                ...conversationContext,
-                currentStep: determineCurrentStep(conversationContext),
-                previousMessages: messages
-            };
-
-            // Call the Firebase function for chat
-            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/chatWithGemini', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    message: input,
-                    context: context
-                })
+            // Call the chatWithGemini function
+            const response = await chatWithGemini({
+                message: userMessage,
+                userContext: {},
+                previousMessages: messages.slice(-5)
             });
 
-            if (!response.ok) {
-                throw new Error(`Failed to get chat response: ${response.status}`);
-            }
+            // Add the bot's response to the messages
+            const botResponse = {
+                role: 'assistant',
+                content: response.data.message.content,
+                timestamp: new Date().toISOString()
+            };
 
-            // Create a reader for the streaming response
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let botResponse = '';
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                // Process the stream data
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(5));
-
-                            if (!data.success) {
-                                throw new Error(data.message || 'Chat failed');
-                            }
-
-                            if (data.chunk) {
-                                // Append the new chunk to the existing response
-                                botResponse += data.chunk;
-                                // Update the message in real-time
-                                setMessages(prev => {
-                                    const newMessages = [...prev];
-                                    const lastMessage = newMessages[newMessages.length - 1];
-                                    if (lastMessage && lastMessage.type === 'bot') {
-                                        lastMessage.content = botResponse;
-                                    } else {
-                                        newMessages.push({ type: 'bot', content: botResponse });
-                                    }
-                                    return newMessages;
-                                });
-                            }
-                        } catch (e) {
-                            console.error('Error parsing chunk:', e);
-                        }
-                    }
-                }
-            }
-
-            // Update conversation context based on the response
-            const updatedContext = updateContextFromResponse(botResponse, conversationContext);
-            setConversationContext(updatedContext);
-
-            // If shipment is complete, notify parent
-            if (updatedContext.selectedRate) {
-                onShipmentComplete(updatedContext);
-            }
+            setMessages(prev => [...prev, botResponse]);
         } catch (error) {
-            console.error('Error processing message:', error);
+            console.error('Error in chat:', error);
             setMessages(prev => [...prev, {
-                type: 'error',
-                content: 'Sorry, I encountered an error. Please try again.'
+                role: 'assistant',
+                content: 'I apologize, but I encountered an error. Please try again or contact support if the issue persists.',
+                timestamp: new Date().toISOString()
             }]);
         } finally {
             setIsProcessing(false);
         }
     };
 
-    const determineCurrentStep = (context) => {
-        if (!context.origin) return 'origin';
-        if (!context.destination) return 'destination';
-        if (!context.packageDetails) return 'package';
-        if (!context.selectedRate) return 'rates';
-        return 'complete';
+    // Update suggestions based on current step
+    const updateSuggestionsForStep = (step) => {
+        const stepSuggestions = {
+            'initial': [
+                "I need to ship a package",
+                "I have a freight shipment",
+                "What information do you need?"
+            ],
+            'ship-from': [
+                "My pickup address is...",
+                "I'm shipping from...",
+                "The origin address is..."
+            ],
+            'ship-to': [
+                "The delivery address is...",
+                "I'm shipping to...",
+                "The destination is..."
+            ],
+            'packages': [
+                "The package weighs...",
+                "The dimensions are...",
+                "It's a pallet of..."
+            ],
+            'rates': [
+                "Show me available rates",
+                "What's the cheapest option?",
+                "What's the fastest option?"
+            ],
+            'rate-selection': [
+                "I'll go with the cheapest",
+                "I need the fastest option",
+                "Tell me more about option 1"
+            ],
+            'review': [
+                "Everything looks good",
+                "I need to change something",
+                "Complete my shipment"
+            ]
+        };
+
+        setSuggestions(stepSuggestions[step] || [
+            "What's next?",
+            "Help me finish my shipment",
+            "What information is missing?"
+        ]);
     };
 
-    const updateContextFromResponse = (response, currentContext) => {
-        // Parse the response to extract relevant information
-        // This is a simplified version - you'll need to implement proper parsing
-        const updatedContext = { ...currentContext };
+    const handleSuggestionClick = (suggestion) => {
+        setInput(suggestion);
+    };
 
-        // Example parsing logic (you'll need to implement proper parsing based on your needs)
-        if (response.includes('origin:')) {
-            updatedContext.origin = extractValue(response, 'origin:');
+    const formatTimestamp = (timestamp) => {
+        return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    // Render rate message differently
+    const renderMessage = (message, index) => {
+        if (message.type === 'rate') {
+            return (
+                <Box
+                    key={index}
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-start',
+                        gap: 1,
+                        mb: 2
+                    }}
+                >
+                    <Card
+                        sx={{
+                            maxWidth: '80%',
+                            cursor: 'pointer',
+                            '&:hover': {
+                                boxShadow: 3,
+                                border: '1px solid',
+                                borderColor: 'primary.main'
+                            }
+                        }}
+                        onClick={() => {
+                            if (message.rateData) {
+                                setConversationContext(prev => ({
+                                    ...prev,
+                                    selectedRate: message.rateData,
+                                    currentStep: 'review'
+                                }));
+
+                                // Add selection message
+                                setMessages(prev => [...prev, {
+                                    role: 'user',
+                                    content: `I'll select this option: ${message.rateData.carrierName} - ${message.rateData.serviceMode}`,
+                                    timestamp: new Date().toISOString()
+                                }]);
+                            }
+                        }}
+                    >
+                        <CardContent>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                                {message.content.split('\n')[0]}
+                            </Typography>
+                            {message.content.split('\n').slice(1).map((line, i) => (
+                                <Typography key={i} variant="body2">{line}</Typography>
+                            ))}
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    display: 'block',
+                                    mt: 1,
+                                    color: 'text.secondary'
+                                }}
+                            >
+                                {formatTimestamp(message.timestamp)}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Box>
+            );
         }
-        if (response.includes('destination:')) {
-            updatedContext.destination = extractValue(response, 'destination:');
-        }
-        // Add more parsing logic for other fields
 
-        return updatedContext;
+        return (
+            <Box
+                key={index}
+                sx={{
+                    display: 'flex',
+                    justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
+                    gap: 1,
+                    mb: 2
+                }}
+            >
+                <Paper
+                    sx={{
+                        p: 2,
+                        maxWidth: '70%',
+                        bgcolor: message.role === 'user' ? 'primary.main' : 'background.paper',
+                        color: message.role === 'user' ? 'white' : 'text.primary',
+                        borderRadius: 2,
+                        boxShadow: 1
+                    }}
+                >
+                    <Typography
+                        sx={{
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word'
+                        }}
+                    >
+                        {message.content}
+                    </Typography>
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            display: 'block',
+                            mt: 1,
+                            color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : 'text.secondary'
+                        }}
+                    >
+                        {formatTimestamp(message.timestamp)}
+                    </Typography>
+                </Paper>
+            </Box>
+        );
     };
 
-    const extractValue = (text, key) => {
-        const match = text.match(new RegExp(`${key}\\s*([^\\n]+)`));
-        return match ? match[1].trim() : null;
+    // Render progress indicator for current step
+    const renderStepIndicator = () => {
+        const steps = [
+            { id: 'initial', label: 'Start', icon: <CompareArrows /> },
+            { id: 'ship-from', label: 'From', icon: <LocationOn /> },
+            { id: 'ship-to', label: 'To', icon: <LocationOn /> },
+            { id: 'packages', label: 'Package', icon: <Inventory /> },
+            { id: 'rates', label: 'Rates', icon: <Payment /> },
+            { id: 'rate-selection', label: 'Select', icon: <CheckCircle /> },
+            { id: 'review', label: 'Review', icon: <RateReview /> }
+        ];
+
+        const currentIndex = steps.findIndex(step => step.id === conversationContext.currentStep);
+
+        return (
+            <Box
+                sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    p: 1,
+                    bgcolor: 'background.default',
+                    borderTop: '1px solid',
+                    borderColor: 'divider'
+                }}
+            >
+                {steps.map((step, index) => (
+                    <Tooltip key={step.id} title={step.label} arrow>
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                opacity: index <= currentIndex ? 1 : 0.5
+                            }}
+                        >
+                            <Chip
+                                icon={step.icon}
+                                label={step.label}
+                                size="small"
+                                color={index === currentIndex ? 'primary' : 'default'}
+                                variant={index <= currentIndex ? 'filled' : 'outlined'}
+                            />
+                        </Box>
+                    </Tooltip>
+                ))}
+            </Box>
+        );
     };
 
+    // Main return statement with updated components
     return (
         <AnimatePresence>
             {!isOpen ? (
@@ -202,19 +621,22 @@ const ChatBot = ({ onShipmentComplete }) => {
                         zIndex: 1000
                     }}
                 >
-                    <IconButton
-                        onClick={() => setIsOpen(true)}
-                        sx={{
-                            bgcolor: 'primary.main',
-                            color: 'white',
-                            p: 2,
-                            '&:hover': {
-                                bgcolor: 'primary.dark'
-                            }
-                        }}
-                    >
-                        <Send />
-                    </IconButton>
+                    <Badge badgeContent={unreadCount} color="error">
+                        <IconButton
+                            onClick={handleOpen}
+                            sx={{
+                                bgcolor: 'primary.main',
+                                color: 'white',
+                                width: '56px',
+                                height: '56px',
+                                '&:hover': {
+                                    bgcolor: 'primary.dark'
+                                }
+                            }}
+                        >
+                            <Send />
+                        </IconButton>
+                    </Badge>
                 </motion.div>
             ) : (
                 <motion.div
@@ -223,67 +645,147 @@ const ChatBot = ({ onShipmentComplete }) => {
                     exit={{ y: 100, opacity: 0 }}
                     style={{
                         position: 'fixed',
-                        bottom: '16px',
-                        right: '16px',
-                        width: '384px',
-                        height: '600px',
+                        bottom: isFullscreen ? '0' : '16px',
+                        right: isFullscreen ? '0' : '16px',
+                        width: isFullscreen ? '100%' : '400px',
+                        height: isFullscreen ? '100%' : '600px',
                         zIndex: 1000
                     }}
                 >
-                    <Paper sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        {/* Chat Header */}
-                        <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="h6">AirmaticBot</Typography>
-                            <IconButton onClick={() => setIsOpen(false)} sx={{ color: 'white' }}>
-                                <Close />
-                            </IconButton>
+                    <Paper
+                        sx={{
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            bgcolor: 'background.paper',
+                            borderRadius: isFullscreen ? 0 : 2,
+                            overflow: 'hidden',
+                            boxShadow: theme.shadows[10]
+                        }}
+                    >
+                        {/* Header */}
+                        <Box
+                            sx={{
+                                p: 2,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                borderBottom: '1px solid',
+                                borderColor: 'divider',
+                                bgcolor: 'primary.main',
+                                color: 'white'
+                            }}
+                        >
+                            <Box>
+                                <Typography variant="h6">
+                                    SolushipX AI Assistant
+                                </Typography>
+                                <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                                    Let's create your shipment together
+                                </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                <IconButton onClick={toggleFullscreen} sx={{ color: 'white' }}>
+                                    {isFullscreen ? <FullscreenExit /> : <Fullscreen />}
+                                </IconButton>
+                                <IconButton onClick={handleClose} sx={{ color: 'white' }}>
+                                    <Close />
+                                </IconButton>
+                            </Box>
                         </Box>
 
-                        {/* Chat Messages */}
-                        <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-                            {apiKeyError && (
-                                <Box sx={{ mb: 2, p: 2, bgcolor: 'error.light', color: 'error.contrastText', borderRadius: 1 }}>
-                                    <Typography variant="body2">{apiKeyError}</Typography>
-                                </Box>
-                            )}
-                            {messages.map((message, index) => (
-                                <Box
-                                    key={index}
-                                    sx={{
-                                        mb: 2,
-                                        display: 'flex',
-                                        justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start'
-                                    }}
-                                >
+                        {/* Step Indicator */}
+                        {renderStepIndicator()}
+
+                        {/* Messages Area */}
+                        <Box
+                            ref={chatContainerRef}
+                            sx={{
+                                flex: 1,
+                                overflowY: 'auto',
+                                p: 2,
+                                display: 'flex',
+                                flexDirection: 'column'
+                            }}
+                        >
+                            {messages.map((message, index) => renderMessage(message, index))}
+
+                            {/* Streaming message */}
+                            {streamingMessage && (
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}>
                                     <Paper
                                         sx={{
-                                            p: 1.5,
-                                            bgcolor: message.type === 'user' ? 'primary.main' : 'grey.100',
-                                            color: message.type === 'user' ? 'white' : 'text.primary',
-                                            maxWidth: '80%'
+                                            p: 2,
+                                            maxWidth: '70%',
+                                            bgcolor: 'background.paper',
+                                            borderRadius: 2
                                         }}
                                     >
-                                        <Typography>{message.content}</Typography>
+                                        <Typography
+                                            sx={{
+                                                whiteSpace: 'pre-wrap',
+                                                wordBreak: 'break-word'
+                                            }}
+                                        >
+                                            {streamingMessage}
+                                        </Typography>
                                     </Paper>
                                 </Box>
-                            ))}
-                            {isProcessing && (
-                                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                    <CircularProgress size={24} />
+                            )}
+
+                            {/* Processing indicator */}
+                            {isProcessing && !streamingMessage && (
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}>
+                                    <Paper
+                                        sx={{
+                                            p: 2,
+                                            bgcolor: 'background.paper',
+                                            borderRadius: 2,
+                                            maxWidth: '70%'
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircularProgress size={16} />
+                                            <Typography>Thinking...</Typography>
+                                        </Box>
+                                    </Paper>
                                 </Box>
                             )}
+
                             <div ref={messagesEndRef} />
                         </Box>
 
                         {/* Input Area */}
-                        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                <IconButton
-                                    onClick={isListening ? stopListening : startListening}
-                                    color={isListening ? 'error' : 'default'}
-                                >
-                                    {isListening ? <MicOff /> : <Mic />}
-                                </IconButton>
+                        <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                            {/* Suggestions */}
+                            {suggestions.length > 0 && (
+                                <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                    {suggestions.map((suggestion, index) => (
+                                        <Button
+                                            key={index}
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={() => handleSuggestionClick(suggestion)}
+                                            sx={{
+                                                borderRadius: 2,
+                                                textTransform: 'none',
+                                                bgcolor: 'background.paper'
+                                            }}
+                                        >
+                                            {suggestion}
+                                        </Button>
+                                    ))}
+                                </Box>
+                            )}
+
+                            {/* Input Field */}
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    gap: 2,
+                                    alignItems: 'center'
+                                }}
+                            >
                                 <input
                                     type="text"
                                     value={input}
@@ -291,17 +793,30 @@ const ChatBot = ({ onShipmentComplete }) => {
                                     onKeyPress={(e) => e.key === 'Enter' && handleSend()}
                                     style={{
                                         flex: 1,
-                                        padding: '8px',
-                                        border: '1px solid #ccc',
-                                        borderRadius: '4px',
-                                        outline: 'none'
+                                        padding: '12px',
+                                        border: '1px solid',
+                                        borderColor: theme.palette.divider,
+                                        borderRadius: '8px',
+                                        outline: 'none',
+                                        fontSize: '16px',
+                                        backgroundColor: theme.palette.background.paper
                                     }}
-                                    placeholder="Type your message..."
+                                    placeholder="Type your message here..."
                                 />
                                 <IconButton
                                     onClick={handleSend}
                                     disabled={!input.trim() || isProcessing}
-                                    color="primary"
+                                    sx={{
+                                        bgcolor: 'primary.main',
+                                        color: 'white',
+                                        '&:hover': {
+                                            bgcolor: 'primary.dark'
+                                        },
+                                        '&.Mui-disabled': {
+                                            bgcolor: 'action.disabledBackground',
+                                            color: 'action.disabled'
+                                        }
+                                    }}
                                 >
                                     <Send />
                                 </IconButton>

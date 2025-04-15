@@ -3,11 +3,41 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const { parseStringPromise } = require("xml2js");
+const path = require('path');
 require('dotenv').config();
+
+// Initialize Firebase Admin SDK with service account
+const admin = require('firebase-admin');
+const serviceAccountPath = path.resolve(__dirname, './solushipx-firebase-adminsdk-fbsvc-d7f5dccc04.json');
+
+// Initialize with service account file
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccountPath)
+    });
+    console.log('Firebase Admin initialized with service account');
+  } catch (error) {
+    console.error('Error initializing Firebase Admin:', error);
+    // Fallback to default credentials if service account fails
+    admin.initializeApp();
+    console.log('Firebase Admin initialized with default credentials');
+  }
+}
 
 // Import GenKit dependencies
 const { gemini20Flash, googleAI } = require('@genkit-ai/googleai');
 const { genkit } = require('genkit');
+
+// Initialize GenKit with Gemini
+// Using GEMINI_API_KEY from .env file
+const ai = genkit({
+  plugins: [googleAI({
+    apiKey: process.env.GEMINI_API_KEY
+  })],
+  model: gemini20Flash,
+  stream: true // Enable streaming by default
+});
 
 // Create Express app
 const app = express();
@@ -23,13 +53,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
-
-// Configure GenKit instance
-const ai = genkit({
-  plugins: [googleAI()],
-  model: gemini20Flash,
-  stream: true // Enable streaming by default
-});
 
 // Input validation
 function validateShipmentData(data) {
@@ -573,11 +596,6 @@ exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
 
   try {
     // Fetch API key from Firestore
-    const admin = require('firebase-admin');
-    if (!admin.apps.length) {
-      admin.initializeApp();
-    }
-    
     const db = admin.firestore();
     const keysRef = db.collection('keys');
     const keysSnapshot = await keysRef.limit(1).get();
@@ -617,71 +635,61 @@ exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
 });
 
 // Chat with Gemini function
-exports.chatWithGemini = functions.https.onRequest({
-    cors: ['https://solushipx.web.app', 'http://localhost:3000']
-}, async (req, res) => {
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const { message, context } = req.body;
-
-    if (!message) {
-        res.write(`data: ${JSON.stringify({ 
-            success: false, 
-            message: "No message provided for chat." 
-        })}\n\n`);
-        res.end();
-        return;
-    }
-
+exports.chatWithGemini = functions.https.onCall(async (data, context) => {
     try {
-        console.log("🤖 Processing chat message with Gemini...");
-        
-        // Set up the prompt for chat
-        const prompt = `You are a helpful logistics assistant for SolushipX. 
-        
-Current context: ${JSON.stringify(context || {}, null, 2)}
-
-User message: ${message}
-
-Please provide a helpful response that guides the user through the shipment creation process.`;
-
-        // Generate response using GenKit with streaming
-        const { response, stream } = await ai.generateStream({
-            prompt: prompt,
-            stream: true
-        });
-        
-        // Stream each chunk to the client
-        for await (const chunk of stream) {
-            res.write(`data: ${JSON.stringify({ 
-                success: true, 
-                chunk: chunk.text 
-            })}\n\n`);
+        // Validate input
+        if (!data.data || !data.data.message || !data.data.message.content) {
+            throw new Error('Message content is required');
         }
 
-        // Send end of stream
-        res.write(`data: ${JSON.stringify({ 
-            success: true, 
-            done: true 
-        })}\n\n`);
-        res.end();
+        const messageText = data.data.message.content;
+        const userContext = data.data.userContext || {};
+        const previousMessages = data.data.previousMessages || [];
 
+        // Simple system prompt
+        const systemPrompt = `You are a helpful shipping assistant for SolushipX. 
+        Help users with their shipping needs by providing information about shipping options, 
+        rates, and best practices.`;
+
+        // Create the full prompt
+        const fullPrompt = `${systemPrompt}\n\nUser message: ${messageText}`;
+
+        // Call GenKit with the structured prompt
+        const response = await ai.generate(fullPrompt);
+        
+        // Extract response text
+        let responseText = '';
+        
+        try {
+            // Handle different response formats
+            if (response && response.message && response.message.content) {
+                // Extract text from the content array
+                responseText = response.message.content
+                    .map(part => part.text || '')
+                    .join('\n');
+            } else if (typeof response === 'string') {
+                responseText = response;
+            } else if (response?.text) {
+                responseText = response.text;
+            } else if (response?.content) {
+                responseText = response.content;
+            } else {
+                responseText = JSON.stringify(response);
+            }
+        } catch (error) {
+            console.error('Error parsing response:', error);
+            responseText = 'I apologize, but I encountered an error processing your message.';
+        }
+
+        // Return simple response
+        return {
+            message: {
+                role: 'model',
+                content: responseText
+            }
+        };
     } catch (error) {
-        console.error("Error in chat with Gemini:", error);
-        res.write(`data: ${JSON.stringify({
-            success: false,
-            message: "Failed to process chat message",
-            error: error.message
-        })}\n\n`);
-        res.end();
+        console.error('Error in chatWithGemini:', error);
+        throw new Error(`Failed to process chat message: ${error.message}`);
     }
 });

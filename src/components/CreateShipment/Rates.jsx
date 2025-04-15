@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link } from '@mui/material';
-import { CircularProgress, Divider } from '@mui/material';
+import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid } from '@mui/material';
+import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { useNavigate } from 'react-router-dom';
 
 const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isLoading, setIsLoading] = useState(true);
@@ -20,6 +21,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [analysisResult, setAnalysisResult] = useState('');
     const [analysisError, setAnalysisError] = useState(null);
     const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
+    const navigate = useNavigate();
 
     // Add CSS styles
     const styles = `
@@ -343,255 +345,257 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
         };
     }, [styles]);
 
-    useEffect(() => {
-        const fetchRates = async () => {
-            try {
-                setIsLoading(true);
-                setError(null);
-                setRatesLoaded(false);
+    const fetchRates = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            setRatesLoaded(false);
 
-                // Use a simple booking reference
-                const bookingRef = "shipment 123";
+            // Use a simple booking reference
+            const bookingRef = "shipment 123";
 
-                // Determine shipment bill type and booking reference type based on shipment type
-                const shipmentType = formData.shipmentInfo.shipmentType || 'courier';
-                const shipmentBillType = 'DefaultLogisticsPlus';
-                const bookingReferenceNumberType = 'Shipment';
+            // Determine shipment bill type and booking reference type based on shipment type
+            const shipmentType = formData.shipmentInfo.shipmentType || 'courier';
+            const shipmentBillType = 'DefaultLogisticsPlus';
+            const bookingReferenceNumberType = 'Shipment';
 
-                const rateRequestData = {
-                    bookingReferenceNumber: bookingRef,
-                    bookingReferenceNumberType: bookingReferenceNumberType,
-                    shipmentBillType: shipmentBillType,
-                    shipmentDate: formData.shipmentInfo.shipmentDate
-                        ? new Date(formData.shipmentInfo.shipmentDate).toISOString()
-                        : new Date().toISOString(),
-                    pickupWindow: {
-                        earliest: formData.shipmentInfo.earliestPickup || "09:00",
-                        latest: formData.shipmentInfo.latestPickup || "17:00"
-                    },
-                    deliveryWindow: {
-                        earliest: formData.shipmentInfo.earliestDelivery || "09:00",
-                        latest: formData.shipmentInfo.latestDelivery || "17:00"
-                    },
-                    fromAddress: {
-                        company: formData.shipFrom.company || "",
-                        street: formData.shipFrom.street || "",
-                        street2: formData.shipFrom.street2 || "",
-                        postalCode: formData.shipFrom.zip || formData.shipFrom.postalCode || "",
-                        city: formData.shipFrom.city || "",
-                        state: formData.shipFrom.state || "",
-                        country: formData.shipFrom.country || "US",
-                        contactName: formData.shipFrom.contactName || "",
-                        contactPhone: formData.shipFrom.contactPhone || "",
-                        contactEmail: formData.shipFrom.contactEmail || "",
-                        specialInstructions: formData.shipFrom.specialInstructions || "none"
-                    },
-                    toAddress: {
-                        company: formData.shipTo.company || "",
-                        street: formData.shipTo.street || "",
-                        street2: formData.shipTo.street2 || "",
-                        postalCode: formData.shipTo.postalCode || "",
-                        city: formData.shipTo.city || "",
-                        state: formData.shipTo.state || "",
-                        country: formData.shipTo.country || "US",
-                        contactName: formData.shipTo.contactName || "",
-                        contactPhone: formData.shipTo.contactPhone || "",
-                        contactEmail: formData.shipTo.contactEmail || "",
-                        specialInstructions: formData.shipTo.specialInstructions || "none"
-                    },
-                    items: formData.packages.map(pkg => ({
-                        name: pkg.description || "Package",
-                        weight: parseFloat(pkg.weight) || 1,
-                        length: parseInt(pkg.length) || 12,
-                        width: parseInt(pkg.width) || 12,
-                        height: parseInt(pkg.height) || 12,
-                        quantity: parseInt(pkg.quantity) || 1,
-                        freightClass: String(pkg.freightClass || "50"),
-                        value: parseFloat(pkg.value || "0"),
-                        stackable: pkg.stackable || false
-                    }))
-                };
+            const rateRequestData = {
+                bookingReferenceNumber: bookingRef,
+                bookingReferenceNumberType: bookingReferenceNumberType,
+                shipmentBillType: shipmentBillType,
+                shipmentDate: formData.shipmentInfo.shipmentDate
+                    ? new Date(formData.shipmentInfo.shipmentDate).toISOString()
+                    : new Date().toISOString(),
+                pickupWindow: {
+                    earliest: formData.shipmentInfo.earliestPickup || "09:00",
+                    latest: formData.shipmentInfo.latestPickup || "17:00"
+                },
+                deliveryWindow: {
+                    earliest: formData.shipmentInfo.earliestDelivery || "09:00",
+                    latest: formData.shipmentInfo.latestDelivery || "17:00"
+                },
+                fromAddress: {
+                    company: formData.shipFrom.company || "",
+                    street: formData.shipFrom.street || "",
+                    street2: formData.shipFrom.street2 || "",
+                    postalCode: formData.shipFrom.zip || formData.shipFrom.postalCode || "",
+                    city: formData.shipFrom.city || "",
+                    state: formData.shipFrom.state || "",
+                    country: formData.shipFrom.country || "US",
+                    contactName: formData.shipFrom.contactName || "",
+                    contactPhone: formData.shipFrom.contactPhone || "",
+                    contactEmail: formData.shipFrom.contactEmail || "",
+                    specialInstructions: formData.shipFrom.specialInstructions || "none"
+                },
+                toAddress: {
+                    company: formData.shipTo.company || "",
+                    street: formData.shipTo.street || "",
+                    street2: formData.shipTo.street2 || "",
+                    postalCode: formData.shipTo.postalCode || "",
+                    city: formData.shipTo.city || "",
+                    state: formData.shipTo.state || "",
+                    country: formData.shipTo.country || "US",
+                    contactName: formData.shipTo.contactName || "",
+                    contactPhone: formData.shipTo.contactPhone || "",
+                    contactEmail: formData.shipTo.contactEmail || "",
+                    specialInstructions: formData.shipTo.specialInstructions || "none"
+                },
+                items: formData.packages.map(pkg => ({
+                    name: pkg.description || "Package",
+                    weight: parseFloat(pkg.weight) || 1,
+                    length: parseInt(pkg.length) || 12,
+                    width: parseInt(pkg.width) || 12,
+                    height: parseInt(pkg.height) || 12,
+                    quantity: parseInt(pkg.quantity) || 1,
+                    freightClass: String(pkg.freightClass || "50"),
+                    value: parseFloat(pkg.value || "0"),
+                    stackable: pkg.stackable || false
+                }))
+            };
 
-                // Validate postal codes before making the API call
-                if (!rateRequestData.fromAddress.postalCode || rateRequestData.fromAddress.postalCode.trim() === '') {
-                    throw new Error('Missing or invalid postal code in origin address');
-                }
+            // Validate postal codes before making the API call
+            if (!rateRequestData.fromAddress.postalCode || rateRequestData.fromAddress.postalCode.trim() === '') {
+                throw new Error('Missing or invalid postal code in origin address');
+            }
 
-                if (!rateRequestData.toAddress.postalCode || rateRequestData.toAddress.postalCode.trim() === '') {
-                    throw new Error('Missing or invalid postal code in destination address');
-                }
+            if (!rateRequestData.toAddress.postalCode || rateRequestData.toAddress.postalCode.trim() === '') {
+                throw new Error('Missing or invalid postal code in destination address');
+            }
 
-                // Validate contact names before making the API call
-                if (!rateRequestData.fromAddress.contactName || rateRequestData.fromAddress.contactName.trim() === '') {
-                    throw new Error('Missing or invalid contact name in origin address');
-                }
+            // Validate contact names before making the API call
+            if (!rateRequestData.fromAddress.contactName || rateRequestData.fromAddress.contactName.trim() === '') {
+                throw new Error('Missing or invalid contact name in origin address');
+            }
 
-                if (!rateRequestData.toAddress.contactName || rateRequestData.toAddress.contactName.trim() === '') {
-                    throw new Error('Missing or invalid contact name in destination address');
-                }
+            if (!rateRequestData.toAddress.contactName || rateRequestData.toAddress.contactName.trim() === '') {
+                throw new Error('Missing or invalid contact name in destination address');
+            }
 
-                // Validate special instructions before making the API call
-                if (!rateRequestData.fromAddress.specialInstructions ||
-                    (rateRequestData.fromAddress.specialInstructions.trim() === '' &&
-                        rateRequestData.fromAddress.specialInstructions !== 'none')) {
-                    throw new Error('Missing or invalid specialInstructions in origin address');
-                }
+            // Validate special instructions before making the API call
+            if (!rateRequestData.fromAddress.specialInstructions ||
+                (rateRequestData.fromAddress.specialInstructions.trim() === '' &&
+                    rateRequestData.fromAddress.specialInstructions !== 'none')) {
+                throw new Error('Missing or invalid specialInstructions in origin address');
+            }
 
-                if (!rateRequestData.toAddress.specialInstructions ||
-                    (rateRequestData.toAddress.specialInstructions.trim() === '' &&
-                        rateRequestData.toAddress.specialInstructions !== 'none')) {
-                    throw new Error('Missing or invalid specialInstructions in destination address');
-                }
+            if (!rateRequestData.toAddress.specialInstructions ||
+                (rateRequestData.toAddress.specialInstructions.trim() === '' &&
+                    rateRequestData.toAddress.specialInstructions !== 'none')) {
+                throw new Error('Missing or invalid specialInstructions in destination address');
+            }
 
-                // Add detailed console logging
-                console.group('🚢 Rate Request Data');
-                console.log('📅 Shipment Details:', {
-                    bookingReference: rateRequestData.bookingReferenceNumber,
-                    bookingReferenceType: rateRequestData.bookingReferenceNumberType,
-                    shipmentBillType: rateRequestData.shipmentBillType,
-                    shipmentDate: rateRequestData.shipmentDate,
-                    pickupWindow: rateRequestData.pickupWindow,
-                    deliveryWindow: rateRequestData.deliveryWindow
+            // Add detailed console logging
+            console.group('🚢 Rate Request Data');
+            console.log('📅 Shipment Details:', {
+                bookingReference: rateRequestData.bookingReferenceNumber,
+                bookingReferenceType: rateRequestData.bookingReferenceNumberType,
+                shipmentBillType: rateRequestData.shipmentBillType,
+                shipmentDate: rateRequestData.shipmentDate,
+                pickupWindow: rateRequestData.pickupWindow,
+                deliveryWindow: rateRequestData.deliveryWindow
+            });
+
+            console.log('📍 From Address:', rateRequestData.fromAddress);
+            console.log('📍 To Address:', rateRequestData.toAddress);
+
+            console.log('📦 Packages:', rateRequestData.items.map(item => ({
+                name: item.name,
+                weight: item.weight,
+                dimensions: `${item.length}x${item.width}x${item.height}`,
+                quantity: item.quantity,
+                freightClass: item.freightClass,
+                value: item.value,
+                stackable: item.stackable
+            })));
+
+            console.groupEnd();
+
+            const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(rateRequestData)
+            });
+
+            const data = await response.json();
+
+            // Process the response data
+            if (data.success && data.data) {
+                // Add detailed logging
+                console.log('Response structure:', {
+                    hasData: !!data.data,
+                    dataKeys: Object.keys(data.data),
+                    dataType: typeof data.data,
+                    isString: typeof data.data === 'string',
+                    isObject: typeof data.data === 'object'
                 });
 
-                console.log('📍 From Address:', rateRequestData.fromAddress);
-                console.log('�� To Address:', rateRequestData.toAddress);
+                try {
+                    // The response is already parsed JSON from the backend
+                    const rateData = data.data;
+                    console.log('Rate Data:', rateData);
 
-                console.log('📦 Packages:', rateRequestData.items.map(item => ({
-                    name: item.name,
-                    weight: item.weight,
-                    dimensions: `${item.length}x${item.width}x${item.height}`,
-                    quantity: item.quantity,
-                    freightClass: item.freightClass,
-                    value: item.value,
-                    stackable: item.stackable
-                })));
+                    // Get available rates from the transformed response
+                    const availableRates = rateData?.availableRates || [];
 
-                console.groupEnd();
+                    if (!availableRates || availableRates.length === 0) {
+                        throw new Error('No rates available');
+                    }
 
-                const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(rateRequestData)
-                });
+                    console.log('Available Rates:', availableRates);
 
-                const data = await response.json();
-
-                // Process the response data
-                if (data.success && data.data) {
-                    // Add detailed logging
-                    console.log('Response structure:', {
-                        hasData: !!data.data,
-                        dataKeys: Object.keys(data.data),
-                        dataType: typeof data.data,
-                        isString: typeof data.data === 'string',
-                        isObject: typeof data.data === 'object'
-                    });
-
-                    try {
-                        // The response is already parsed JSON from the backend
-                        const rateData = data.data;
-                        console.log('Rate Data:', rateData);
-
-                        // Get available rates from the transformed response
-                        const availableRates = rateData?.availableRates || [];
-
-                        if (!availableRates || availableRates.length === 0) {
-                            throw new Error('No rates available');
-                        }
-
-                        console.log('Available Rates:', availableRates);
-
-                        const transformedRates = availableRates.map(rate => {
-                            // Add detailed logging for debugging
-                            console.log('Processing rate:', {
-                                FreightCharges: rate.FreightCharges,
-                                FuelCharges: rate.FuelCharges,
-                                ServiceCharges: rate.ServiceCharges,
-                                AccessorialCharges: rate.AccessorialCharges,
-                                TotalCharges: rate.TotalCharges,
-                                ServiceMode: rate.ServiceMode,
-                                fullRate: rate
-                            });
-
-                            // Add validation for required fields
-                            if (!rate.QuoteId || !rate.CarrierName || !rate.ServiceMode || !rate.TotalCharges) {
-                                console.warn('Rate missing required fields:', rate);
-                            }
-
-                            return {
-                                id: rate.QuoteId || rate.quoteId,
-                                carrier: rate.CarrierName || rate.carrierName,
-                                service: rate.ServiceMode || rate.serviceMode,
-                                rate: parseFloat(rate.TotalCharges || rate.totalCharges),
-                                freightCharges: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
-                                fuelCharges: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
-                                serviceCharges: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
-                                accessorialCharges: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
-                                currency: rate.Currency || rate.currency || 'USD',
-                                transitDays: parseInt(rate.TransitTime || rate.transitTime) || 0,
-                                deliveryDate: (rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate)?.split('T')[0] || '',
-                                serviceLevel: rate.ServiceMode || rate.serviceMode,
-                                guaranteed: rate.GuaranteedService || rate.guaranteedService || false,
-                                guaranteeCharge: parseFloat(rate.GuaranteeCharge || rate.guaranteeCharge || 0),
-                                express: (rate.ServiceMode || rate.serviceMode || '').toLowerCase().includes('express'),
-                                surcharges: [
-                                    {
-                                        name: 'Freight Charges',
-                                        amount: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
-                                        category: 'Freight'
-                                    },
-                                    {
-                                        name: 'Fuel Charges',
-                                        amount: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
-                                        category: 'Fuel'
-                                    },
-                                    {
-                                        name: 'Service Charges',
-                                        amount: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
-                                        category: 'Service'
-                                    },
-                                    ...(parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0) > 0 ? [{
-                                        name: 'Accessorial Charges',
-                                        amount: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
-                                        category: 'Accessorial'
-                                    }] : []),
-                                    ...((rate.Accessorials || rate.accessorials || []).map(accessorial => ({
-                                        name: accessorial.Description || accessorial.description || 'Additional Charge',
-                                        amount: parseFloat(accessorial.Amount || accessorial.amount || 0),
-                                        category: accessorial.Category || accessorial.category || 'Service'
-                                    })))
-                                ].filter(surcharge => surcharge.amount > 0)
-                            };
+                    const transformedRates = availableRates.map(rate => {
+                        // Add detailed logging for debugging
+                        console.log('Processing rate:', {
+                            FreightCharges: rate.FreightCharges,
+                            FuelCharges: rate.FuelCharges,
+                            ServiceCharges: rate.ServiceCharges,
+                            AccessorialCharges: rate.AccessorialCharges,
+                            TotalCharges: rate.TotalCharges,
+                            ServiceMode: rate.ServiceMode,
+                            fullRate: rate
                         });
 
-                        console.log('Transformed Rates:', transformedRates);
-                        setRates(transformedRates);
-                        setFilteredRates(transformedRates);
-                        setSelectedRate(null);
-                    } catch (err) {
-                        console.error('Error parsing response:', err);
-                        throw new Error('Failed to parse rate response: ' + err.message);
-                    }
-                } else {
-                    throw new Error(data.error?.message || 'Failed to fetch rates');
-                }
-            } catch (err) {
-                console.error('Error fetching rates:', err);
-                setError(err.message);
-            } finally {
-                // Add a minimum delay before setting ratesLoaded
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                setRatesLoaded(true);
-                setIsLoading(false);
-            }
-        };
+                        // Add validation for required fields
+                        if (!rate.QuoteId || !rate.CarrierName || !rate.ServiceMode || !rate.TotalCharges) {
+                            console.warn('Rate missing required fields:', rate);
+                        }
 
-        fetchRates();
+                        return {
+                            id: rate.QuoteId || rate.quoteId,
+                            carrier: rate.CarrierName || rate.carrierName,
+                            service: rate.ServiceMode || rate.serviceMode,
+                            rate: parseFloat(rate.TotalCharges || rate.totalCharges),
+                            freightCharges: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
+                            fuelCharges: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
+                            serviceCharges: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
+                            accessorialCharges: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
+                            currency: rate.Currency || rate.currency || 'USD',
+                            transitDays: parseInt(rate.TransitTime || rate.transitTime) || 0,
+                            deliveryDate: (rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate)?.split('T')[0] || '',
+                            serviceLevel: rate.ServiceMode || rate.serviceMode,
+                            guaranteed: rate.GuaranteedService || rate.guaranteedService || false,
+                            guaranteeCharge: parseFloat(rate.GuaranteeCharge || rate.guaranteeCharge || 0),
+                            express: (rate.ServiceMode || rate.serviceMode || '').toLowerCase().includes('express'),
+                            surcharges: [
+                                {
+                                    name: 'Freight Charges',
+                                    amount: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
+                                    category: 'Freight'
+                                },
+                                {
+                                    name: 'Fuel Charges',
+                                    amount: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
+                                    category: 'Fuel'
+                                },
+                                {
+                                    name: 'Service Charges',
+                                    amount: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
+                                    category: 'Service'
+                                },
+                                ...(parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0) > 0 ? [{
+                                    name: 'Accessorial Charges',
+                                    amount: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
+                                    category: 'Accessorial'
+                                }] : []),
+                                ...((rate.Accessorials || rate.accessorials || []).map(accessorial => ({
+                                    name: accessorial.Description || accessorial.description || 'Additional Charge',
+                                    amount: parseFloat(accessorial.Amount || accessorial.amount || 0),
+                                    category: accessorial.Category || accessorial.category || 'Service'
+                                })))
+                            ].filter(surcharge => surcharge.amount > 0)
+                        };
+                    });
+
+                    console.log('Transformed Rates:', transformedRates);
+                    setRates(transformedRates);
+                    setFilteredRates(transformedRates);
+                    setSelectedRate(null);
+                } catch (err) {
+                    console.error('Error parsing response:', err);
+                    throw new Error('Failed to parse rate response: ' + err.message);
+                }
+            } else {
+                throw new Error(data.error?.message || 'Failed to fetch rates');
+            }
+        } catch (err) {
+            console.error('Error fetching rates:', err);
+            setError(err.message);
+        } finally {
+            // Add a minimum delay before setting ratesLoaded
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            setRatesLoaded(true);
+            setIsLoading(false);
+        }
     }, [formData]);
+
+    useEffect(() => {
+        if (formData) {
+            fetchRates();
+        }
+    }, [formData, fetchRates]);
 
     useEffect(() => {
         let filtered = [...rates];
