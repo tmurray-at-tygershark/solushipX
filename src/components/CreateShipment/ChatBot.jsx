@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, IconButton, Paper, Typography, CircularProgress, Button, Card, CardContent, useTheme, Badge, Tooltip, Fade, Chip, TextField, Autocomplete } from '@mui/material';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Box, IconButton, Paper, Typography, CircularProgress, Button, Card, CardContent, useTheme, Badge, Tooltip, Fade, Chip, TextField, Autocomplete, Grid } from '@mui/material';
 import { Mic, MicOff, Send, Close, ExpandMore, ExpandLess, AttachFile, Undo, RestartAlt, CheckCircle, AccessTime, LocationOn, LocalShipping, Inventory, Payment, RateReview, TrendingUp, CompareArrows, Fullscreen, FullscreenExit } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, getDocs } from 'firebase/firestore';
@@ -8,106 +8,19 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import GeminiAgent from '../../services/GeminiAgent';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import GooglePlacesService from '../../services/GooglePlacesService';
-import SimpleMap from '../../components/SimpleMap';
+import { GoogleMap, LoadScript, Marker } from '@react-google-maps/api';
 import AIExperience from '../AI/AIExperience';
+import styled from 'styled-components';
+import AddressInputWidget from './AddressInputWidget';
+import MapWidget from './MapWidget';
 
 const STEPS = {
-    'initial': {
-        number: 1,
-        label: 'Initial Questions',
-        icon: <LocalShipping />,
-        description: 'Basic information about your shipment',
-        questions: [
-            'Are you looking to ship large freight or courier package?',
-            'Do you have a reference number you would like to use for this shipment?',
-            'When would you like to schedule this shipment? (immediately, or on a specific date)',
-            'Can we come pick it up during normal business hours? (9am-5pm)',
-            'Can we deliver it during normal business hours?',
-            'Do you require a signature upon delivery of this shipment?'
-        ],
-        requiredFields: ['shipmentType', 'referenceNumber', 'shipmentDate', 'pickupWindow', 'deliveryWindow', 'signatureRequired']
-    },
-    'ship-from': {
-        number: 2,
-        label: 'From Address',
-        icon: <LocationOn />,
-        description: 'Origin address details',
-        questions: [
-            'What is the company name at the origin? (or "none" if not applicable)',
-            'What is the street address you\'re shipping from?',
-            'Is there an apartment, suite, or unit number? (or "none" if not applicable)',
-            'What is the city you\'re shipping from?',
-            'What is the state/province you\'re shipping from?',
-            'What is the postal/zip code you\'re shipping from?',
-            'What is the country you\'re shipping from?',
-            'What is the contact name at the origin?',
-            'What is the contact phone number at the origin?',
-            'What is the contact email at the origin?',
-            'Are there any special instructions for pickup? (or "none" if not applicable)'
-        ],
-        requiredFields: ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName']
-    },
-    'ship-to': {
-        number: 3,
-        label: 'To Address',
-        icon: <LocationOn />,
-        description: 'Destination address details',
-        questions: [
-            'What is the company name at the destination? (or "none" if not applicable)',
-            'What is the street address you\'re shipping to?',
-            'Is there an apartment, suite, or unit number? (or "none" if not applicable)',
-            'What is the city you\'re shipping to?',
-            'What is the state/province you\'re shipping to?',
-            'What is the postal/zip code you\'re shipping to?',
-            'What is the country you\'re shipping to?',
-            'What is the contact name at the destination?',
-            'What is the contact phone number at the destination?',
-            'What is the contact email at the destination?',
-            'Are there any special instructions for delivery? (or "none" if not applicable)'
-        ],
-        requiredFields: ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName']
-    },
-    'packages': {
-        number: 4,
-        label: 'Packages',
-        icon: <Inventory />,
-        description: 'Package details and dimensions',
-        questions: [
-            'How many packages are you shipping?',
-            'What is the weight of your package(s) in pounds?',
-            'What is the length of your package(s) in inches?',
-            'What is the width of your package(s) in inches?',
-            'What is the height of your package(s) in inches?',
-            'What is the declared value of your package(s) in USD?',
-            'What is the freight class for your shipment? (or "50" if unsure)',
-            'Is your package stackable? (yes/no)',
-            'Do you have a description for your package(s)? (or "Package" if not applicable)'
-        ],
-        requiredFields: ['weight', 'length', 'width', 'height', 'quantity']
-    },
-    'rates': {
-        number: 5,
-        label: 'Rates',
-        icon: <Payment />,
-        description: 'Select shipping rate and service',
-        questions: [
-            'Would you like to see available shipping rates now?',
-            'Which rate would you like to select? (Enter the number)',
-            'Would you like me to analyze the rates for you?'
-        ],
-        actions: ['fetchRates', 'analyzeRates', 'selectRate']
-    },
-    'review': {
-        number: 6,
-        label: 'Review',
-        icon: <RateReview />,
-        description: 'Review and confirm shipment details',
-        questions: [
-            'Would you like to review all the shipment details?',
-            'Is all the information correct?',
-            'Would you like to make any changes?'
-        ]
-    }
+    INIT: { number: 1, label: 'Start' },
+    ORIGIN: { number: 2, label: 'Origin' },
+    DESTINATION: { number: 3, label: 'Destination' },
+    PACKAGE: { number: 4, label: 'Package' },
+    RATES: { number: 5, label: 'Rates' },
+    REVIEW: { number: 6, label: 'Review' }
 };
 
 const guidedQuestions = {
@@ -346,13 +259,139 @@ const stepSuggestions = {
     ]
 };
 
+const ProgressBar = styled.div`
+  width: 100%;
+  height: 4px;
+  background: #E5E7EB;
+  border-radius: 2px;
+  margin: 16px 0;
+  overflow: hidden;
+`;
+
+const Progress = styled.div`
+  height: 100%;
+  background: #3B82F6;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: ${props => props.progress}%;
+`;
+
+const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
+
+const SimpleMap = React.memo(({ address, title }) => {
+    const [position, setPosition] = useState(null);
+    const [error, setError] = useState(null);
+    const mapRef = useRef(null);
+
+    useEffect(() => {
+        if (!window.google || !window.google.maps) {
+            setError('Google Maps not loaded');
+            return;
+        }
+
+        if (!address) {
+            setError('Address information is missing');
+            return;
+        }
+
+        const geocoder = new window.google.maps.Geocoder();
+        const addressString = `${address.street || ''}${address.street2 ? ', ' + address.street2 : ''}, ${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}, ${address.country || ''}`;
+
+        geocoder.geocode({ address: addressString }, (results, status) => {
+            if (status === 'OK') {
+                const location = results[0].geometry.location;
+                setPosition({
+                    lat: location.lat(),
+                    lng: location.lng()
+                });
+
+                if (mapRef.current) {
+                    const bounds = new window.google.maps.LatLngBounds();
+                    bounds.extend(location);
+                    mapRef.current.fitBounds(bounds, {
+                        padding: { top: 50, right: 50, bottom: 50, left: 50 }
+                    });
+                }
+            } else {
+                console.error('Geocoding failed:', status);
+                setError('Failed to geocode address');
+            }
+        });
+    }, [address]);
+
+    const handleMapLoad = React.useCallback((map) => {
+        mapRef.current = map;
+    }, []);
+
+    if (error) {
+        return (
+            <Box sx={{
+                height: '300px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#f5f5f5',
+                borderRadius: '8px',
+                p: 2
+            }}>
+                <Typography variant="body2" color="text.secondary" align="center">
+                    {error}
+                </Typography>
+            </Box>
+        );
+    }
+
+    if (!position) {
+        return (
+            <Box sx={{
+                height: '300px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#f5f5f5',
+                borderRadius: '8px'
+            }}>
+                <CircularProgress size={24} />
+            </Box>
+        );
+    }
+
+    return (
+        <GoogleMap
+            mapContainerStyle={{
+                width: '100%',
+                height: '300px',
+                borderRadius: '8px'
+            }}
+            center={position}
+            zoom={17}
+            onLoad={handleMapLoad}
+            options={{
+                disableDefaultUI: false,
+                zoomControl: true,
+                mapTypeControl: false,
+                streetViewControl: true,
+                fullscreenControl: true
+            }}
+        >
+            <Marker
+                position={position}
+                icon={{
+                    url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+                    scaledSize: new window.google.maps.Size(30, 30)
+                }}
+            />
+        </GoogleMap>
+    );
+});
+
 const ChatBot = ({ onShipmentComplete, formData }) => {
     const theme = useTheme();
     const location = useLocation();
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
-    const [currentStep, setCurrentStep] = useState('initial');
+    const [currentStep, setCurrentStep] = useState(STEPS.INIT);
     const [shipmentData, setShipmentData] = useState({});
     const [unreadCount, setUnreadCount] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -399,15 +438,28 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
     const [verificationIssues, setVerificationIssues] = useState([]);
     const inputRef = useRef(null);
     const geminiAgent = useRef(new GeminiAgent());
+    const [progress, setProgress] = useState(0);
+    const [originAddress, setOriginAddress] = useState(null);
+    const [destinationAddress, setDestinationAddress] = useState(null);
+    const [showAddressInput, setShowAddressInput] = useState(false);
+    const [mapsApiKey, setMapsApiKey] = useState(null);
+    const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+    const placesService = useRef(null);
 
     // Initialize chat with welcome message
     useEffect(() => {
         if (messages.length === 0) {
-            const welcomeMessage = {
-                text: "Welcome to SolushipX! I'm here to help you create a shipment. Are you looking to ship large freight or a courier package?",
-                sender: 'ai'
-            };
-            setMessages([welcomeMessage]);
+            const welcomeMessages = [
+                {
+                    text: "Welcome to SolushipX! I'm here to help you create a shipment.",
+                    sender: 'ai'
+                },
+                {
+                    text: "Are you looking to ship large freight or a courier package?",
+                    sender: 'ai'
+                }
+            ];
+            setMessages(welcomeMessages);
         }
     }, []);
 
@@ -416,6 +468,43 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             setUnreadCount(0);
         }
     }, [isOpen]);
+
+    // Fetch Maps API key when component mounts
+    useEffect(() => {
+        const fetchMapsApiKey = async () => {
+            try {
+                const keysRef = collection(db, 'keys');
+                const keysSnapshot = await getDocs(keysRef);
+
+                if (!keysSnapshot.empty) {
+                    const keyDoc = keysSnapshot.docs[0];
+                    const key = keyDoc.data().googleAPI;
+                    if (!key) {
+                        throw new Error('No API key found in Firestore');
+                    }
+                    setMapsApiKey(key);
+                } else {
+                    throw new Error('No keys document found in Firestore');
+                }
+            } catch (error) {
+                console.error('Error fetching Maps API key:', error);
+            }
+        };
+
+        fetchMapsApiKey();
+    }, []);
+
+    // Wait for Maps API to load
+    const handleGoogleMapsLoaded = useCallback(() => {
+        setIsGoogleMapsLoaded(true);
+    }, []);
+
+    useEffect(() => {
+        // Initialize Google Places service
+        if (window.google && window.google.maps) {
+            placesService.current = new window.google.maps.places.AutocompleteService();
+        }
+    }, []);
 
     const handleClose = () => {
         setIsOpen(false);
@@ -429,23 +518,44 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         setIsFullscreen(!isFullscreen);
     };
 
+    // Update progress when step changes
+    useEffect(() => {
+        const totalSteps = Object.keys(STEPS).length;
+        const newProgress = ((currentStep.number - 1) / (totalSteps - 1)) * 100;
+        setProgress(newProgress);
+    }, [currentStep]);
+
+    const updateStep = (message) => {
+        const lowerMessage = message.toLowerCase();
+
+        // Determine the current context from the message
+        if (lowerMessage.includes('origin') || lowerMessage.includes('coming from') || lowerMessage.includes('pickup')) {
+            setCurrentStep(STEPS.ORIGIN);
+        } else if (lowerMessage.includes('destination') || lowerMessage.includes('going to') || lowerMessage.includes('deliver')) {
+            setCurrentStep(STEPS.DESTINATION);
+        } else if (lowerMessage.includes('package') || lowerMessage.includes('weight') || lowerMessage.includes('dimensions')) {
+            setCurrentStep(STEPS.PACKAGE);
+        } else if (lowerMessage.includes('rate') || lowerMessage.includes('cost') || lowerMessage.includes('price')) {
+            setCurrentStep(STEPS.RATES);
+        } else if (lowerMessage.includes('review') || lowerMessage.includes('confirm')) {
+            setCurrentStep(STEPS.REVIEW);
+        }
+    };
+
     const handleSend = async (message) => {
         try {
-            // Add user message to chat
-            const userMessage = { text: message, sender: 'user' };
-            setMessages(prev => [...prev, userMessage]);
+            setMessages(prev => [...prev, { text: message, sender: 'user' }]);
 
-            // Process the message with GeminiAgent
+            // Update step based on message content
+            updateStep(message);
+
             const response = await geminiAgent.current.processMessage(message, messages);
-
-            // Add AI response to chat
             const aiMessage = { text: response.message.content, sender: 'ai' };
+
             setMessages(prev => [...prev, aiMessage]);
 
-            // Update current step if changed
-            if (response.currentStep && response.currentStep !== currentStep) {
-                setCurrentStep(response.currentStep);
-            }
+            // Update step based on AI response
+            updateStep(response.message.content);
 
             // Update shipment data with collected info
             if (response.collectedInfo) {
@@ -460,11 +570,10 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             }
         } catch (error) {
             console.error('Error processing message:', error);
-            const errorMessage = {
-                text: "I apologize, but I encountered an error. Please try again or rephrase your message.",
+            setMessages(prev => [...prev, {
+                text: 'I apologize, but I encountered an error. Please try again.',
                 sender: 'ai'
-            };
-            setMessages(prev => [...prev, errorMessage]);
+            }]);
         }
     };
 
@@ -491,86 +600,19 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         }
     };
 
-    const handleAddressSelect = async (selectedPrediction) => {
+    const handleAddressSelect = async (prediction) => {
         try {
-            setIsValidatingAddress(true);
-            const placeDetails = await GooglePlacesService.getPlaceDetails(selectedPrediction.place_id);
+            const placeDetails = await GooglePlacesService.getPlaceDetails(prediction.place_id);
+            const formattedAddress = formatAddressMessage(placeDetails, currentAddressType);
 
-            // Add debug logging
-            console.log('Place Details:', placeDetails);
-            console.log('Address Components:', placeDetails.address_components);
+            // Send the formatted address as a user message
+            handleSend(formattedAddress);
 
-            // Get the country first to determine validation rules
-            const country = getAddressComponent(placeDetails, 'country');
-            const countryCode = getAddressComponent(placeDetails, 'country', 'short_name');
-            if (!['US', 'CA'].includes(countryCode)) {
-                setAddressError('Sorry, we currently only support shipping within the United States and Canada.');
-                return;
-            }
-
-            // Format the address components
-            const formattedAddress = {
-                street: `${getAddressComponent(placeDetails, 'street_number')} ${getAddressComponent(placeDetails, 'route')}`.trim(),
-                city: getAddressComponent(placeDetails, 'locality') || getAddressComponent(placeDetails, 'sublocality') || getAddressComponent(placeDetails, 'administrative_area_level_2'),
-                state: getAddressComponent(placeDetails, 'administrative_area_level_1'),
-                postalCode: getAddressComponent(placeDetails, 'postal_code'),
-                country: country
-            };
-
-            // Check if postal code is missing
-            if (!formattedAddress.postalCode) {
-                const addressMessage = `I found the address at ${formattedAddress.street}, ${formattedAddress.city}, ${formattedAddress.state}, ${formattedAddress.country}. What is the postal code for this address?`;
-                setMessages(prev => [...prev, {
-                    text: addressMessage,
-                    sender: 'user'
-                }]);
-                setIsAddressInput(false);
-                setCurrentAddressType(null);
-                setInput('');
-                return;
-            }
-
-            // Add the formatted address as a user message
-            const addressMessage = formatAddressMessage(placeDetails, currentAddressType);
-            setMessages(prev => [...prev, {
-                text: addressMessage,
-                sender: 'user'
-            }]);
-
-            // Update the context with the new address
-            updateAddressInContext(formattedAddress);
-
-            // Reset address input mode
+            // Clear the address input state
             setIsAddressInput(false);
-            setCurrentAddressType(null);
-            setInput('');
-
-            // Call chatWithGemini to continue the conversation
-            const response = await chatWithGemini({
-                message: {
-                    text: addressMessage,
-                    sender: 'user'
-                },
-                userContext: conversationContext,
-                previousMessages: messages.slice(-5)
-            });
-
-            // Update the conversation context with the new context from the response
-            setConversationContext(response.data.userContext);
-
-            // Add the bot's response to the messages
-            const botResponse = {
-                text: response.data.message.content,
-                sender: 'ai'
-            };
-
-            setMessages(prev => [...prev, botResponse]);
-
+            setAddressPredictions([]);
         } catch (error) {
-            console.error('Error selecting address:', error);
-            setAddressError('Failed to process the selected address. Please try again.');
-        } finally {
-            setIsValidatingAddress(false);
+            console.error('Error getting place details:', error);
         }
     };
 
@@ -766,28 +808,166 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         const state = getComponent('administrative_area_level_1');
         const postalCode = getComponent('postal_code');
         const country = getComponent('country');
+        const subpremise = getComponent('subpremise'); // For suite/unit numbers
 
-        if (country && !['United States', 'Canada', 'US', 'CA'].includes(country)) {
-            return `Sorry, we currently only support shipping within the United States and Canada. Please provide an address from these countries.`;
-        }
-
+        // Remove country restriction
         if (!streetNumber || !route || !city || !state || !postalCode || !country) {
             const missing = [];
             if (!streetNumber || !route) missing.push('street address');
             if (!city) missing.push('city');
-            if (!state) missing.push(country === 'Canada' ? 'province' : 'state');
-            if (!postalCode) missing.push(country === 'Canada' ? 'postal code' : 'ZIP code');
+            if (!state) missing.push('state/province');
+            if (!postalCode) missing.push('postal code');
             if (!country) missing.push('country');
 
-            const missingStr = missing.join(', ');
-            return `The ${type} address needs more information. Please provide the ${missingStr}. For ${country === 'Canada' ? 'Canadian' : 'US'} addresses, all these details are required.`;
+            const missingStr = missing.join(',');
+            return `The ${type} address needs more information. Please provide the ${missingStr}.`;
         }
 
-        const formattedAddress = country === 'Canada'
-            ? `${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`
+        // Format address with suite/unit number if available
+        const formattedAddress = subpremise
+            ? `${streetNumber} ${route}, ${subpremise}, ${city}, ${state} ${postalCode}, ${country}`
             : `${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`;
 
         return `The ${type} address is: ${formattedAddress.replace(/\s+/g, ' ').trim()}`;
+    };
+
+    const renderAddressInput = () => {
+        if (!showAddressInput) return null;
+
+        return (
+            <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                    Enter {currentAddressType === 'origin' ? 'origin' : 'destination'} address
+                </Typography>
+                <AddressInputWidget
+                    onAddressSelect={(place) => handleAddressSelect(place)}
+                    placeholder={`Enter ${currentAddressType === 'origin' ? 'origin' : 'destination'} address...`}
+                />
+            </Box>
+        );
+    };
+
+    const renderMap = () => {
+        if (!originAddress && !destinationAddress) return null;
+
+        return (
+            <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                    Shipment Route
+                </Typography>
+                {mapsApiKey && (
+                    <LoadScript
+                        googleMapsApiKey={mapsApiKey}
+                        libraries={GOOGLE_MAPS_LIBRARIES}
+                        onLoad={handleGoogleMapsLoaded}
+                    >
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    Origin
+                                </Typography>
+                                <SimpleMap
+                                    address={{
+                                        street: originAddress?.street,
+                                        street2: originAddress?.street2,
+                                        city: originAddress?.city,
+                                        state: originAddress?.state,
+                                        postalCode: originAddress?.postalCode,
+                                        country: originAddress?.country
+                                    }}
+                                    title="Origin"
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    Destination
+                                </Typography>
+                                <SimpleMap
+                                    address={{
+                                        street: destinationAddress?.street,
+                                        street2: destinationAddress?.street2,
+                                        city: destinationAddress?.city,
+                                        state: destinationAddress?.state,
+                                        postalCode: destinationAddress?.postalCode,
+                                        country: destinationAddress?.country
+                                    }}
+                                    title="Destination"
+                                />
+                            </Grid>
+                        </Grid>
+                    </LoadScript>
+                )}
+            </Box>
+        );
+    };
+
+    const handleAddressSearch = async (input) => {
+        if (!input || !placesService.current) return;
+
+        try {
+            const predictions = await new Promise((resolve, reject) => {
+                placesService.current.getPlacePredictions(
+                    {
+                        input,
+                        types: ['address'],
+                        componentRestrictions: { country: ['us', 'ca'] }
+                    },
+                    (results, status) => {
+                        if (status === 'OK') resolve(results);
+                        else reject(status);
+                    }
+                );
+            });
+            setAddressPredictions(predictions);
+        } catch (error) {
+            console.error('Error fetching address predictions:', error);
+            setAddressPredictions([]);
+        }
+    };
+
+    // Update the message rendering to include address input when needed
+    const renderMessageContent = (message) => {
+        if (message.sender === 'ai' &&
+            (message.text.toLowerCase().includes('what is the street address') ||
+                message.text.toLowerCase().includes('where is this package'))) {
+            setIsAddressInput(true);
+            setCurrentAddressType(message.text.toLowerCase().includes('shipping from') ? 'origin' : 'destination');
+
+            return (
+                <Box>
+                    <Typography variant="body1" sx={{ mb: 2 }}>{message.text}</Typography>
+                    <Autocomplete
+                        freeSolo
+                        options={addressPredictions}
+                        getOptionLabel={(option) =>
+                            typeof option === 'string' ? option : option.description
+                        }
+                        renderOption={(props, option) => (
+                            <Box component="li" {...props}>
+                                <LocationOn sx={{ mr: 1 }} />
+                                {option.description}
+                            </Box>
+                        )}
+                        renderInput={(params) => (
+                            <TextField
+                                {...params}
+                                fullWidth
+                                placeholder="Type an address..."
+                                variant="outlined"
+                                onChange={(e) => handleAddressSearch(e.target.value)}
+                            />
+                        )}
+                        onChange={(event, value) => {
+                            if (value && typeof value !== 'string') {
+                                handleAddressSelect(value);
+                            }
+                        }}
+                    />
+                </Box>
+            );
+        }
+
+        return <Typography variant="body1">{message.text}</Typography>;
     };
 
     // Render the chat interface
@@ -826,6 +1006,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                 onSend={handleSend}
                 messages={messages}
             />
+            {renderAddressInput()}
+            {renderMap()}
         </>
     );
 };

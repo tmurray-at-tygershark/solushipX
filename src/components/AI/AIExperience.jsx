@@ -16,6 +16,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import { useTheme } from '@mui/material/styles';
 import ShipmentVisualizer from './ShipmentVisualizer';
+import AddressInputWidget from '../CreateShipment/AddressInputWidget';
+import MapWidget from '../CreateShipment/MapWidget';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
     position: 'fixed',
@@ -66,13 +68,16 @@ const MessageBubble = styled(Box)(({ theme, isUser }) => ({
 const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
     const [message, setMessage] = useState('');
     const [suggestions] = useState([
-        'Create a new shipment',
-        'Track my package',
-        'Get shipping rates',
-        'Schedule a pickup'
+        'FREIGHT',
+        'COURIER',
+        'IM NOT SURE'
     ]);
     const theme = useTheme();
     const messagesEndRef = useRef(null);
+    const [currentAddressType, setCurrentAddressType] = useState(null);
+    const [showAddressInput, setShowAddressInput] = useState(false);
+    const [originAddress, setOriginAddress] = useState(null);
+    const [destinationAddress, setDestinationAddress] = useState(null);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -90,6 +95,84 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
             e.preventDefault();
             handleSend();
         }
+    };
+
+    const handleSuggestionClick = (suggestion) => {
+        if (suggestion.toLowerCase().includes('address')) {
+            // Determine if it's origin or destination address
+            const isOrigin = suggestion.toLowerCase().includes('origin') ||
+                suggestion.toLowerCase().includes('from');
+            const isDestination = suggestion.toLowerCase().includes('destination') ||
+                suggestion.toLowerCase().includes('to');
+
+            if (isOrigin || isDestination) {
+                setCurrentAddressType(isOrigin ? 'origin' : 'destination');
+                setShowAddressInput(true);
+                return;
+            }
+        }
+
+        onSend(suggestion);
+    };
+
+    const handleAddressSelect = (placeDetails) => {
+        if (currentAddressType === 'origin') {
+            setOriginAddress(placeDetails);
+        } else {
+            setDestinationAddress(placeDetails);
+        }
+        setShowAddressInput(false);
+        setCurrentAddressType(null);
+
+        // Format and send the address message
+        const formattedAddress = formatAddressMessage(placeDetails, currentAddressType);
+        onSend(formattedAddress);
+    };
+
+    const formatAddressMessage = (placeDetails, type) => {
+        if (!placeDetails) return '';
+
+        const components = placeDetails.address_components || [];
+        const streetNumber = components.find(c => c.types.includes('street_number'))?.long_name;
+        const route = components.find(c => c.types.includes('route'))?.long_name;
+        const city = components.find(c => c.types.includes('locality'))?.long_name;
+        const state = components.find(c => c.types.includes('administrative_area_level_1'))?.long_name;
+        const postalCode = components.find(c => c.types.includes('postal_code'))?.long_name;
+        const country = components.find(c => c.types.includes('country'))?.long_name;
+        const subpremise = components.find(c => c.types.includes('subpremise'))?.long_name;
+
+        if (!streetNumber || !route || !city || !state || !postalCode || !country) {
+            return `Please provide a complete ${type} address including street number, street name, city, state/province, and postal code.`;
+        }
+
+        const address = `${streetNumber} ${route}${subpremise ? `, ${subpremise}` : ''}, ${city}, ${state} ${postalCode}, ${country}`;
+        return `I've set the ${type} address to: ${address}`;
+    };
+
+    const renderAddressInput = () => {
+        if (!showAddressInput) return null;
+
+        return (
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Enter {currentAddressType} address:
+                </Typography>
+                <AddressInputWidget onSelect={handleAddressSelect} />
+            </Box>
+        );
+    };
+
+    const renderMap = () => {
+        if (!originAddress || !destinationAddress) return null;
+
+        return (
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Shipment Route:
+                </Typography>
+                <MapWidget origin={originAddress} destination={destinationAddress} />
+            </Box>
+        );
     };
 
     return (
@@ -191,6 +274,12 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                                 <div ref={messagesEndRef} />
                             </Box>
 
+                            {/* Address Input Widget */}
+                            {renderAddressInput()}
+
+                            {/* Map Widget */}
+                            {renderMap()}
+
                             {/* Suggestions */}
                             <Box sx={{ mb: 2 }}>
                                 <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
@@ -201,7 +290,7 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                                         <SuggestionChip
                                             key={index}
                                             label={suggestion}
-                                            onClick={() => onSend(suggestion)}
+                                            onClick={() => handleSuggestionClick(suggestion)}
                                             clickable
                                         />
                                     ))}
