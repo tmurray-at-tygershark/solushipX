@@ -9,6 +9,7 @@ import GeminiAgent from '../../services/GeminiAgent';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import GooglePlacesService from '../../services/GooglePlacesService';
 import SimpleMap from '../../components/SimpleMap';
+import AIExperience from '../AI/AIExperience';
 
 const STEPS = {
     'initial': {
@@ -350,8 +351,11 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
     const location = useLocation();
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const [messages, setMessages] = useState([]);
+    const [currentStep, setCurrentStep] = useState('initial');
+    const [shipmentData, setShipmentData] = useState({});
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const [input, setInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -371,7 +375,6 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         currentQuestionIndex: 0
     });
     const [apiKeyError, setApiKeyError] = useState(null);
-    const [unreadCount, setUnreadCount] = useState(0);
     const [isMinimized, setIsMinimized] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
     const [isLoadingRates, setIsLoadingRates] = useState(false);
@@ -395,85 +398,24 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
     const [isVerifyingAddress, setIsVerifyingAddress] = useState(false);
     const [verificationIssues, setVerificationIssues] = useState([]);
     const inputRef = useRef(null);
-
-    const formatAddressMessage = (placeDetails, type) => {
-        if (!placeDetails || !placeDetails.address_components) {
-            return `${type} address is incomplete. Please provide all required information.`;
-        }
-
-        const getComponent = (type) => {
-            const component = placeDetails.address_components.find(c => c.types.includes(type));
-            return component ? component.long_name : '';
-        };
-
-        const streetNumber = getComponent('street_number');
-        const route = getComponent('route');
-        const city = getComponent('locality') || getComponent('sublocality') || getComponent('administrative_area_level_2');
-        const state = getComponent('administrative_area_level_1');
-        const postalCode = getComponent('postal_code');
-        const country = getComponent('country');
-
-        // Check if country is supported
-        if (country && !['United States', 'Canada', 'US', 'CA'].includes(country)) {
-            return `Sorry, we currently only support shipping within the United States and Canada. Please provide an address from these countries.`;
-        }
-
-        // Check if we have all required components
-        if (!streetNumber || !route || !city || !state || !postalCode || !country) {
-            const missing = [];
-            if (!streetNumber || !route) missing.push('street address');
-            if (!city) missing.push('city');
-            if (!state) missing.push(country === 'Canada' ? 'province' : 'state');
-            if (!postalCode) missing.push(country === 'Canada' ? 'postal code' : 'ZIP code');
-            if (!country) missing.push('country');
-
-            const missingStr = missing.join(', ');
-            return `The ${type} address needs more information. Please provide the ${missingStr}. For ${country === 'Canada' ? 'Canadian' : 'US'} addresses, all these details are required.`;
-        }
-
-        // Format the address based on the country
-        const formattedAddress = country === 'Canada'
-            ? `The ${type} address is: ${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`
-            : `The ${type} address is: ${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`;
-
-        return formattedAddress.replace(/\s+/g, ' ').trim();
-    };
+    const geminiAgent = useRef(new GeminiAgent());
 
     // Initialize chat with welcome message
     useEffect(() => {
         if (messages.length === 0) {
             const welcomeMessage = {
-                role: 'assistant',
-                content: `Hello! I'll help you create a shipment. First, let me ask you a few questions about your shipment. Are you looking to ship large freight or courier package?`,
-                timestamp: new Date().toISOString()
+                text: "Welcome to SolushipX! I'm here to help you create a shipment. Are you looking to ship large freight or a courier package?",
+                sender: 'ai'
             };
             setMessages([welcomeMessage]);
-
-            // Set initial suggestions based on the first question
-            setSuggestions([
-                "Courier Package",
-                "Large Freight",
-                "I need help deciding"
-            ]);
         }
     }, []);
 
-    // Auto-scroll to bottom when messages change
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages, streamingMessage]);
-
-    // Update unread count when new messages arrive and chat is closed
-    useEffect(() => {
-        if (!isOpen && messages.length > 0) {
-            setUnreadCount(prev => prev + 1);
+        if (isOpen) {
+            setUnreadCount(0);
         }
-    }, [messages, isOpen]);
-
-    // Update chat interface based on current step
-    useEffect(() => {
-        updateSuggestionsForStep(conversationContext.currentStep);
-    }, [conversationContext.currentStep]);
+    }, [isOpen]);
 
     const handleClose = () => {
         setIsOpen(false);
@@ -481,264 +423,48 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
 
     const handleOpen = () => {
         setIsOpen(true);
-        setUnreadCount(0);
     };
 
     const toggleFullscreen = () => {
         setIsFullscreen(!isFullscreen);
     };
 
-    const handleInitialQuestionResponse = async (response) => {
-        const currentQuestion = STEPS.initial.questions[conversationContext.currentQuestionIndex];
-        let updatedContext = { ...conversationContext };
-        let nextQuestion = null;
-        let nextSuggestions = [];
+    const handleSend = async (message) => {
+        try {
+            // Add user message to chat
+            const userMessage = { text: message, sender: 'user' };
+            setMessages(prev => [...prev, userMessage]);
 
-        switch (conversationContext.currentQuestionIndex) {
-            case 0: // Shipment type question
-                if (response.toLowerCase().includes('courier')) {
-                    updatedContext.shipmentType = 'courier';
-                } else if (response.toLowerCase().includes('freight')) {
-                    updatedContext.shipmentType = 'freight';
-                }
-                nextQuestion = STEPS.initial.questions[1];
-                nextSuggestions = stepSuggestions.reference;
-                break;
+            // Process the message with GeminiAgent
+            const response = await geminiAgent.current.processMessage(message, messages);
 
-            case 1: // Reference number question
-                if (response.toLowerCase().includes('yes') || response.toLowerCase().includes('have')) {
-                    updatedContext.referenceNumber = 'pending';
-                    // Add a follow-up message asking for the reference number
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: 'Please enter your reference number:',
-                        timestamp: new Date().toISOString()
-                    }]);
-                    return;
-                } else if (response.match(/^[a-zA-Z0-9-_]+$/)) {
-                    // If the response looks like a reference number, store it
-                    updatedContext.referenceNumber = response;
-                    nextQuestion = STEPS.initial.questions[2];
-                    nextSuggestions = stepSuggestions.schedule;
-                } else {
-                    updatedContext.referenceNumber = null;
-                    nextQuestion = STEPS.initial.questions[2];
-                    nextSuggestions = stepSuggestions.schedule;
-                }
-                break;
+            // Add AI response to chat
+            const aiMessage = { text: response.message.content, sender: 'ai' };
+            setMessages(prev => [...prev, aiMessage]);
 
-            case 2: // Scheduling question
-                const schedulingResponse = response.toLowerCase().trim();
+            // Update current step if changed
+            if (response.currentStep && response.currentStep !== currentStep) {
+                setCurrentStep(response.currentStep);
+            }
 
-                // First, check for explicit scheduling preferences
-                if (schedulingResponse.includes('immediately') ||
-                    schedulingResponse.includes('today') ||
-                    schedulingResponse.includes('now') ||
-                    schedulingResponse.includes('asap')) {
-                    updatedContext.shipmentDate = new Date().toISOString();
-                    nextQuestion = STEPS.initial.questions[3];
-                    nextSuggestions = stepSuggestions.pickup;
-                }
-                // Then check for specific date requests
-                else if (schedulingResponse.includes('specific') ||
-                    schedulingResponse.includes('future') ||
-                    schedulingResponse.includes('later')) {
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: 'Please enter your preferred shipment date (YYYY-MM-DD):',
-                        timestamp: new Date().toISOString()
-                    }]);
-                    return;
-                }
-                // Check for actual date format
-                else if (schedulingResponse.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                    const date = new Date(schedulingResponse);
-                    if (!isNaN(date.getTime()) && date >= new Date()) {
-                        updatedContext.shipmentDate = date.toISOString();
-                        nextQuestion = STEPS.initial.questions[3];
-                        nextSuggestions = stepSuggestions.pickup;
-                    } else {
-                        setMessages(prev => [...prev, {
-                            role: 'assistant',
-                            content: 'Please enter a valid future date in YYYY-MM-DD format:',
-                            timestamp: new Date().toISOString()
-                        }]);
-                        return;
-                    }
-                }
-                // Handle uncertainty and ambiguous responses
-                else if (schedulingResponse.includes('not sure') ||
-                    schedulingResponse.includes('unsure') ||
-                    schedulingResponse.includes('dont know') ||
-                    schedulingResponse.includes("don't know") ||
-                    schedulingResponse.includes('help') ||
-                    schedulingResponse.includes('maybe') ||
-                    schedulingResponse.includes('perhaps') ||
-                    schedulingResponse.includes('think') ||
-                    schedulingResponse.includes('could') ||
-                    schedulingResponse.includes('might')) {
+            // Update shipment data with collected info
+            if (response.collectedInfo) {
+                setShipmentData(prev => ({
+                    ...prev,
+                    ...response.collectedInfo
+                }));
+            }
 
-                    // Get current date info for context
-                    const today = new Date();
-                    const tomorrow = new Date(today);
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    const nextWeek = new Date(today);
-                    nextWeek.setDate(nextWeek.getDate() + 7);
-
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: `Let me help you decide when to schedule your shipment. Here are your options:\n\n` +
-                            `1. Schedule immediately (today ${today.toLocaleDateString()})\n` +
-                            `2. Schedule for tomorrow (${tomorrow.toLocaleDateString()})\n` +
-                            `3. Schedule for next week (${nextWeek.toLocaleDateString()})\n` +
-                            `4. Choose a specific date\n\n` +
-                            `You can also tell me:\n` +
-                            `- If you need it by a certain date\n` +
-                            `- If you have a preferred day of the week\n` +
-                            `- If you need it within a specific timeframe\n\n` +
-                            `What would work best for you?`,
-                        timestamp: new Date().toISOString()
-                    }]);
-                    setSuggestions([
-                        "Schedule immediately",
-                        "Schedule for tomorrow",
-                        "Schedule for next week",
-                        "Choose a specific date",
-                        "I need more guidance"
-                    ]);
-                    return;
-                }
-                // Handle relative time expressions
-                else if (schedulingResponse.includes('tomorrow')) {
-                    const tomorrow = new Date();
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    updatedContext.shipmentDate = tomorrow.toISOString();
-                    nextQuestion = STEPS.initial.questions[3];
-                    nextSuggestions = stepSuggestions.pickup;
-                }
-                else if (schedulingResponse.includes('next week')) {
-                    const nextWeek = new Date();
-                    nextWeek.setDate(nextWeek.getDate() + 7);
-                    updatedContext.shipmentDate = nextWeek.toISOString();
-                    nextQuestion = STEPS.initial.questions[3];
-                    nextSuggestions = stepSuggestions.pickup;
-                }
-                // Handle invalid or unclear responses
-                else {
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: 'I need to know when you want to schedule this shipment. You can:\n\n' +
-                            '1. Type "immediately" for today\n' +
-                            '2. Type "tomorrow" for tomorrow\n' +
-                            '3. Type "next week" for next week\n' +
-                            '4. Type "specific" to choose a custom date\n' +
-                            '5. Or enter a date in YYYY-MM-DD format\n\n' +
-                            'What would you prefer?',
-                        timestamp: new Date().toISOString()
-                    }]);
-                    setSuggestions([
-                        "immediately",
-                        "tomorrow",
-                        "next week",
-                        "specific",
-                        "I need help deciding"
-                    ]);
-                    return;
-                }
-                break;
-
-            case 3: // Pickup window question
-                if (response.toLowerCase().includes('yes')) {
-                    updatedContext.pickupWindow = {
-                        earliest: '09:00',
-                        latest: '17:00'
-                    };
-                } else if (response.toLowerCase().includes('no')) {
-                    // Add a follow-up message asking for preferred pickup hours
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: 'Please enter your preferred pickup hours (HH:MM-HH:MM):',
-                        timestamp: new Date().toISOString()
-                    }]);
-                    return;
-                }
-                nextQuestion = STEPS.initial.questions[4];
-                nextSuggestions = stepSuggestions.delivery;
-                break;
-
-            case 4: // Delivery window question
-                if (response.toLowerCase().includes('yes')) {
-                    updatedContext.deliveryWindow = {
-                        earliest: '09:00',
-                        latest: '17:00'
-                    };
-                } else if (response.toLowerCase().includes('no')) {
-                    // Add a follow-up message asking for preferred delivery hours
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: 'Please enter your preferred delivery hours (HH:MM-HH:MM):',
-                        timestamp: new Date().toISOString()
-                    }]);
-                    return;
-                }
-                nextQuestion = STEPS.initial.questions[5];
-                nextSuggestions = stepSuggestions.signature;
-                break;
-
-            case 5: // Signature requirement question
-                if (response.toLowerCase().includes('yes')) {
-                    updatedContext.signatureRequired = true;
-                    // Add a follow-up message asking about adult signature
-                    setMessages(prev => [...prev, {
-                        role: 'assistant',
-                        content: 'Does it need to be an adult signature?',
-                        timestamp: new Date().toISOString()
-                    }]);
-                    setSuggestions(['Yes, adult signature required', 'No, any signature is fine']);
-                    return;
-                } else {
-                    updatedContext.signatureRequired = false;
-                }
-                // Move to address collection
-                updatedContext.currentStep = 'ship-from';
-                nextQuestion = STEPS['ship-from'].questions[0];
-                nextSuggestions = stepSuggestions['ship-from'];
-                break;
-        }
-
-        // Update the conversation context
-        updatedContext.currentQuestionIndex = conversationContext.currentQuestionIndex + 1;
-        setConversationContext(updatedContext);
-
-        // Add the next question to the chat
-        if (nextQuestion) {
-            setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: nextQuestion,
-                timestamp: new Date().toISOString()
-            }]);
-            setSuggestions(nextSuggestions);
-        }
-    };
-
-    const handleSend = async (message = input) => {
-        const messageToSend = typeof message === 'string' ? message : input;
-        if (!messageToSend?.trim()) return;
-
-        // Add user message to chat
-        const userMessage = {
-            role: 'user',
-            content: messageToSend,
-            timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, userMessage]);
-        setInput('');
-
-        // Handle the message based on current step
-        if (conversationContext.currentStep === 'initial') {
-            await handleInitialQuestionResponse(messageToSend);
-        } else {
-            // ... existing message handling code ...
+            if (!isOpen) {
+                setUnreadCount(prev => prev + 1);
+            }
+        } catch (error) {
+            console.error('Error processing message:', error);
+            const errorMessage = {
+                text: "I apologize, but I encountered an error. Please try again or rephrase your message.",
+                sender: 'ai'
+            };
+            setMessages(prev => [...prev, errorMessage]);
         }
     };
 
@@ -755,7 +481,7 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             setIsAddressInput(false);
 
             // Automatically send the message
-            await handleSend();
+            await handleSend(addressMessage);
         } catch (error) {
             console.error('Error confirming address:', error);
             setAddressError('Failed to process address. Please try again.');
@@ -795,9 +521,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             if (!formattedAddress.postalCode) {
                 const addressMessage = `I found the address at ${formattedAddress.street}, ${formattedAddress.city}, ${formattedAddress.state}, ${formattedAddress.country}. What is the postal code for this address?`;
                 setMessages(prev => [...prev, {
-                    role: 'user',
-                    content: addressMessage,
-                    timestamp: new Date().toISOString()
+                    text: addressMessage,
+                    sender: 'user'
                 }]);
                 setIsAddressInput(false);
                 setCurrentAddressType(null);
@@ -808,9 +533,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             // Add the formatted address as a user message
             const addressMessage = formatAddressMessage(placeDetails, currentAddressType);
             setMessages(prev => [...prev, {
-                role: 'user',
-                content: addressMessage,
-                timestamp: new Date().toISOString()
+                text: addressMessage,
+                sender: 'user'
             }]);
 
             // Update the context with the new address
@@ -824,9 +548,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             // Call chatWithGemini to continue the conversation
             const response = await chatWithGemini({
                 message: {
-                    role: 'user',
-                    content: addressMessage,
-                    timestamp: new Date().toISOString()
+                    text: addressMessage,
+                    sender: 'user'
                 },
                 userContext: conversationContext,
                 previousMessages: messages.slice(-5)
@@ -837,9 +560,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
 
             // Add the bot's response to the messages
             const botResponse = {
-                role: 'assistant',
-                content: response.data.message.content,
-                timestamp: new Date().toISOString()
+                text: response.data.message.content,
+                sender: 'ai'
             };
 
             setMessages(prev => [...prev, botResponse]);
@@ -950,9 +672,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
 
                                 // Add selection message
                                 setMessages(prev => [...prev, {
-                                    role: 'user',
-                                    content: `I'll select this option: ${message.rateData.carrierName} - ${message.rateData.serviceMode}`,
-                                    timestamp: new Date().toISOString()
+                                    text: `I'll select this option: ${message.rateData.carrierName} - ${message.rateData.serviceMode}`,
+                                    sender: 'user'
                                 }]);
                             }
                         }}
@@ -985,7 +706,7 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                 key={index}
                 sx={{
                     display: 'flex',
-                    justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
+                    justifyContent: message.sender === 'user' ? 'flex-end' : 'flex-start',
                     gap: 1,
                     mb: 2
                 }}
@@ -994,8 +715,8 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                     sx={{
                         p: 2,
                         maxWidth: '70%',
-                        bgcolor: message.role === 'user' ? 'primary.main' : 'background.paper',
-                        color: message.role === 'user' ? 'white' : 'text.primary',
+                        bgcolor: message.sender === 'user' ? 'primary.main' : 'background.paper',
+                        color: message.sender === 'user' ? 'white' : 'text.primary',
                         borderRadius: 2,
                         boxShadow: 1
                     }}
@@ -1006,14 +727,14 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                             wordBreak: 'break-word'
                         }}
                     >
-                        {message.content}
+                        {message.text}
                     </Typography>
                     <Typography
                         variant="caption"
                         sx={{
                             display: 'block',
                             mt: 1,
-                            color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : 'text.secondary'
+                            color: message.sender === 'user' ? 'rgba(255,255,255,0.7)' : 'text.secondary'
                         }}
                     >
                         {formatTimestamp(message.timestamp)}
@@ -1029,260 +750,83 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         return null;
     };
 
+    const formatAddressMessage = (placeDetails, type) => {
+        if (!placeDetails || !placeDetails.address_components) {
+            return `${type} address is incomplete. Please provide all required information.`;
+        }
+
+        const getComponent = (type) => {
+            const component = placeDetails.address_components.find(c => c.types.includes(type));
+            return component ? component.long_name : '';
+        };
+
+        const streetNumber = getComponent('street_number');
+        const route = getComponent('route');
+        const city = getComponent('locality') || getComponent('sublocality') || getComponent('administrative_area_level_2');
+        const state = getComponent('administrative_area_level_1');
+        const postalCode = getComponent('postal_code');
+        const country = getComponent('country');
+
+        if (country && !['United States', 'Canada', 'US', 'CA'].includes(country)) {
+            return `Sorry, we currently only support shipping within the United States and Canada. Please provide an address from these countries.`;
+        }
+
+        if (!streetNumber || !route || !city || !state || !postalCode || !country) {
+            const missing = [];
+            if (!streetNumber || !route) missing.push('street address');
+            if (!city) missing.push('city');
+            if (!state) missing.push(country === 'Canada' ? 'province' : 'state');
+            if (!postalCode) missing.push(country === 'Canada' ? 'postal code' : 'ZIP code');
+            if (!country) missing.push('country');
+
+            const missingStr = missing.join(', ');
+            return `The ${type} address needs more information. Please provide the ${missingStr}. For ${country === 'Canada' ? 'Canadian' : 'US'} addresses, all these details are required.`;
+        }
+
+        const formattedAddress = country === 'Canada'
+            ? `${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`
+            : `${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`;
+
+        return `The ${type} address is: ${formattedAddress.replace(/\s+/g, ' ').trim()}`;
+    };
+
     // Render the chat interface
     return (
-        <Box
-            sx={{
-                position: 'fixed',
-                bottom: 20,
-                right: 20,
-                zIndex: 1000,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end'
-            }}
-        >
-            {/* Chat button when closed */}
+        <>
             {!isOpen && (
-                <Badge badgeContent={unreadCount} color="error">
-                    <IconButton
-                        onClick={handleOpen}
-                        sx={{
-                            bgcolor: 'primary.main',
-                            color: 'white',
-                            '&:hover': {
-                                bgcolor: 'primary.dark'
-                            },
-                            width: 56,
-                            height: 56
-                        }}
-                    >
-                        <LocalShipping />
-                    </IconButton>
-                </Badge>
-            )}
-
-            {/* Chat interface when open */}
-            <AnimatePresence>
-                {isOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 20 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <Paper
-                            ref={chatContainerRef}
+                <Box
+                    sx={{
+                        position: 'fixed',
+                        bottom: 20,
+                        right: 20,
+                        zIndex: 1000,
+                    }}
+                >
+                    <Badge badgeContent={unreadCount} color="primary">
+                        <IconButton
+                            onClick={handleOpen}
                             sx={{
-                                width: isFullscreen ? '100vw' : 400,
-                                height: isFullscreen ? '100vh' : 500,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                overflow: 'hidden',
-                                position: 'relative',
-                                boxShadow: 3
+                                width: 60,
+                                height: 60,
+                                backgroundColor: theme.palette.primary.main,
+                                color: 'white',
+                                '&:hover': {
+                                    backgroundColor: theme.palette.primary.dark,
+                                },
                             }}
                         >
-                            {/* Chat header */}
-                            <Box
-                                sx={{
-                                    p: 2,
-                                    bgcolor: 'primary.main',
-                                    color: 'white',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                <Typography variant="h6">SolushipX Assistant</Typography>
-                                <Box>
-                                    <IconButton
-                                        size="small"
-                                        onClick={toggleFullscreen}
-                                        sx={{ color: 'white' }}
-                                    >
-                                        {isFullscreen ? <FullscreenExit /> : <Fullscreen />}
-                                    </IconButton>
-                                    <IconButton
-                                        size="small"
-                                        onClick={handleClose}
-                                        sx={{ color: 'white' }}
-                                    >
-                                        <Close />
-                                    </IconButton>
-                                </Box>
-                            </Box>
-
-                            {/* Chat messages */}
-                            <Box
-                                sx={{
-                                    flex: 1,
-                                    overflowY: 'auto',
-                                    p: 2,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 1
-                                }}
-                            >
-                                {messages.map((message, index) => renderMessage(message, index))}
-                                {streamingMessage && (
-                                    <Box
-                                        sx={{
-                                            display: 'flex',
-                                            justifyContent: 'flex-start',
-                                            gap: 1,
-                                            mb: 2
-                                        }}
-                                    >
-                                        <Paper
-                                            sx={{
-                                                p: 2,
-                                                maxWidth: '70%',
-                                                bgcolor: 'background.paper',
-                                                borderRadius: 2,
-                                                boxShadow: 1
-                                            }}
-                                        >
-                                            <Typography
-                                                sx={{
-                                                    whiteSpace: 'pre-wrap',
-                                                    wordBreak: 'break-word'
-                                                }}
-                                            >
-                                                {streamingMessage}
-                                                <CircularProgress
-                                                    size={12}
-                                                    sx={{ ml: 1, verticalAlign: 'middle' }}
-                                                />
-                                            </Typography>
-                                        </Paper>
-                                    </Box>
-                                )}
-                                <div ref={messagesEndRef} />
-                            </Box>
-
-                            {/* Quick suggestions */}
-                            {suggestions.length > 0 && (
-                                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                    {suggestions.map((suggestion, index) => (
-                                        <Chip
-                                            key={index}
-                                            label={suggestion}
-                                            onClick={() => handleSuggestionClick(suggestion)}
-                                            sx={{
-                                                cursor: 'pointer',
-                                                '&:hover': {
-                                                    bgcolor: 'primary.main',
-                                                    color: 'white'
-                                                }
-                                            }}
-                                        />
-                                    ))}
-                                </Box>
-                            )}
-
-                            {/* Input area */}
-                            <Box
-                                sx={{
-                                    p: 2,
-                                    borderTop: '1px solid',
-                                    borderColor: 'divider',
-                                    display: 'flex',
-                                    gap: 1
-                                }}
-                            >
-                                {isAddressInput ? (
-                                    <Autocomplete
-                                        freeSolo
-                                        fullWidth
-                                        options={addressPredictions}
-                                        getOptionLabel={(option) => typeof option === 'string' ? option : option.description}
-                                        inputValue={input}
-                                        onInputChange={(event, newValue) => {
-                                            setInput(newValue);
-                                            if (newValue && newValue.length >= 3) {
-                                                GooglePlacesService.getPlacePredictions(newValue)
-                                                    .then(predictions => setAddressPredictions(predictions))
-                                                    .catch(error => {
-                                                        console.error('Error fetching predictions:', error);
-                                                        setAddressError('Failed to fetch address suggestions. Please try again.');
-                                                    });
-                                            }
-                                        }}
-                                        onChange={(event, newValue) => {
-                                            if (newValue && typeof newValue !== 'string' && newValue.place_id) {
-                                                handleAddressSelect(newValue);
-                                            }
-                                        }}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                fullWidth
-                                                placeholder={`Enter address or postal code (US/Canada)`}
-                                                error={!!addressError}
-                                                helperText={addressError}
-                                                InputProps={{
-                                                    ...params.InputProps,
-                                                    endAdornment: (
-                                                        <>
-                                                            {isValidatingAddress && (
-                                                                <CircularProgress color="inherit" size={20} />
-                                                            )}
-                                                            {params.InputProps.endAdornment}
-                                                        </>
-                                                    )
-                                                }}
-                                            />
-                                        )}
-                                        renderOption={(props, option) => (
-                                            <li {...props}>
-                                                <LocationOn sx={{ mr: 1, color: option.types?.includes('postal_code') ? 'success.main' : 'text.secondary' }} />
-                                                <Box>
-                                                    <Typography variant="body2">{option.description}</Typography>
-                                                    {option.types?.includes('postal_code') && (
-                                                        <Typography variant="caption" color="success.main">
-                                                            Postal Code
-                                                        </Typography>
-                                                    )}
-                                                </Box>
-                                            </li>
-                                        )}
-                                    />
-                                ) : (
-                                    <TextField
-                                        fullWidth
-                                        variant="outlined"
-                                        placeholder="Type your message..."
-                                        value={input}
-                                        onChange={(e) => setInput(e.target.value)}
-                                        onKeyPress={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                handleSend();
-                                            }
-                                        }}
-                                        disabled={isProcessing}
-                                        size="small"
-                                        inputRef={inputRef}
-                                    />
-                                )}
-                                <IconButton
-                                    color="primary"
-                                    onClick={() => handleSend()}
-                                    disabled={isProcessing || !input.trim()}
-                                >
-                                    {isProcessing ? (
-                                        <CircularProgress size={24} />
-                                    ) : (
-                                        <Send />
-                                    )}
-                                </IconButton>
-                            </Box>
-                        </Paper>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </Box>
+                            <LocalShipping />
+                        </IconButton>
+                    </Badge>
+                </Box>
+            )}
+            <AIExperience
+                open={isOpen}
+                onClose={handleClose}
+                onSend={handleSend}
+                messages={messages}
+            />
+        </>
     );
 };
 

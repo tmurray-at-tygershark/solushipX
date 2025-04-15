@@ -247,4 +247,4 @@ class GeminiAgent {
     }
 }
 
-export default new GeminiAgent(); 
+export default GeminiAgent; 
