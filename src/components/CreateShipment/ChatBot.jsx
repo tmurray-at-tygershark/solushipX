@@ -515,16 +515,34 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                         timestamp: new Date().toISOString()
                     }]);
                     return;
+                } else if (response.match(/^[a-zA-Z0-9-_]+$/)) {
+                    // If the response looks like a reference number, store it
+                    updatedContext.referenceNumber = response;
+                    nextQuestion = STEPS.initial.questions[2];
+                    nextSuggestions = stepSuggestions.schedule;
+                } else {
+                    updatedContext.referenceNumber = null;
+                    nextQuestion = STEPS.initial.questions[2];
+                    nextSuggestions = stepSuggestions.schedule;
                 }
-                nextQuestion = STEPS.initial.questions[2];
-                nextSuggestions = stepSuggestions.schedule;
                 break;
 
             case 2: // Scheduling question
-                if (response.toLowerCase().includes('immediately')) {
+                const schedulingResponse = response.toLowerCase().trim();
+
+                // First, check for explicit scheduling preferences
+                if (schedulingResponse.includes('immediately') ||
+                    schedulingResponse.includes('today') ||
+                    schedulingResponse.includes('now') ||
+                    schedulingResponse.includes('asap')) {
                     updatedContext.shipmentDate = new Date().toISOString();
-                } else if (response.toLowerCase().includes('specific')) {
-                    // Add a follow-up message asking for the specific date
+                    nextQuestion = STEPS.initial.questions[3];
+                    nextSuggestions = stepSuggestions.pickup;
+                }
+                // Then check for specific date requests
+                else if (schedulingResponse.includes('specific') ||
+                    schedulingResponse.includes('future') ||
+                    schedulingResponse.includes('later')) {
                     setMessages(prev => [...prev, {
                         role: 'assistant',
                         content: 'Please enter your preferred shipment date (YYYY-MM-DD):',
@@ -532,8 +550,101 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                     }]);
                     return;
                 }
-                nextQuestion = STEPS.initial.questions[3];
-                nextSuggestions = stepSuggestions.pickup;
+                // Check for actual date format
+                else if (schedulingResponse.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    const date = new Date(schedulingResponse);
+                    if (!isNaN(date.getTime()) && date >= new Date()) {
+                        updatedContext.shipmentDate = date.toISOString();
+                        nextQuestion = STEPS.initial.questions[3];
+                        nextSuggestions = stepSuggestions.pickup;
+                    } else {
+                        setMessages(prev => [...prev, {
+                            role: 'assistant',
+                            content: 'Please enter a valid future date in YYYY-MM-DD format:',
+                            timestamp: new Date().toISOString()
+                        }]);
+                        return;
+                    }
+                }
+                // Handle uncertainty and ambiguous responses
+                else if (schedulingResponse.includes('not sure') ||
+                    schedulingResponse.includes('unsure') ||
+                    schedulingResponse.includes('dont know') ||
+                    schedulingResponse.includes("don't know") ||
+                    schedulingResponse.includes('help') ||
+                    schedulingResponse.includes('maybe') ||
+                    schedulingResponse.includes('perhaps') ||
+                    schedulingResponse.includes('think') ||
+                    schedulingResponse.includes('could') ||
+                    schedulingResponse.includes('might')) {
+
+                    // Get current date info for context
+                    const today = new Date();
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    const nextWeek = new Date(today);
+                    nextWeek.setDate(nextWeek.getDate() + 7);
+
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: `Let me help you decide when to schedule your shipment. Here are your options:\n\n` +
+                            `1. Schedule immediately (today ${today.toLocaleDateString()})\n` +
+                            `2. Schedule for tomorrow (${tomorrow.toLocaleDateString()})\n` +
+                            `3. Schedule for next week (${nextWeek.toLocaleDateString()})\n` +
+                            `4. Choose a specific date\n\n` +
+                            `You can also tell me:\n` +
+                            `- If you need it by a certain date\n` +
+                            `- If you have a preferred day of the week\n` +
+                            `- If you need it within a specific timeframe\n\n` +
+                            `What would work best for you?`,
+                        timestamp: new Date().toISOString()
+                    }]);
+                    setSuggestions([
+                        "Schedule immediately",
+                        "Schedule for tomorrow",
+                        "Schedule for next week",
+                        "Choose a specific date",
+                        "I need more guidance"
+                    ]);
+                    return;
+                }
+                // Handle relative time expressions
+                else if (schedulingResponse.includes('tomorrow')) {
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    updatedContext.shipmentDate = tomorrow.toISOString();
+                    nextQuestion = STEPS.initial.questions[3];
+                    nextSuggestions = stepSuggestions.pickup;
+                }
+                else if (schedulingResponse.includes('next week')) {
+                    const nextWeek = new Date();
+                    nextWeek.setDate(nextWeek.getDate() + 7);
+                    updatedContext.shipmentDate = nextWeek.toISOString();
+                    nextQuestion = STEPS.initial.questions[3];
+                    nextSuggestions = stepSuggestions.pickup;
+                }
+                // Handle invalid or unclear responses
+                else {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: 'I need to know when you want to schedule this shipment. You can:\n\n' +
+                            '1. Type "immediately" for today\n' +
+                            '2. Type "tomorrow" for tomorrow\n' +
+                            '3. Type "next week" for next week\n' +
+                            '4. Type "specific" to choose a custom date\n' +
+                            '5. Or enter a date in YYYY-MM-DD format\n\n' +
+                            'What would you prefer?',
+                        timestamp: new Date().toISOString()
+                    }]);
+                    setSuggestions([
+                        "immediately",
+                        "tomorrow",
+                        "next week",
+                        "specific",
+                        "I need help deciding"
+                    ]);
+                    return;
+                }
                 break;
 
             case 3: // Pickup window question
