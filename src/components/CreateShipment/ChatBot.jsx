@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, IconButton, Paper, Typography, CircularProgress, Button, Card, CardContent, useTheme, Badge, Tooltip, Fade, Chip, TextField } from '@mui/material';
+import { Box, IconButton, Paper, Typography, CircularProgress, Button, Card, CardContent, useTheme, Badge, Tooltip, Fade, Chip, TextField, Autocomplete } from '@mui/material';
 import { Mic, MicOff, Send, Close, ExpandMore, ExpandLess, AttachFile, Undo, RestartAlt, CheckCircle, AccessTime, LocationOn, LocalShipping, Inventory, Payment, RateReview, TrendingUp, CompareArrows, Fullscreen, FullscreenExit } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, getDocs } from 'firebase/firestore';
@@ -7,19 +7,24 @@ import { db } from '../../firebase';
 import { useLocation, useNavigate } from 'react-router-dom';
 import GeminiAgent from '../../services/GeminiAgent';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import GooglePlacesService from '../../services/GooglePlacesService';
+import SimpleMap from '../../components/SimpleMap';
 
 const STEPS = {
-    'shipment-info': {
+    'initial': {
         number: 1,
-        label: 'Shipment Info',
+        label: 'Initial Questions',
         icon: <LocalShipping />,
         description: 'Basic information about your shipment',
         questions: [
-            'What type of shipment are you creating? (e.g., courier, freight, express)',
-            'When do you need this shipment to be picked up?',
-            'Do you need any special handling for this shipment?'
+            'Are you looking to ship large freight or courier package?',
+            'Do you have a reference number you would like to use for this shipment?',
+            'When would you like to schedule this shipment? (immediately, or on a specific date)',
+            'Can we come pick it up during normal business hours? (9am-5pm)',
+            'Can we deliver it during normal business hours?',
+            'Do you require a signature upon delivery of this shipment?'
         ],
-        requiredFields: ['shipmentType', 'shipmentDate']
+        requiredFields: ['shipmentType', 'referenceNumber', 'shipmentDate', 'pickupWindow', 'deliveryWindow', 'signatureRequired']
     },
     'ship-from': {
         number: 2,
@@ -273,6 +278,73 @@ const guidedQuestions = {
     ]
 };
 
+const stepSuggestions = {
+    'initial': [
+        "Courier Package",
+        "Large Freight",
+        "I need help deciding"
+    ],
+    'reference': [
+        "Yes, I have a reference number",
+        "No reference number needed",
+        "Skip this step"
+    ],
+    'schedule': [
+        "Schedule immediately",
+        "Schedule for a specific date",
+        "I need help deciding"
+    ],
+    'pickup': [
+        "Yes, during business hours",
+        "No, need different hours",
+        "I need help deciding"
+    ],
+    'delivery': [
+        "Yes, during business hours",
+        "No, need different hours",
+        "I need help deciding"
+    ],
+    'signature': [
+        "Yes, signature required",
+        "No signature needed",
+        "I need help deciding"
+    ],
+    'ship-from': [
+        "Enter my pickup address",
+        "I need help with the address",
+        "Skip this step for now"
+    ],
+    'ship-to': [
+        "Enter my delivery address",
+        "I need help with the address",
+        "Skip this step for now"
+    ],
+    'packages': [
+        "Add package details",
+        "I have multiple packages",
+        "Need help with dimensions",
+        "Skip this step for now"
+    ],
+    'rates': [
+        "Show me available rates",
+        "What's the cheapest option?",
+        "What's the fastest option?",
+        "Compare rates for me"
+    ],
+    'rate-selection': [
+        "Select this rate",
+        "Show me more options",
+        "What's the delivery time?",
+        "Need more information"
+    ],
+    'review': [
+        "Everything looks good",
+        "I need to make changes",
+        "Complete my shipment",
+        "Save as draft"
+    ]
+};
+
 const ChatBot = ({ onShipmentComplete, formData }) => {
     const theme = useTheme();
     const location = useLocation();
@@ -289,7 +361,14 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         items: [{}],
         rates: [],
         selectedRate: null,
-        currentStep: 'initial'
+        currentStep: 'initial',
+        shipmentType: null,
+        referenceNumber: null,
+        shipmentDate: null,
+        pickupWindow: null,
+        deliveryWindow: null,
+        signatureRequired: null,
+        currentQuestionIndex: 0
     });
     const [apiKeyError, setApiKeyError] = useState(null);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -303,22 +382,78 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
     const [streamingMessage, setStreamingMessage] = useState('');
     const functions = getFunctions();
     const chatWithGemini = httpsCallable(functions, 'chatWithGemini');
+    const [addressPredictions, setAddressPredictions] = useState([]);
+    const [isAddressInput, setIsAddressInput] = useState(false);
+    const [currentAddressType, setCurrentAddressType] = useState(null);
+    const [selectedPlace, setSelectedPlace] = useState(null);
+    const [addressError, setAddressError] = useState(null);
+    const [isValidatingAddress, setIsValidatingAddress] = useState(false);
+    const [showAddressConfirm, setShowAddressConfirm] = useState(false);
+    const [confirmAddress, setConfirmAddress] = useState(null);
+    const [isEditingAddress, setIsEditingAddress] = useState(false);
+    const [editingAddress, setEditingAddress] = useState(null);
+    const [isVerifyingAddress, setIsVerifyingAddress] = useState(false);
+    const [verificationIssues, setVerificationIssues] = useState([]);
+    const inputRef = useRef(null);
+
+    const formatAddressMessage = (placeDetails, type) => {
+        if (!placeDetails || !placeDetails.address_components) {
+            return `${type} address is incomplete. Please provide all required information.`;
+        }
+
+        const getComponent = (type) => {
+            const component = placeDetails.address_components.find(c => c.types.includes(type));
+            return component ? component.long_name : '';
+        };
+
+        const streetNumber = getComponent('street_number');
+        const route = getComponent('route');
+        const city = getComponent('locality') || getComponent('sublocality') || getComponent('administrative_area_level_2');
+        const state = getComponent('administrative_area_level_1');
+        const postalCode = getComponent('postal_code');
+        const country = getComponent('country');
+
+        // Check if country is supported
+        if (country && !['United States', 'Canada', 'US', 'CA'].includes(country)) {
+            return `Sorry, we currently only support shipping within the United States and Canada. Please provide an address from these countries.`;
+        }
+
+        // Check if we have all required components
+        if (!streetNumber || !route || !city || !state || !postalCode || !country) {
+            const missing = [];
+            if (!streetNumber || !route) missing.push('street address');
+            if (!city) missing.push('city');
+            if (!state) missing.push(country === 'Canada' ? 'province' : 'state');
+            if (!postalCode) missing.push(country === 'Canada' ? 'postal code' : 'ZIP code');
+            if (!country) missing.push('country');
+
+            const missingStr = missing.join(', ');
+            return `The ${type} address needs more information. Please provide the ${missingStr}. For ${country === 'Canada' ? 'Canadian' : 'US'} addresses, all these details are required.`;
+        }
+
+        // Format the address based on the country
+        const formattedAddress = country === 'Canada'
+            ? `The ${type} address is: ${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`
+            : `The ${type} address is: ${streetNumber} ${route}, ${city}, ${state} ${postalCode}, ${country}`;
+
+        return formattedAddress.replace(/\s+/g, ' ').trim();
+    };
 
     // Initialize chat with welcome message
     useEffect(() => {
         if (messages.length === 0) {
             const welcomeMessage = {
                 role: 'assistant',
-                content: `Hi! I'm your SolushipX AI assistant. I'll help you create a shipment step by step. What would you like to ship today?`,
+                content: `Hello! I'll help you create a shipment. First, let me ask you a few questions about your shipment. Are you looking to ship large freight or courier package?`,
                 timestamp: new Date().toISOString()
             };
             setMessages([welcomeMessage]);
 
-            // Set initial suggestions based on the first step
+            // Set initial suggestions based on the first question
             setSuggestions([
-                "I need to ship a package",
-                "I have a freight shipment",
-                "What information do you need?"
+                "Courier Package",
+                "Large Freight",
+                "I need help deciding"
             ]);
         }
     }, []);
@@ -353,28 +488,241 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
         setIsFullscreen(!isFullscreen);
     };
 
-    const handleSend = async () => {
-        if (!input.trim()) return;
+    const handleInitialQuestionResponse = async (response) => {
+        const currentQuestion = STEPS.initial.questions[conversationContext.currentQuestionIndex];
+        let updatedContext = { ...conversationContext };
+        let nextQuestion = null;
+        let nextSuggestions = [];
 
+        switch (conversationContext.currentQuestionIndex) {
+            case 0: // Shipment type question
+                if (response.toLowerCase().includes('courier')) {
+                    updatedContext.shipmentType = 'courier';
+                } else if (response.toLowerCase().includes('freight')) {
+                    updatedContext.shipmentType = 'freight';
+                }
+                nextQuestion = STEPS.initial.questions[1];
+                nextSuggestions = stepSuggestions.reference;
+                break;
+
+            case 1: // Reference number question
+                if (response.toLowerCase().includes('yes') || response.toLowerCase().includes('have')) {
+                    updatedContext.referenceNumber = 'pending';
+                    // Add a follow-up message asking for the reference number
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: 'Please enter your reference number:',
+                        timestamp: new Date().toISOString()
+                    }]);
+                    return;
+                }
+                nextQuestion = STEPS.initial.questions[2];
+                nextSuggestions = stepSuggestions.schedule;
+                break;
+
+            case 2: // Scheduling question
+                if (response.toLowerCase().includes('immediately')) {
+                    updatedContext.shipmentDate = new Date().toISOString();
+                } else if (response.toLowerCase().includes('specific')) {
+                    // Add a follow-up message asking for the specific date
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: 'Please enter your preferred shipment date (YYYY-MM-DD):',
+                        timestamp: new Date().toISOString()
+                    }]);
+                    return;
+                }
+                nextQuestion = STEPS.initial.questions[3];
+                nextSuggestions = stepSuggestions.pickup;
+                break;
+
+            case 3: // Pickup window question
+                if (response.toLowerCase().includes('yes')) {
+                    updatedContext.pickupWindow = {
+                        earliest: '09:00',
+                        latest: '17:00'
+                    };
+                } else if (response.toLowerCase().includes('no')) {
+                    // Add a follow-up message asking for preferred pickup hours
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: 'Please enter your preferred pickup hours (HH:MM-HH:MM):',
+                        timestamp: new Date().toISOString()
+                    }]);
+                    return;
+                }
+                nextQuestion = STEPS.initial.questions[4];
+                nextSuggestions = stepSuggestions.delivery;
+                break;
+
+            case 4: // Delivery window question
+                if (response.toLowerCase().includes('yes')) {
+                    updatedContext.deliveryWindow = {
+                        earliest: '09:00',
+                        latest: '17:00'
+                    };
+                } else if (response.toLowerCase().includes('no')) {
+                    // Add a follow-up message asking for preferred delivery hours
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: 'Please enter your preferred delivery hours (HH:MM-HH:MM):',
+                        timestamp: new Date().toISOString()
+                    }]);
+                    return;
+                }
+                nextQuestion = STEPS.initial.questions[5];
+                nextSuggestions = stepSuggestions.signature;
+                break;
+
+            case 5: // Signature requirement question
+                if (response.toLowerCase().includes('yes')) {
+                    updatedContext.signatureRequired = true;
+                    // Add a follow-up message asking about adult signature
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: 'Does it need to be an adult signature?',
+                        timestamp: new Date().toISOString()
+                    }]);
+                    setSuggestions(['Yes, adult signature required', 'No, any signature is fine']);
+                    return;
+                } else {
+                    updatedContext.signatureRequired = false;
+                }
+                // Move to address collection
+                updatedContext.currentStep = 'ship-from';
+                nextQuestion = STEPS['ship-from'].questions[0];
+                nextSuggestions = stepSuggestions['ship-from'];
+                break;
+        }
+
+        // Update the conversation context
+        updatedContext.currentQuestionIndex = conversationContext.currentQuestionIndex + 1;
+        setConversationContext(updatedContext);
+
+        // Add the next question to the chat
+        if (nextQuestion) {
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: nextQuestion,
+                timestamp: new Date().toISOString()
+            }]);
+            setSuggestions(nextSuggestions);
+        }
+    };
+
+    const handleSend = async (message = input) => {
+        const messageToSend = typeof message === 'string' ? message : input;
+        if (!messageToSend?.trim()) return;
+
+        // Add user message to chat
         const userMessage = {
             role: 'user',
-            content: input.trim(),
+            content: messageToSend,
             timestamp: new Date().toISOString()
         };
-
-        // Add message to UI immediately
         setMessages(prev => [...prev, userMessage]);
         setInput('');
-        setIsProcessing(true);
-        setStreamingMessage('');
+
+        // Handle the message based on current step
+        if (conversationContext.currentStep === 'initial') {
+            await handleInitialQuestionResponse(messageToSend);
+        } else {
+            // ... existing message handling code ...
+        }
+    };
+
+    const handleAddressConfirm = async () => {
+        if (!confirmAddress) return;
 
         try {
-            // Call the chatWithGemini function
+            const { placeDetails, type } = confirmAddress;
+
+            // Format the address details for the chat with more structure
+            const addressMessage = formatAddressMessage(placeDetails, type);
+            setInput(addressMessage);
+            setAddressPredictions([]);
+            setIsAddressInput(false);
+
+            // Automatically send the message
+            await handleSend();
+        } catch (error) {
+            console.error('Error confirming address:', error);
+            setAddressError('Failed to process address. Please try again.');
+        } finally {
+            setShowAddressConfirm(false);
+            setConfirmAddress(null);
+        }
+    };
+
+    const handleAddressSelect = async (selectedPrediction) => {
+        try {
+            setIsValidatingAddress(true);
+            const placeDetails = await GooglePlacesService.getPlaceDetails(selectedPrediction.place_id);
+
+            // Add debug logging
+            console.log('Place Details:', placeDetails);
+            console.log('Address Components:', placeDetails.address_components);
+
+            // Get the country first to determine validation rules
+            const country = getAddressComponent(placeDetails, 'country');
+            const countryCode = getAddressComponent(placeDetails, 'country', 'short_name');
+            if (!['US', 'CA'].includes(countryCode)) {
+                setAddressError('Sorry, we currently only support shipping within the United States and Canada.');
+                return;
+            }
+
+            // Format the address components
+            const formattedAddress = {
+                street: `${getAddressComponent(placeDetails, 'street_number')} ${getAddressComponent(placeDetails, 'route')}`.trim(),
+                city: getAddressComponent(placeDetails, 'locality') || getAddressComponent(placeDetails, 'sublocality') || getAddressComponent(placeDetails, 'administrative_area_level_2'),
+                state: getAddressComponent(placeDetails, 'administrative_area_level_1'),
+                postalCode: getAddressComponent(placeDetails, 'postal_code'),
+                country: country
+            };
+
+            // Check if postal code is missing
+            if (!formattedAddress.postalCode) {
+                const addressMessage = `I found the address at ${formattedAddress.street}, ${formattedAddress.city}, ${formattedAddress.state}, ${formattedAddress.country}. What is the postal code for this address?`;
+                setMessages(prev => [...prev, {
+                    role: 'user',
+                    content: addressMessage,
+                    timestamp: new Date().toISOString()
+                }]);
+                setIsAddressInput(false);
+                setCurrentAddressType(null);
+                setInput('');
+                return;
+            }
+
+            // Add the formatted address as a user message
+            const addressMessage = formatAddressMessage(placeDetails, currentAddressType);
+            setMessages(prev => [...prev, {
+                role: 'user',
+                content: addressMessage,
+                timestamp: new Date().toISOString()
+            }]);
+
+            // Update the context with the new address
+            updateAddressInContext(formattedAddress);
+
+            // Reset address input mode
+            setIsAddressInput(false);
+            setCurrentAddressType(null);
+            setInput('');
+
+            // Call chatWithGemini to continue the conversation
             const response = await chatWithGemini({
-                message: userMessage,
-                userContext: {},
+                message: {
+                    role: 'user',
+                    content: addressMessage,
+                    timestamp: new Date().toISOString()
+                },
+                userContext: conversationContext,
                 previousMessages: messages.slice(-5)
             });
+
+            // Update the conversation context with the new context from the response
+            setConversationContext(response.data.userContext);
 
             // Add the bot's response to the messages
             const botResponse = {
@@ -384,71 +732,78 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
             };
 
             setMessages(prev => [...prev, botResponse]);
+
         } catch (error) {
-            console.error('Error in chat:', error);
-            setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: 'I apologize, but I encountered an error. Please try again or contact support if the issue persists.',
-                timestamp: new Date().toISOString()
-            }]);
+            console.error('Error selecting address:', error);
+            setAddressError('Failed to process the selected address. Please try again.');
         } finally {
-            setIsProcessing(false);
+            setIsValidatingAddress(false);
         }
+    };
+
+    const getAddressComponent = (placeDetails, type, nameType = 'long_name') => {
+        const component = placeDetails.address_components?.find(c => c.types.includes(type));
+        return component ? component[nameType] : '';
+    };
+
+    const validateAddress = (address) => {
+        const issues = [];
+        if (!address.street) issues.push('Street address is missing or invalid');
+        if (!address.city) issues.push('City is missing or invalid');
+        if (!address.state) issues.push('State/Province is missing or invalid');
+        if (!address.country) {
+            issues.push('Country is missing or invalid');
+        } else if (!['United States', 'Canada'].includes(address.country)) {
+            issues.push('Currently, we only support shipping within the United States and Canada');
+        }
+        if (!address.postalCode) {
+            const postalTerm = address.country === 'Canada' ? 'postal code' : 'ZIP code';
+            issues.push(`${postalTerm} is missing or invalid`);
+        } else {
+            const usZipRegex = /^\d{5}(-\d{4})?$/;
+            const canadianPostalRegex = /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/;
+            const isUS = address.country === 'United States';
+            const isCanada = address.country === 'Canada';
+
+            if (isUS && !usZipRegex.test(address.postalCode)) {
+                issues.push('Please enter a valid ZIP code (e.g., 12345 or 12345-6789)');
+            } else if (isCanada && !canadianPostalRegex.test(address.postalCode)) {
+                issues.push('Please enter a valid postal code (e.g., A1A 1A1)');
+            }
+        }
+        return issues;
+    };
+
+    const updateAddressInContext = (formattedAddress) => {
+        setConversationContext(prev => ({
+            ...prev,
+            [currentAddressType === 'origin' ? 'fromAddress' : 'toAddress']: {
+                ...formattedAddress,
+                formatted_address: Object.values(formattedAddress).filter(Boolean).join(', ')
+            }
+        }));
     };
 
     // Update suggestions based on current step
     const updateSuggestionsForStep = (step) => {
-        const stepSuggestions = {
-            'initial': [
-                "I need to ship a package",
-                "I have a freight shipment",
-                "What information do you need?"
-            ],
-            'ship-from': [
-                "My pickup address is...",
-                "I'm shipping from...",
-                "The origin address is..."
-            ],
-            'ship-to': [
-                "The delivery address is...",
-                "I'm shipping to...",
-                "The destination is..."
-            ],
-            'packages': [
-                "The package weighs...",
-                "The dimensions are...",
-                "It's a pallet of..."
-            ],
-            'rates': [
-                "Show me available rates",
-                "What's the cheapest option?",
-                "What's the fastest option?"
-            ],
-            'rate-selection': [
-                "I'll go with the cheapest",
-                "I need the fastest option",
-                "Tell me more about option 1"
-            ],
-            'review': [
-                "Everything looks good",
-                "I need to change something",
-                "Complete my shipment"
-            ]
-        };
-
         setSuggestions(stepSuggestions[step] || [
             "What's next?",
-            "Help me finish my shipment",
-            "What information is missing?"
+            "I need help",
+            "Go back",
+            "Start over"
         ]);
     };
 
-    const handleSuggestionClick = (suggestion) => {
+    const handleSuggestionClick = async (suggestion) => {
         setInput(suggestion);
+        // Automatically send the message
+        await handleSend(suggestion);
     };
 
     const formatTimestamp = (timestamp) => {
-        return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
     // Render rate message differently
@@ -559,273 +914,264 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
 
     // Render progress indicator for current step
     const renderStepIndicator = () => {
-        const steps = [
-            { id: 'initial', label: 'Start', icon: <CompareArrows /> },
-            { id: 'ship-from', label: 'From', icon: <LocationOn /> },
-            { id: 'ship-to', label: 'To', icon: <LocationOn /> },
-            { id: 'packages', label: 'Package', icon: <Inventory /> },
-            { id: 'rates', label: 'Rates', icon: <Payment /> },
-            { id: 'rate-selection', label: 'Select', icon: <CheckCircle /> },
-            { id: 'review', label: 'Review', icon: <RateReview /> }
-        ];
-
-        const currentIndex = steps.findIndex(step => step.id === conversationContext.currentStep);
-
-        return (
-            <Box
-                sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    p: 1,
-                    bgcolor: 'background.default',
-                    borderTop: '1px solid',
-                    borderColor: 'divider'
-                }}
-            >
-                {steps.map((step, index) => (
-                    <Tooltip key={step.id} title={step.label} arrow>
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                opacity: index <= currentIndex ? 1 : 0.5
-                            }}
-                        >
-                            <Chip
-                                icon={step.icon}
-                                label={step.label}
-                                size="small"
-                                color={index === currentIndex ? 'primary' : 'default'}
-                                variant={index <= currentIndex ? 'filled' : 'outlined'}
-                            />
-                        </Box>
-                    </Tooltip>
-                ))}
-            </Box>
-        );
+        // This function is no longer needed
+        return null;
     };
 
-    // Main return statement with updated components
+    // Render the chat interface
     return (
-        <AnimatePresence>
-            {!isOpen ? (
-                <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    exit={{ scale: 0 }}
-                    style={{
-                        position: 'fixed',
-                        bottom: '16px',
-                        right: '16px',
-                        zIndex: 1000
-                    }}
-                >
-                    <Badge badgeContent={unreadCount} color="error">
-                        <IconButton
-                            onClick={handleOpen}
-                            sx={{
-                                bgcolor: 'primary.main',
-                                color: 'white',
-                                width: '56px',
-                                height: '56px',
-                                '&:hover': {
-                                    bgcolor: 'primary.dark'
-                                }
-                            }}
-                        >
-                            <Send />
-                        </IconButton>
-                    </Badge>
-                </motion.div>
-            ) : (
-                <motion.div
-                    initial={{ y: 100, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: 100, opacity: 0 }}
-                    style={{
-                        position: 'fixed',
-                        bottom: isFullscreen ? '0' : '16px',
-                        right: isFullscreen ? '0' : '16px',
-                        width: isFullscreen ? '100%' : '400px',
-                        height: isFullscreen ? '100%' : '600px',
-                        zIndex: 1000
-                    }}
-                >
-                    <Paper
+        <Box
+            sx={{
+                position: 'fixed',
+                bottom: 20,
+                right: 20,
+                zIndex: 1000,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end'
+            }}
+        >
+            {/* Chat button when closed */}
+            {!isOpen && (
+                <Badge badgeContent={unreadCount} color="error">
+                    <IconButton
+                        onClick={handleOpen}
                         sx={{
-                            height: '100%',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            bgcolor: 'background.paper',
-                            borderRadius: isFullscreen ? 0 : 2,
-                            overflow: 'hidden',
-                            boxShadow: theme.shadows[10]
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            '&:hover': {
+                                bgcolor: 'primary.dark'
+                            },
+                            width: 56,
+                            height: 56
                         }}
                     >
-                        {/* Header */}
-                        <Box
-                            sx={{
-                                p: 2,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                borderBottom: '1px solid',
-                                borderColor: 'divider',
-                                bgcolor: 'primary.main',
-                                color: 'white'
-                            }}
-                        >
-                            <Box>
-                                <Typography variant="h6">
-                                    SolushipX AI Assistant
-                                </Typography>
-                                <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                                    Let's create your shipment together
-                                </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                <IconButton onClick={toggleFullscreen} sx={{ color: 'white' }}>
-                                    {isFullscreen ? <FullscreenExit /> : <Fullscreen />}
-                                </IconButton>
-                                <IconButton onClick={handleClose} sx={{ color: 'white' }}>
-                                    <Close />
-                                </IconButton>
-                            </Box>
-                        </Box>
+                        <LocalShipping />
+                    </IconButton>
+                </Badge>
+            )}
 
-                        {/* Step Indicator */}
-                        {renderStepIndicator()}
-
-                        {/* Messages Area */}
-                        <Box
+            {/* Chat interface when open */}
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 20 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <Paper
                             ref={chatContainerRef}
                             sx={{
-                                flex: 1,
-                                overflowY: 'auto',
-                                p: 2,
+                                width: isFullscreen ? '100vw' : 400,
+                                height: isFullscreen ? '100vh' : 500,
                                 display: 'flex',
-                                flexDirection: 'column'
+                                flexDirection: 'column',
+                                overflow: 'hidden',
+                                position: 'relative',
+                                boxShadow: 3
                             }}
                         >
-                            {messages.map((message, index) => renderMessage(message, index))}
+                            {/* Chat header */}
+                            <Box
+                                sx={{
+                                    p: 2,
+                                    bgcolor: 'primary.main',
+                                    color: 'white',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                }}
+                            >
+                                <Typography variant="h6">SolushipX Assistant</Typography>
+                                <Box>
+                                    <IconButton
+                                        size="small"
+                                        onClick={toggleFullscreen}
+                                        sx={{ color: 'white' }}
+                                    >
+                                        {isFullscreen ? <FullscreenExit /> : <Fullscreen />}
+                                    </IconButton>
+                                    <IconButton
+                                        size="small"
+                                        onClick={handleClose}
+                                        sx={{ color: 'white' }}
+                                    >
+                                        <Close />
+                                    </IconButton>
+                                </Box>
+                            </Box>
 
-                            {/* Streaming message */}
-                            {streamingMessage && (
-                                <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}>
-                                    <Paper
+                            {/* Chat messages */}
+                            <Box
+                                sx={{
+                                    flex: 1,
+                                    overflowY: 'auto',
+                                    p: 2,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 1
+                                }}
+                            >
+                                {messages.map((message, index) => renderMessage(message, index))}
+                                {streamingMessage && (
+                                    <Box
                                         sx={{
-                                            p: 2,
-                                            maxWidth: '70%',
-                                            bgcolor: 'background.paper',
-                                            borderRadius: 2
+                                            display: 'flex',
+                                            justifyContent: 'flex-start',
+                                            gap: 1,
+                                            mb: 2
                                         }}
                                     >
-                                        <Typography
+                                        <Paper
                                             sx={{
-                                                whiteSpace: 'pre-wrap',
-                                                wordBreak: 'break-word'
+                                                p: 2,
+                                                maxWidth: '70%',
+                                                bgcolor: 'background.paper',
+                                                borderRadius: 2,
+                                                boxShadow: 1
                                             }}
                                         >
-                                            {streamingMessage}
-                                        </Typography>
-                                    </Paper>
-                                </Box>
-                            )}
+                                            <Typography
+                                                sx={{
+                                                    whiteSpace: 'pre-wrap',
+                                                    wordBreak: 'break-word'
+                                                }}
+                                            >
+                                                {streamingMessage}
+                                                <CircularProgress
+                                                    size={12}
+                                                    sx={{ ml: 1, verticalAlign: 'middle' }}
+                                                />
+                                            </Typography>
+                                        </Paper>
+                                    </Box>
+                                )}
+                                <div ref={messagesEndRef} />
+                            </Box>
 
-                            {/* Processing indicator */}
-                            {isProcessing && !streamingMessage && (
-                                <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}>
-                                    <Paper
-                                        sx={{
-                                            p: 2,
-                                            bgcolor: 'background.paper',
-                                            borderRadius: 2,
-                                            maxWidth: '70%'
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <CircularProgress size={16} />
-                                            <Typography>Thinking...</Typography>
-                                        </Box>
-                                    </Paper>
-                                </Box>
-                            )}
-
-                            <div ref={messagesEndRef} />
-                        </Box>
-
-                        {/* Input Area */}
-                        <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                            {/* Suggestions */}
+                            {/* Quick suggestions */}
                             {suggestions.length > 0 && (
-                                <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                                     {suggestions.map((suggestion, index) => (
-                                        <Button
+                                        <Chip
                                             key={index}
-                                            variant="outlined"
-                                            size="small"
+                                            label={suggestion}
                                             onClick={() => handleSuggestionClick(suggestion)}
                                             sx={{
-                                                borderRadius: 2,
-                                                textTransform: 'none',
-                                                bgcolor: 'background.paper'
+                                                cursor: 'pointer',
+                                                '&:hover': {
+                                                    bgcolor: 'primary.main',
+                                                    color: 'white'
+                                                }
                                             }}
-                                        >
-                                            {suggestion}
-                                        </Button>
+                                        />
                                     ))}
                                 </Box>
                             )}
 
-                            {/* Input Field */}
+                            {/* Input area */}
                             <Box
                                 sx={{
+                                    p: 2,
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider',
                                     display: 'flex',
-                                    gap: 2,
-                                    alignItems: 'center'
+                                    gap: 1
                                 }}
                             >
-                                <input
-                                    type="text"
-                                    value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                                    style={{
-                                        flex: 1,
-                                        padding: '12px',
-                                        border: '1px solid',
-                                        borderColor: theme.palette.divider,
-                                        borderRadius: '8px',
-                                        outline: 'none',
-                                        fontSize: '16px',
-                                        backgroundColor: theme.palette.background.paper
-                                    }}
-                                    placeholder="Type your message here..."
-                                />
+                                {isAddressInput ? (
+                                    <Autocomplete
+                                        freeSolo
+                                        fullWidth
+                                        options={addressPredictions}
+                                        getOptionLabel={(option) => typeof option === 'string' ? option : option.description}
+                                        inputValue={input}
+                                        onInputChange={(event, newValue) => {
+                                            setInput(newValue);
+                                            if (newValue && newValue.length >= 3) {
+                                                GooglePlacesService.getPlacePredictions(newValue)
+                                                    .then(predictions => setAddressPredictions(predictions))
+                                                    .catch(error => {
+                                                        console.error('Error fetching predictions:', error);
+                                                        setAddressError('Failed to fetch address suggestions. Please try again.');
+                                                    });
+                                            }
+                                        }}
+                                        onChange={(event, newValue) => {
+                                            if (newValue && typeof newValue !== 'string' && newValue.place_id) {
+                                                handleAddressSelect(newValue);
+                                            }
+                                        }}
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                fullWidth
+                                                placeholder={`Enter address or postal code (US/Canada)`}
+                                                error={!!addressError}
+                                                helperText={addressError}
+                                                InputProps={{
+                                                    ...params.InputProps,
+                                                    endAdornment: (
+                                                        <>
+                                                            {isValidatingAddress && (
+                                                                <CircularProgress color="inherit" size={20} />
+                                                            )}
+                                                            {params.InputProps.endAdornment}
+                                                        </>
+                                                    )
+                                                }}
+                                            />
+                                        )}
+                                        renderOption={(props, option) => (
+                                            <li {...props}>
+                                                <LocationOn sx={{ mr: 1, color: option.types?.includes('postal_code') ? 'success.main' : 'text.secondary' }} />
+                                                <Box>
+                                                    <Typography variant="body2">{option.description}</Typography>
+                                                    {option.types?.includes('postal_code') && (
+                                                        <Typography variant="caption" color="success.main">
+                                                            Postal Code
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            </li>
+                                        )}
+                                    />
+                                ) : (
+                                    <TextField
+                                        fullWidth
+                                        variant="outlined"
+                                        placeholder="Type your message..."
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyPress={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSend();
+                                            }
+                                        }}
+                                        disabled={isProcessing}
+                                        size="small"
+                                        inputRef={inputRef}
+                                    />
+                                )}
                                 <IconButton
-                                    onClick={handleSend}
-                                    disabled={!input.trim() || isProcessing}
-                                    sx={{
-                                        bgcolor: 'primary.main',
-                                        color: 'white',
-                                        '&:hover': {
-                                            bgcolor: 'primary.dark'
-                                        },
-                                        '&.Mui-disabled': {
-                                            bgcolor: 'action.disabledBackground',
-                                            color: 'action.disabled'
-                                        }
-                                    }}
+                                    color="primary"
+                                    onClick={() => handleSend()}
+                                    disabled={isProcessing || !input.trim()}
                                 >
-                                    <Send />
+                                    {isProcessing ? (
+                                        <CircularProgress size={24} />
+                                    ) : (
+                                        <Send />
+                                    )}
                                 </IconButton>
                             </Box>
-                        </Box>
-                    </Paper>
-                </motion.div>
-            )}
-        </AnimatePresence>
+                        </Paper>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </Box>
     );
 };
 
