@@ -13,13 +13,15 @@ import {
     Chip,
     CircularProgress,
     Tooltip,
-    Fade
+    Fade,
+    Autocomplete
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import PersonIcon from '@mui/icons-material/Person';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getAuth } from 'firebase/auth';
@@ -94,6 +96,14 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         shipmentType: null,
         pendingQuestion: null
     });
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
+    const [customerAddresses, setCustomerAddresses] = useState([]);
+    const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+    const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+    const [filteredCustomers, setFilteredCustomers] = useState([]);
+    const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+    const [customerError, setCustomerError] = useState(null);
 
     // Sync local messages with prop messages when they change
     useEffect(() => {
@@ -315,7 +325,7 @@ Country: ${completeAddress.country}
 
             const incompleteAddressMessage = {
                 id: Date.now() + 1,
-                text: `I see you've selected ${completeAddress.company}. I need a complete address including street, city, state/province, and postal code. What's the street address?`,
+                text: `I see you've selected an address for ${selectedCustomer?.name}, but I need a complete address. What's the street address?`,
                 sender: 'assistant'
             };
 
@@ -327,23 +337,28 @@ Country: ${completeAddress.country}
             ]);
 
             // Set the current field to collect street address
-            setCurrentField('fromStreet');
+            setCurrentField('toStreet');
             setShowAddressSuggestions(false);
             setMessage('');
             return;
         }
 
-        // If the address is complete, proceed as before
-        // Update shipment data with the selected address
+        // If the address is complete, proceed with setting it as the origin address
         setShipmentData(prev => ({
             ...prev,
-            fromCompany: completeAddress.company,
-            fromStreet: completeAddress.street,
-            fromCity: completeAddress.city,
-            fromState: completeAddress.state,
-            fromPostalCode: completeAddress.postalCode,
-            fromCountry: completeAddress.country,
-            currentField: 'toCompany', // Skip directly to destination company
+            fromAddress: {
+                company: completeAddress.company,
+                street: completeAddress.street,
+                street2: completeAddress.street2 || '',
+                city: completeAddress.city,
+                state: completeAddress.state,
+                postalCode: completeAddress.postalCode,
+                country: completeAddress.country,
+                contactName: completeAddress.contactName || '',
+                contactPhone: completeAddress.contactPhone || '',
+                contactEmail: completeAddress.contactEmail || '',
+                specialInstructions: completeAddress.specialInstructions || 'none'
+            }
         }));
 
         // Format the complete address with clear structure
@@ -358,8 +373,8 @@ ${completeAddress.contactName ? `Contact: ${completeAddress.contactName}` : ''}
 ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         `.trim();
 
-        // First send the user selection message to the parent with full address details
-        const userText = `I'll use this address:\n\n${formattedAddress}`;
+        // Send the user selection message to the parent with full address details
+        const userText = `I'll use this pickup address:\n\n${formattedAddress}`;
         onSend(userText);
 
         // Create message objects for our local state
@@ -371,13 +386,13 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
 
         const confirmationMessage = {
             id: Date.now() + 1,
-            text: `Perfect! I've recorded this address:\n\n${formattedAddress}`,
+            text: `Perfect! I've got the complete pickup address:\n\n${formattedAddress}`,
             sender: 'assistant'
         };
 
         const followUpMessage = {
             id: Date.now() + 2,
-            text: "Now, let's move on to the destination. What company or person is receiving the package?",
+            text: "Now, let's find the destination. Please search for a customer to deliver to.",
             sender: 'assistant'
         };
 
@@ -389,13 +404,20 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
             followUpMessage
         ]);
 
-        setShowAddressSuggestions(false); // Hide suggestions after selection
+        // Hide address suggestions and show customer search
+        setShowAddressSuggestions(false);
+        setShowCustomerSearch(true);
+        setCurrentField('destination');
+
+        // Fetch customers for search
+        fetchCustomers();
+
         setMessage(''); // Clear input field
     };
 
     // Enhanced message processing with better NLP
-    const processUserMessage = (userMessage) => {
-        const msg = userMessage.toLowerCase();
+    const processUserMessage = async (message) => {
+        const msg = message.toLowerCase();
 
         // Add to conversation history
         setConversationContext(prev => ({
@@ -406,14 +428,15 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         // Show typing indicator
         setIsTyping(true);
 
-        // Simulate AI thinking time
-        setTimeout(() => {
-            setIsTyping(false);
+        try {
+            // Simulate AI thinking time
+            await new Promise(resolve => setTimeout(resolve, 800));
 
             // Handle greetings with context awareness
             if (isGreeting(msg)) {
                 const greetingResponse = generateGreetingResponse();
                 addAssistantMessage(greetingResponse);
+                setIsTyping(false);
                 return;
             }
 
@@ -424,7 +447,7 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                     items: [
                         {
                             ...prev.items[0],
-                            name: userMessage
+                            name: message
                         }
                     ]
                 }));
@@ -432,25 +455,69 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                 // Store shipment type in context
                 setConversationContext(prev => ({
                     ...prev,
-                    shipmentType: userMessage
+                    shipmentType: message
                 }));
 
                 // Show address suggestions immediately when we know what's being shipped
                 if (companyAddresses && companyAddresses.length > 0) {
                     setShowAddressSuggestions(true);
-                    const response = "Great! I'll help you ship " + userMessage + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
+                    setShowCustomerSearch(false);
+                    const response = "Great! I'll help you ship " + message + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
                     addAssistantMessage(response);
                 } else {
-                    const response = "Great! I'll help you ship " + userMessage + ". What company or person is sending this?";
+                    const response = "Great! I'll help you ship " + message + ". What company or person is sending this?";
                     addAssistantMessage(response);
                     setCurrentField('fromCompany');
                 }
+                setIsTyping(false);
                 return;
             }
 
-            // Rest of the existing message processing logic
-            // ... existing code ...
-        }, 800);
+            // Handle destination input
+            if (currentField === 'destination' || msg.includes('customer')) {
+                // Hide address suggestions and show customer search
+                setShowAddressSuggestions(false);
+                setShowCustomerSearch(true);
+
+                // Update shipment data with destination company
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        company: message
+                    }
+                }));
+
+                // Fetch and show customer list
+                await fetchCustomers();
+                addAssistantMessage("Please search and select a customer from the list.");
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle manual destination address input if no customer is selected
+            if (currentField === 'toCompany') {
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        company: message
+                    }
+                }));
+                setCurrentField('toStreet');
+                addAssistantMessage("What's the street address for delivery?");
+                setIsTyping(false);
+                return;
+            }
+
+            // Rest of the existing message processing logic...
+
+        } catch (error) {
+            console.error('Error processing message:', error);
+            addAssistantMessage("I apologize, but I encountered an error processing your request. Please try again.");
+        } finally {
+            setIsTyping(false);
+        }
     };
 
     // Helper functions for enhanced NLP
@@ -719,15 +786,17 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
 
     // Render the address suggestion list
     const renderAddressSuggestions = () => {
-        if (!showAddressSuggestions || companyAddresses.length === 0) return null;
+        if (!showAddressSuggestions) return null;
+
+        // Use customerAddresses if we're selecting a destination address, otherwise use companyAddresses
+        const addressesToShow = currentField === 'destination' ? customerAddresses : companyAddresses;
+
+        if (addressesToShow.length === 0) return null;
 
         // Sort addresses to show default addresses first
-        const sortedAddresses = [...companyAddresses].sort((a, b) => {
-            // If a is default and b is not, a comes first
+        const sortedAddresses = [...addressesToShow].sort((a, b) => {
             if (a.isDefault && !b.isDefault) return -1;
-            // If b is default and a is not, b comes first
             if (b.isDefault && !a.isDefault) return 1;
-            // Otherwise maintain original order
             return 0;
         });
 
@@ -749,7 +818,7 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                     gap: 1
                 }}>
                     <LocationOnIcon sx={{ fontSize: 20 }} />
-                    Select a Pickup Address
+                    {currentField === 'destination' ? 'Select a Delivery Address' : 'Select a Pickup Address'}
                 </Typography>
                 <List sx={{
                     maxHeight: '300px',
@@ -854,6 +923,139 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
             </Box>
         );
     };
+
+    const fetchCustomers = async () => {
+        try {
+            setIsLoadingCustomers(true);
+            setCustomerError(null);
+            const currentUser = auth.currentUser;
+
+            if (!currentUser) {
+                setCustomerError('User not authenticated');
+                return;
+            }
+
+            // Get user's data to determine company ID
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (!userDoc.exists()) {
+                setCustomerError('User data not found');
+                return;
+            }
+
+            const userData = userDoc.data();
+            const companyId = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+
+            if (!companyId) {
+                setCustomerError('No company associated with this user');
+                return;
+            }
+
+            // Fetch customers for the company
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('companyId', '==', companyId)
+            );
+
+            const querySnapshot = await getDocs(customersQuery);
+
+            if (querySnapshot.empty) {
+                setCustomerError('No customers found for this company.');
+                return;
+            }
+
+            const customersData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            setCustomers(customersData);
+            setFilteredCustomers(customersData);
+        } catch (err) {
+            console.error('Error fetching customers:', err);
+            setCustomerError('Failed to load customers. Please try again.');
+        } finally {
+            setIsLoadingCustomers(false);
+        }
+    };
+
+    const handleCustomerSelect = (customer) => {
+        setSelectedCustomer(customer);
+
+        // Get all addresses for the customer
+        const customerAddresses = customer.addresses || [];
+        setCustomerAddresses(customerAddresses);
+
+        // Hide customer search and show address selection
+        setShowCustomerSearch(false);
+        setShowAddressSuggestions(true);
+
+        // Add a message to confirm customer selection and prompt for address selection
+        const userMessage = {
+            id: Date.now(),
+            text: `Selected customer: ${customer.name}`,
+            sender: 'user'
+        };
+
+        const assistantMessage = {
+            id: Date.now() + 1,
+            text: `Great! I see ${customer.name} has ${customerAddresses.length} saved address${customerAddresses.length === 1 ? '' : 'es'}. Please select the specific delivery address from the options below.`,
+            sender: 'assistant'
+        };
+
+        setLocalMessages(prevMessages => [...prevMessages, userMessage, assistantMessage]);
+    };
+
+    const renderCustomerSearch = () => (
+        <Box sx={{ mb: 2 }}>
+            <Autocomplete
+                options={customers}
+                getOptionLabel={(option) => option.name || ''}
+                value={selectedCustomer}
+                onChange={(event, newValue) => {
+                    if (newValue) {
+                        handleCustomerSelect(newValue);
+                    }
+                }}
+                renderInput={(params) => (
+                    <TextField
+                        {...params}
+                        label="Search Customers"
+                        variant="outlined"
+                        fullWidth
+                        placeholder="Start typing to search customers..."
+                        error={!!customerError}
+                        helperText={customerError}
+                    />
+                )}
+                renderOption={(props, option) => (
+                    <Box component="li" {...props}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                            <PersonIcon sx={{ mr: 2, color: 'primary.main' }} />
+                            <Box>
+                                <Typography variant="subtitle1">{option.name}</Typography>
+                                {option.contacts?.[0] && (
+                                    <Typography variant="body2" color="textSecondary">
+                                        {option.contacts[0].name}
+                                    </Typography>
+                                )}
+                            </Box>
+                        </Box>
+                    </Box>
+                )}
+                filterOptions={(options, { inputValue }) => {
+                    return options.filter(option =>
+                        option.name?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                        option.contacts?.some(contact =>
+                            contact.name?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                            contact.email?.toLowerCase().includes(inputValue.toLowerCase())
+                        )
+                    );
+                }}
+                loading={isLoadingCustomers}
+                loadingText="Loading customers..."
+            />
+        </Box>
+    );
 
     return (
         <AnimatePresence>
@@ -992,8 +1194,11 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                             </Box>
                         )}
 
+                        {/* Customer Search */}
+                        {showCustomerSearch && renderCustomerSearch()}
+
                         {/* Address Suggestions */}
-                        {renderAddressSuggestions()}
+                        {showAddressSuggestions && renderAddressSuggestions()}
 
                         {/* Input Area - hide when showing address suggestions and we're at the origin address step */}
                         {!(showAddressSuggestions && (currentField === 'intro' || currentField === 'fromCompany')) && (

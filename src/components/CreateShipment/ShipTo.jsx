@@ -4,6 +4,8 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import './ShipTo.css';
+import { Autocomplete, TextField, Box, Typography, Chip } from '@mui/material';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
 
 const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     const { currentUser } = useAuth();
@@ -32,7 +34,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     const [showAddAddressForm, setShowAddAddressForm] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchFocused, setSearchFocused] = useState(false);
+    const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
     const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage] = useState(50);
@@ -156,39 +158,15 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
     const handleCustomerSelect = (customer) => {
         setSelectedCustomer(customer);
-        const shippingAddresses = customer.addresses?.filter(addr => addr.type === 'shipping') || [];
-        setCustomerAddresses(shippingAddresses);
-
-        // Find the default/primary address
-        const defaultAddressIndex = shippingAddresses.findIndex(addr => addr.default === true);
-
-        // If there's a default address, select it; otherwise, select the first address if available
-        if (defaultAddressIndex !== -1) {
-            setSelectedAddressId(defaultAddressIndex);
-            handleAddressChange(defaultAddressIndex);
-        } else if (shippingAddresses.length > 0) {
-            setSelectedAddressId(0);
-            handleAddressChange(0);
+        setCustomerAddresses(customer.addresses || []);
+        setShowAddressSuggestions(true);
+        // Set default address if available
+        const defaultAddress = customer.addresses?.find(addr => addr.default);
+        if (defaultAddress) {
+            setSelectedAddressId(customer.addresses.indexOf(defaultAddress));
         } else {
             setSelectedAddressId(null);
         }
-
-        setFormData({
-            name: '',
-            company: customer.name || '',
-            attention: '',
-            street: '',
-            street2: '',
-            city: '',
-            state: '',
-            postalCode: '',
-            country: 'US',
-            contactName: customer.contacts?.[0]?.name || '',
-            contactPhone: customer.contacts?.[0]?.phone || '',
-            contactEmail: customer.contacts?.[0]?.email || '',
-            specialInstructions: ''
-        });
-        setSearchFocused(false);
     };
 
     const handleAddressChange = useCallback((addressIndex) => {
@@ -325,6 +303,133 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         onNext();
     }, [selectedCustomer, selectedAddressId, formData, onNext, onDataChange]);
 
+    const renderCustomerSearch = () => (
+        <div className="customer-search mb-4">
+            <Autocomplete
+                options={customers}
+                getOptionLabel={(option) => option.name}
+                value={selectedCustomer}
+                onChange={(event, newValue) => {
+                    if (newValue) {
+                        handleCustomerSelect(newValue);
+                    }
+                }}
+                renderInput={(params) => (
+                    <TextField
+                        {...params}
+                        label="Search Customers"
+                        variant="outlined"
+                        fullWidth
+                        placeholder="Start typing to search customers..."
+                    />
+                )}
+                renderOption={(props, option) => (
+                    <Box component="li" {...props}>
+                        <div className="d-flex align-items-center w-100">
+                            <div className="customer-avatar me-3">
+                                {option.name?.charAt(0) || 'C'}
+                            </div>
+                            <div>
+                                <Typography variant="subtitle1">{option.name}</Typography>
+                                {option.contacts?.[0] && (
+                                    <Typography variant="body2" color="textSecondary">
+                                        <i className="bi bi-person me-1"></i> {option.contacts[0].name}
+                                    </Typography>
+                                )}
+                            </div>
+                        </div>
+                    </Box>
+                )}
+                filterOptions={(options, { inputValue }) => {
+                    return options.filter(option =>
+                        option.name.toLowerCase().includes(inputValue.toLowerCase()) ||
+                        option.contacts?.some(contact =>
+                            contact.name?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                            contact.email?.toLowerCase().includes(inputValue.toLowerCase())
+                        )
+                    );
+                }}
+            />
+        </div>
+    );
+
+    const renderAddressSuggestions = () => (
+        <div className="address-suggestions mb-4">
+            <div className="card border-primary">
+                <div className="card-header bg-light d-flex align-items-center">
+                    <LocationOnIcon className="me-2" />
+                    <h6 className="mb-0">Select Shipping Destination</h6>
+                </div>
+                <div className="card-body p-0">
+                    <div className="address-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                        {customerAddresses.length === 0 ? (
+                            <div className="text-center py-4">
+                                <p className="text-muted mb-3">No saved addresses found</p>
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={() => setShowAddAddressForm(true)}
+                                >
+                                    <i className="bi bi-plus-lg me-1"></i> Add Your First Address
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="row g-3 p-3">
+                                {customerAddresses.map((address, index) => (
+                                    <div key={index} className="col-md-6">
+                                        <div
+                                            className={`card h-100 address-card ${selectedAddressId === index ? 'selected border-primary' : ''}`}
+                                            onClick={() => handleAddressChange(index)}
+                                            style={{ cursor: 'pointer' }}
+                                        >
+                                            <div className="card-body">
+                                                <div className="d-flex justify-content-between align-items-start mb-2">
+                                                    <h6 className="card-title mb-0">{address.street}</h6>
+                                                    {address.default && (
+                                                        <Chip
+                                                            label="Default"
+                                                            color="primary"
+                                                            size="small"
+                                                        />
+                                                    )}
+                                                </div>
+                                                {address.street2 && (
+                                                    <Typography variant="body2" className="mb-1">
+                                                        {address.street2}
+                                                    </Typography>
+                                                )}
+                                                <Typography variant="body2" className="mb-2">
+                                                    {address.city}, {address.state} {address.zip}
+                                                </Typography>
+                                                <div className="mt-2 pt-2 border-top">
+                                                    {address.attention && (
+                                                        <Typography variant="body2" className="mb-1">
+                                                            <span className="text-muted">Attention:</span> {address.attention}
+                                                        </Typography>
+                                                    )}
+                                                    {address.specialInstructions && (
+                                                        <>
+                                                            <Typography variant="body2" className="mb-1">
+                                                                <span className="text-muted">Special Instructions:</span>
+                                                            </Typography>
+                                                            <Typography variant="body2" className="fst-italic">
+                                                                {address.specialInstructions}
+                                                            </Typography>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
     if (loading) {
         return (
             <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '200px' }}>
@@ -352,527 +457,13 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
             <div className="card shadow-sm mb-4">
                 <div className="card-body">
-                    <h5 className="card-title mb-4">Select Customer</h5>
+                    <h5 className="card-title mb-4">Ship To</h5>
 
-                    <div className="customer-selection mb-4">
-                        <div className="search-container position-relative">
-                            <div className="input-group">
-                                <span className="input-group-text bg-white border-end-0">
-                                    <i className="bi bi-search text-muted"></i>
-                                </span>
-                                <input
-                                    type="text"
-                                    className="form-control border-start-0 ps-0"
-                                    placeholder="Search by customer name, company, contact, or location..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onFocus={() => setSearchFocused(true)}
-                                />
-                                {searchQuery && (
-                                    <button
-                                        className="btn btn-outline-secondary border-start-0"
-                                        type="button"
-                                        onClick={() => setSearchQuery('')}
-                                    >
-                                        <i className="bi bi-x"></i>
-                                    </button>
-                                )}
-                            </div>
+                    {renderCustomerSearch()}
 
-                            {searchFocused && searchQuery && (
-                                <div className="search-results-dropdown">
-                                    {filteredCustomers.length === 0 ? (
-                                        <div className="p-3 text-center text-muted">
-                                            <i className="bi bi-search me-2"></i> No customers found
-                                        </div>
-                                    ) : (
-                                        <div className="customer-search-results">
-                                            {filteredCustomers.map((customer) => (
-                                                <div
-                                                    key={customer.id}
-                                                    className="customer-search-item"
-                                                    onClick={() => handleCustomerSelect(customer)}
-                                                >
-                                                    <div className="d-flex align-items-center">
-                                                        <div className="customer-avatar me-3">
-                                                            {customer.name?.charAt(0) || 'C'}
-                                                        </div>
-                                                        <div>
-                                                            <div className="fw-medium">{customer.name}</div>
-                                                            <div className="small text-muted">
-                                                                {customer.contacts?.[0]?.email || 'No email'}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        {selectedCustomer ? (
-                            <div className="selected-customer mt-4">
-                                <div className="card border-primary">
-                                    <div className="card-body">
-                                        <div className="d-flex justify-content-between align-items-start">
-                                            <div>
-                                                <h6 className="mb-1">{selectedCustomer.name}</h6>
-                                                <p className="text-muted small mb-0">
-                                                    {selectedCustomer.contacts?.[0]?.name && (
-                                                        <span className="me-2">
-                                                            <i className="bi bi-person me-1"></i> {selectedCustomer.contacts[0].name}
-                                                        </span>
-                                                    )}
-                                                    {selectedCustomer.contacts?.[0]?.email && (
-                                                        <span className="me-2">
-                                                            <i className="bi bi-envelope me-1"></i> {selectedCustomer.contacts[0].email}
-                                                        </span>
-                                                    )}
-                                                    {selectedCustomer.contacts?.[0]?.phone && (
-                                                        <span>
-                                                            <i className="bi bi-telephone me-1"></i> {selectedCustomer.contacts[0].phone}
-                                                        </span>
-                                                    )}
-                                                </p>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm btn-outline-secondary"
-                                                onClick={() => {
-                                                    setSelectedCustomer(null);
-                                                    setCustomerAddresses([]);
-                                                    setSelectedAddressId(null);
-                                                }}
-                                            >
-                                                Change
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="customer-list mt-4">
-                                <div className="d-flex justify-content-between align-items-center mb-3">
-                                    <h6 className="mb-0">Customer List</h6>
-                                    <div className="d-flex align-items-center">
-                                        <button
-                                            type="button"
-                                            className="btn btn-sm btn-outline-secondary me-2"
-                                            onClick={toggleViewMode}
-                                            style={{
-                                                backgroundColor: viewMode === 'list' ? '#f8f9fa' : 'transparent',
-                                                color: '#212529',
-                                                borderColor: '#dee2e6'
-                                            }}
-                                        >
-                                            <i className={`bi ${viewMode === 'grid' ? 'bi-list' : 'bi-grid'}`}></i>
-                                            {viewMode === 'grid' ? ' List View' : ' Grid View'}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {viewMode === 'grid' ? (
-                                    <div className="row g-3">
-                                        {currentItems.map((customer) => (
-                                            <div key={customer.id} className="col-md-6">
-                                                <div
-                                                    className="card h-100 customer-card"
-                                                    onClick={() => handleCustomerSelect(customer)}
-                                                >
-                                                    <div className="card-body">
-                                                        <div className="d-flex align-items-center mb-3">
-                                                            <div className="customer-avatar me-3">
-                                                                {customer.name?.charAt(0) || 'C'}
-                                                            </div>
-                                                            <div>
-                                                                <h6 className="card-title mb-1 text-dark">{customer.name}</h6>
-                                                                <p className="card-text small text-muted mb-0">
-                                                                    {customer.addresses?.length || 0} address{customer.addresses?.length !== 1 ? 'es' : ''}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="customer-details">
-                                                            {customer.contacts?.[0] && (
-                                                                <div className="small mb-1">
-                                                                    <i className="bi bi-person me-1"></i> {customer.contacts[0].name}
-                                                                </div>
-                                                            )}
-                                                            {customer.contacts?.[0]?.email && (
-                                                                <div className="small mb-1">
-                                                                    <i className="bi bi-envelope me-1"></i> {customer.contacts[0].email}
-                                                                </div>
-                                                            )}
-                                                            {customer.contacts?.[0]?.phone && (
-                                                                <div className="small">
-                                                                    <i className="bi bi-telephone me-1"></i> {customer.contacts[0].phone}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="list-view">
-                                        <div className="list-group">
-                                            {currentItems.map((customer) => (
-                                                <div
-                                                    key={customer.id}
-                                                    className="list-group-item list-group-item-action"
-                                                    onClick={() => handleCustomerSelect(customer)}
-                                                >
-                                                    <div className="d-flex align-items-center">
-                                                        <div className="customer-avatar me-3">
-                                                            {customer.name?.charAt(0) || 'C'}
-                                                        </div>
-                                                        <div className="flex-grow-1">
-                                                            <h6 className="mb-1 text-dark">{customer.name}</h6>
-                                                            <div className="d-flex flex-wrap">
-                                                                {customer.contacts?.[0] && (
-                                                                    <span className="me-3 small">
-                                                                        <i className="bi bi-person me-1"></i> {customer.contacts[0].name}
-                                                                    </span>
-                                                                )}
-                                                                {customer.contacts?.[0]?.email && (
-                                                                    <span className="me-3 small">
-                                                                        <i className="bi bi-envelope me-1"></i> {customer.contacts[0].email}
-                                                                    </span>
-                                                                )}
-                                                                {customer.contacts?.[0]?.phone && (
-                                                                    <span className="me-3 small">
-                                                                        <i className="bi bi-telephone me-1"></i> {customer.contacts[0].phone}
-                                                                    </span>
-                                                                )}
-                                                                <span className="small text-muted">
-                                                                    {customer.addresses?.length || 0} address{customer.addresses?.length !== 1 ? 'es' : ''}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <i className="bi bi-chevron-right text-muted"></i>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {filteredCustomers.length > itemsPerPage && (
-                                    <div className="d-flex justify-content-center mt-4">
-                                        <nav aria-label="Customer pagination">
-                                            <ul className="pagination">
-                                                <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
-                                                    <button
-                                                        className="page-link"
-                                                        onClick={() => handlePageChange(currentPage - 1)}
-                                                        disabled={currentPage === 1}
-                                                    >
-                                                        Previous
-                                                    </button>
-                                                </li>
-                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(number => (
-                                                    <li
-                                                        key={number}
-                                                        className={`page-item ${currentPage === number ? 'active' : ''}`}
-                                                    >
-                                                        <button
-                                                            className="page-link"
-                                                            onClick={() => handlePageChange(number)}
-                                                        >
-                                                            {number}
-                                                        </button>
-                                                    </li>
-                                                ))}
-                                                <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
-                                                    <button
-                                                        className="page-link"
-                                                        onClick={() => handlePageChange(currentPage + 1)}
-                                                        disabled={currentPage === totalPages}
-                                                    >
-                                                        Next
-                                                    </button>
-                                                </li>
-                                            </ul>
-                                        </nav>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {selectedCustomer && (
+                    {selectedCustomer && showAddressSuggestions && (
                         <>
-                            <h5 className="card-title mb-4">Select Shipping Destination</h5>
-
-                            <div className="address-selection mb-4">
-                                <div className="d-flex justify-content-between align-items-center mb-3">
-                                    <label className="form-label mb-0">Saved Addresses</label>
-                                    {!showAddAddressForm && (
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline-primary btn-sm"
-                                            onClick={() => setShowAddAddressForm(true)}
-                                        >
-                                            <i className="bi bi-plus-lg me-1"></i> Add New Address
-                                        </button>
-                                    )}
-                                </div>
-
-                                {showAddAddressForm ? (
-                                    <div className="add-address-form mb-4">
-                                        <div className="card border-primary">
-                                            <div className="card-header bg-light d-flex justify-content-between align-items-center">
-                                                <h6 className="mb-0">Add New Shipping Destination</h6>
-                                                <button
-                                                    type="button"
-                                                    className="btn-close"
-                                                    onClick={handleCloseForm}
-                                                    disabled={isSubmitting}
-                                                ></button>
-                                            </div>
-                                            <div className="card-body p-4">
-                                                {error && (
-                                                    <div className="alert alert-danger" role="alert">
-                                                        {error}
-                                                    </div>
-                                                )}
-
-                                                <div className="row g-3">
-                                                    <div className="col-md-12">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newStreet">Street Address*</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newStreet"
-                                                                name="street"
-                                                                className="form-control"
-                                                                value={newAddress.street}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., 3850 Oak St"
-                                                                required
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-12">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newStreet2">Suite/Unit (Optional)</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newStreet2"
-                                                                name="street2"
-                                                                className="form-control"
-                                                                value={newAddress.street2}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., Suite 100"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newCity">City*</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newCity"
-                                                                name="city"
-                                                                className="form-control"
-                                                                value={newAddress.city}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., New York"
-                                                                required
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newState">{getStateLabel(newAddress.country)}*</label>
-                                                            <select
-                                                                id="newState"
-                                                                name="state"
-                                                                className="form-control"
-                                                                value={newAddress.state}
-                                                                onChange={handleNewAddressChange}
-                                                                required
-                                                            >
-                                                                <option value="">Select {getStateLabel(newAddress.country)}</option>
-                                                                {getStateOptions(newAddress.country).map(({ value, label }) => (
-                                                                    <option key={value} value={value}>{label}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newPostalCode">Postal Code*</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newPostalCode"
-                                                                name="postalCode"
-                                                                className="form-control"
-                                                                value={newAddress.postalCode}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., 11340"
-                                                                required
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-6">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newCountry">Country*</label>
-                                                            <select
-                                                                id="newCountry"
-                                                                name="country"
-                                                                className="form-control"
-                                                                value={newAddress.country}
-                                                                onChange={handleNewAddressChange}
-                                                                required
-                                                            >
-                                                                <option value="US">United States</option>
-                                                                <option value="CA">Canada</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-12">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newAttention">Attention</label>
-                                                            <input
-                                                                type="text"
-                                                                id="newAttention"
-                                                                name="attention"
-                                                                className="form-control"
-                                                                value={newAddress.attention}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., Shipping Dept"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-12">
-                                                        <div className="form-group">
-                                                            <label className="form-label" htmlFor="newSpecialInstructions">Special Instructions</label>
-                                                            <textarea
-                                                                id="newSpecialInstructions"
-                                                                name="specialInstructions"
-                                                                className="form-control"
-                                                                value={newAddress.specialInstructions}
-                                                                onChange={handleNewAddressChange}
-                                                                placeholder="e.g., Delivery entrance on side"
-                                                                rows="2"
-                                                            ></textarea>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-12 mt-3">
-                                                        <div className="form-check">
-                                                            <input
-                                                                type="checkbox"
-                                                                id="newIsDefault"
-                                                                name="isDefault"
-                                                                className="form-check-input"
-                                                                checked={newAddress.isDefault}
-                                                                onChange={handleNewAddressChange}
-                                                            />
-                                                            <label className="form-check-label" htmlFor="newIsDefault">
-                                                                Set as default address
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="card-footer bg-light">
-                                                <div className="d-flex justify-content-between">
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-secondary"
-                                                        onClick={handleCloseForm}
-                                                        disabled={isSubmitting}
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-success"
-                                                        onClick={handleAddAddress}
-                                                        disabled={isSubmitting}
-                                                    >
-                                                        {isSubmitting ? (
-                                                            <>
-                                                                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                                                Adding...
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <i className="bi bi-check-lg me-1"></i> Add Address
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="address-list">
-                                        {customerAddresses.length === 0 ? (
-                                            <div className="text-center py-4">
-                                                <p className="text-muted mb-3">No saved addresses found</p>
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-primary"
-                                                    onClick={() => setShowAddAddressForm(true)}
-                                                >
-                                                    <i className="bi bi-plus-lg me-1"></i> Add Your First Address
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="row g-3">
-                                                {customerAddresses.map((address, index) => (
-                                                    <div key={index} className="col-md-6">
-                                                        <div
-                                                            className={`card h-100 address-card ${selectedAddressId === index ? 'selected' : ''}`}
-                                                            onClick={() => handleAddressChange(index)}
-                                                        >
-                                                            <div className="card-body">
-                                                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                                                    <h6 className="card-title mb-0">{address.street}</h6>
-                                                                    {address.default && (
-                                                                        <span className="badge bg-primary">Default</span>
-                                                                    )}
-                                                                </div>
-                                                                {address.street2 && (
-                                                                    <p className="card-text small mb-1">
-                                                                        {address.street2}
-                                                                    </p>
-                                                                )}
-                                                                <p className="card-text small mb-1">
-                                                                    {address.city}, {address.state} {address.zip}
-                                                                </p>
-                                                                <div className="mt-2 pt-2 border-top">
-                                                                    {address.attention && (
-                                                                        <p className="card-text small mb-2">
-                                                                            <span className="text-muted">Attention:</span> {address.attention}
-                                                                        </p>
-                                                                    )}
-                                                                    {address.specialInstructions && (
-                                                                        <>
-                                                                            <p className="card-text small mb-0">
-                                                                                <span className="text-muted">Special Instructions:</span>
-                                                                            </p>
-                                                                            <p className="card-text small mb-0 fst-italic">
-                                                                                {address.specialInstructions}
-                                                                            </p>
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            {renderAddressSuggestions()}
 
                             <div className="special-instructions mt-4">
                                 <label className="form-label">Special Instructions (Optional)</label>
