@@ -22,7 +22,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import PersonIcon from '@mui/icons-material/Person';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getAuth } from 'firebase/auth';
 import { analyzeText, getResponseForAnalysis } from '../../utils/sentimentAnalyzer';
@@ -352,17 +352,40 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                     shipmentType: message
                 }));
 
-                // Show address suggestions immediately when we know what's being shipped
-                if (companyAddresses && companyAddresses.length > 0) {
-                    setShowAddressSuggestions(true);
-                    setShowCustomerSearch(false);
-                    const response = "Great! I'll help you ship " + message + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
-                    addAssistantMessage(response);
-                    setCurrentField('shipfrom');
+                // Ask for shipment date
+                const today = new Date();
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+
+                addAssistantMessage(`When would you like to send this package? You can say things like 'today' (${formatDateForDisplay(today)}), 'tomorrow' (${formatDateForDisplay(tomorrow)}), or give a specific date.`);
+                setCurrentField('shipmentDate');
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle shipment date input
+            if (currentField === 'shipmentDate') {
+                const date = parseShipmentDate(message);
+                if (date) {
+                    setShipmentData(prev => ({
+                        ...prev,
+                        shipmentDate: date.toISOString().split('T')[0]
+                    }));
+
+                    // Show address suggestions immediately when we know what's being shipped
+                    if (companyAddresses && companyAddresses.length > 0) {
+                        setShowAddressSuggestions(true);
+                        setShowCustomerSearch(false);
+                        const response = `Great! I'll help you ship ${conversationContext.shipmentType} on ${formatDateForDisplay(date)}. I see you have some saved addresses. Would you like to use one of these for the pickup location?`;
+                        addAssistantMessage(response);
+                        setCurrentField('shipfrom');
+                    } else {
+                        const response = `Great! I'll help you ship ${conversationContext.shipmentType} on ${formatDateForDisplay(date)}. What company or person is sending this?`;
+                        addAssistantMessage(response);
+                        setCurrentField('shipfrom');
+                    }
                 } else {
-                    const response = "Great! I'll help you ship " + message + ". What company or person is sending this?";
-                    addAssistantMessage(response);
-                    setCurrentField('shipfrom');
+                    addAssistantMessage("I couldn't understand the date or the date is in the past. Please try again with a date like 'today', 'tomorrow', or a specific date like 'June 21, 2025'.");
                 }
                 setIsTyping(false);
                 return;
@@ -407,7 +430,7 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
             }
 
             // Handle package weight input
-            if (currentField === 'packages') {
+            if (currentField === 'packageWeight') {
                 const weight = parseFloat(message.replace(/[^0-9.]/g, ''));
                 if (!isNaN(weight)) {
                     setShipmentData(prev => ({
@@ -651,111 +674,6 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         fetchCustomers();
 
         setMessage(''); // Clear input field
-    };
-
-    // Enhanced message processing with better NLP
-    const processUserMessage = async (message) => {
-        const msg = message.toLowerCase();
-
-        // Add to conversation history
-        setConversationContext(prev => ({
-            ...prev,
-            lastQuestion: currentField
-        }));
-
-        // Show typing indicator
-        setIsTyping(true);
-
-        try {
-            // Simulate AI thinking time
-            await new Promise(resolve => setTimeout(resolve, 800));
-
-            // Handle greetings with context awareness
-            if (isGreeting(msg)) {
-                const greetingResponse = generateGreetingResponse();
-                addAssistantMessage(greetingResponse);
-                setIsTyping(false);
-                return;
-            }
-
-            // If this is the first response about what's being shipped
-            if (currentField === 'intro' && !msg.includes('hello') && !msg.includes('hi')) {
-                setShipmentData(prev => ({
-                    ...prev,
-                    items: [
-                        {
-                            ...prev.items[0],
-                            name: message
-                        }
-                    ]
-                }));
-
-                // Store shipment type in context
-                setConversationContext(prev => ({
-                    ...prev,
-                    shipmentType: message
-                }));
-
-                // Show address suggestions immediately when we know what's being shipped
-                if (companyAddresses && companyAddresses.length > 0) {
-                    setShowAddressSuggestions(true);
-                    setShowCustomerSearch(false);
-                    const response = "Great! I'll help you ship " + message + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
-                    addAssistantMessage(response);
-                } else {
-                    const response = "Great! I'll help you ship " + message + ". What company or person is sending this?";
-                    addAssistantMessage(response);
-                    setCurrentField('fromCompany');
-                }
-                setIsTyping(false);
-                return;
-            }
-
-            // Handle destination input
-            if (currentField === 'destination' || msg.includes('customer')) {
-                // Hide address suggestions and show customer search
-                setShowAddressSuggestions(false);
-                setShowCustomerSearch(true);
-
-                // Update shipment data with destination company
-                setShipmentData(prev => ({
-                    ...prev,
-                    toAddress: {
-                        ...prev.toAddress,
-                        company: message
-                    }
-                }));
-
-                // Fetch and show customer list
-                await fetchCustomers();
-                addAssistantMessage("Please search and select a customer from the list.");
-                setIsTyping(false);
-                return;
-            }
-
-            // Handle manual destination address input if no customer is selected
-            if (currentField === 'toCompany') {
-                setShipmentData(prev => ({
-                    ...prev,
-                    toAddress: {
-                        ...prev.toAddress,
-                        company: message
-                    }
-                }));
-                setCurrentField('toStreet');
-                addAssistantMessage("What's the street address for delivery?");
-                setIsTyping(false);
-                return;
-            }
-
-            // Rest of the existing message processing logic...
-
-        } catch (error) {
-            console.error('Error processing message:', error);
-            addAssistantMessage("I apologize, but I encountered an error processing your request. Please try again.");
-        } finally {
-            setIsTyping(false);
-        }
     };
 
     // Helper functions for enhanced NLP
@@ -1239,6 +1157,343 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
             />
         </Box>
     );
+
+    // Helper function to parse shipment date from natural language
+    const parseShipmentDate = (message) => {
+        const msg = message.toLowerCase();
+        const today = new Date();
+        let targetDate = new Date(today);
+
+        // Handle relative dates
+        if (msg.includes('today')) {
+            return today;
+        }
+        if (msg.includes('tomorrow')) {
+            targetDate.setDate(today.getDate() + 1);
+            return targetDate;
+        }
+        if (msg.includes('next week')) {
+            targetDate.setDate(today.getDate() + 7);
+            return targetDate;
+        }
+
+        // Try to parse specific date formats
+        const dateFormats = [
+            // Month DD, YYYY
+            /(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i,
+            // YYYY-MM-DD
+            /(\d{4})-(\d{1,2})-(\d{1,2})/,
+            // MM/DD/YYYY
+            /(\d{1,2})\/(\d{1,2})\/(\d{4})/
+        ];
+
+        for (const format of dateFormats) {
+            const match = msg.match(format);
+            if (match) {
+                if (format === dateFormats[0]) {
+                    // Month DD, YYYY format
+                    const month = getMonthNumber(match[1]);
+                    const day = parseInt(match[2]);
+                    const year = parseInt(match[3]);
+                    targetDate = new Date(year, month, day);
+                } else if (format === dateFormats[1]) {
+                    // YYYY-MM-DD format
+                    targetDate = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+                } else if (format === dateFormats[2]) {
+                    // MM/DD/YYYY format
+                    targetDate = new Date(parseInt(match[3]), parseInt(match[1]) - 1, parseInt(match[2]));
+                }
+
+                // Validate the date is not in the past
+                if (targetDate < today) {
+                    return null;
+                }
+                return targetDate;
+            }
+        }
+
+        return null;
+    };
+
+    // Helper function to convert month name to number
+    const getMonthNumber = (monthName) => {
+        const months = {
+            'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
+            'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
+        };
+        return months[monthName.toLowerCase().substring(0, 3)];
+    };
+
+    // Helper function to format date for display
+    const formatDateForDisplay = (date) => {
+        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+        return date.toLocaleDateString('en-US', options);
+    };
+
+    // Helper function to get current state description
+    const getCurrentStateDescription = () => {
+        switch (currentField) {
+            case 'intro':
+                return 'Initial stage - What are you shipping today?';
+            case 'shipmentDate':
+                return 'Collecting shipment date';
+            case 'shipfrom':
+                return 'Collecting pickup address information';
+            case 'shipto':
+                return 'Collecting delivery address information';
+            case 'packages':
+                return 'Collecting package weight';
+            case 'packageDimensions':
+                return 'Collecting package dimensions';
+            case 'specialInstructions':
+                return 'Collecting special handling instructions';
+            case 'referenceNumber':
+                return 'Collecting reference number';
+            case 'complete':
+                return 'Completing shipment details';
+            default:
+                return 'Unknown stage';
+        }
+    };
+
+    // Handle address selection
+    const handleAddressSelect = (address) => {
+        // Determine if this is for origin or destination based on currentField
+        const isDestination = currentField === 'shipto' || currentField === 'destination';
+
+        // Check if this is a customer address (will have 'zip' field) or company address (will have 'postalCode' field)
+        const isCustomerAddress = 'zip' in address;
+
+        // Check if the address is complete based on the address type
+        const isAddressComplete = address.company &&
+            address.street &&
+            address.city &&
+            address.state &&
+            (isCustomerAddress ? address.zip : address.postalCode);
+
+        // Ensure we have a complete address with all fields
+        const completeAddress = {
+            ...address,
+            country: address.country || 'US',
+            // If we're in shipto mode and have a selected customer, use their name as the company
+            company: isDestination && selectedCustomer ? selectedCustomer.name : address.company,
+            // Use the appropriate field based on address type
+            postalCode: isCustomerAddress ? address.zip : address.postalCode,
+            // Include attention name if available
+            contactName: address.attention || address.contactName || '',
+            // Include special instructions if available
+            specialInstructions: address.specialInstructions || 'none'
+        };
+
+        // If the address is complete, proceed with setting it as either origin or destination address
+        if (isAddressComplete) {
+            const addressData = {
+                company: completeAddress.company,
+                street: completeAddress.street,
+                street2: completeAddress.street2 || '',
+                city: completeAddress.city,
+                state: completeAddress.state,
+                postalCode: isCustomerAddress ? completeAddress.zip : completeAddress.postalCode,
+                country: completeAddress.country,
+                contactName: completeAddress.contactName || '',
+                contactPhone: completeAddress.contactPhone || '',
+                contactEmail: completeAddress.contactEmail || '',
+                specialInstructions: completeAddress.specialInstructions || 'none'
+            };
+
+            setShipmentData(prev => ({
+                ...prev,
+                [isDestination ? 'toAddress' : 'fromAddress']: addressData
+            }));
+
+            // Format the complete address with clear structure
+            const formattedAddress = `
+Company: ${completeAddress.company}
+Street: ${completeAddress.street}${completeAddress.street2 ? `, ${completeAddress.street2}` : ''}
+City: ${completeAddress.city}
+State/Province: ${completeAddress.state}
+Postal Code: ${isCustomerAddress ? completeAddress.zip : completeAddress.postalCode}
+Country: ${completeAddress.country}
+${completeAddress.contactName ? `Contact: ${completeAddress.contactName}` : ''}
+${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
+${completeAddress.specialInstructions ? `Special Instructions: ${completeAddress.specialInstructions}` : ''}
+            `.trim();
+
+            // Send the user selection message to the parent with full address details
+            const userText = `I'll use this ${isDestination ? 'delivery' : 'pickup'} address:\n\n${formattedAddress}`;
+            onSend(userText);
+
+            // Create message objects for our local state
+            const userMessage = {
+                id: Date.now(),
+                text: userText,
+                sender: 'user'
+            };
+
+            const confirmationMessage = {
+                id: Date.now() + 1,
+                text: `Perfect! I've got your complete ${isDestination ? 'delivery' : 'pickup'} address.`,
+                sender: 'assistant'
+            };
+
+            // Determine the next step based on whether this was origin or destination
+            let followUpMessage;
+            if (isDestination) {
+                // If this was the destination, we're done with address collection
+                followUpMessage = {
+                    id: Date.now() + 2,
+                    text: "Great! Now let's get the package details. What's the weight of your package in pounds?",
+                    sender: 'assistant'
+                };
+                setCurrentField('packageWeight');
+            } else {
+                // If this was the origin, prompt for destination
+                followUpMessage = {
+                    id: Date.now() + 2,
+                    text: "Now, let's find the destination. Please search for a customer to deliver to.",
+                    sender: 'assistant'
+                };
+                setCurrentField('destination');
+                setShowCustomerSearch(true);
+                fetchCustomers();
+            }
+
+            // Update our local messages with all three new messages
+            setLocalMessages([
+                ...localMessages,
+                userMessage,
+                confirmationMessage,
+                followUpMessage
+            ]);
+
+            // Hide address suggestions
+            setShowAddressSuggestions(false);
+            setMessage(''); // Clear input field
+            return;
+        }
+
+        // Handle incomplete address
+        const addressSummary = `
+Company: ${completeAddress.company || 'N/A'}
+${completeAddress.street ? `Street: ${completeAddress.street}` : ''}
+${completeAddress.city ? `City: ${completeAddress.city}` : ''}
+${completeAddress.state ? `State/Province: ${completeAddress.state}` : ''}
+${isCustomerAddress ? (completeAddress.zip ? `Postal Code: ${completeAddress.zip}` : '') : (completeAddress.postalCode ? `Postal Code: ${completeAddress.postalCode}` : '')}
+Country: ${completeAddress.country}
+        `.trim();
+
+        // First send the user selection message to the parent with full address details
+        const userText = `I'll use this address:\n\n${addressSummary}`;
+        onSend(userText);
+
+        // Create message objects for our local state
+        const userMessage = {
+            id: Date.now(),
+            text: userText,
+            sender: 'user'
+        };
+
+        // Determine which field is missing and ask for it
+        let missingFieldMessage;
+        if (!completeAddress.street) {
+            missingFieldMessage = "What's the street address?";
+        } else if (!completeAddress.city) {
+            missingFieldMessage = "What city is this address in?";
+        } else if (!completeAddress.state) {
+            missingFieldMessage = "What state or province is this address in?";
+        } else if (!(isCustomerAddress ? completeAddress.zip : completeAddress.postalCode)) {
+            missingFieldMessage = `What's the ${isCustomerAddress ? 'ZIP' : 'postal'} code?`;
+        }
+
+        const incompleteAddressMessage = {
+            id: Date.now() + 1,
+            text: missingFieldMessage || "I need more information about this address. What's the street address?",
+            sender: 'assistant'
+        };
+
+        // Update our local messages
+        setLocalMessages([
+            ...localMessages,
+            userMessage,
+            incompleteAddressMessage
+        ]);
+
+        // Set the current field to collect the missing information
+        setCurrentField(isDestination ? 'toStreet' : 'fromStreet');
+        setShowAddressSuggestions(false);
+        setMessage('');
+    };
+
+    // Handle customer selection
+    const handleCustomerSelect = (customer) => {
+        setSelectedCustomer(customer);
+
+        // Get the primary contact or first contact
+        const primaryContact = customer.contacts?.find(contact => contact.primary) || customer.contacts?.[0];
+
+        // Update shipment data with customer information
+        setShipmentData(prev => ({
+            ...prev,
+            toAddress: {
+                ...prev.toAddress,
+                company: customer.name,
+                contactName: primaryContact?.name || '',
+                contactPhone: primaryContact?.phone || '',
+                contactEmail: primaryContact?.email || ''
+            }
+        }));
+
+        // Check if customer has addresses
+        if (customer.addresses && customer.addresses.length > 0) {
+            // Find the default shipping address or use the first address
+            const defaultShippingAddress = customer.addresses.find(addr => addr.default && addr.type === 'shipping') ||
+                customer.addresses.find(addr => addr.type === 'shipping') ||
+                customer.addresses[0];
+
+            // Format addresses for display
+            const formattedAddresses = customer.addresses.map(addr => ({
+                ...addr,
+                company: customer.name,
+                contactName: addr.attention || primaryContact?.name || '',
+                contactPhone: primaryContact?.phone || '',
+                contactEmail: primaryContact?.email || '',
+                postalCode: addr.zip // Map zip to postalCode for consistency
+            }));
+
+            setCustomerAddresses(formattedAddresses);
+            setShowCustomerSearch(false);
+            setShowAddressSuggestions(true);
+            setCurrentField('shipto');
+
+            // If there's a default shipping address, use it automatically
+            if (defaultShippingAddress) {
+                handleAddressSelect({
+                    ...defaultShippingAddress,
+                    company: customer.name,
+                    contactName: defaultShippingAddress.attention || primaryContact?.name || '',
+                    contactPhone: primaryContact?.phone || '',
+                    contactEmail: primaryContact?.email || '',
+                    postalCode: defaultShippingAddress.zip
+                });
+            } else {
+                addAssistantMessage("I found some addresses for this customer. Please select one for delivery:");
+            }
+        } else {
+            // If no addresses exist, create a default address from customer info
+            const defaultAddress = {
+                company: customer.name,
+                contactName: primaryContact?.name || '',
+                contactPhone: primaryContact?.phone || '',
+                contactEmail: primaryContact?.email || '',
+                country: 'US'
+            };
+
+            setCustomerAddresses([defaultAddress]);
+            setShowCustomerSearch(false);
+            addAssistantMessage("I'll need the complete delivery address. What's the street address?");
+            setCurrentField('toStreet');
+        }
+    };
 
     return (
         <AnimatePresence>
