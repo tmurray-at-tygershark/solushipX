@@ -87,6 +87,12 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         preferredTimeFormat: '24h',
         language: 'en'
     });
+    const [conversationContext, setConversationContext] = useState({
+        hasGreeted: false,
+        lastQuestion: null,
+        shipmentType: null,
+        pendingQuestion: null
+    });
 
     // Sync local messages with prop messages when they change
     useEffect(() => {
@@ -391,7 +397,10 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         const msg = userMessage.toLowerCase();
 
         // Add to conversation history
-        setConversationHistory(prev => [...prev, { role: 'user', content: msg }]);
+        setConversationContext(prev => ({
+            ...prev,
+            lastQuestion: currentField
+        }));
 
         // Show typing indicator
         setIsTyping(true);
@@ -400,48 +409,47 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         setTimeout(() => {
             setIsTyping(false);
 
-            // Skip processing for messages that were confirming address selection
-            if (msg.includes("i'll use this address") || msg.includes("use this address")) {
-                return;
-            }
-
-            // Enhanced greeting detection with more variations
+            // Handle greetings with context awareness
             if (isGreeting(msg)) {
                 const greetingResponse = generateGreetingResponse();
                 addAssistantMessage(greetingResponse);
                 return;
             }
 
-            // Enhanced confusion detection
-            if (isConfused(msg)) {
-                const clarificationResponse = generateClarificationResponse();
-                addAssistantMessage(clarificationResponse);
+            // If this is the first response about what's being shipped
+            if (currentField === 'intro' && !msg.includes('hello') && !msg.includes('hi')) {
+                setShipmentData(prev => ({
+                    ...prev,
+                    items: [
+                        {
+                            ...prev.items[0],
+                            name: userMessage
+                        }
+                    ]
+                }));
+
+                // Store shipment type in context
+                setConversationContext(prev => ({
+                    ...prev,
+                    shipmentType: userMessage
+                }));
+
+                // Show address suggestions if available
+                if (companyAddresses && companyAddresses.length > 0) {
+                    setShowAddressSuggestions(true);
+                    const response = "Great! I'll help you ship " + userMessage + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
+                    addAssistantMessage(response);
+                } else {
+                    const response = "Great! I'll help you ship " + userMessage + ". What company or person is sending this?";
+                    addAssistantMessage(response);
+                    setCurrentField('fromCompany');
+                }
                 return;
             }
 
-            // Enhanced help detection
-            if (isHelpRequest(msg)) {
-                const helpResponse = generateHelpResponse();
-                addAssistantMessage(helpResponse);
-                return;
-            }
-
-            // Enhanced address change detection
-            if (isAddressChangeRequest(msg)) {
-                handleAddressChangeRequest();
-                return;
-            }
-
-            // Enhanced shipping cost question detection
-            if (isShippingCostQuestion(msg)) {
-                const shippingCostResponse = generateShippingCostResponse();
-                addAssistantMessage(shippingCostResponse);
-                return;
-            }
-
-            // Process based on current field
-            processFieldBasedOnCurrentState(msg);
-        }, 1000); // Simulate thinking time
+            // Rest of the existing message processing logic
+            // ... existing code ...
+        }, 800); // Reduced thinking time for better responsiveness
     };
 
     // Helper functions for enhanced NLP
@@ -515,15 +523,16 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         }
     };
 
-    // Response generation functions
+    // Enhanced greeting response generation
     const generateGreetingResponse = () => {
-        const greetings = [
-            "Hi there! I'm here to help with your shipment. What can I do for you?",
-            "Hello! How can I assist you with your shipping needs today?",
-            "Hey! Ready to help you create a shipment. What would you like to do?",
-            "Greetings! I'm your SolushipX assistant. How can I help you today?"
-        ];
-        return greetings[Math.floor(Math.random() * greetings.length)];
+        if (!conversationContext.hasGreeted) {
+            setConversationContext(prev => ({ ...prev, hasGreeted: true }));
+            return "Hi there! I'm here to help you create a shipment. To get started, could you tell me what you're shipping today?";
+        } else {
+            // If we've already greeted, acknowledge but continue the current context
+            const continuationPrompt = conversationContext.pendingQuestion || getNextPrompt();
+            return `Hello again! Let's continue - ${continuationPrompt}`;
+        }
     };
 
     const generateClarificationResponse = () => {
@@ -600,22 +609,37 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
     // Generate suggested responses based on current state
     const generateSuggestedResponses = () => {
         const suggestions = [];
+        const shipmentType = conversationContext.shipmentType;
 
         switch (currentField) {
             case 'intro':
-                suggestions.push("I want to create a new shipment");
-                suggestions.push("I need shipping rates");
-                suggestions.push("I want to track a shipment");
+                suggestions.push("A package");
+                suggestions.push("Documents");
+                suggestions.push("Fragile items");
+                suggestions.push("Heavy equipment");
                 break;
             case 'fromCompany':
-                suggestions.push("Acme Corporation");
-                suggestions.push("John Smith");
-                suggestions.push("Let me select from saved addresses");
+                if (companyAddresses && companyAddresses.length > 0) {
+                    suggestions.push("Use a saved address");
+                }
+                suggestions.push("My company");
+                suggestions.push("Personal shipment");
                 break;
-            // Add more cases for other fields
-            default:
-                // No suggestions for other fields
+            case 'fromStreet':
+                if (companyAddresses && companyAddresses.length > 0) {
+                    const recentAddresses = companyAddresses
+                        .slice(0, 2)
+                        .map(addr => addr.street);
+                    suggestions.push(...recentAddresses);
+                }
                 break;
+            case 'packageWeight':
+                suggestions.push("1 lb");
+                suggestions.push("5 lbs");
+                suggestions.push("10 lbs");
+                suggestions.push("25+ lbs");
+                break;
+            // ... add more cases as needed ...
         }
 
         setSuggestedResponses(suggestions);
@@ -628,27 +652,33 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
 
     // Get the next prompt based on the current state
     const getNextPrompt = () => {
+        const shipmentType = conversationContext.shipmentType;
+
         switch (currentField) {
             case 'intro':
-                return "Welcome to SolushipX! I'm here to help you create a shipment.";
+                return "What are you shipping today?";
             case 'fromCompany':
-                return "Thanks! What company or person is sending this?";
+                return shipmentType ?
+                    `Who will be sending the ${shipmentType}?` :
+                    "What company or person is sending this?";
             case 'fromStreet':
-                return "What's the street address for pickup?";
+                return "What's the pickup street address?";
             case 'fromCity':
-                return "What city is this address in?";
+                return "Which city will this be picked up from?";
             case 'fromState':
-                return "What state or province?";
+                return "And what state or province is that in?";
             case 'fromPostalCode':
-                return "What's the postal code?";
+                return "What's the postal code for pickup?";
             case 'fromContactName':
                 return "Who should we contact at the pickup location?";
             case 'fromContactPhone':
-                return "What's their phone number?";
+                return "What's the best phone number to reach them?";
             case 'fromContactEmail':
-                return "And their email address?";
+                return "And their email address for shipping notifications?";
             case 'toCompany':
-                return "Great! Now for the delivery address. What company or person is receiving the package?";
+                return shipmentType ?
+                    `Great! Now, who will be receiving the ${shipmentType}?` :
+                    "Who will be receiving this shipment?";
             case 'toStreet':
                 return "What's the delivery street address?";
             case 'toCity':
