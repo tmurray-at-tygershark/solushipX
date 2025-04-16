@@ -19,6 +19,7 @@ import { styled } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getAuth } from 'firebase/auth';
@@ -434,7 +435,7 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                     shipmentType: userMessage
                 }));
 
-                // Show address suggestions if available
+                // Show address suggestions immediately when we know what's being shipped
                 if (companyAddresses && companyAddresses.length > 0) {
                     setShowAddressSuggestions(true);
                     const response = "Great! I'll help you ship " + userMessage + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
@@ -449,7 +450,7 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
 
             // Rest of the existing message processing logic
             // ... existing code ...
-        }, 800); // Reduced thinking time for better responsiveness
+        }, 800);
     };
 
     // Helper functions for enhanced NLP
@@ -731,11 +732,43 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         });
 
         return (
-            <Box sx={{ mb: 2, width: '100%' }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
-                    Please select an origin address from your saved addresses:
+            <Box sx={{
+                mb: 2,
+                width: '100%',
+                backgroundColor: 'rgba(106, 70, 193, 0.05)',
+                borderRadius: 2,
+                p: 2,
+                border: '1px solid rgba(106, 70, 193, 0.2)'
+            }}>
+                <Typography variant="subtitle1" sx={{
+                    mb: 2,
+                    color: 'primary.main',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                }}>
+                    <LocationOnIcon sx={{ fontSize: 20 }} />
+                    Select a Pickup Address
                 </Typography>
-                <List sx={{ maxHeight: '300px', overflowY: 'auto' }}>
+                <List sx={{
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    '&::-webkit-scrollbar': {
+                        width: '8px',
+                    },
+                    '&::-webkit-scrollbar-track': {
+                        background: '#f1f1f1',
+                        borderRadius: '4px',
+                    },
+                    '&::-webkit-scrollbar-thumb': {
+                        background: '#888',
+                        borderRadius: '4px',
+                        '&:hover': {
+                            background: '#555',
+                        },
+                    },
+                }}>
                     {sortedAddresses.map((address, index) => (
                         <ListItem
                             key={index}
@@ -746,17 +779,17 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                                 borderRadius: 1,
                                 mb: 1,
                                 '&:hover': {
-                                    backgroundColor: 'rgba(0,0,0,0.05)',
+                                    backgroundColor: 'rgba(106, 70, 193, 0.05)',
                                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                                     borderColor: 'primary.main',
                                     borderWidth: 1
                                 },
-                                padding: '10px 15px',
+                                padding: '12px 16px',
                                 display: 'block',
                                 position: 'relative',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
-                                backgroundColor: address.isDefault ? 'rgba(106, 70, 193, 0.05)' : 'transparent'
+                                backgroundColor: address.isDefault ? 'rgba(106, 70, 193, 0.05)' : 'white'
                             }}
                         >
                             {/* Address summary */}
@@ -767,7 +800,8 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                                     mb: 0.5,
                                     fontSize: '0.95rem',
                                     display: 'flex',
-                                    alignItems: 'center'
+                                    alignItems: 'center',
+                                    gap: 1
                                 }}>
                                     {address.company}
                                     {address.isDefault && (
@@ -775,7 +809,6 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                                             size="small"
                                             label="Default"
                                             sx={{
-                                                ml: 1,
                                                 height: '18px',
                                                 fontSize: '0.7rem',
                                                 backgroundColor: 'primary.light',
@@ -795,31 +828,25 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
                                 </Typography>
                             </Box>
 
-                            {/* Compact details in 2 columns */}
+                            {/* Contact info */}
                             <Box sx={{
                                 display: 'flex',
-                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: '0 10px',
                                 fontSize: '0.8rem',
                                 color: 'text.secondary'
                             }}>
-                                {/* Contact info */}
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    flexWrap: 'wrap',
-                                    gap: '0 10px'
-                                }}>
-                                    {address.contactName && (
-                                        <Typography component="span" variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                            Contact: {address.contactName}
-                                        </Typography>
-                                    )}
-                                    {address.contactPhone && (
-                                        <Typography component="span" variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                            Phone: {address.contactPhone}
-                                        </Typography>
-                                    )}
-                                </Box>
+                                {address.contactName && (
+                                    <Typography component="span" variant="body2" sx={{ fontSize: '0.8rem' }}>
+                                        Contact: {address.contactName}
+                                    </Typography>
+                                )}
+                                {address.contactPhone && (
+                                    <Typography component="span" variant="body2" sx={{ fontSize: '0.8rem' }}>
+                                        Phone: {address.contactPhone}
+                                    </Typography>
+                                )}
                             </Box>
                         </ListItem>
                     ))}
