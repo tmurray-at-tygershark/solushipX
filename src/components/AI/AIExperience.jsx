@@ -405,6 +405,94 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                 return;
             }
 
+            // Handle package weight input
+            if (currentField === 'packages') {
+                const weight = parseFloat(message.replace(/[^0-9.]/g, ''));
+                if (!isNaN(weight)) {
+                    setShipmentData(prev => ({
+                        ...prev,
+                        items: [
+                            {
+                                ...prev.items[0],
+                                weight: weight
+                            }
+                        ]
+                    }));
+
+                    // Add confirmation message
+                    const confirmationMessage = {
+                        id: Date.now() + 1,
+                        text: `Great! I've recorded the package weight as ${weight} pounds. What are the dimensions of your package? (Please provide length x width x height in inches)`,
+                        sender: 'assistant'
+                    };
+
+                    setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                    setCurrentField('packageDimensions');
+                } else {
+                    addAssistantMessage("I couldn't understand the weight. Please provide a number in pounds.");
+                }
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle package dimensions input
+            if (currentField === 'packageDimensions') {
+                const dimensions = message.match(/(\d+)[^\d]+(\d+)[^\d]+(\d+)/);
+                if (dimensions && dimensions.length >= 4) {
+                    const [_, length, width, height] = dimensions;
+                    setShipmentData(prev => ({
+                        ...prev,
+                        items: [
+                            {
+                                ...prev.items[0],
+                                length: parseInt(length),
+                                width: parseInt(width),
+                                height: parseInt(height)
+                            }
+                        ]
+                    }));
+
+                    // Add confirmation message
+                    const confirmationMessage = {
+                        id: Date.now() + 1,
+                        text: `Perfect! I've recorded the package dimensions as ${length}" × ${width}" × ${height}". Would you like to add any special handling instructions for your package?`,
+                        sender: 'assistant'
+                    };
+
+                    setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                    setCurrentField('specialInstructions');
+                } else {
+                    addAssistantMessage("I couldn't understand the dimensions. Please provide them in the format: length x width x height (in inches). For example: 12 x 8 x 6");
+                }
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle special instructions input
+            if (currentField === 'specialInstructions') {
+                setShipmentData(prev => ({
+                    ...prev,
+                    items: [
+                        {
+                            ...prev.items[0],
+                            specialInstructions: message
+                        }
+                    ]
+                }));
+
+                // Add confirmation message
+                const confirmationMessage = {
+                    id: Date.now() + 1,
+                    text: `I've recorded your special handling instructions: "${message}". Now, let's calculate the shipping cost. Would you like to proceed?`,
+                    sender: 'assistant'
+                };
+
+                setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                setCurrentField('complete');
+                setIsTyping(false);
+                return;
+            }
+
             // Rest of the existing message processing logic...
         } catch (error) {
             console.error('Error processing message:', error);
