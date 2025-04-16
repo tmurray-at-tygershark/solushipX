@@ -483,7 +483,27 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                 // Add confirmation message
                 const confirmationMessage = {
                     id: Date.now() + 1,
-                    text: `I've recorded your special handling instructions: "${message}". Now, let's calculate the shipping cost. Would you like to proceed?`,
+                    text: `I've recorded your special handling instructions: "${message}". Would you like to add a reference number for this shipment?`,
+                    sender: 'assistant'
+                };
+
+                setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                setCurrentField('referenceNumber');
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle reference number input
+            if (currentField === 'referenceNumber') {
+                setShipmentData(prev => ({
+                    ...prev,
+                    referenceNumber: message
+                }));
+
+                // Add confirmation message
+                const confirmationMessage = {
+                    id: Date.now() + 1,
+                    text: `I've recorded your reference number: "${message}". Now, let's calculate the shipping cost. Would you like to proceed?`,
                     sender: 'assistant'
                 };
 
