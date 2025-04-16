@@ -74,6 +74,13 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
+    // Create a local copy of messages that we can update
+    const [localMessages, setLocalMessages] = useState([]);
+
+    // Sync local messages with prop messages when they change
+    useEffect(() => {
+        setLocalMessages(messages);
+    }, [messages]);
 
     // Initialize shipment data state
     const [shipmentData, setShipmentData] = useState({
@@ -215,29 +222,74 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         }
     };
 
-    // Handle selecting an address suggestion
+    // Handle address selection
     const handleAddressSelect = (address) => {
-        setShowAddressSuggestions(false);
+        // Ensure we have a complete address with all fields
+        const completeAddress = {
+            ...address,
+            country: address.country || 'CA', // Default to Canada if not present
+        };
 
-        // Update the shipment data with the selected address
+        // Update shipment data with the selected address
         setShipmentData(prev => ({
             ...prev,
-            fromAddress: {
-                ...address
-            }
+            fromCompany: completeAddress.company,
+            fromStreet: completeAddress.street,
+            fromCity: completeAddress.city,
+            fromState: completeAddress.state,
+            fromPostalCode: completeAddress.postalCode,
+            fromCountry: completeAddress.country,
+            currentField: 'fromAddress_completed', // Mark address as completed
         }));
 
-        // Send a message about using this address
-        const addressMsg = `I'll use this address: ${address.company}, ${address.street}, ${address.city}, ${address.state} ${address.postalCode}`;
-        onSend(addressMsg);
+        // First send the user selection message to the parent
+        const userText = `I'll use this address: ${completeAddress.company}`;
+        onSend(userText);
 
-        // Skip to the next major field
-        setCurrentField('toCompany');
+        // Create message objects for our local state
+        const userMessage = {
+            id: Date.now(),
+            text: userText,
+            sender: 'user'
+        };
+
+        const confirmationMessage = {
+            id: Date.now() + 1,
+            text: `I've selected the address: ${completeAddress.company}, ${completeAddress.street}, ${completeAddress.city}, ${completeAddress.state} ${completeAddress.postalCode}, ${completeAddress.country}`,
+            sender: 'assistant'
+        };
+
+        const followUpMessage = {
+            id: Date.now() + 2,
+            text: "Great! I've recorded your complete origin address details. Now, let's move on to the destination address. What company are you shipping to?",
+            sender: 'assistant'
+        };
+
+        // Update our local messages with all three new messages
+        setLocalMessages([
+            ...localMessages,
+            userMessage,
+            confirmationMessage,
+            followUpMessage
+        ]);
+
+        setShowAddressSuggestions(false); // Hide suggestions after selection
+        setMessage(''); // Clear input field
     };
 
     // Process user message to extract and update shipment data
     const processUserMessage = (userMessage) => {
         const msg = userMessage.toLowerCase();
+
+        // Check if user wants to change origin address
+        if (msg.includes('change') && (msg.includes('origin') || msg.includes('from') || msg.includes('my address'))) {
+            setCurrentField('fromCompany'); // Reset to origin address collection
+            // Show address suggestions again
+            if (companyAddresses && companyAddresses.length > 0) {
+                setShowAddressSuggestions(true);
+            }
+            return; // Don't process further
+        }
 
         // Extract information based on current field being collected
         switch (currentField) {
@@ -692,7 +744,7 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                                 </MessageBubble>
                             ) : (
                                 // Show conversation messages
-                                messages.map((msg, index) => (
+                                localMessages.map((msg, index) => (
                                     <MessageBubble
                                         key={index}
                                         isUser={msg.sender === 'user'}

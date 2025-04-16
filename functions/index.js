@@ -1102,16 +1102,192 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
         const userContext = data.data.userContext || {};
         const previousMessages = data.data.previousMessages || [];
         
-        // Simple prompt focused on collecting shipping information
+        // Check if this is the very first message in the conversation (initial welcome)
+        // We don't want to process these or the AI will start talking to itself
+        const isFirstMessage = previousMessages.length === 0;
+        
+        // Handle first welcome message differently
+        if (isFirstMessage) {
+            console.log('Initial message detected, providing welcome without AI processing');
+            return {
+                message: {
+                    content: "Welcome to SolushipX! I'm here to help you create a shipment. What are we shipping today?"
+                },
+                currentStep: 'intro',
+                collectedInfo: userContext.shipmentData || {}
+            };
+        }
+        
+        // Guard against looping - if we have multiple AI messages in a row, stop the cycle
+        let recentAIMessageCount = 0;
+        for (let i = previousMessages.length - 1; i >= Math.max(0, previousMessages.length - 5); i--) {
+            if (previousMessages[i].sender === 'ai') {
+                recentAIMessageCount++;
+            } else {
+                break; // Stop counting once we find a user message
+            }
+        }
+        
+        // If we have multiple consecutive AI messages, there might be a loop
+        if (recentAIMessageCount > 1 && data.data.message.sender === 'ai') {
+            console.log('Potential message loop detected, breaking the cycle');
+            return {
+                message: {
+                    content: "I'm waiting for your input. Please let me know what you're shipping today."
+                },
+                currentStep: userContext.currentStep || 'intro',
+                collectedInfo: userContext.shipmentData || {}
+            };
+        }
+        
+        // Review previous messages to check for address selection patterns
+        const lastFiveMessages = previousMessages.slice(-5);
+        let addressWasSelected = false;
+        let defaultAddressOffered = false;
+        let addressHasBeenFound = false;
+        
+        console.log('Processing message:', messageText);
+        
+        // Enhanced check for the current message being an address selection
+        if (messageText.startsWith("I'll use this address:") || 
+            messageText.includes("Address selected:") ||
+            messageText.includes("Selected origin address:") ||
+            messageText.includes("complete with all required fields") ||
+            messageText.includes("complete origin address with company:")) {
+            console.log('Address selection detected in current message');
+            addressWasSelected = true;
+            userContext.currentStep = 'toCompany';
+        }
+        
+        // Check if this is a response to a default address offer
+        if ((messageText.toLowerCase().includes('yes') || 
+             messageText.toLowerCase().includes('yeah') || 
+             messageText.toLowerCase().includes('ok') || 
+             messageText.toLowerCase().includes('sure')) && 
+            lastFiveMessages.some(msg => msg.text && 
+                msg.text.includes('Would you like to use your default address'))) {
+            console.log('Default address confirmation detected');
+            addressWasSelected = true;
+            userContext.currentStep = 'toCompany';
+        }
+        
+        // Check for default address offers in previous messages
+        for (const msg of lastFiveMessages) {
+            if (msg.text && msg.text.includes('Would you like to use your default address')) {
+                defaultAddressOffered = true;
+            }
+        }
+        
+        // Also check previous messages for address selection or completion markers with enhanced pattern matching
+        for (const msg of lastFiveMessages) {
+            if (msg.text && (
+                msg.text.startsWith("I'll use this address:") ||
+                msg.text.includes("[ORIGIN ADDRESS COMPLETE]") ||
+                msg.text.includes("origin address is complete") ||
+                msg.text.includes("selected origin address") ||
+                msg.text.includes("Address selected:") ||
+                msg.text.includes("Selected origin address:") ||
+                msg.text.includes("company, street, city, state/province, postal code, and country") ||
+                msg.text.includes("complete with all required fields") ||
+                msg.text.includes("complete origin address with company:") ||
+                msg.text.includes("I've added the complete origin address")
+            )) {
+                console.log('Address selection detected in previous messages');
+                addressWasSelected = true;
+                addressHasBeenFound = true;
+                userContext.currentStep = 'toCompany';
+                break;
+            }
+        }
+        
+        // If an address was just selected in this message or recently, respond immediately
+        // without going to the AI to avoid the AI asking for address details again
+        if (addressWasSelected) {
+            // Return a direct response to move to destination company
+            return {
+                message: {
+                    content: "Perfect! I've got your complete origin address. Now, let's move on to the destination. What company or person is receiving the package?"
+                },
+                currentStep: 'toCompany',
+                collectedInfo: userContext.shipmentData || {}
+            };
+        }
+        
+        // If the special address completion marker is in the current message, handle it directly
+        if (messageText.includes("[ORIGIN ADDRESS COMPLETE]")) {
+            console.log('Address completion marker found in current message');
+            userContext.currentStep = 'toCompany';
+            
+            // Skip sending this to AI and respond directly
+            return {
+                message: {
+                    content: "Great! Let's continue with the destination address. What company or person is receiving the package?"
+                },
+                currentStep: 'toCompany',
+                collectedInfo: userContext.shipmentData || {}
+            };
+        }
+        
+        // If a default address was offered and this isn't a yes/no response, we should move on
+        if (defaultAddressOffered && 
+            !(messageText.toLowerCase().includes('yes') || 
+              messageText.toLowerCase().includes('no') || 
+              messageText.toLowerCase().includes('yeah') || 
+              messageText.toLowerCase().includes('nope'))) {
+            // User is continuing the conversation after the address prompt
+            console.log('User continuing after address prompt');
+        }
+        
+        // Build a stronger prompt that emphasizes handling address selection correctly
         const systemPrompt = `You are a helpful shipping assistant for SolushipX. 
         Your job is to collect shipping information from the user in a simple, conversational way.
         
         The conversation flow follows these steps:
         1. Ask what they're shipping
-        2. Collect origin address details (company, street, city, state, postal code, contact name, phone, email)
-        3. Collect destination address details (same fields)
+        2. Help user select from saved origin addresses or collect new origin address details
+        3. Collect destination address details
         4. Collect package details (weight, dimensions, quantity, value)
         5. Confirm all details
+        
+        CRITICAL INSTRUCTION - ADDRESS HANDLING:
+        - When a user selects a complete address or confirms their default address, you MUST skip to destination address questions.
+        - DO NOT ask for any origin address fields that have already been provided.
+        - If you see any of the following patterns, it means the origin address is ALREADY COMPLETE:
+          * "I'll use this address: [company], [street], [city], [state/province] [postal], [country]"
+          * "Address selected: [address details]"
+          * "Selected origin address: [address details]"
+          * "I've added the complete origin address with company: [company], street: [street], city: [city]..."
+          * "[ORIGIN ADDRESS COMPLETE]"
+          * Any message mentioning "complete with all required fields"
+        
+        - When asking about the destination address, DO NOT ask about origin address again.
+        - If you see a message that contains "company, street, city, state/province, postal code, and country", it means a complete address was selected.
+        
+        EXAMPLES OF COMPLETE ADDRESSES (recognize these patterns):
+        1. "I'll use this address: ABC Company, 123 Main St, San Francisco, CA 94105, US"
+        2. "I'll use this address: SoluShip Global Logistics, 4 Plunkett Court, Barrie, ON L4N 6M3, CA"
+        3. "Address selected: XYZ Inc, 456 Park Ave, New York, NY 10022, US"
+        4. "I've added the complete origin address with company: SoluShip, street: 123 Shipping Lane, city: Toronto, state/province: ON, postal code: M5V 2H1, and country: CA"
+        
+        EXAMPLES OF USER RESPONSES AND HOW TO HANDLE THEM:
+        
+        Example 1 - Address Selection:
+        User: "I'll use this address: Acme Inc, 100 Main St, Chicago, IL 60601, US"
+        Assistant: "Perfect! I've got your complete origin address. Now, what company or person is receiving the package?"
+        
+        Example 2 - Default Address Confirmation:
+        User: "yes" (after being asked if they want to use default address)
+        Assistant: "Great! I'll use your default address. Now, let's move on to the destination. What company or person is receiving the package?"
+        
+        Example 3 - Manual Origin Address Entry:
+        User: "box"
+        Assistant: "Thanks! What company or person is sending this box?" 
+        User: "Acme Inc"
+        Assistant: "Got it! What's the street address for pickup?"
+        
+        Example 4 - Completing Destination Address:
+        User: "XYZ Corp"
+        Assistant: "What's the street address for delivery to XYZ Corp?"
         
         IMPORTANT:
         - Keep responses short and focused.
@@ -1121,11 +1297,24 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
         - Be conversational and friendly.
         - If the user corrects information, acknowledge it and continue.
         - Don't repeat questions that have already been answered.
-        
+
         Current step: ${userContext.currentStep || 'intro'}`;
 
-        // Call GenKit with the simplified prompt
-        const response = await ai.generate(systemPrompt + '\n\nUser message: ' + messageText);
+        // Add context about address selection to help the AI
+        let contextPrompt = '';
+        if (addressHasBeenFound) {
+            contextPrompt = `\n\nIMPORTANT CONTEXT: The user has previously selected a complete origin address. Skip directly to destination address questions.`;
+        }
+        
+        // Create the full prompt including previous messages for context
+        const previousMessagesText = previousMessages.map(msg => 
+            `${msg.sender === 'user' ? 'User' : 'Assistant'}: ${msg.text}`
+        ).join('\n');
+        
+        const fullPrompt = `${systemPrompt}${contextPrompt}\n\nPrevious conversation:\n${previousMessagesText}\n\nUser message: ${messageText}`;
+
+        // Call GenKit with the enhanced prompt
+        const response = await ai.generate(fullPrompt);
         
         // Extract response text
         let responseText = '';
