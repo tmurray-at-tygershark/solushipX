@@ -1101,141 +1101,31 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
         const messageText = data.data.message.content;
         const userContext = data.data.userContext || {};
         const previousMessages = data.data.previousMessages || [];
-
-        // Build the system prompt
-        let systemPrompt = `You are a helpful shipping assistant for SolushipX. 
-        Help users with their shipping needs by providing information about shipping options, 
-        rates, and best practices.
         
-        IMPORTANT INSTRUCTIONS:
-        1. NEVER reintroduce yourself if the user has already started a conversation
-        2. NEVER ask if they want to ship a package if they've already indicated they do
-        3. NEVER repeat questions you've already asked
-        4. Keep track of what information you've already collected
-        5. Be concise and direct in your responses
-        6. Focus on collecting ONE piece of information at a time
-        7. If you have partial information, acknowledge it and ask ONLY for what's missing
-        8. If the user provides information, acknowledge it and ask for the next missing piece
-        9. If the user repeats information, acknowledge that you already have it and ask for the next missing piece
-        10. Use AI to understand the context of the user's message and respond appropriately
-        11. NEVER repeat the entire context after each piece of information
-        12. If the user corrects information, acknowledge the correction and continue
-        13. If the user provides multiple pieces of information, acknowledge each one separately
-        14. If the user provides information in an unexpected format, ask for clarification
-
-        HANDLING AMBIGUOUS RESPONSES:
-        1. When a user expresses uncertainty (e.g., "I'm not sure", "maybe", "perhaps"):
-           - Acknowledge their uncertainty
-           - Provide clear, specific options
-           - Include relevant context (dates, times, etc.)
-           - Offer examples or suggestions
-           - Ask for clarification in a supportive way
-
-        2. For scheduling-related uncertainty:
-           - Show actual dates (today, tomorrow, next week)
-           - Explain the implications of each choice
-           - Offer flexibility where possible
-           - Provide clear next steps
-
-        3. For address-related uncertainty:
-           - Break down the address components
-           - Explain what information is required
-           - Offer to help with format
-           - Provide examples of valid formats
-
-        4. For package-related uncertainty:
-           - Explain common package types
-           - Provide measurement guidance
-           - Offer to help with calculations
-           - Suggest standard sizes if applicable
-
-        RESPONSE STRUCTURE:
-        1. Acknowledge the user's input or uncertainty
-        2. Provide context and options
-        3. Give clear, actionable next steps
-        4. Include relevant suggestions or examples
-        5. End with a specific question or prompt
-
-        CONVERSATION FLOW:
-        1. Maintain a natural, helpful tone
-        2. Use the user's previous responses to inform next questions
-        3. Adapt the level of detail based on user expertise
-        4. Provide progressive guidance (start simple, add detail as needed)
-        5. Keep the conversation focused on the current task`;
-
-        // Determine the current step in the conversation
-        let currentStep = 'initial';
+        // Simple prompt focused on collecting shipping information
+        const systemPrompt = `You are a helpful shipping assistant for SolushipX. 
+        Your job is to collect shipping information from the user in a simple, conversational way.
         
-        // Check if we're in the address collection phase
-        if (userContext.fromAddress && !isAddressComplete(userContext.fromAddress)) {
-            currentStep = 'originAddress';
-        } else if (userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
-                  (!userContext.toAddress || !isAddressComplete(userContext.toAddress))) {
-            currentStep = 'destinationAddress';
-        } else if (userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
-                  userContext.toAddress && isAddressComplete(userContext.toAddress) && 
-                  !userContext.packageDetails) {
-            currentStep = 'packageDetails';
-        } else if (userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
-                  userContext.toAddress && isAddressComplete(userContext.toAddress) && 
-                  userContext.packageDetails && !isShipmentSetupComplete(userContext)) {
-            currentStep = 'shipmentSetup';
-        } else if (isShipmentSetupComplete(userContext) && 
-                  userContext.fromAddress && isAddressComplete(userContext.fromAddress) && 
-                  userContext.toAddress && isAddressComplete(userContext.toAddress) && 
-                  userContext.packageDetails) {
-            currentStep = 'complete';
-        }
+        The conversation flow follows these steps:
+        1. Ask what they're shipping
+        2. Collect origin address details (company, street, city, state, postal code, contact name, phone, email)
+        3. Collect destination address details (same fields)
+        4. Collect package details (weight, dimensions, quantity, value)
+        5. Confirm all details
+        
+        IMPORTANT:
+        - Keep responses short and focused.
+        - Ask for only ONE piece of information at a time.
+        - Acknowledge what the user has provided before asking for the next piece of information.
+        - Don't explain the entire process - just guide them through it step by step.
+        - Be conversational and friendly.
+        - If the user corrects information, acknowledge it and continue.
+        - Don't repeat questions that have already been answered.
+        
+        Current step: ${userContext.currentStep || 'intro'}`;
 
-        // Add step-specific instructions
-        switch (currentStep) {
-            case 'initial':
-                systemPrompt += `\n\nCURRENT STEP: Initial greeting
-                - If the user mentions shipping a package, acknowledge it and ask for the origin address
-                - If the user just says hello or similar, ask what they would like to ship`;
-                break;
-            case 'originAddress':
-                systemPrompt += `\n\nCURRENT STEP: Collecting origin address
-                - Ask for the next missing piece of the origin address
-                - If the user provides multiple pieces of information, acknowledge each one
-                - If the user corrects information, acknowledge the correction
-                - If the user provides information in an unexpected format, ask for clarification`;
-                break;
-            case 'destinationAddress':
-                systemPrompt += `\n\nCURRENT STEP: Collecting destination address
-                - Ask for the next missing piece of the destination address
-                - If the user provides multiple pieces of information, acknowledge each one
-                - If the user corrects information, acknowledge the correction
-                - If the user provides information in an unexpected format, ask for clarification`;
-                break;
-            case 'packageDetails':
-                systemPrompt += `\n\nCURRENT STEP: Collecting package details
-                - Ask for the weight of the package
-                - If the user provides the weight, ask for dimensions (length, width, height)
-                - If the user provides dimensions, ask for the value of the package
-                - If the user provides the value, ask for any special handling requirements`;
-                break;
-            case 'shipmentSetup':
-                systemPrompt += `\n\nCURRENT STEP: Setting up shipment
-                - Ask for the next missing piece of shipment setup information
-                - If the user provides multiple pieces of information, acknowledge each one
-                - If the user corrects information, acknowledge the correction
-                - If the user provides information in an unexpected format, ask for clarification`;
-                break;
-            case 'complete':
-                systemPrompt += `\n\nCURRENT STEP: Confirming shipment details
-                - Summarize all collected information
-                - Ask if everything is correct
-                - If the user confirms, proceed to the next phase
-                - If the user wants to change anything, ask what needs to be changed`;
-                break;
-        }
-
-        // Create the full prompt with context and conversation history
-        const fullPrompt = `${systemPrompt}\n\nUser context: ${JSON.stringify(userContext)}\n\nPrevious messages: ${JSON.stringify(previousMessages)}\n\nUser message: ${messageText}`;
-
-        // Call GenKit with the structured prompt
-        const response = await ai.generate(fullPrompt);
+        // Call GenKit with the simplified prompt
+        const response = await ai.generate(systemPrompt + '\n\nUser message: ' + messageText);
         
         // Extract response text
         let responseText = '';
@@ -1259,180 +1149,16 @@ exports.chatWithGemini = functions.https.onCall(async (data, context) => {
             responseText = 'I apologize, but I encountered an error processing your message.';
         }
 
-        // Extract any new information from the user's message
-        const locationInfo = extractLocationInfo(messageText);
-
-        // Update context with any new information
-        if (locationInfo.city || locationInfo.state || locationInfo.country || locationInfo.postalCode || locationInfo.street) {
-            // If we don't have an origin address yet, or if the user is providing origin information
-            if (!userContext.fromAddress || 
-                (userContext.fromAddress && 
-                 (!userContext.fromAddress.city || 
-                  !userContext.fromAddress.state || 
-                  !userContext.fromAddress.country || 
-                  !userContext.fromAddress.postalCode || 
-                  !userContext.fromAddress.street))) {
-                
-                // Check if the user is correcting information
-                if (messageText.toLowerCase().includes('street') || messageText.toLowerCase().includes('address')) {
-                    userContext.fromAddress = {
-                        ...userContext.fromAddress,
-                        street: locationInfo.street || userContext.fromAddress?.street
-                    };
-                } else if (messageText.toLowerCase().includes('city')) {
-                    userContext.fromAddress = {
-                        ...userContext.fromAddress,
-                        city: locationInfo.city || userContext.fromAddress?.city
-                    };
-                } else if (messageText.toLowerCase().includes('state') || messageText.toLowerCase().includes('province')) {
-                    userContext.fromAddress = {
-                        ...userContext.fromAddress,
-                        state: locationInfo.state || userContext.fromAddress?.state
-                    };
-                } else if (messageText.toLowerCase().includes('country')) {
-                    userContext.fromAddress = {
-                        ...userContext.fromAddress,
-                        country: locationInfo.country || userContext.fromAddress?.country
-                    };
-                } else if (messageText.toLowerCase().includes('postal') || messageText.toLowerCase().includes('zip')) {
-                    userContext.fromAddress = {
-                        ...userContext.fromAddress,
-                        postalCode: locationInfo.postalCode || userContext.fromAddress?.postalCode
-                    };
-                } else {
-                    // If no specific field is mentioned, update all provided fields
-                    userContext.fromAddress = {
-                        ...userContext.fromAddress,
-                        ...locationInfo
-                    };
-                }
-                
-                // Format postal code if present
-                if (userContext.fromAddress.postalCode && userContext.fromAddress.country) {
-                    userContext.fromAddress.postalCode = formatPostalCode(
-                        userContext.fromAddress.postalCode, 
-                        userContext.fromAddress.country
-                    );
-                }
-            } 
-            // If we have a complete origin address but no destination address yet
-            else if (isAddressComplete(userContext.fromAddress) && 
-                    (!userContext.toAddress || 
-                     (userContext.toAddress && 
-                      (!userContext.toAddress.city || 
-                       !userContext.toAddress.state || 
-                       !userContext.toAddress.country || 
-                       !userContext.toAddress.postalCode || 
-                       !userContext.toAddress.street)))) {
-                
-                // Check if the user is correcting information
-                if (messageText.toLowerCase().includes('street') || messageText.toLowerCase().includes('address')) {
-                    userContext.toAddress = {
-                        ...userContext.toAddress,
-                        street: locationInfo.street || userContext.toAddress?.street
-                    };
-                } else if (messageText.toLowerCase().includes('city')) {
-                    userContext.toAddress = {
-                        ...userContext.toAddress,
-                        city: locationInfo.city || userContext.toAddress?.city
-                    };
-                } else if (messageText.toLowerCase().includes('state') || messageText.toLowerCase().includes('province')) {
-                    userContext.toAddress = {
-                        ...userContext.toAddress,
-                        state: locationInfo.state || userContext.toAddress?.state
-                    };
-                } else if (messageText.toLowerCase().includes('country')) {
-                    userContext.toAddress = {
-                        ...userContext.toAddress,
-                        country: locationInfo.country || userContext.toAddress?.country
-                    };
-                } else if (messageText.toLowerCase().includes('postal') || messageText.toLowerCase().includes('zip')) {
-                    userContext.toAddress = {
-                        ...userContext.toAddress,
-                        postalCode: locationInfo.postalCode || userContext.toAddress?.postalCode
-                    };
-                } else {
-                    // If no specific field is mentioned, update all provided fields
-                    userContext.toAddress = {
-                        ...userContext.toAddress,
-                        ...locationInfo
-                    };
-                }
-                
-                // Format postal code if present
-                if (userContext.toAddress.postalCode && userContext.toAddress.country) {
-                    userContext.toAddress.postalCode = formatPostalCode(
-                        userContext.toAddress.postalCode, 
-                        userContext.toAddress.country
-                    );
-                }
-            }
-        }
-
-        // Extract package details
-        if (messageText.toLowerCase().includes('weight') || messageText.toLowerCase().includes('lbs') || messageText.toLowerCase().includes('kg')) {
-            const weightMatch = messageText.match(/(\d+(?:\.\d+)?)\s*(lbs|kg|pounds|kilograms)/i);
-            if (weightMatch && validateWeight(weightMatch[0])) {
-                userContext.packageDetails = {
-                    ...userContext.packageDetails,
-                    weight: formatWeight(weightMatch[0])
-                };
-            }
-        }
-
-        // Extract and update shipment setup information
-        if (messageText.toLowerCase().includes('reference') || messageText.toLowerCase().includes('shipment') || messageText.toLowerCase().includes('order')) {
-            const referenceMatch = messageText.match(/(?:reference|shipment|order)\s+(?:number|name|id)?\s*[:#]?\s*([^\s,]+)/i);
-            if (referenceMatch && !userContext.bookingReference) {
-                userContext.bookingReference = referenceMatch[1].trim();
-            }
-        }
-
-        if (messageText.toLowerCase().includes('type') || messageText.toLowerCase().includes('kind')) {
-            const typeMatch = messageText.match(/(?:type|kind)\s+(?:is|of)?\s*[:#]?\s*([^\s,]+)/i);
-            if (typeMatch && !userContext.bookingReferenceType) {
-                userContext.bookingReferenceType = typeMatch[1].trim();
-            }
-        }
-
-        if (messageText.toLowerCase().includes('bill') || messageText.toLowerCase().includes('payment')) {
-            const billMatch = messageText.match(/(?:bill|payment)\s+(?:type|method)?\s*[:#]?\s*([^\s,]+)/i);
-            if (billMatch && !userContext.shipmentBillType) {
-                userContext.shipmentBillType = billMatch[1].trim();
-            }
-        }
-
-        if (messageText.toLowerCase().includes('date') || messageText.toLowerCase().includes('when')) {
-            const dateMatch = messageText.match(/(?:date|when)\s+(?:is|should)?\s*[:#]?\s*([^\s,]+)/i);
-            if (dateMatch && !userContext.shipmentDate) {
-                userContext.shipmentDate = dateMatch[1].trim();
-            }
-        }
-
-        if (messageText.toLowerCase().includes('pickup') || messageText.toLowerCase().includes('pick up')) {
-            const pickupMatch = messageText.match(/(?:pickup|pick up)\s+(?:window|time)?\s*[:#]?\s*([^\s,]+)/i);
-            if (pickupMatch && !userContext.pickupWindow) {
-                userContext.pickupWindow = pickupMatch[1].trim();
-            }
-        }
-
-        if (messageText.toLowerCase().includes('delivery') || messageText.toLowerCase().includes('drop off')) {
-            const deliveryMatch = messageText.match(/(?:delivery|drop off)\s+(?:window|time)?\s*[:#]?\s*([^\s,]+)/i);
-            if (deliveryMatch && !userContext.deliveryWindow) {
-                userContext.deliveryWindow = deliveryMatch[1].trim();
-            }
-        }
-
-        // Return response with updated context
+        // Return a response matching the expected structure in ChatBot.jsx
         return {
             message: {
-                role: 'model',
                 content: responseText
             },
-            userContext: userContext
+            currentStep: userContext.currentStep,
+            collectedInfo: userContext.shipmentData || {}
         };
     } catch (error) {
         console.error('Error in chatWithGemini:', error);
-        throw new Error(`Failed to process chat message: ${error.message}`);
+        throw new functions.https.HttpsError('internal', 'Error processing message', error.message);
     }
 });
