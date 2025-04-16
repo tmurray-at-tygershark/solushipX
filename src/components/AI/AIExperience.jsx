@@ -25,6 +25,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getAuth } from 'firebase/auth';
+import { analyzeText, getResponseForAnalysis } from '../../utils/sentimentAnalyzer';
 
 // Styled components
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -472,190 +473,34 @@ Country: ${completeAddress.country}
             return;
         }
 
-        // Add the address type to the address object
-        const addressWithType = {
-            ...completeAddress,
-            type: 'origin'
-        };
-
-        // Update the fromAddress in shipment data
+        // If the address is complete, proceed with setting it as the origin address
         setShipmentData(prev => ({
             ...prev,
             fromAddress: {
-                company: addressWithType.company,
-                street: addressWithType.street,
-                street2: addressWithType.street2 || '',
-                city: addressWithType.city,
-                state: addressWithType.state,
-                postalCode: addressWithType.postalCode,
-                country: addressWithType.country,
-                contactName: addressWithType.contactName || '',
-                contactPhone: addressWithType.contactPhone || '',
-                contactEmail: addressWithType.contactEmail || '',
-                specialInstructions: addressWithType.specialInstructions || 'none'
+                company: completeAddress.company,
+                street: completeAddress.street,
+                street2: completeAddress.street2 || '',
+                city: completeAddress.city,
+                state: completeAddress.state,
+                postalCode: completeAddress.postalCode,
+                country: completeAddress.country,
+                contactName: completeAddress.contactName || '',
+                contactPhone: completeAddress.contactPhone || '',
+                contactEmail: completeAddress.contactEmail || '',
+                specialInstructions: completeAddress.specialInstructions || 'none'
             }
         }));
 
         // Format the complete address with clear structure
         const formattedAddress = `
-${addressWithType.company}
-Street: ${addressWithType.street}${addressWithType.street2 ? `, ${addressWithType.street2}` : ''}
-City: ${addressWithType.city}
-State/Province: ${addressWithType.state}
-Postal Code: ${addressWithType.postalCode}
-Country: ${addressWithType.country}
-${addressWithType.contactName ? `Contact: ${addressWithType.contactName}` : ''}
-${addressWithType.contactPhone ? `Phone: ${addressWithType.contactPhone}` : ''}
-        `.trim();
-
-        // Send the user selection message to the parent with full address details
-        const userText = `I'll use this pickup address:\n\n${formattedAddress}`;
-        onSend(userText);
-
-        // Create message objects for our local state
-        const userMessage = {
-            id: Date.now(),
-            text: userText,
-            sender: 'user'
-        };
-
-        const confirmationMessage = {
-            id: Date.now() + 1,
-            text: `Perfect! I've got the complete pickup address:\n\n${formattedAddress}`,
-            sender: 'assistant'
-        };
-
-        // Move to destination selection
-        const followUpMessage = {
-            id: Date.now() + 2,
-            text: "Now, let's find the destination. Please search for a customer to deliver to.",
-            sender: 'assistant'
-        };
-
-        // Update our local messages with all three new messages
-        setLocalMessages(prevMessages => [
-            ...prevMessages,
-            userMessage,
-            confirmationMessage,
-            followUpMessage
-        ]);
-
-        // Hide address suggestions and show customer search
-        setShowAddressSuggestions(false);
-        setShowCustomerSearch(true);
-        setCurrentField('shipto');
-        fetchCustomers();
-        setMessage('');
-    };
-
-    // Handle shipping to address selection
-    const handleShipToAddress = (address) => {
-        console.log('Selected destination address:', address);
-
-        // Check if the address is complete
-        const isAddressComplete = address.street &&
-            address.city &&
-            address.state &&
-            (address.zip || address.postalCode); // Check for either zip or postalCode
-
-        console.log('Address completeness check:', {
-            hasStreet: !!address.street,
-            hasCity: !!address.city,
-            hasState: !!address.state,
-            hasZip: !!address.zip,
-            hasPostalCode: !!address.postalCode,
-            isComplete: isAddressComplete
-        });
-
-        // Ensure we have a complete address with all fields
-        const completeAddress = {
-            ...address,
-            company: selectedCustomer?.name || address.company, // Use customer name as company
-            country: address.country || 'US',
-            postalCode: address.zip || address.postalCode, // Use either zip or postalCode
-            street2: address.street2 || '', // Include street2 if present
-            attention: address.attention || '' // Include attention if present
-        };
-
-        // Handle incomplete address differently
-        if (!isAddressComplete) {
-            // Format what we have of the address
-            const addressSummary = `
-Company: ${completeAddress.company || 'N/A'}
-${completeAddress.street ? `Street: ${completeAddress.street}` : ''}
-${completeAddress.street2 ? `Street 2: ${completeAddress.street2}` : ''}
-${completeAddress.city ? `City: ${completeAddress.city}` : ''}
-${completeAddress.state ? `State/Province: ${completeAddress.state}` : ''}
-${completeAddress.postalCode ? `Postal Code: ${completeAddress.postalCode}` : ''}
+Company: ${completeAddress.company}
+Street: ${completeAddress.street}${completeAddress.street2 ? `, ${completeAddress.street2}` : ''}
+City: ${completeAddress.city}
+State/Province: ${completeAddress.state}
+Postal Code: ${completeAddress.postalCode}
 Country: ${completeAddress.country}
-${completeAddress.attention ? `Attention: ${completeAddress.attention}` : ''}
-            `.trim();
-
-            // First send the user selection message to the parent with full address details
-            const userText = `I'll use this address:\n\n${addressSummary}`;
-            onSend(userText);
-
-            // Create message objects for our local state
-            const userMessage = {
-                id: Date.now(),
-                text: userText,
-                sender: 'user'
-            };
-
-            const incompleteAddressMessage = {
-                id: Date.now() + 1,
-                text: `I see you've selected an address for ${completeAddress.company}, but I need a complete address. What's the street address?`,
-                sender: 'assistant'
-            };
-
-            // Update our local messages
-            setLocalMessages([
-                ...localMessages,
-                userMessage,
-                incompleteAddressMessage
-            ]);
-
-            // Set the current field to collect street address
-            setCurrentField('shipto');
-            setShowAddressSuggestions(false);
-            setMessage('');
-            return;
-        }
-
-        // Add the address type to the address object
-        const addressWithType = {
-            ...completeAddress,
-            type: 'destination'
-        };
-
-        // Update the toAddress in shipment data
-        setShipmentData(prev => ({
-            ...prev,
-            toAddress: {
-                company: addressWithType.company,
-                street: addressWithType.street,
-                street2: addressWithType.street2 || '',
-                city: addressWithType.city,
-                state: addressWithType.state,
-                postalCode: addressWithType.postalCode,
-                country: addressWithType.country,
-                contactName: addressWithType.attention || '', // Use attention as contact name
-                contactPhone: addressWithType.contactPhone || '',
-                contactEmail: addressWithType.contactEmail || '',
-                specialInstructions: addressWithType.specialInstructions || 'none'
-            }
-        }));
-
-        // Format the complete address with clear structure
-        const formattedAddress = `
-${addressWithType.company}
-Street: ${addressWithType.street}${addressWithType.street2 ? `, ${addressWithType.street2}` : ''}
-City: ${addressWithType.city}
-State/Province: ${addressWithType.state}
-Postal Code: ${addressWithType.postalCode}
-Country: ${addressWithType.country}
-${addressWithType.attention ? `Attention: ${addressWithType.attention}` : ''}
-${addressWithType.specialInstructions ? `Special Instructions: ${addressWithType.specialInstructions}` : ''}
+${completeAddress.contactName ? `Contact: ${completeAddress.contactName}` : ''}
+${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
         `.trim();
 
         // Send the user selection message to the parent with full address details
@@ -671,104 +516,137 @@ ${addressWithType.specialInstructions ? `Special Instructions: ${addressWithType
 
         const confirmationMessage = {
             id: Date.now() + 1,
-            text: `Perfect! I've got the complete delivery address:\n\n${formattedAddress}`,
+            text: `Perfect! I've got your complete destination address. Now, let's move on to package details.`,
             sender: 'assistant'
         };
 
-        // Move to package details
         const followUpMessage = {
             id: Date.now() + 2,
-            text: "Great! Now let's get the package details. What's the weight of your package in pounds?",
+            text: "Now, let's find the destination. Please search for a customer to deliver to.",
             sender: 'assistant'
         };
 
         // Update our local messages with all three new messages
-        setLocalMessages(prevMessages => [
-            ...prevMessages,
+        setLocalMessages([
+            ...localMessages,
             userMessage,
             confirmationMessage,
             followUpMessage
         ]);
 
-        // Hide address suggestions and move to package details
+        // Hide address suggestions and show customer search
         setShowAddressSuggestions(false);
-        setCurrentField('packages');
-        setMessage('');
+        setShowCustomerSearch(true);
+        setCurrentField('destination');
+
+        // Fetch customers for search
+        fetchCustomers();
+
+        setMessage(''); // Clear input field
     };
 
-    // Handle address selection based on current field
-    const handleAddressSelect = (address) => {
-        if (currentField === 'shipfrom') {
-            handleShipFromAddress(address);
-        } else if (currentField === 'shipto') {
-            handleShipToAddress(address);
-        }
-    };
+    // Enhanced message processing with better NLP
+    const processUserMessage = async (message) => {
+        const msg = message.toLowerCase();
 
-    // Handle customer selection
-    const handleCustomerSelect = (customer) => {
-        setSelectedCustomer(customer);
-
-        // Get all addresses for the customer
-        const customerAddresses = customer.addresses || [];
-        setCustomerAddresses(customerAddresses);
-
-        // Update shipment data with destination company
-        setShipmentData(prev => ({
+        // Add to conversation history
+        setConversationContext(prev => ({
             ...prev,
-            toAddress: {
-                ...prev.toAddress,
-                company: customer.name,
-                contactName: customer.contacts?.[0]?.name || '',
-                contactPhone: customer.contacts?.[0]?.phone || '',
-                contactEmail: customer.contacts?.[0]?.email || ''
-            }
+            lastQuestion: currentField
         }));
 
-        // Update all states in a single batch to prevent race conditions
-        const updates = () => {
-            // First set the current field
-            setCurrentField('shipto');
+        // Show typing indicator
+        setIsTyping(true);
 
-            // Then update UI states
-            setShowCustomerSearch(false);
-            setShowAddressSuggestions(true);
-        };
+        try {
+            // Simulate AI thinking time
+            await new Promise(resolve => setTimeout(resolve, 800));
 
-        // Execute updates
-        updates();
+            // Handle greetings with context awareness
+            if (isGreeting(msg)) {
+                const greetingResponse = generateGreetingResponse();
+                addAssistantMessage(greetingResponse);
+                setIsTyping(false);
+                return;
+            }
 
-        // Add a message to confirm customer selection and prompt for address selection
-        const userMessage = {
-            id: Date.now(),
-            text: `Selected customer: ${customer.name}`,
-            sender: 'user'
-        };
+            // If this is the first response about what's being shipped
+            if (currentField === 'intro' && !msg.includes('hello') && !msg.includes('hi')) {
+                setShipmentData(prev => ({
+                    ...prev,
+                    items: [
+                        {
+                            ...prev.items[0],
+                            name: message
+                        }
+                    ]
+                }));
 
-        const assistantMessage = {
-            id: Date.now() + 1,
-            text: `Great! I see ${customer.name} has ${customerAddresses.length} saved address${customerAddresses.length === 1 ? '' : 'es'}. Please select the specific delivery address from the options below.`,
-            sender: 'assistant'
-        };
+                // Store shipment type in context
+                setConversationContext(prev => ({
+                    ...prev,
+                    shipmentType: message
+                }));
 
-        setLocalMessages(prevMessages => [...prevMessages, userMessage, assistantMessage]);
-    };
+                // Show address suggestions immediately when we know what's being shipped
+                if (companyAddresses && companyAddresses.length > 0) {
+                    setShowAddressSuggestions(true);
+                    setShowCustomerSearch(false);
+                    const response = "Great! I'll help you ship " + message + ". I see you have some saved addresses. Would you like to use one of these for the pickup location?";
+                    addAssistantMessage(response);
+                } else {
+                    const response = "Great! I'll help you ship " + message + ". What company or person is sending this?";
+                    addAssistantMessage(response);
+                    setCurrentField('fromCompany');
+                }
+                setIsTyping(false);
+                return;
+            }
 
-    // Get current state description
-    const getCurrentStateDescription = () => {
-        switch (currentField) {
-            case 'intro':
-                return "We're just starting to create your shipment.";
-            case 'shipfrom':
-                return "We're collecting information about the pickup address.";
-            case 'shipto':
-                return "We're collecting information about the delivery address.";
-            case 'packages':
-                return "We're collecting information about your package.";
-            case 'complete':
-                return "We've collected all the necessary information for your shipment.";
-            default:
-                return "We're setting up your shipment.";
+            // Handle destination input
+            if (currentField === 'destination' || msg.includes('customer')) {
+                // Hide address suggestions and show customer search
+                setShowAddressSuggestions(false);
+                setShowCustomerSearch(true);
+
+                // Update shipment data with destination company
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        company: message
+                    }
+                }));
+
+                // Fetch and show customer list
+                await fetchCustomers();
+                addAssistantMessage("Please search and select a customer from the list.");
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle manual destination address input if no customer is selected
+            if (currentField === 'toCompany') {
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        company: message
+                    }
+                }));
+                setCurrentField('toStreet');
+                addAssistantMessage("What's the street address for delivery?");
+                setIsTyping(false);
+                return;
+            }
+
+            // Rest of the existing message processing logic...
+
+        } catch (error) {
+            console.error('Error processing message:', error);
+            addAssistantMessage("I apologize, but I encountered an error processing your request. Please try again.");
+        } finally {
+            setIsTyping(false);
         }
     };
 
