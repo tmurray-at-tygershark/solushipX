@@ -455,7 +455,7 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
                     sender: 'ai'
                 },
                 {
-                    text: "Are you looking to ship large freight or a courier package?",
+                    text: "What are we shipping today?",
                     sender: 'ai'
                 }
             ];
