@@ -6,19 +6,14 @@ import {
     IconButton,
     TextField,
     Paper,
-    Fade,
-    Chip,
     Avatar
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
-import { useTheme } from '@mui/material/styles';
-import ShipmentVisualizer from './ShipmentVisualizer';
-import AddressInputWidget from '../CreateShipment/AddressInputWidget';
-import MapWidget from '../CreateShipment/MapWidget';
 
+// Styled components
 const StyledPaper = styled(Paper)(({ theme }) => ({
     position: 'fixed',
     top: 0,
@@ -43,17 +38,6 @@ const MessageInput = styled(TextField)(({ theme }) => ({
     },
 }));
 
-const SuggestionChip = styled(Chip)(({ theme }) => ({
-    margin: theme.spacing(0.5),
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    '&:hover': {
-        backgroundColor: theme.palette.primary.main,
-        color: '#fff',
-    },
-}));
-
 const MessageBubble = styled(Box)(({ theme, isUser }) => ({
     maxWidth: '70%',
     padding: theme.spacing(1.5, 2),
@@ -67,112 +51,416 @@ const MessageBubble = styled(Box)(({ theme, isUser }) => ({
 
 const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
     const [message, setMessage] = useState('');
-    const [suggestions] = useState([
-        'FREIGHT',
-        'COURIER',
-        'IM NOT SURE'
-    ]);
-    const theme = useTheme();
     const messagesEndRef = useRef(null);
-    const [currentAddressType, setCurrentAddressType] = useState(null);
-    const [showAddressInput, setShowAddressInput] = useState(false);
-    const [originAddress, setOriginAddress] = useState(null);
-    const [destinationAddress, setDestinationAddress] = useState(null);
 
+    // Initialize shipment data state
+    const [shipmentData, setShipmentData] = useState({
+        bookingReferenceNumber: `shipment ${Math.floor(Math.random() * 1000)}`,
+        bookingReferenceNumberType: "Shipment",
+        shipmentBillType: "DefaultLogisticsPlus",
+        shipmentDate: new Date().toISOString().split('T')[0],
+        pickupWindow: {
+            earliest: "09:00",
+            latest: "17:00"
+        },
+        deliveryWindow: {
+            earliest: "09:00",
+            latest: "17:00"
+        },
+        fromAddress: {
+            company: "",
+            street: "",
+            street2: "",
+            postalCode: "",
+            city: "",
+            state: "",
+            country: "US",
+            contactName: "",
+            contactPhone: "",
+            contactEmail: "",
+            specialInstructions: "none"
+        },
+        toAddress: {
+            company: "",
+            street: "",
+            street2: "",
+            postalCode: "",
+            city: "",
+            state: "",
+            country: "US",
+            contactName: "",
+            contactPhone: "",
+            contactEmail: "",
+            specialInstructions: "none"
+        },
+        items: [
+            {
+                name: "Package",
+                weight: 1,
+                length: 12,
+                width: 12,
+                height: 12,
+                quantity: 1,
+                freightClass: "50",
+                value: 0,
+                stackable: false
+            }
+        ]
+    });
+
+    // Track conversation state
+    const [currentField, setCurrentField] = useState('intro');
+
+    // Auto-scroll to the bottom of messages
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    // Handle sending messages
     const handleSend = () => {
         if (message.trim()) {
+            // Send message to parent component
             onSend(message);
+
+            // Process the message to update shipment data
+            processUserMessage(message);
+
+            // Clear input field
             setMessage('');
         }
     };
 
+    // Process user message to extract and update shipment data
+    const processUserMessage = (userMessage) => {
+        const msg = userMessage.toLowerCase();
+
+        // Extract information based on current field being collected
+        switch (currentField) {
+            case 'intro':
+                // Move to origin address collection
+                setCurrentField('fromCompany');
+                break;
+
+            case 'fromCompany':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        company: userMessage
+                    }
+                }));
+                setCurrentField('fromStreet');
+                break;
+
+            case 'fromStreet':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        street: userMessage
+                    }
+                }));
+                setCurrentField('fromCity');
+                break;
+
+            case 'fromCity':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        city: userMessage
+                    }
+                }));
+                setCurrentField('fromState');
+                break;
+
+            case 'fromState':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        state: userMessage
+                    }
+                }));
+                setCurrentField('fromPostalCode');
+                break;
+
+            case 'fromPostalCode':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        postalCode: userMessage
+                    }
+                }));
+                setCurrentField('fromContactName');
+                break;
+
+            case 'fromContactName':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        contactName: userMessage
+                    }
+                }));
+                setCurrentField('fromContactPhone');
+                break;
+
+            case 'fromContactPhone':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        contactPhone: userMessage
+                    }
+                }));
+                setCurrentField('fromContactEmail');
+                break;
+
+            case 'fromContactEmail':
+                setShipmentData(prev => ({
+                    ...prev,
+                    fromAddress: {
+                        ...prev.fromAddress,
+                        contactEmail: userMessage
+                    }
+                }));
+                setCurrentField('toCompany');
+                break;
+
+            case 'toCompany':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        company: userMessage
+                    }
+                }));
+                setCurrentField('toStreet');
+                break;
+
+            case 'toStreet':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        street: userMessage
+                    }
+                }));
+                setCurrentField('toCity');
+                break;
+
+            case 'toCity':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        city: userMessage
+                    }
+                }));
+                setCurrentField('toState');
+                break;
+
+            case 'toState':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        state: userMessage
+                    }
+                }));
+                setCurrentField('toPostalCode');
+                break;
+
+            case 'toPostalCode':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        postalCode: userMessage
+                    }
+                }));
+                setCurrentField('toContactName');
+                break;
+
+            case 'toContactName':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        contactName: userMessage
+                    }
+                }));
+                setCurrentField('toContactPhone');
+                break;
+
+            case 'toContactPhone':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        contactPhone: userMessage
+                    }
+                }));
+                setCurrentField('toContactEmail');
+                break;
+
+            case 'toContactEmail':
+                setShipmentData(prev => ({
+                    ...prev,
+                    toAddress: {
+                        ...prev.toAddress,
+                        contactEmail: userMessage
+                    }
+                }));
+                setCurrentField('packageWeight');
+                break;
+
+            case 'packageWeight':
+                // Try to parse a number from the message
+                const weight = parseFloat(msg.replace(/[^0-9.]/g, ''));
+                if (!isNaN(weight)) {
+                    setShipmentData(prev => ({
+                        ...prev,
+                        items: [
+                            {
+                                ...prev.items[0],
+                                weight: weight
+                            }
+                        ]
+                    }));
+                }
+                setCurrentField('packageDimensions');
+                break;
+
+            case 'packageDimensions':
+                // Try to extract dimensions (length x width x height)
+                const dimensions = msg.match(/(\d+)[^\d]+(\d+)[^\d]+(\d+)/);
+                if (dimensions && dimensions.length >= 4) {
+                    setShipmentData(prev => ({
+                        ...prev,
+                        items: [
+                            {
+                                ...prev.items[0],
+                                length: parseInt(dimensions[1]),
+                                width: parseInt(dimensions[2]),
+                                height: parseInt(dimensions[3])
+                            }
+                        ]
+                    }));
+                }
+                setCurrentField('packageQuantity');
+                break;
+
+            case 'packageQuantity':
+                // Try to parse a number from the message
+                const quantity = parseInt(msg.replace(/[^0-9]/g, ''));
+                if (!isNaN(quantity)) {
+                    setShipmentData(prev => ({
+                        ...prev,
+                        items: [
+                            {
+                                ...prev.items[0],
+                                quantity: quantity
+                            }
+                        ]
+                    }));
+                }
+                setCurrentField('packageValue');
+                break;
+
+            case 'packageValue':
+                // Try to parse a number from the message
+                const value = parseFloat(msg.replace(/[^0-9.]/g, ''));
+                if (!isNaN(value)) {
+                    setShipmentData(prev => ({
+                        ...prev,
+                        items: [
+                            {
+                                ...prev.items[0],
+                                value: value
+                            }
+                        ]
+                    }));
+                }
+                setCurrentField('complete');
+
+                // Send final data to the cloud function or store for later use
+                console.log('Shipment data collected:', shipmentData);
+
+                // You can send the shipment data to a function to process it
+                // processShipmentData(shipmentData);
+                break;
+
+            case 'complete':
+                // Conversation is complete, data is collected
+                break;
+
+            default:
+                // Start at the beginning if state is unknown
+                setCurrentField('intro');
+        }
+    };
+
+    // Get the next prompt based on the current state
+    const getNextPrompt = () => {
+        switch (currentField) {
+            case 'intro':
+                return "Hi! I'm your shipping assistant. I'll help you set up a shipment. Let's start - what are you shipping today?";
+            case 'fromCompany':
+                return "Great! Let's gather the shipping details. What's the name of the company or person sending the package?";
+            case 'fromStreet':
+                return "What's the street address for pickup?";
+            case 'fromCity':
+                return "What city is this address in?";
+            case 'fromState':
+                return "What state or province?";
+            case 'fromPostalCode':
+                return "What's the postal code?";
+            case 'fromContactName':
+                return "Who should we contact at the pickup location?";
+            case 'fromContactPhone':
+                return "What's their phone number?";
+            case 'fromContactEmail':
+                return "And their email address?";
+            case 'toCompany':
+                return "Great! Now for the delivery address. What company or person is receiving the package?";
+            case 'toStreet':
+                return "What's the delivery street address?";
+            case 'toCity':
+                return "What city is the delivery address in?";
+            case 'toState':
+                return "What state or province?";
+            case 'toPostalCode':
+                return "What's the postal code for delivery?";
+            case 'toContactName':
+                return "Who should we contact at the delivery location?";
+            case 'toContactPhone':
+                return "What's their phone number?";
+            case 'toContactEmail':
+                return "And their email address?";
+            case 'packageWeight':
+                return "Now let's get the package details. How much does your package weigh in pounds?";
+            case 'packageDimensions':
+                return "What are the dimensions of your package in inches? (length x width x height)";
+            case 'packageQuantity':
+                return "How many packages are you shipping?";
+            case 'packageValue':
+                return "What's the value of your shipment? (in dollars)";
+            case 'complete':
+                return `Thank you! I have all the information I need. Here's a summary of your shipment:\n\nFrom: ${shipmentData.fromAddress.company}, ${shipmentData.fromAddress.city}, ${shipmentData.fromAddress.state}\nTo: ${shipmentData.toAddress.company}, ${shipmentData.toAddress.city}, ${shipmentData.toAddress.state}\nPackage: ${shipmentData.items[0].weight} lbs, ${shipmentData.items[0].length}x${shipmentData.items[0].width}x${shipmentData.items[0].height} inches\n\nIs everything correct?`;
+            default:
+                return "Let's set up your shipment. What are you shipping today?";
+        }
+    };
+
+    // Handle key press (Enter to send)
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSend();
         }
-    };
-
-    const handleSuggestionClick = (suggestion) => {
-        if (suggestion.toLowerCase().includes('address')) {
-            // Determine if it's origin or destination address
-            const isOrigin = suggestion.toLowerCase().includes('origin') ||
-                suggestion.toLowerCase().includes('from');
-            const isDestination = suggestion.toLowerCase().includes('destination') ||
-                suggestion.toLowerCase().includes('to');
-
-            if (isOrigin || isDestination) {
-                setCurrentAddressType(isOrigin ? 'origin' : 'destination');
-                setShowAddressInput(true);
-                return;
-            }
-        }
-
-        onSend(suggestion);
-    };
-
-    const handleAddressSelect = (placeDetails) => {
-        if (currentAddressType === 'origin') {
-            setOriginAddress(placeDetails);
-        } else {
-            setDestinationAddress(placeDetails);
-        }
-        setShowAddressInput(false);
-        setCurrentAddressType(null);
-
-        // Format and send the address message
-        const formattedAddress = formatAddressMessage(placeDetails, currentAddressType);
-        onSend(formattedAddress);
-    };
-
-    const formatAddressMessage = (placeDetails, type) => {
-        if (!placeDetails) return '';
-
-        const components = placeDetails.address_components || [];
-        const streetNumber = components.find(c => c.types.includes('street_number'))?.long_name;
-        const route = components.find(c => c.types.includes('route'))?.long_name;
-        const city = components.find(c => c.types.includes('locality'))?.long_name;
-        const state = components.find(c => c.types.includes('administrative_area_level_1'))?.long_name;
-        const postalCode = components.find(c => c.types.includes('postal_code'))?.long_name;
-        const country = components.find(c => c.types.includes('country'))?.long_name;
-        const subpremise = components.find(c => c.types.includes('subpremise'))?.long_name;
-
-        if (!streetNumber || !route || !city || !state || !postalCode || !country) {
-            return `Please provide a complete ${type} address including street number, street name, city, state/province, and postal code.`;
-        }
-
-        const address = `${streetNumber} ${route}${subpremise ? `, ${subpremise}` : ''}, ${city}, ${state} ${postalCode}, ${country}`;
-        return `I've set the ${type} address to: ${address}`;
-    };
-
-    const renderAddressInput = () => {
-        if (!showAddressInput) return null;
-
-        return (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                    Enter {currentAddressType} address:
-                </Typography>
-                <AddressInputWidget onSelect={handleAddressSelect} />
-            </Box>
-        );
-    };
-
-    const renderMap = () => {
-        if (!originAddress || !destinationAddress) return null;
-
-        return (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                    Shipment Route:
-                </Typography>
-                <MapWidget origin={originAddress} destination={destinationAddress} />
-            </Box>
-        );
     };
 
     return (
@@ -213,135 +501,100 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                         flexGrow: 1,
                         p: 3,
                         display: 'flex',
-                        gap: 3,
+                        flexDirection: 'column',
                         height: 'calc(100vh - 64px)', // Subtract header height
                         overflow: 'hidden' // Prevent double scrollbars
                     }}>
-                        {/* Chat and Input Area */}
+                        {/* Messages Area */}
                         <Box sx={{
-                            flex: 1,
+                            flexGrow: 1,
+                            mb: 2,
+                            overflowY: 'auto',
+                            px: 2,
                             display: 'flex',
                             flexDirection: 'column',
-                            height: '100%'
+                            '&::-webkit-scrollbar': {
+                                width: '8px',
+                            },
+                            '&::-webkit-scrollbar-track': {
+                                background: '#f1f1f1',
+                                borderRadius: '4px',
+                            },
+                            '&::-webkit-scrollbar-thumb': {
+                                background: '#888',
+                                borderRadius: '4px',
+                                '&:hover': {
+                                    background: '#555',
+                                },
+                            },
                         }}>
-                            {/* Messages Area */}
-                            <Box sx={{
-                                flexGrow: 1,
-                                mb: 2,
-                                overflowY: 'auto',
-                                px: 2,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                '&::-webkit-scrollbar': {
-                                    width: '8px',
-                                },
-                                '&::-webkit-scrollbar-track': {
-                                    background: '#f1f1f1',
-                                    borderRadius: '4px',
-                                },
-                                '&::-webkit-scrollbar-thumb': {
-                                    background: '#888',
-                                    borderRadius: '4px',
-                                    '&:hover': {
-                                        background: '#555',
-                                    },
-                                },
-                            }}>
-                                {messages.length === 0 ? (
-                                    <Box sx={{ textAlign: 'center', mt: 4 }}>
-                                        <Typography variant="h6" color="text.secondary" gutterBottom>
-                                            Welcome to SolushipX!
+                            {messages.length === 0 ? (
+                                // Show initial message if no messages yet
+                                <MessageBubble
+                                    isUser={false}
+                                    component={motion.div}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                >
+                                    <Typography variant="body1">
+                                        {getNextPrompt()}
+                                    </Typography>
+                                </MessageBubble>
+                            ) : (
+                                // Show conversation messages
+                                messages.map((msg, index) => (
+                                    <MessageBubble
+                                        key={index}
+                                        isUser={msg.sender === 'user'}
+                                        component={motion.div}
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                    >
+                                        <Typography variant="body1">
+                                            {msg.text}
                                         </Typography>
-                                        <Typography variant="body1" color="text.secondary">
-                                            I'm here to help you with your shipping needs. What would you like to do?
-                                        </Typography>
-                                    </Box>
-                                ) : (
-                                    messages.map((msg, index) => (
-                                        <MessageBubble
-                                            key={index}
-                                            isUser={msg.sender === 'user'}
-                                            component={motion.div}
-                                            initial={{ opacity: 0, y: 20 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                        >
-                                            <Typography variant="body1">
-                                                {msg.text}
-                                            </Typography>
-                                        </MessageBubble>
-                                    ))
-                                )}
-                                <div ref={messagesEndRef} />
-                            </Box>
-
-                            {/* Address Input Widget */}
-                            {renderAddressInput()}
-
-                            {/* Map Widget */}
-                            {renderMap()}
-
-                            {/* Suggestions */}
-                            <Box sx={{ mb: 2 }}>
-                                <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
-                                    Suggested Actions
-                                </Typography>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap' }}>
-                                    {suggestions.map((suggestion, index) => (
-                                        <SuggestionChip
-                                            key={index}
-                                            label={suggestion}
-                                            onClick={() => handleSuggestionClick(suggestion)}
-                                            clickable
-                                        />
-                                    ))}
-                                </Box>
-                            </Box>
-
-                            {/* Input Area */}
-                            <Box sx={{
-                                display: 'flex',
-                                gap: 1,
-                                alignItems: 'center',
-                                background: 'white',
-                                p: 2,
-                                borderTop: '1px solid rgba(0,0,0,0.05)'
-                            }}>
-                                <MessageInput
-                                    fullWidth
-                                    placeholder="Ask anything about shipping..."
-                                    value={message}
-                                    onChange={(e) => setMessage(e.target.value)}
-                                    onKeyPress={handleKeyPress}
-                                    multiline
-                                    maxRows={4}
-                                    variant="outlined"
-                                    InputProps={{
-                                        endAdornment: (
-                                            <IconButton
-                                                onClick={handleSend}
-                                                color="primary"
-                                                sx={{
-                                                    background: message ? 'linear-gradient(45deg, #6B46C1, #805AD5)' : 'transparent',
-                                                    color: message ? 'white' : 'inherit',
-                                                    '&:hover': {
-                                                        background: message ? 'linear-gradient(45deg, #805AD5, #6B46C1)' : 'rgba(0,0,0,0.04)'
-                                                    }
-                                                }}
-                                            >
-                                                <SendIcon />
-                                            </IconButton>
-                                        ),
-                                    }}
-                                />
-                            </Box>
+                                    </MessageBubble>
+                                ))
+                            )}
+                            <div ref={messagesEndRef} />
                         </Box>
 
-                        {/* Shipment Visualization Area */}
+                        {/* Input Area */}
                         <Box sx={{
-                            width: '40%',
-                            display: { xs: 'none', md: 'block' }
+                            display: 'flex',
+                            gap: 1,
+                            alignItems: 'center',
+                            background: 'white',
+                            p: 2,
+                            borderTop: '1px solid rgba(0,0,0,0.05)'
                         }}>
-                            <ShipmentVisualizer />
+                            <MessageInput
+                                fullWidth
+                                placeholder="Type your response..."
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                onKeyPress={handleKeyPress}
+                                multiline
+                                maxRows={4}
+                                variant="outlined"
+                                InputProps={{
+                                    endAdornment: (
+                                        <IconButton
+                                            onClick={handleSend}
+                                            color="primary"
+                                            sx={{
+                                                background: message ? 'linear-gradient(45deg, #6B46C1, #805AD5)' : 'transparent',
+                                                color: message ? 'white' : 'inherit',
+                                                '&:hover': {
+                                                    background: message ? 'linear-gradient(45deg, #805AD5, #6B46C1)' : 'rgba(0,0,0,0.04)'
+                                                }
+                                            }}
+                                        >
+                                            <SendIcon />
+                                        </IconButton>
+                                    ),
+                                }}
+                            />
                         </Box>
                     </Box>
                 </StyledPaper>
