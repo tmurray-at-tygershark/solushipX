@@ -6,12 +6,19 @@ import {
     IconButton,
     TextField,
     Paper,
-    Avatar
+    Avatar,
+    List,
+    ListItem,
+    ListItemText,
+    Chip
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { getAuth } from 'firebase/auth';
 
 // Styled components
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -49,9 +56,24 @@ const MessageBubble = styled(Box)(({ theme, isUser }) => ({
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
 }));
 
+const SuggestionChip = styled(Chip)(({ theme }) => ({
+    margin: theme.spacing(0.5),
+    backgroundColor: theme.palette.background.paper,
+    border: '1px solid rgba(0,0,0,0.1)',
+    '&:hover': {
+        backgroundColor: theme.palette.primary.light,
+        color: theme.palette.primary.contrastText,
+    },
+}));
+
 const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
     const [message, setMessage] = useState('');
     const messagesEndRef = useRef(null);
+    const auth = getAuth();
+    const [companyAddresses, setCompanyAddresses] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
 
     // Initialize shipment data state
     const [shipmentData, setShipmentData] = useState({
@@ -111,6 +133,69 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
     // Track conversation state
     const [currentField, setCurrentField] = useState('intro');
 
+    // Fetch company addresses when component mounts
+    useEffect(() => {
+        const fetchCompanyAddresses = async () => {
+            if (!auth.currentUser) return;
+
+            try {
+                setLoading(true);
+                console.log('Fetching company addresses...');
+
+                // First, fetch the user's data from the users collection
+                const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+                if (!userDoc.exists()) {
+                    console.log('User document not found');
+                    setError('User data not found. Please contact support.');
+                    setLoading(false);
+                    return;
+                }
+
+                const userData = userDoc.data();
+                console.log('User data:', userData);
+
+                if (!userData.connectedCompanies?.companies || userData.connectedCompanies.companies.length === 0) {
+                    console.log('No connected companies found for user');
+                    setError('No company associated with this account. Please contact support.');
+                    setLoading(false);
+                    return;
+                }
+
+                // Get the first company ID from the companies array
+                const companyId = userData.connectedCompanies.companies[0];
+                console.log('Using company ID:', companyId);
+
+                // Try to find the company by companyID field
+                const companiesRef = collection(db, 'companies');
+                const q = query(companiesRef, where('companyID', '==', companyId));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    console.log('No company found with companyID:', companyId);
+                    setError('Company data not found. Please contact support.');
+                    setLoading(false);
+                    return;
+                }
+
+                const companyDoc = querySnapshot.docs[0];
+                const data = companyDoc.data();
+                console.log('Company data:', data);
+
+                // Set company addresses
+                const shipFromAddresses = data.shipFromAddresses || [];
+                setCompanyAddresses(shipFromAddresses);
+                console.log('Company addresses loaded:', shipFromAddresses);
+            } catch (err) {
+                console.error('Error fetching company addresses:', err);
+                setError('Failed to load company addresses. Please try again or contact support.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchCompanyAddresses();
+    }, [auth.currentUser]);
+
     // Auto-scroll to the bottom of messages
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -130,6 +215,26 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         }
     };
 
+    // Handle selecting an address suggestion
+    const handleAddressSelect = (address) => {
+        setShowAddressSuggestions(false);
+
+        // Update the shipment data with the selected address
+        setShipmentData(prev => ({
+            ...prev,
+            fromAddress: {
+                ...address
+            }
+        }));
+
+        // Send a message about using this address
+        const addressMsg = `I'll use this address: ${address.company}, ${address.street}, ${address.city}, ${address.state} ${address.postalCode}`;
+        onSend(addressMsg);
+
+        // Skip to the next major field
+        setCurrentField('toCompany');
+    };
+
     // Process user message to extract and update shipment data
     const processUserMessage = (userMessage) => {
         const msg = userMessage.toLowerCase();
@@ -137,8 +242,15 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         // Extract information based on current field being collected
         switch (currentField) {
             case 'intro':
-                // Move to origin address collection
-                setCurrentField('fromCompany');
+                // Check if we should show address suggestions
+                if (companyAddresses && companyAddresses.length > 0) {
+                    setShowAddressSuggestions(true);
+                    // Still move to next step in case they don't want to use a suggestion
+                    setCurrentField('fromCompany');
+                } else {
+                    // Move to origin address collection
+                    setCurrentField('fromCompany');
+                }
                 break;
 
             case 'fromCompany':
@@ -463,6 +575,44 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         }
     };
 
+    // Render the address suggestion list
+    const renderAddressSuggestions = () => {
+        if (!showAddressSuggestions || companyAddresses.length === 0) return null;
+
+        return (
+            <Box sx={{ mb: 2, width: '100%' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+                    I found these addresses associated with your account:
+                </Typography>
+                <List>
+                    {companyAddresses.map((address, index) => (
+                        <ListItem
+                            key={index}
+                            button
+                            onClick={() => handleAddressSelect(address)}
+                            sx={{
+                                border: '1px solid rgba(0,0,0,0.1)',
+                                borderRadius: 1,
+                                mb: 1,
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0,0,0,0.05)'
+                                }
+                            }}
+                        >
+                            <ListItemText
+                                primary={address.company}
+                                secondary={`${address.street}, ${address.city}, ${address.state} ${address.postalCode}`}
+                            />
+                        </ListItem>
+                    ))}
+                </List>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Click an address to use it, or continue entering your information manually.
+                </Typography>
+            </Box>
+        );
+    };
+
     return (
         <AnimatePresence>
             {open && (
@@ -556,8 +706,21 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                                     </MessageBubble>
                                 ))
                             )}
+                            {loading && (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                                    <Typography variant="body2">Loading...</Typography>
+                                </Box>
+                            )}
+                            {error && (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                                    <Typography variant="body2" color="error">{error}</Typography>
+                                </Box>
+                            )}
                             <div ref={messagesEndRef} />
                         </Box>
+
+                        {/* Address Suggestions */}
+                        {renderAddressSuggestions()}
 
                         {/* Input Area */}
                         <Box sx={{
