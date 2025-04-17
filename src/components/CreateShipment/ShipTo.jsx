@@ -321,6 +321,14 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         variant="outlined"
                         fullWidth
                         placeholder="Start typing to search customers..."
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                backgroundColor: 'white',
+                                '&:hover': {
+                                    backgroundColor: 'white',
+                                },
+                            },
+                        }}
                     />
                 )}
                 renderOption={(props, option) => (
@@ -349,6 +357,20 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         )
                     );
                 }}
+                ListboxProps={{
+                    sx: {
+                        maxHeight: '300px',
+                        '& .MuiAutocomplete-option': {
+                            padding: '8px 16px',
+                            '&:hover': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            },
+                        },
+                    },
+                }}
+                disablePortal
+                disableClearable
+                blurOnSelect
             />
         </div>
     );
@@ -441,64 +463,42 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     }
 
     return (
-        <form className="ship-to-form">
-            {error && (
-                <div className="alert alert-danger alert-dismissible fade show" role="alert">
-                    {error}
-                    <button type="button" className="btn-close" onClick={() => setError(null)}></button>
-                </div>
-            )}
-            {success && (
-                <div className="alert alert-success alert-dismissible fade show" role="alert">
-                    {success}
-                    <button type="button" className="btn-close" onClick={() => setSuccess(null)}></button>
-                </div>
-            )}
+        <div className="ship-to-container">
+            <div className="section-title mb-4">
+                <h2>Ship To</h2>
+                <p className="text-muted">Select or search for a customer to ship to</p>
+            </div>
 
-            <div className="card shadow-sm mb-4">
-                <div className="card-body">
-                    <h5 className="card-title mb-4">Ship To</h5>
+            {renderCustomerSearch()}
 
-                    {renderCustomerSearch()}
-
-                    {selectedCustomer && showAddressSuggestions && (
-                        <>
-                            {renderAddressSuggestions()}
-
-                            <div className="special-instructions mt-4">
-                                <label className="form-label">Special Instructions (Optional)</label>
-                                <textarea
-                                    name="specialInstructions"
-                                    className="form-control"
-                                    value={formData.specialInstructions}
-                                    onChange={handleInputChange}
-                                    rows="3"
-                                    placeholder="Enter any special handling instructions or notes for the carrier"
-                                ></textarea>
+            {selectedCustomer && (
+                <>
+                    <div className="selected-customer mb-4">
+                        <div className="customer-info">
+                            <div className="customer-avatar">
+                                {selectedCustomer.name?.charAt(0) || 'C'}
                             </div>
-                        </>
-                    )}
-                </div>
-            </div>
+                            <div>
+                                <h3>{selectedCustomer.name}</h3>
+                                {selectedCustomer.contacts?.[0] && (
+                                    <p className="text-muted mb-0">
+                                        <i className="bi bi-person me-1"></i> {selectedCustomer.contacts[0].name}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
 
-            <div className="navigation-buttons d-flex justify-content-between mt-4">
-                <button
-                    type="button"
-                    className="btn btn-outline-primary"
-                    onClick={onPrevious}
-                >
-                    <i className="bi bi-arrow-left me-2"></i> Previous
-                </button>
-                <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleSubmit}
-                    disabled={!selectedCustomer || selectedAddressId === null}
-                >
-                    Next <i className="bi bi-arrow-right ms-2"></i>
-                </button>
-            </div>
-        </form>
+                    {renderAddressSuggestions()}
+                </>
+            )}
+
+            {!selectedCustomer && (
+                <div className="text-center mt-4">
+                    <p className="text-muted">Select a customer to view their addresses</p>
+                </div>
+            )}
+        </div>
     );
 };
 

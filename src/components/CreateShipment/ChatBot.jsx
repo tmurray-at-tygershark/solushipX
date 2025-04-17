@@ -449,17 +449,19 @@ const ChatBot = ({ onShipmentComplete, formData }) => {
     // Initialize chat with welcome message
     useEffect(() => {
         if (messages.length === 0) {
-            const welcomeMessages = [
-                {
-                    text: "Welcome to SolushipX! I'm here to help you create a shipment.",
-                    sender: 'ai'
-                },
-                {
+            // First welcome message
+            setMessages([{
+                text: "Welcome to SolushipX! I'm here to help you create a shipment.",
+                sender: 'ai'
+            }]);
+
+            // Second welcome message with 2-second delay
+            setTimeout(() => {
+                setMessages(prevMessages => [...prevMessages, {
                     text: "What are we shipping today?",
                     sender: 'ai'
-                }
-            ];
-            setMessages(welcomeMessages);
+                }]);
+            }, 2000);
         }
     }, []);
 

@@ -109,7 +109,21 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
     // Sync local messages with prop messages only on initial mount
     useEffect(() => {
         if (localMessages.length === 0) {
-            setLocalMessages(messages);
+            // First welcome message
+            setLocalMessages([{
+                id: Date.now(),
+                text: "Welcome to SolushipX! I'm here to help you create a shipment.",
+                sender: 'assistant'
+            }]);
+
+            // Second welcome message with 2-second delay
+            setTimeout(() => {
+                setLocalMessages(prevMessages => [...prevMessages, {
+                    id: Date.now() + 1,
+                    text: "What are we shipping today?",
+                    sender: 'assistant'
+                }]);
+            }, 2000);
         }
     }, [messages]);
 
@@ -258,8 +272,14 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
 
     // Auto-scroll to the bottom of messages
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+        if (messagesEndRef.current) {
+            const scrollOptions = {
+                behavior: 'smooth',
+                block: 'end',
+            };
+            messagesEndRef.current.scrollIntoView(scrollOptions);
+        }
+    }, [localMessages, messages]);
 
     // Handle sending messages
     const handleSend = () => {
@@ -1724,6 +1744,7 @@ Country: ${completeAddress.country}
                                     background: '#555',
                                 },
                             },
+                            pb: 2, // Add padding at the bottom to ensure last message is visible
                         }}>
                             {messages.length === 0 ? (
                                 // Show initial message if no messages yet
@@ -1772,7 +1793,7 @@ Country: ${completeAddress.country}
                                     </Typography>
                                 </Box>
                             )}
-                            <div ref={messagesEndRef} />
+                            <div ref={messagesEndRef} style={{ height: '1px', margin: 0, padding: 0 }} />
                         </Box>
 
                         {/* Suggested Responses */}
