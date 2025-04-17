@@ -309,6 +309,56 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
         }
     };
 
+    // Add this function before the processUserMessage function
+    const generateShipmentTypeResponse = (shipmentType) => {
+        const type = shipmentType.toLowerCase();
+
+        // Common items with standard responses
+        const commonItems = {
+            'box': "Got it! We ship boxes all the time. Let's get this moving for you.",
+            'boxes': "Perfect! We handle boxes every day. Let's get these moving for you.",
+            'package': "Great! We're experts at handling packages. Let's get this moving for you.",
+            'packages': "Excellent! We handle packages all the time. Let's get these moving for you.",
+            'document': "Documents are our specialty! We'll make sure these arrive safely.",
+            'documents': "Documents are our specialty! We'll make sure these arrive safely.",
+            'letter': "Letters are our bread and butter! We'll get this delivered promptly.",
+            'letters': "Letters are our bread and butter! We'll get these delivered promptly."
+        };
+
+        // Special items that need extra care
+        const specialItems = {
+            'fragile': "Oh, fragile items! We'll make sure to handle these with extra care.",
+            'fragiles': "Oh, fragile items! We'll make sure to handle these with extra care.",
+            'medical': "Medical equipment! We have special protocols for handling these items.",
+            'medicine': "Medical supplies! We have special protocols for handling these items.",
+            'hazardous': "Hazardous materials! We have the proper certifications to handle these safely.",
+            'chemical': "Chemical materials! We have the proper certifications to handle these safely.",
+            'perishable': "Perishable items! We have temperature-controlled shipping options for these.",
+            'food': "Food items! We have temperature-controlled shipping options for these.",
+            'live': "Live animals! We have special protocols for handling these shipments.",
+            'animal': "Animals! We have special protocols for handling these shipments.",
+            'monkey': "Wow, a monkey! That's a first! We'll make sure to handle this special shipment with extra care.",
+            'monkeys': "Wow, monkeys! That's a first! We'll make sure to handle these special shipments with extra care."
+        };
+
+        // Check for common items first
+        for (const [key, response] of Object.entries(commonItems)) {
+            if (type.includes(key)) {
+                return response;
+            }
+        }
+
+        // Check for special items
+        for (const [key, response] of Object.entries(specialItems)) {
+            if (type.includes(key)) {
+                return response;
+            }
+        }
+
+        // Default response for unknown items
+        return `Interesting! We'll make sure to handle your ${shipmentType} shipment with care.`;
+    };
+
     // Process user message
     const processUserMessage = async (message) => {
         const msg = message.toLowerCase();
@@ -351,6 +401,10 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                     ...prev,
                     shipmentType: message
                 }));
+
+                // Generate dynamic response based on shipment type
+                const shipmentResponse = generateShipmentTypeResponse(message);
+                addAssistantMessage(shipmentResponse);
 
                 // Ask for shipment date
                 const today = new Date();
@@ -430,56 +484,54 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                         addAssistantMessage("What company or person is sending this?");
                         setCurrentField('shipfrom');
                     }
-                    setIsTyping(false);
-                    return;
-                }
-
-                // Try to parse specific time
-                const timeMatch = msg.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-                if (timeMatch) {
-                    let [_, hours, minutes, period] = timeMatch;
-                    hours = parseInt(hours);
-                    minutes = minutes ? parseInt(minutes) : 0;
-
-                    // Convert to 24-hour format
-                    if (period?.toLowerCase() === 'pm' && hours < 12) hours += 12;
-                    if (period?.toLowerCase() === 'am' && hours === 12) hours = 0;
-
-                    // Format time as HH:MM
-                    const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-
-                    // Set pickup window (1 hour window)
-                    const pickupTime = new Date();
-                    pickupTime.setHours(hours, minutes, 0);
-
-                    const endTime = new Date(pickupTime);
-                    endTime.setHours(endTime.getHours() + 1);
-
-                    setShipmentData(prev => ({
-                        ...prev,
-                        pickupWindow: {
-                            earliest: formattedTime,
-                            latest: `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`
-                        }
-                    }));
-
-                    // First message confirming the pickup time
-                    addAssistantMessage(`Perfect! I've set the pickup time for ${formattedTime}.`);
-
-                    // Show address suggestions
-                    if (companyAddresses && companyAddresses.length > 0) {
-                        setShowAddressSuggestions(true);
-                        setShowCustomerSearch(false);
-                        // Second message about address selection
-                        addAssistantMessage("I see you have some saved addresses. Would you like to use one of these for the pickup location?");
-                        setCurrentField('shipfrom');
-                    } else {
-                        // Second message asking for company details
-                        addAssistantMessage("What company or person is sending this?");
-                        setCurrentField('shipfrom');
-                    }
                 } else {
-                    addAssistantMessage("I couldn't understand the time. Please provide a specific time (like '9am' or '2:30pm') or let me know if you want to use our standard business hours (9 AM to 5 PM).");
+                    // Try to parse specific time
+                    const timeMatch = msg.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+                    if (timeMatch) {
+                        let [_, hours, minutes, period] = timeMatch;
+                        hours = parseInt(hours);
+                        minutes = minutes ? parseInt(minutes) : 0;
+
+                        // Convert to 24-hour format
+                        if (period?.toLowerCase() === 'pm' && hours < 12) hours += 12;
+                        if (period?.toLowerCase() === 'am' && hours === 12) hours = 0;
+
+                        // Format time as HH:MM
+                        const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+                        // Set pickup window (1 hour window)
+                        const pickupTime = new Date();
+                        pickupTime.setHours(hours, minutes, 0);
+
+                        const endTime = new Date(pickupTime);
+                        endTime.setHours(endTime.getHours() + 1);
+
+                        setShipmentData(prev => ({
+                            ...prev,
+                            pickupWindow: {
+                                earliest: formattedTime,
+                                latest: `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`
+                            }
+                        }));
+
+                        // First message confirming the pickup time
+                        addAssistantMessage(`Perfect! I've set the pickup time for ${formattedTime}.`);
+
+                        // Show address suggestions
+                        if (companyAddresses && companyAddresses.length > 0) {
+                            setShowAddressSuggestions(true);
+                            setShowCustomerSearch(false);
+                            // Second message about address selection
+                            addAssistantMessage("I see you have some saved addresses. Would you like to use one of these for the pickup location?");
+                            setCurrentField('shipfrom');
+                        } else {
+                            // Second message asking for company details
+                            addAssistantMessage("What company or person is sending this?");
+                            setCurrentField('shipfrom');
+                        }
+                    } else {
+                        addAssistantMessage("I couldn't understand the time. Please provide a specific time (like '9am' or '2:30pm') or let me know if you want to use our standard business hours (9 AM to 5 PM).");
+                    }
                 }
                 setIsTyping(false);
                 return;
@@ -1297,6 +1349,14 @@ ${completeAddress.specialInstructions ? `**Special Instructions:** ${completeAdd
             return targetDate;
         }
 
+        // Handle "X days from now" format
+        const daysFromNowMatch = msg.match(/(\d+)\s*days?\s*from\s*now/i);
+        if (daysFromNowMatch) {
+            const days = parseInt(daysFromNowMatch[1]);
+            targetDate.setDate(today.getDate() + days);
+            return targetDate;
+        }
+
         // Try to parse specific date formats
         const dateFormats = [
             // Month DD, YYYY
@@ -1566,11 +1626,6 @@ Country: ${completeAddress.country}
 
         // Check if customer has addresses
         if (customer.addresses && customer.addresses.length > 0) {
-            // Find the default shipping address or use the first address
-            const defaultShippingAddress = customer.addresses.find(addr => addr.default && addr.type === 'shipping') ||
-                customer.addresses.find(addr => addr.type === 'shipping') ||
-                customer.addresses[0];
-
             // Format addresses for display
             const formattedAddresses = customer.addresses.map(addr => ({
                 ...addr,
@@ -1586,19 +1641,8 @@ Country: ${completeAddress.country}
             setShowAddressSuggestions(true);
             setCurrentField('shipto');
 
-            // If there's a default shipping address, use it automatically
-            if (defaultShippingAddress) {
-                handleAddressSelect({
-                    ...defaultShippingAddress,
-                    company: customer.name,
-                    contactName: defaultShippingAddress.attention || primaryContact?.name || '',
-                    contactPhone: primaryContact?.phone || '',
-                    contactEmail: primaryContact?.email || '',
-                    postalCode: defaultShippingAddress.zip
-                });
-            } else {
-                addAssistantMessage("I found some addresses for this customer. Please select one for delivery:");
-            }
+            // Show message to select an address
+            addAssistantMessage("I found some addresses for this customer. Please select one for delivery:");
         } else {
             // If no addresses exist, create a default address from customer info
             const defaultAddress = {
