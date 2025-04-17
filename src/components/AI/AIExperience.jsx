@@ -357,7 +357,7 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                 const tomorrow = new Date(today);
                 tomorrow.setDate(tomorrow.getDate() + 1);
 
-                addAssistantMessage(`When would you like to send this package? You can say things like 'today' (${formatDateForDisplay(today)}), 'tomorrow' (${formatDateForDisplay(tomorrow)}), or give a specific date.`);
+                addAssistantMessage(`When would you like to send this package?`);
                 setCurrentField('shipmentDate');
                 setIsTyping(false);
                 return;
@@ -372,20 +372,114 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                         shipmentDate: date.toISOString().split('T')[0]
                     }));
 
+                    // First message confirming the shipment date
+                    addAssistantMessage(`Great! I'll help you ship ${conversationContext.shipmentType} on ${formatDateForDisplay(date)}.`);
+
+                    // Second message asking about pickup time
+                    addAssistantMessage("Do you need a specific pickup time for this shipment? If not, we'll use our standard business hours (9 AM to 5 PM).");
+                    setCurrentField('pickupTime');
+                    setIsTyping(false);
+                    return;
+                } else {
+                    addAssistantMessage("I couldn't understand the date or the date is in the past. Please try again with a date like 'today', 'tomorrow', or a specific date like 'June 21, 2025'.");
+                }
+                setIsTyping(false);
+                return;
+            }
+
+            // Handle pickup time input
+            if (currentField === 'pickupTime') {
+                const msg = message.toLowerCase();
+
+                // Comprehensive array of "no" responses that indicate standard business hours
+                const standardHoursResponses = [
+                    'no', 'nope', 'nah', 'nay', 'negative',
+                    'any', 'anytime', 'standard', 'business',
+                    'doesn\'t matter', 'dont matter', 'doesnt matter',
+                    'no preference', 'whatever', 'either', 'either way',
+                    'default', 'regular', 'normal', 'usual',
+                    '9 to 5', '9-5', '9am to 5pm', '9am-5pm',
+                    'morning', 'afternoon', 'during the day',
+                    'during business hours', 'business hours',
+                    'during work hours', 'work hours'
+                ];
+
+                // Check if user wants standard business hours or says no
+                if (standardHoursResponses.some(response => msg.includes(response))) {
+                    // Set standard business hours
+                    setShipmentData(prev => ({
+                        ...prev,
+                        pickupWindow: {
+                            earliest: "09:00",
+                            latest: "17:00"
+                        }
+                    }));
+
+                    // First message confirming the pickup time
+                    addAssistantMessage(`Perfect! I've set the pickup time for our standard business hours (9 AM to 5 PM).`);
+
                     // Show address suggestions immediately when we know what's being shipped
                     if (companyAddresses && companyAddresses.length > 0) {
                         setShowAddressSuggestions(true);
                         setShowCustomerSearch(false);
-                        const response = `Great! I'll help you ship ${conversationContext.shipmentType} on ${formatDateForDisplay(date)}. I see you have some saved addresses. Would you like to use one of these for the pickup location?`;
-                        addAssistantMessage(response);
+                        // Second message about address selection
+                        addAssistantMessage("I see you have some saved addresses. Would you like to use one of these for the pickup location?");
                         setCurrentField('shipfrom');
                     } else {
-                        const response = `Great! I'll help you ship ${conversationContext.shipmentType} on ${formatDateForDisplay(date)}. What company or person is sending this?`;
-                        addAssistantMessage(response);
+                        // Second message asking for company details
+                        addAssistantMessage("What company or person is sending this?");
+                        setCurrentField('shipfrom');
+                    }
+                    setIsTyping(false);
+                    return;
+                }
+
+                // Try to parse specific time
+                const timeMatch = msg.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+                if (timeMatch) {
+                    let [_, hours, minutes, period] = timeMatch;
+                    hours = parseInt(hours);
+                    minutes = minutes ? parseInt(minutes) : 0;
+
+                    // Convert to 24-hour format
+                    if (period?.toLowerCase() === 'pm' && hours < 12) hours += 12;
+                    if (period?.toLowerCase() === 'am' && hours === 12) hours = 0;
+
+                    // Format time as HH:MM
+                    const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+                    // Set pickup window (1 hour window)
+                    const pickupTime = new Date();
+                    pickupTime.setHours(hours, minutes, 0);
+
+                    const endTime = new Date(pickupTime);
+                    endTime.setHours(endTime.getHours() + 1);
+
+                    setShipmentData(prev => ({
+                        ...prev,
+                        pickupWindow: {
+                            earliest: formattedTime,
+                            latest: `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`
+                        }
+                    }));
+
+                    // First message confirming the pickup time
+                    addAssistantMessage(`Perfect! I've set the pickup time for ${formattedTime}.`);
+
+                    // Show address suggestions
+                    if (companyAddresses && companyAddresses.length > 0) {
+                        setShowAddressSuggestions(true);
+                        setShowCustomerSearch(false);
+                        // Second message about address selection
+                        addAssistantMessage("I see you have some saved addresses. Would you like to use one of these for the pickup location?");
+                        setCurrentField('shipfrom');
+                    } else {
+                        // Second message asking for company details
+                        addAssistantMessage("What company or person is sending this?");
                         setCurrentField('shipfrom');
                     }
                 } else {
-                    addAssistantMessage("I couldn't understand the date or the date is in the past. Please try again with a date like 'today', 'tomorrow', or a specific date like 'June 21, 2025'.");
+                    addAssistantMessage("I couldn't understand the time. Please provide a specific time (like '9am' or '2:30pm') or let me know if you want to use our standard business hours (9 AM to 5 PM).");
                 }
                 setIsTyping(false);
                 return;
@@ -446,11 +540,17 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                     // Add confirmation message
                     const confirmationMessage = {
                         id: Date.now() + 1,
-                        text: `Great! I've recorded the package weight as ${weight} pounds. What are the dimensions of your package? (Please provide length x width x height in inches)`,
+                        text: `Great! I've recorded the package weight as ${weight} pounds.`,
                         sender: 'assistant'
                     };
 
-                    setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                    const nextQuestionMessage = {
+                        id: Date.now() + 2,
+                        text: "What are the dimensions of your package? (Please provide length x width x height in inches)",
+                        sender: 'assistant'
+                    };
+
+                    setLocalMessages(prevMessages => [...prevMessages, confirmationMessage, nextQuestionMessage]);
                     setCurrentField('packageDimensions');
                 } else {
                     addAssistantMessage("I couldn't understand the weight. Please provide a number in pounds.");
@@ -479,11 +579,17 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                     // Add confirmation message
                     const confirmationMessage = {
                         id: Date.now() + 1,
-                        text: `Perfect! I've recorded the package dimensions as ${length}" × ${width}" × ${height}". Would you like to add any special handling instructions for your package?`,
+                        text: `Perfect! I've recorded the package dimensions as:\n\n${length}" × ${width}" × ${height}"`,
                         sender: 'assistant'
                     };
 
-                    setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                    const nextQuestionMessage = {
+                        id: Date.now() + 2,
+                        text: "Would you like to add any special handling instructions for your package?",
+                        sender: 'assistant'
+                    };
+
+                    setLocalMessages(prevMessages => [...prevMessages, confirmationMessage, nextQuestionMessage]);
                     setCurrentField('specialInstructions');
                 } else {
                     addAssistantMessage("I couldn't understand the dimensions. Please provide them in the format: length x width x height (in inches). For example: 12 x 8 x 6");
@@ -507,11 +613,17 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                 // Add confirmation message
                 const confirmationMessage = {
                     id: Date.now() + 1,
-                    text: `I've recorded your special handling instructions: "${message}". Would you like to add a reference number for this shipment?`,
+                    text: `I've recorded your special handling instructions: "${message}".`,
                     sender: 'assistant'
                 };
 
-                setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                const nextQuestionMessage = {
+                    id: Date.now() + 2,
+                    text: "Would you like to add a reference number for this shipment?",
+                    sender: 'assistant'
+                };
+
+                setLocalMessages(prevMessages => [...prevMessages, confirmationMessage, nextQuestionMessage]);
                 setCurrentField('referenceNumber');
                 setIsTyping(false);
                 return;
@@ -527,11 +639,17 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                 // Add confirmation message
                 const confirmationMessage = {
                     id: Date.now() + 1,
-                    text: `I've recorded your reference number: "${message}". Now, let's calculate the shipping cost. Would you like to proceed?`,
+                    text: `I've recorded your reference number: "${message}".`,
                     sender: 'assistant'
                 };
 
-                setLocalMessages(prevMessages => [...prevMessages, confirmationMessage]);
+                const nextQuestionMessage = {
+                    id: Date.now() + 2,
+                    text: "Now, let's calculate the shipping cost. Would you like to proceed?",
+                    sender: 'assistant'
+                };
+
+                setLocalMessages(prevMessages => [...prevMessages, confirmationMessage, nextQuestionMessage]);
                 setCurrentField('complete');
                 setIsTyping(false);
                 return;
@@ -624,15 +742,17 @@ Country: ${completeAddress.country}
 
         // Format the complete address with clear structure
         const formattedAddress = `
-Company: ${completeAddress.company}
-Street: ${completeAddress.street}${completeAddress.street2 ? `, ${completeAddress.street2}` : ''}
-City: ${completeAddress.city}
-State/Province: ${completeAddress.state}
-Postal Code: ${completeAddress.postalCode}
-Country: ${completeAddress.country}
-${completeAddress.contactName ? `Contact: ${completeAddress.contactName}` : ''}
-${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
-        `.trim();
+**Company:** ${completeAddress.company}
+**Street:** ${completeAddress.street}${completeAddress.street2 ? `, ${completeAddress.street2}` : ''}
+**City:** ${completeAddress.city}
+**State/Province:** ${completeAddress.state}
+**Postal Code:** ${completeAddress.postalCode}
+**Country:** ${completeAddress.country}
+${completeAddress.contactName ? `**Contact:** ${completeAddress.contactName}` : ''}
+${completeAddress.contactPhone ? `**Phone:** ${completeAddress.contactPhone}` : ''}
+${completeAddress.contactEmail ? `**Email:** ${completeAddress.contactEmail}` : ''}
+${completeAddress.specialInstructions ? `**Special Instructions:** ${completeAddress.specialInstructions}` : ''}
+`.trim();
 
         // Send the user selection message to the parent with full address details
         const userText = `I'll use this delivery address:\n\n${formattedAddress}`;
@@ -1308,19 +1428,20 @@ ${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
 
             // Format the complete address with clear structure
             const formattedAddress = `
-Company: ${completeAddress.company}
-Street: ${completeAddress.street}${completeAddress.street2 ? `, ${completeAddress.street2}` : ''}
-City: ${completeAddress.city}
-State/Province: ${completeAddress.state}
-Postal Code: ${isCustomerAddress ? completeAddress.zip : completeAddress.postalCode}
-Country: ${completeAddress.country}
-${completeAddress.contactName ? `Contact: ${completeAddress.contactName}` : ''}
-${completeAddress.contactPhone ? `Phone: ${completeAddress.contactPhone}` : ''}
-${completeAddress.specialInstructions ? `Special Instructions: ${completeAddress.specialInstructions}` : ''}
-            `.trim();
+**Company:** ${completeAddress.company}
+**Street:** ${completeAddress.street}${completeAddress.street2 ? `, ${completeAddress.street2}` : ''}
+**City:** ${completeAddress.city}
+**State/Province:** ${completeAddress.state}
+**Postal Code:** ${isCustomerAddress ? completeAddress.zip : completeAddress.postalCode}
+**Country:** ${completeAddress.country}
+${completeAddress.contactName ? `**Contact:** ${completeAddress.contactName}` : ''}
+${completeAddress.contactPhone ? `**Phone:** ${completeAddress.contactPhone}` : ''}
+${completeAddress.contactEmail ? `**Email:** ${completeAddress.contactEmail}` : ''}
+${completeAddress.specialInstructions ? `**Special Instructions:** ${completeAddress.specialInstructions}` : ''}
+`.trim();
 
             // Send the user selection message to the parent with full address details
-            const userText = `I'll use this ${isDestination ? 'delivery' : 'pickup'} address:\n\n${formattedAddress}`;
+            const userText = `I'll use this address:\n\n${formattedAddress}`;
             onSend(userText);
 
             // Create message objects for our local state
