@@ -14,7 +14,8 @@ import {
     CircularProgress,
     Tooltip,
     Fade,
-    Autocomplete
+    Autocomplete,
+    Button
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
@@ -22,6 +23,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import PersonIcon from '@mui/icons-material/Person';
+import AddIcon from '@mui/icons-material/Add';
 import { doc, getDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getAuth } from 'firebase/auth';
@@ -317,6 +319,49 @@ const AIExperience = ({ open, onClose, onSend, messages = [] }) => {
                 setLocalMessages(prevMessages => [...prevMessages, greetingResponse]);
 
                 // Don't process further for greetings, but don't modify current state either
+                setMessage('');
+                return;
+            }
+
+            // Check if this is a request to ship something
+            if (lowerMsg.includes('ship') && !conversationContext.shipmentType) {
+                // Extract the item to ship from the message
+                const itemMatch = lowerMsg.match(/ship\s+(?:a|an|the)?\s+(\w+)/i);
+                const itemToShip = itemMatch ? itemMatch[1] : message;
+
+                // Update shipment data
+                setShipmentData(prev => ({
+                    ...prev,
+                    items: [
+                        {
+                            ...prev.items[0],
+                            name: itemToShip
+                        }
+                    ]
+                }));
+
+                // Store shipment type in context
+                setConversationContext(prev => ({
+                    ...prev,
+                    shipmentType: itemToShip
+                }));
+
+                // Generate dynamic response based on shipment type
+                const shipmentResponse = {
+                    id: Date.now() + 1,
+                    text: generateShipmentTypeResponse(itemToShip),
+                    sender: 'assistant'
+                };
+
+                const nextQuestion = {
+                    id: Date.now() + 2,
+                    text: "When would you like to send this package?",
+                    sender: 'assistant'
+                };
+
+                // Add the responses to our local messages
+                setLocalMessages(prevMessages => [...prevMessages, shipmentResponse, nextQuestion]);
+                setCurrentField('shipmentDate');
                 setMessage('');
                 return;
             }
@@ -824,7 +869,7 @@ ${completeAddress.contactName ? `**Contact:** ${completeAddress.contactName}` : 
 ${completeAddress.contactPhone ? `**Phone:** ${completeAddress.contactPhone}` : ''}
 ${completeAddress.contactEmail ? `**Email:** ${completeAddress.contactEmail}` : ''}
 ${completeAddress.specialInstructions ? `**Special Instructions:** ${completeAddress.specialInstructions}` : ''}
-`.trim();
+        `.trim();
 
         // Send the user selection message to the parent with full address details
         const userText = `I'll use this delivery address:\n\n${formattedAddress}`;
@@ -1122,124 +1167,133 @@ ${completeAddress.specialInstructions ? `**Special Instructions:** ${completeAdd
 
         return (
             <Box sx={{
-                mb: 2,
-                width: '100%',
-                backgroundColor: 'rgba(106, 70, 193, 0.05)',
-                borderRadius: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
                 p: 2,
-                border: '1px solid rgba(106, 70, 193, 0.2)'
+                bgcolor: 'background.paper',
+                borderRadius: 2,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
             }}>
-                <Typography variant="subtitle1" sx={{
-                    mb: 2,
-                    color: 'primary.main',
-                    fontWeight: 'bold',
+                <Typography variant="h6" sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 1
+                    gap: 1,
+                    color: 'primary.main',
+                    fontWeight: 600
                 }}>
-                    <LocationOnIcon sx={{ fontSize: 20 }} />
-                    {currentField === 'shipto' ? 'Select a Delivery Address' : 'Select a Pickup Address'}
+                    <LocationOnIcon />
+                    {currentField === 'shipto' ? 'Select Delivery Address' : 'Select Pickup Address'}
                 </Typography>
-                <List sx={{
-                    maxHeight: '300px',
+
+                <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1.5,
+                    maxHeight: '400px',
                     overflowY: 'auto',
-                    '&::-webkit-scrollbar': {
-                        width: '8px',
-                    },
-                    '&::-webkit-scrollbar-track': {
-                        background: '#f1f1f1',
-                        borderRadius: '4px',
-                    },
-                    '&::-webkit-scrollbar-thumb': {
-                        background: '#888',
-                        borderRadius: '4px',
-                        '&:hover': {
-                            background: '#555',
-                        },
-                    },
+                    pr: 1
                 }}>
                     {sortedAddresses.map((address, index) => (
-                        <ListItem
+                        <MessageBubble
                             key={index}
-                            button
+                            isUser={false}
+                            component={motion.div}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, delay: index * 0.1 }}
                             onClick={() => handleAddressSelect(address)}
                             sx={{
-                                border: `1px solid ${address.isDefault ? 'primary.main' : 'rgba(0,0,0,0.1)'}`,
-                                borderRadius: 1,
-                                mb: 1,
+                                cursor: 'pointer',
+                                position: 'relative',
+                                overflow: 'hidden',
                                 '&:hover': {
                                     backgroundColor: 'rgba(106, 70, 193, 0.05)',
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                                    borderColor: 'primary.main',
-                                    borderWidth: 1
+                                    transform: 'translateY(-2px)',
+                                    transition: 'all 0.2s ease',
                                 },
-                                padding: '12px 16px',
-                                display: 'block',
-                                position: 'relative',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                                backgroundColor: address.isDefault ? 'rgba(106, 70, 193, 0.05)' : 'white'
+                                border: `1px solid ${address.isDefault ? 'primary.main' : 'rgba(0,0,0,0.1)'}`,
+                                backgroundColor: address.isDefault ? 'rgba(106, 70, 193, 0.05)' : 'white',
+                                borderRadius: '12px',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                                p: 2
                             }}
                         >
-                            {/* Address summary */}
-                            <Box sx={{ display: 'flex', flexDirection: 'column', mb: 0.5 }}>
-                                <Typography variant="subtitle1" sx={{
-                                    fontWeight: 'bold',
-                                    color: 'primary.main',
-                                    mb: 0.5,
-                                    fontSize: '0.95rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 1
-                                }}>
-                                    {address.company}
-                                    {address.isDefault && (
-                                        <Chip
-                                            size="small"
-                                            label="Default"
-                                            sx={{
-                                                height: '18px',
-                                                fontSize: '0.7rem',
-                                                backgroundColor: 'primary.light',
-                                                color: 'white'
-                                            }}
-                                        />
-                                    )}
-                                </Typography>
-
-                                {/* One-line summary of full address */}
-                                <Typography variant="body2" sx={{
-                                    color: 'text.secondary',
-                                    fontSize: '0.85rem',
-                                    mb: 0.5
-                                }}>
-                                    {address.street}{address.street2 ? `, ${address.street2}` : ''}, {address.city}, {address.state} {address.zip}, {address.country || 'CA'}
-                                </Typography>
-                            </Box>
-
-                            {/* Contact info */}
                             <Box sx={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                flexWrap: 'wrap',
-                                gap: '0 10px',
-                                fontSize: '0.8rem',
-                                color: 'text.secondary'
+                                flexDirection: 'column',
+                                gap: 1
                             }}>
-                                {address.contactName && (
-                                    <Typography component="span" variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                        Contact: {address.contactName}
-                                    </Typography>
+                                {address.isDefault && (
+                                    <Chip
+                                        label="Default Address"
+                                        size="small"
+                                        color="primary"
+                                        sx={{ alignSelf: 'flex-start' }}
+                                    />
                                 )}
-                                {address.contactPhone && (
-                                    <Typography component="span" variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                        Phone: {address.contactPhone}
+
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 0.5
+                                }}>
+                                    <Typography variant="subtitle1" sx={{
+                                        fontWeight: 600,
+                                        color: 'text.primary'
+                                    }}>
+                                        {address.company || address.contactName}
                                     </Typography>
+
+                                    <Typography variant="body2" sx={{
+                                        color: 'text.secondary',
+                                        lineHeight: 1.4
+                                    }}>
+                                        {address.street}{address.street2 ? `, ${address.street2}` : ''}
+                                    </Typography>
+                                    <Typography variant="body2" sx={{
+                                        color: 'text.secondary',
+                                        lineHeight: 1.4
+                                    }}>
+                                        {address.city}, {address.state} {address.postalCode || address.zip}
+                                    </Typography>
+                                </Box>
+
+                                {address.contactName && (
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 1,
+                                        mt: 1,
+                                        pt: 1,
+                                        borderTop: '1px solid rgba(0,0,0,0.05)'
+                                    }}>
+                                        <PersonIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+                                        <Typography variant="body2" color="text.secondary">
+                                            {address.contactName}
+                                        </Typography>
+                                    </Box>
                                 )}
                             </Box>
-                        </ListItem>
+                        </MessageBubble>
                     ))}
-                </List>
+                </Box>
+
+                <Button
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={() => {
+                        setShowAddressSuggestions(false);
+                        addAssistantMessage("Let's add a new address. What's the street address?");
+                        setCurrentField(currentField === 'shipto' ? 'toStreet' : 'fromStreet');
+                    }}
+                    sx={{
+                        mt: 1,
+                        alignSelf: 'flex-start'
+                    }}
+                >
+                    Add New Address
+                </Button>
             </Box>
         );
     };
@@ -1366,6 +1420,24 @@ ${completeAddress.specialInstructions ? `**Special Instructions:** ${completeAdd
         }
         if (msg.includes('next week')) {
             targetDate.setDate(today.getDate() + 7);
+            return targetDate;
+        }
+
+        // Handle "next" with day names
+        const dayNames = {
+            'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+            'thursday': 4, 'friday': 5, 'saturday': 6
+        };
+
+        const nextDayMatch = msg.match(/next\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/i);
+        if (nextDayMatch) {
+            const targetDay = dayNames[nextDayMatch[1].toLowerCase()];
+            const currentDay = today.getDay();
+            let daysToAdd = targetDay - currentDay;
+            if (daysToAdd <= 0) {
+                daysToAdd += 7; // If the target day is earlier in the week, add 7 to get to next week
+            }
+            targetDate.setDate(today.getDate() + daysToAdd);
             return targetDate;
         }
 
