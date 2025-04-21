@@ -4,6 +4,7 @@ import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, L
 import { CircularProgress, Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isLoading, setIsLoading] = useState(true);
@@ -351,7 +352,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                 setRatesLoaded(false);
 
                 // Use a simple booking reference
-                const bookingRef = "shipment 123";
+                const bookingRef = "shipment-" + new Date().getTime();
 
                 // Determine shipment bill type and booking reference type based on shipment type
                 const shipmentType = formData.shipmentInfo.shipmentType || 'courier';
@@ -455,7 +456,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                 });
 
                 console.log('📍 From Address:', rateRequestData.fromAddress);
-                console.log('�� To Address:', rateRequestData.toAddress);
+                console.log('📍 To Address:', rateRequestData.toAddress);
 
                 console.log('📦 Packages:', rateRequestData.items.map(item => ({
                     name: item.name,
@@ -469,115 +470,116 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
                 console.groupEnd();
 
-                const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(rateRequestData)
-                });
+                // Get the API key from environment variables or use a development fallback
+                // In production, this should be set in the environment variables
+                let apiKey;
 
-                const data = await response.json();
+                // Try to get API key from environment variables
+                if (process.env.REACT_APP_ESHIP_PLUS_API_KEY) {
+                    apiKey = process.env.REACT_APP_ESHIP_PLUS_API_KEY;
+                    console.log('Using API key from environment variables');
+                } else {
+                    // Fallback for development
+                    apiKey = 'development-api-key';
+                    console.log('Using development API key fallback');
+                }
 
-                // Process the response data
-                if (data.success && data.data) {
-                    // Add detailed logging
-                    console.log('Response structure:', {
-                        hasData: !!data.data,
-                        dataKeys: Object.keys(data.data),
-                        dataType: typeof data.data,
-                        isString: typeof data.data === 'string',
-                        isObject: typeof data.data === 'object'
-                    });
+                try {
+                    // Use Firebase Functions SDK to call the function
+                    const functions = getFunctions();
+                    const getRatesFunction = httpsCallable(functions, 'getRatesEShipPlus');
 
-                    try {
-                        // The response is already parsed JSON from the backend
-                        const rateData = data.data;
-                        console.log('Rate Data:', rateData);
+                    // Add the API key to the request data
+                    const requestWithApiKey = {
+                        ...rateRequestData,
+                        apiKey: apiKey
+                    };
 
-                        // Get available rates from the transformed response
-                        const availableRates = rateData?.availableRates || [];
+                    console.log('Calling getRatesEShipPlus via Firebase SDK...');
+                    const result = await getRatesFunction(requestWithApiKey);
 
-                        if (!availableRates || availableRates.length === 0) {
-                            throw new Error('No rates available');
-                        }
+                    // The result comes directly from the function as data
+                    const data = result.data;
 
-                        console.log('Available Rates:', availableRates);
+                    // Process the response data
+                    if (data.success && data.data) {
+                        console.log('API Response:', data);
 
-                        const transformedRates = availableRates.map(rate => {
-                            // Add detailed logging for debugging
-                            console.log('Processing rate:', {
-                                FreightCharges: rate.FreightCharges,
-                                FuelCharges: rate.FuelCharges,
-                                ServiceCharges: rate.ServiceCharges,
-                                AccessorialCharges: rate.AccessorialCharges,
-                                TotalCharges: rate.TotalCharges,
-                                ServiceMode: rate.ServiceMode,
-                                fullRate: rate
-                            });
+                        try {
+                            // Extract available rates from the API response
+                            const availableRates = data.data.availableRates || [];
 
-                            // Add validation for required fields
-                            if (!rate.QuoteId || !rate.CarrierName || !rate.ServiceMode || !rate.TotalCharges) {
-                                console.warn('Rate missing required fields:', rate);
+                            if (!availableRates || availableRates.length === 0) {
+                                throw new Error('No rates available');
                             }
 
-                            return {
-                                id: rate.QuoteId || rate.quoteId,
-                                carrier: rate.CarrierName || rate.carrierName,
-                                service: rate.ServiceMode || rate.serviceMode,
-                                rate: parseFloat(rate.TotalCharges || rate.totalCharges),
-                                freightCharges: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
-                                fuelCharges: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
-                                serviceCharges: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
-                                accessorialCharges: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
-                                currency: rate.Currency || rate.currency || 'USD',
-                                transitDays: parseInt(rate.TransitTime || rate.transitTime) || 0,
-                                deliveryDate: (rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate)?.split('T')[0] || '',
-                                serviceLevel: rate.ServiceMode || rate.serviceMode,
-                                guaranteed: rate.GuaranteedService || rate.guaranteedService || false,
-                                guaranteeCharge: parseFloat(rate.GuaranteeCharge || rate.guaranteeCharge || 0),
-                                express: (rate.ServiceMode || rate.serviceMode || '').toLowerCase().includes('express'),
+                            console.log('Available Rates:', availableRates);
+
+                            // Transform rates to match our component's expected format
+                            const transformedRates = availableRates.map(rate => ({
+                                id: rate.quoteId,
+                                carrier: rate.carrierName,
+                                service: rate.serviceMode,
+                                rate: parseFloat(rate.totalCharges),
+                                freightCharges: parseFloat(rate.freightCharges || 0),
+                                fuelCharges: parseFloat(rate.fuelCharges || 0),
+                                serviceCharges: parseFloat(rate.serviceCharges || 0),
+                                accessorialCharges: parseFloat(rate.accessorialCharges || 0),
+                                currency: rate.currency || 'USD',
+                                transitDays: parseInt(rate.transitTime || 0),
+                                deliveryDate: rate.estimatedDeliveryDate ? rate.estimatedDeliveryDate.split('T')[0] : '',
+                                serviceLevel: rate.serviceMode,
+                                guaranteed: rate.guaranteedService || false,
+                                guaranteeCharge: parseFloat(rate.guaranteeCharge || 0),
+                                express: (rate.serviceMode || '').toLowerCase().includes('express'),
                                 surcharges: [
                                     {
                                         name: 'Freight Charges',
-                                        amount: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
+                                        amount: parseFloat(rate.freightCharges || 0),
                                         category: 'Freight'
                                     },
                                     {
                                         name: 'Fuel Charges',
-                                        amount: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
+                                        amount: parseFloat(rate.fuelCharges || 0),
                                         category: 'Fuel'
                                     },
                                     {
                                         name: 'Service Charges',
-                                        amount: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
+                                        amount: parseFloat(rate.serviceCharges || 0),
                                         category: 'Service'
                                     },
-                                    ...(parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0) > 0 ? [{
+                                    ...(parseFloat(rate.accessorialCharges || 0) > 0 ? [{
                                         name: 'Accessorial Charges',
-                                        amount: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
+                                        amount: parseFloat(rate.accessorialCharges || 0),
                                         category: 'Accessorial'
                                     }] : []),
-                                    ...((rate.Accessorials || rate.accessorials || []).map(accessorial => ({
-                                        name: accessorial.Description || accessorial.description || 'Additional Charge',
-                                        amount: parseFloat(accessorial.Amount || accessorial.amount || 0),
-                                        category: accessorial.Category || accessorial.category || 'Service'
+                                    ...((rate.accessorials || []).map(accessorial => ({
+                                        name: accessorial.description || 'Additional Charge',
+                                        amount: parseFloat(accessorial.amount || 0),
+                                        category: accessorial.category || 'Service'
                                     })))
                                 ].filter(surcharge => surcharge.amount > 0)
-                            };
-                        });
+                            }));
 
-                        console.log('Transformed Rates:', transformedRates);
-                        setRates(transformedRates);
-                        setFilteredRates(transformedRates);
-                        setSelectedRate(null);
-                    } catch (err) {
-                        console.error('Error parsing response:', err);
-                        throw new Error('Failed to parse rate response: ' + err.message);
+                            console.log('Transformed Rates:', transformedRates);
+                            setRates(transformedRates);
+                            setFilteredRates(transformedRates);
+                            setSelectedRate(null);
+                        } catch (err) {
+                            console.error('Error transforming rates:', err);
+                            throw new Error('Failed to transform rate response: ' + err.message);
+                        }
+                    } else {
+                        throw new Error(data.error?.message || 'Failed to fetch rates');
                     }
-                } else {
-                    throw new Error(data.error?.message || 'Failed to fetch rates');
+                } catch (err) {
+                    console.error('Error fetching rates:', err);
+                    setError(err.message);
+                } finally {
+                    // Add a minimum delay before setting ratesLoaded
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    setRatesLoaded(true);
+                    setIsLoading(false);
                 }
             } catch (err) {
                 console.error('Error fetching rates:', err);

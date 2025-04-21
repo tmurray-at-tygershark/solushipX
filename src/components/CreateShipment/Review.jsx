@@ -29,6 +29,7 @@ import {
     CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
 
@@ -175,15 +176,9 @@ const SimpleMap = React.memo(({ address, title }) => {
 
 const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNext, onRateSelect }) => {
     const theme = useTheme();
-    const [isLoading, setIsLoading] = useState(true);
-    const [rates, setRates] = useState([]);
-    const [filteredRates, setFilteredRates] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [sortBy, setSortBy] = useState('price');
-    const [serviceFilter, setServiceFilter] = useState('all');
-    const [showRateDetails, setShowRateDetails] = useState(false);
     const [loadingDots, setLoadingDots] = useState('');
-    const [ratesLoaded, setRatesLoaded] = useState(false);
     const [map, setMap] = useState(null);
     const [mapCenter, setMapCenter] = useState({ lat: 41.8781, lng: -87.6298 });
     const [mapZoom, setMapZoom] = useState(15);
@@ -251,8 +246,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                 geocoder.geocode(
                     {
                         address: addressString,
-                        region: address.country?.toLowerCase() || 'us',
-                        key: mapsApiKey // Include API key in the request
+                        region: address.country?.toLowerCase() || 'us'
                     },
                     (results, status) => {
                         if (status === 'OK' && results && results.length > 0) {
@@ -310,238 +304,16 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
         updateGeocodedAddresses();
     }, [formData.shipFrom, formData.shipTo, isGoogleMapsLoaded, mapsApiKey]);
 
+    // Add effect for loading dots animation
     useEffect(() => {
-        const fetchRates = async () => {
-            try {
-                setIsLoading(true);
-                setError(null);
-                setRatesLoaded(false);
-
-                // Use a simple booking reference
-                const bookingRef = "shipment 123";
-
-                // Determine shipment bill type and booking reference type based on shipment type
-                const shipmentType = formData.shipmentInfo.shipmentType || 'courier';
-                const shipmentBillType = 'DefaultLogisticsPlus';
-                const bookingReferenceNumberType = 'Shipment';
-
-                const rateRequestData = {
-                    bookingReferenceNumber: bookingRef,
-                    bookingReferenceNumberType: bookingReferenceNumberType,
-                    shipmentBillType: shipmentBillType,
-                    shipmentDate: formData.shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
-                    pickupWindow: {
-                        earliest: formData.shipmentInfo.earliestPickup || "09:00",
-                        latest: formData.shipmentInfo.latestPickup || "17:00"
-                    },
-                    deliveryWindow: {
-                        earliest: formData.shipmentInfo.earliestDelivery || "09:00",
-                        latest: formData.shipmentInfo.latestDelivery || "17:00"
-                    },
-                    fromAddress: {
-                        company: formData.shipFrom.company || "",
-                        street: formData.shipFrom.street || "",
-                        street2: formData.shipFrom.street2 || "",
-                        postalCode: formData.shipFrom.postalCode || "",
-                        city: formData.shipFrom.city || "",
-                        state: formData.shipFrom.state || "",
-                        country: formData.shipFrom.country || "US",
-                        contactName: formData.shipFrom.contactName || "",
-                        contactPhone: formData.shipFrom.contactPhone || "",
-                        contactEmail: formData.shipFrom.contactEmail || "",
-                        specialInstructions: formData.shipFrom.specialInstructions || ""
-                    },
-                    toAddress: {
-                        company: formData.shipTo.company || "",
-                        street: formData.shipTo.street || "",
-                        street2: formData.shipTo.street2 || "",
-                        postalCode: formData.shipTo.postalCode || "",
-                        city: formData.shipTo.city || "",
-                        state: formData.shipTo.state || "",
-                        country: formData.shipTo.country || "US",
-                        contactName: formData.shipTo.contactName || "",
-                        contactPhone: formData.shipTo.contactPhone || "",
-                        contactEmail: formData.shipTo.contactEmail || "",
-                        specialInstructions: formData.shipTo.specialInstructions || ""
-                    },
-                    items: formData.packages.map(pkg => ({
-                        name: pkg.description || "Package",
-                        weight: parseFloat(pkg.weight) || 1,
-                        length: parseInt(pkg.length) || 12,
-                        width: parseInt(pkg.width) || 12,
-                        height: parseInt(pkg.height) || 12,
-                        quantity: parseInt(pkg.quantity) || 1,
-                        freightClass: String(pkg.freightClass || "50"),
-                        value: parseFloat(pkg.value || "0"),
-                        stackable: pkg.stackable || false
-                    }))
-                };
-
-                console.log('Rate Request Data:', rateRequestData);
-
-                const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(rateRequestData)
-                });
-
-                const data = await response.json();
-
-                // Process the response data
-                if (data.success && data.data) {
-                    // Add detailed logging
-                    console.log('Response structure:', {
-                        hasData: !!data.data,
-                        dataKeys: Object.keys(data.data),
-                        dataType: typeof data.data,
-                        isString: typeof data.data === 'string',
-                        isObject: typeof data.data === 'object'
-                    });
-
-                    try {
-                        // The response is already parsed JSON from the backend
-                        const rateData = data.data;
-                        console.log('Rate Data:', rateData);
-
-                        // Get available rates from the transformed response
-                        const availableRates = rateData?.availableRates || [];
-
-                        if (!availableRates || availableRates.length === 0) {
-                            throw new Error('No rates available');
-                        }
-
-                        console.log('Available Rates:', availableRates);
-
-                        const transformedRates = availableRates.map(rate => {
-                            // Add detailed logging for debugging
-                            console.log('Processing rate:', {
-                                freightCharges: rate.freightCharges,
-                                fuelCharges: rate.fuelCharges,
-                                serviceCharges: rate.serviceCharges,
-                                accessorialCharges: rate.accessorialCharges,
-                                totalCharges: rate.totalCharges,
-                                serviceMode: rate.serviceMode,
-                                fullRate: rate
-                            });
-
-                            // Update validation to match actual data structure
-                            if (!rate.carrierKey || !rate.carrierName || !rate.serviceMode || !rate.totalCharges) {
-                                console.warn('Rate missing required fields:', rate);
-                            }
-
-                            return {
-                                id: rate.QuoteId || rate.quoteId,
-                                carrier: rate.CarrierName || rate.carrierName,
-                                service: rate.ServiceMode || rate.serviceMode,
-                                rate: parseFloat(rate.TotalCharges || rate.totalCharges),
-                                freightCharges: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
-                                fuelCharges: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
-                                serviceCharges: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
-                                accessorialCharges: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
-                                currency: rate.Currency || rate.currency || 'USD',
-                                transitDays: parseInt(rate.TransitTime || rate.transitTime) || 0,
-                                deliveryDate: (rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate)?.split('T')[0] || '',
-                                serviceLevel: rate.ServiceMode || rate.serviceMode,
-                                guaranteed: rate.GuaranteedService || rate.guaranteedService || false,
-                                guaranteeCharge: parseFloat(rate.GuaranteeCharge || rate.guaranteeCharge || 0),
-                                express: (rate.ServiceMode || rate.serviceMode || '').toLowerCase().includes('express'),
-                                surcharges: [
-                                    {
-                                        name: 'Freight Charges',
-                                        amount: parseFloat(rate.freightCharges || 0),
-                                        category: 'Freight'
-                                    },
-                                    {
-                                        name: 'Fuel Charges',
-                                        amount: parseFloat(rate.fuelCharges || 0),
-                                        category: 'Fuel'
-                                    },
-                                    {
-                                        name: 'Service Charges',
-                                        amount: parseFloat(rate.serviceCharges || 0),
-                                        category: 'Service'
-                                    },
-                                    ...(parseFloat(rate.accessorialCharges || 0) > 0 ? [{
-                                        name: 'Accessorial Charges',
-                                        amount: parseFloat(rate.accessorialCharges || 0),
-                                        category: 'Accessorial'
-                                    }] : []),
-                                    ...((rate.accessorials || []).map(accessorial => ({
-                                        name: accessorial.description || 'Additional Charge',
-                                        amount: parseFloat(accessorial.amount || 0),
-                                        category: accessorial.category || 'Service'
-                                    })))
-                                ]
-                            };
-                        });
-
-                        // Save the selected rate to Firebase
-                        // Function moved outside the component for better scope access
-
-                        console.log('Transformed rates:', transformedRates);
-                        setRates(transformedRates);
-                        setFilteredRates(transformedRates);
-                    } catch (err) {
-                        console.error('Error parsing response:', err);
-                        throw new Error('Failed to parse rate response: ' + err.message);
-                    }
-                } else {
-                    throw new Error(data.error?.message || 'Failed to fetch rates');
-                }
-            } catch (err) {
-                console.error('Error fetching rates:', err);
-                setError(err.message);
-            } finally {
-                // Add a minimum delay before setting ratesLoaded
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                setRatesLoaded(true);
-                setIsLoading(false);
-            }
-        };
-
-        fetchRates();
-    }, [formData]);
-
-    useEffect(() => {
-        let filtered = [...rates];
-
-        // Apply service filter
-        if (serviceFilter !== 'all') {
-            filtered = filtered.filter(rate => {
-                switch (serviceFilter) {
-                    case 'guaranteed':
-                        return rate.guaranteed;
-                    case 'economy':
-                        return rate.service.toLowerCase().includes('economy') ||
-                            rate.service.toLowerCase().includes('standard');
-                    case 'express':
-                        return rate.service.toLowerCase().includes('express') ||
-                            rate.service.toLowerCase().includes('priority');
-                    default:
-                        return true;
-                }
-            });
+        let interval;
+        if (isLoading) {
+            interval = setInterval(() => {
+                setLoadingDots(prev => prev.length >= 3 ? '' : prev + '.');
+            }, 500);
         }
-
-        // Apply sorting
-        filtered.sort((a, b) => {
-            switch (sortBy) {
-                case 'price':
-                    return (a.rate || 0) - (b.rate || 0);
-                case 'transit':
-                    return (a.transitDays || 0) - (b.transitDays || 0);
-                case 'carrier':
-                    return (a.carrier || '').localeCompare(b.carrier || '');
-                default:
-                    return 0;
-            }
-        });
-
-        setFilteredRates(filtered);
-    }, [rates, sortBy, serviceFilter]);
+        return () => clearInterval(interval);
+    }, [isLoading]);
 
     const toggleSection = (section) => {
         setExpandedSections(prev => ({
@@ -596,24 +368,11 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
             ...rate,
             guaranteeSelected: checked
         };
-        // Update the rates list
-        const updatedRates = rates.map(r =>
-            r.id === rate.id ? updatedRate : r
-        );
-        setRates(updatedRates);
-        setFilteredRates(updatedRates);
+        // Update the selectedRate
+        setSelectedRate(updatedRate);
+        // Notify parent component
+        onRateSelect(updatedRate);
     };
-
-    // Add effect for loading dots animation
-    useEffect(() => {
-        let interval;
-        if (isLoading) {
-            interval = setInterval(() => {
-                setLoadingDots(prev => prev.length >= 3 ? '' : prev + '.');
-            }, 500);
-        }
-        return () => clearInterval(interval);
-    }, [isLoading]);
 
     const handleRateSelect = async (rate) => {
         try {
@@ -949,73 +708,83 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                     </Paper>
 
                     {/* Selected Rate */}
-                    <Paper sx={{ mb: 4 }}>
-                        <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
-                            <Typography variant="h6">Rate Details</Typography>
-                        </Box>
-                        <Box sx={{ p: 3 }}>
-                            <Grid container spacing={3}>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="h5" gutterBottom>
-                                        {selectedRate?.carrier}
-                                    </Typography>
-                                    <Chip
-                                        label={selectedRate?.service}
-                                        color="primary"
-                                        sx={{ mb: 2 }}
-                                    />
-                                    <Typography variant="body2" color="text.secondary">
-                                        Transit Time: {selectedRate?.transitDays} days
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Box sx={{ textAlign: 'right' }}>
-                                        <Typography variant="h4" color="primary" gutterBottom>
-                                            ${selectedRate?.rate.toFixed(2)}
+                    {selectedRate && (
+                        <Paper sx={{ mb: 4 }}>
+                            <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
+                                <Typography variant="h6">Rate Details</Typography>
+                            </Box>
+                            <Box sx={{ p: 3 }}>
+                                <Grid container spacing={3}>
+                                    <Grid item xs={12} md={6}>
+                                        <Typography variant="h5" gutterBottom>
+                                            {selectedRate?.carrier}
                                         </Typography>
+                                        <Chip
+                                            label={selectedRate?.service}
+                                            color="primary"
+                                            sx={{ mb: 2 }}
+                                        />
                                         <Typography variant="body2" color="text.secondary">
-                                            Total Charges
+                                            Transit Time: {selectedRate?.transitDays} days
                                         </Typography>
-                                    </Box>
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <Box sx={{ textAlign: 'right' }}>
+                                            <Typography variant="h4" color="primary" gutterBottom>
+                                                ${selectedRate?.rate.toFixed(2)}
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Total Charges
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
                                 </Grid>
-                            </Grid>
-                            <Divider sx={{ my: 2 }} />
-                            <Grid container spacing={2}>
-                                <Grid item xs={6} md={3}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Freight Charges
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        ${selectedRate?.freightCharges.toFixed(2)}
-                                    </Typography>
+                                <Divider sx={{ my: 2 }} />
+                                <Grid container spacing={2}>
+                                    <Grid item xs={6} md={3}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Freight Charges
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            ${selectedRate?.freightCharges.toFixed(2)}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={6} md={3}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Fuel Surcharge
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            ${selectedRate?.fuelCharges.toFixed(2)}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={6} md={3}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Accessorial Charges
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            ${selectedRate?.accessorialCharges.toFixed(2)}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={6} md={3}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Service Charges
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            ${selectedRate?.serviceCharges.toFixed(2)}
+                                        </Typography>
+                                    </Grid>
                                 </Grid>
-                                <Grid item xs={6} md={3}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Fuel Surcharge
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        ${selectedRate?.fuelCharges.toFixed(2)}
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={6} md={3}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Accessorial Charges
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        ${selectedRate?.accessorialCharges.toFixed(2)}
-                                    </Typography>
-                                </Grid>
-                                <Grid item xs={6} md={3}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Service Charges
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        ${selectedRate?.serviceCharges.toFixed(2)}
-                                    </Typography>
-                                </Grid>
-                            </Grid>
-                        </Box>
-                    </Paper>
+                            </Box>
+                        </Paper>
+                    )}
+
+                    {!selectedRate && (
+                        <Paper sx={{ mb: 4, p: 3, textAlign: 'center' }}>
+                            <Typography variant="h6" color="error">
+                                No rate selected. Please go back and select a rate.
+                            </Typography>
+                        </Paper>
+                    )}
 
                     {/* Navigation Buttons */}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
@@ -1043,13 +812,14 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                             onClick={handleSubmit}
+                            disabled={!selectedRate}
                             style={{
                                 padding: '12px 24px',
                                 borderRadius: '8px',
                                 border: 'none',
-                                background: '#1a237e',
+                                background: !selectedRate ? '#cccccc' : '#1a237e',
                                 color: 'white',
-                                cursor: 'pointer',
+                                cursor: !selectedRate ? 'not-allowed' : 'pointer',
                                 fontSize: '16px',
                                 fontWeight: 500,
                                 display: 'flex',

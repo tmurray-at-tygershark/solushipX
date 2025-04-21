@@ -38,7 +38,6 @@ import {
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { generateApiKey } from '../../../utils/apiKeyGenerator';
 import './CarrierKeys.css';
 
 const CarrierKeys = () => {
@@ -58,6 +57,16 @@ const CarrierKeys = () => {
         status: 'active',
         expiresAt: '',
     });
+
+    // Add local implementation of generateApiKey
+    const generateApiKey = (length = 32) => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    };
 
     useEffect(() => {
         fetchCarriers();
