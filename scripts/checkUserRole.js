@@ -2,7 +2,7 @@ const admin = require('firebase-admin');
 const path = require('path');
 
 // Initialize Firebase Admin
-const serviceAccount = require(path.join(__dirname, '..', 'solushipx-firebase-adminsdk-fbsvc-d7f5dccc04.json'));
+const serviceAccount = require(path.join(__dirname, '..', 'service-account.json'));
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });

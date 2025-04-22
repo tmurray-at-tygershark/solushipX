@@ -4,6 +4,8 @@ const cors = require('cors');
 const axios = require('axios');
 const { parseStringPromise } = require("xml2js");
 require('dotenv').config();
+const admin = require('firebase-admin');
+const serviceAccount = require('./service-account.json');
 
 // Import GenKit dependencies
 const { gemini20Flash, googleAI } = require('@genkit-ai/googleai');
@@ -30,6 +32,17 @@ const ai = genkit({
   model: gemini20Flash,
   stream: true // Enable streaming by default
 });
+
+// Initialize with the specific service account
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+console.log('Initialized Admin SDK with service account');
+
+// Import function handlers
+const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
+const { getCompany } = require('./src/getCompany');
+const { getCompanyShipmentOrigins } = require('./src/getCompanyShipmentOrigins');
 
 // Input validation
 function validateShipmentData(data) {
@@ -573,11 +586,6 @@ exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
 
   try {
     // Fetch API key from Firestore
-    const admin = require('firebase-admin');
-    if (!admin.apps.length) {
-      admin.initializeApp();
-    }
-    
     const db = admin.firestore();
     const keysRef = db.collection('keys');
     const keysSnapshot = await keysRef.limit(1).get();
@@ -614,4 +622,27 @@ exports.getMapsApiKey = functions.https.onRequest(async (req, res) => {
       error: error.message || 'Internal server error'
     });
   }
+});
+
+// Export the original rate function
+exports.getRatesEShipPlus = getRatesEShipPlus;
+
+// Export getCompany callable function
+exports.getCompany = functions.https.onCall({
+  cors: true,
+  region: 'us-central1'
+}, getCompany);
+
+// Export getCompanyShipmentOrigins callable function with necessary configuration
+exports.getCompanyShipmentOrigins = functions.https.onCall({
+  region: 'us-central1',
+  cors: true,
+  enforceAppCheck: false,
+  invoker: 'public',
+  maxInstances: 10,
+  timeoutSeconds: 120,
+  memory: '256MiB',
+}, (data, context) => {
+  // The function runs with admin privileges regardless of the calling user
+  return getCompanyShipmentOrigins(data, context);
 });

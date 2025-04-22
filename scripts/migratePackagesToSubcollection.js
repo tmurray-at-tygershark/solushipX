@@ -1,5 +1,5 @@
 const admin = require('firebase-admin');
-const serviceAccount = require('../solushipx-firebase-adminsdk-fbsvc-d7f5dccc04.json');
+const serviceAccount = require('../service-account.json');
 
 // Initialize Firebase Admin
 admin.initializeApp({
