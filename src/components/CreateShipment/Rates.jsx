@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useFormContext } from '../../contexts/FormDataContext';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid } from '@mui/material';
 import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isLoading, setIsLoading] = useState(true);
@@ -331,6 +333,23 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
         @keyframes spinner-border {
             to { transform: rotate(360deg); }
         }
+        
+        /* Navigation Buttons */
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding: 1rem 0;
+        }
+        
+        .btn-navigation {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
     `;
 
     useEffect(() => {
@@ -470,16 +489,13 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
             console.groupEnd();
 
-            const response = await fetch('https://getshippingrates-xedyh5vw7a-uc.a.run.app/rates', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(rateRequestData)
-            });
+            // Initialize Firebase Functions and get the callable function
+            const functions = getFunctions();
+            const getRatesFunction = httpsCallable(functions, 'getRatesEShipPlus');
 
-            const data = await response.json();
+            // Call the function
+            const result = await getRatesFunction(rateRequestData);
+            const data = result.data;
 
             // Process the response data
             if (data.success && data.data) {
@@ -500,96 +516,63 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                     // Get available rates from the transformed response
                     const availableRates = rateData?.availableRates || [];
 
-                    if (!availableRates || availableRates.length === 0) {
-                        throw new Error('No rates available');
+                    if (availableRates.length === 0) {
+                        setError('No rates available for this shipment. Please check your shipment details and try again.');
+                        setIsLoading(false);
+                        return;
                     }
 
-                    console.log('Available Rates:', availableRates);
-
+                    // Transform the rate data
                     const transformedRates = availableRates.map(rate => {
-                        // Add detailed logging for debugging
-                        console.log('Processing rate:', {
-                            FreightCharges: rate.FreightCharges,
-                            FuelCharges: rate.FuelCharges,
-                            ServiceCharges: rate.ServiceCharges,
-                            AccessorialCharges: rate.AccessorialCharges,
-                            TotalCharges: rate.TotalCharges,
-                            ServiceMode: rate.ServiceMode,
-                            fullRate: rate
-                        });
+                        // Calculate the total days for delivery
+                        const transitTimeDisplay = String(rate.transitTime || '1-2 business days');
 
-                        // Add validation for required fields
-                        if (!rate.QuoteId || !rate.CarrierName || !rate.ServiceMode || !rate.TotalCharges) {
-                            console.warn('Rate missing required fields:', rate);
-                        }
+                        // Extract just the number from the transit time display
+                        const transitDays = transitTimeDisplay.match(/\d+/)?.[0] || '1';
 
+                        console.log(`Processing rate: ${rate.service} with transit time: ${transitTimeDisplay}, extracted days: ${transitDays}`);
+
+                        // Create a standardized object for each rate
                         return {
-                            id: rate.QuoteId || rate.quoteId,
-                            carrier: rate.CarrierName || rate.carrierName,
-                            service: rate.ServiceMode || rate.serviceMode,
-                            rate: parseFloat(rate.TotalCharges || rate.totalCharges),
-                            freightCharges: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
-                            fuelCharges: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
-                            serviceCharges: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
-                            accessorialCharges: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
-                            currency: rate.Currency || rate.currency || 'USD',
-                            transitDays: parseInt(rate.TransitTime || rate.transitTime) || 0,
-                            deliveryDate: (rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate)?.split('T')[0] || '',
-                            serviceLevel: rate.ServiceMode || rate.serviceMode,
-                            guaranteed: rate.GuaranteedService || rate.guaranteedService || false,
-                            guaranteeCharge: parseFloat(rate.GuaranteeCharge || rate.guaranteeCharge || 0),
-                            express: (rate.ServiceMode || rate.serviceMode || '').toLowerCase().includes('express'),
-                            surcharges: [
-                                {
-                                    name: 'Freight Charges',
-                                    amount: parseFloat(rate.FreightCharges || rate.freightCharges || 0),
-                                    category: 'Freight'
-                                },
-                                {
-                                    name: 'Fuel Charges',
-                                    amount: parseFloat(rate.FuelCharges || rate.fuelCharges || 0),
-                                    category: 'Fuel'
-                                },
-                                {
-                                    name: 'Service Charges',
-                                    amount: parseFloat(rate.ServiceCharges || rate.serviceCharges || 0),
-                                    category: 'Service'
-                                },
-                                ...(parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0) > 0 ? [{
-                                    name: 'Accessorial Charges',
-                                    amount: parseFloat(rate.AccessorialCharges || rate.accessorialCharges || 0),
-                                    category: 'Accessorial'
-                                }] : []),
-                                ...((rate.Accessorials || rate.accessorials || []).map(accessorial => ({
-                                    name: accessorial.Description || accessorial.description || 'Additional Charge',
-                                    amount: parseFloat(accessorial.Amount || accessorial.amount || 0),
-                                    category: accessorial.Category || accessorial.category || 'Service'
-                                })))
-                            ].filter(surcharge => surcharge.amount > 0)
+                            id: rate.id || `rate-${Math.random().toString(36).substring(2, 9)}`,
+                            carrier: rate.carrierName || rate.originalRate?.carrierName || 'Unknown',
+                            service: rate.service || 'Standard',
+                            transitDays: parseInt(transitDays),
+                            transitTime: transitTimeDisplay,
+                            price: parseFloat(rate.totalCharges) || 0,
+                            currency: rate.currency || 'USD',
+                            guaranteeOption: rate.guaranteed || false,
+                            guaranteedOptionAvailable: rate.guaranteedOptionAvailable || false,
+                            guaranteedPrice: rate.guaranteedPrice || null,
+                            charges: rate.charges || [],
+                            originalRate: rate,
+                            carrierCode: rate.carrierCode || '',
+                            serviceCode: rate.serviceCode || '',
+                            packageCounts: rate.packageCounts || {}
                         };
                     });
 
                     console.log('Transformed Rates:', transformedRates);
+
                     setRates(transformedRates);
                     setFilteredRates(transformedRates);
-                    setSelectedRate(null);
-                } catch (err) {
-                    console.error('Error parsing response:', err);
-                    throw new Error('Failed to parse rate response: ' + err.message);
+                    setRatesLoaded(true);
+                } catch (parseError) {
+                    console.error('Error parsing rate data:', parseError);
+                    setError(`Error parsing rate data: ${parseError.message}`);
                 }
             } else {
-                throw new Error(data.error?.message || 'Failed to fetch rates');
+                const errorMessage = data.error || 'Failed to retrieve shipping rates. Please try again.';
+                console.error('API Error:', errorMessage);
+                setError(errorMessage);
             }
-        } catch (err) {
-            console.error('Error fetching rates:', err);
-            setError(err.message);
+        } catch (error) {
+            console.error('Error fetching rates:', error);
+            setError(`Error fetching rates: ${error.message}`);
         } finally {
-            // Add a minimum delay before setting ratesLoaded
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            setRatesLoaded(true);
             setIsLoading(false);
         }
-    }, [formData]);
+    }, [formData, onRateSelect, selectedRate]);
 
     useEffect(() => {
         if (formData) {
@@ -684,10 +667,9 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
             setSelectedRate(null);
             onRateSelect(null);
         } else {
-            // Select the new rate and move to next step
+            // Select the new rate without moving to next step
             setSelectedRate(rate);
             onRateSelect(rate);
-            onNext(); // Automatically move to next step
         }
     };
 
@@ -956,7 +938,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
                                                 <div className="total-charges">
                                                     <div className="label">Total Charges</div>
-                                                    <div className="amount">${rate.rate.toFixed(2)} <span className="currency-code">{rate.currency}</span></div>
+                                                    <div className="amount">${rate.price.toFixed(2)} <span className="currency-code">{rate.currency}</span></div>
                                                 </div>
 
                                                 {rate.guaranteed && (
@@ -980,24 +962,24 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                                     <ul className="rate-details-list">
                                                         <li>
                                                             <span className="charge-name">Service Mode</span>
-                                                            <span className="charge-amount">{rate.serviceLevel}</span>
+                                                            <span className="charge-amount">{rate.originalRate?.serviceMode || 'Standard'}</span>
                                                         </li>
                                                         <li>
                                                             <span className="charge-name">Freight Charges</span>
-                                                            <span className="charge-amount">${rate.freightCharges.toFixed(2)}</span>
+                                                            <span className="charge-amount">${rate.originalRate?.freightCharges?.toFixed(2) || '0.00'}</span>
                                                         </li>
                                                         <li>
                                                             <span className="charge-name">Fuel Charges</span>
-                                                            <span className="charge-amount">${rate.fuelCharges.toFixed(2)}</span>
+                                                            <span className="charge-amount">${rate.originalRate?.fuelCharges?.toFixed(2) || '0.00'}</span>
                                                         </li>
                                                         <li>
                                                             <span className="charge-name">Service Charges</span>
-                                                            <span className="charge-amount">${rate.serviceCharges.toFixed(2)}</span>
+                                                            <span className="charge-amount">${rate.originalRate?.serviceCharges?.toFixed(2) || '0.00'}</span>
                                                         </li>
-                                                        {rate.accessorialCharges > 0 && (
+                                                        {rate.originalRate?.accessorialCharges > 0 && (
                                                             <li>
                                                                 <span className="charge-name">Accessorial Charges</span>
-                                                                <span className="charge-amount">${rate.accessorialCharges.toFixed(2)}</span>
+                                                                <span className="charge-amount">${rate.originalRate.accessorialCharges.toFixed(2)}</span>
                                                             </li>
                                                         )}
                                                     </ul>
@@ -1026,6 +1008,14 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                         onClick={onPrevious}
                     >
                         <i className="bi bi-arrow-left"></i> Previous
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-primary btn-navigation"
+                        onClick={handleSubmit}
+                        disabled={!selectedRate}
+                    >
+                        Next <i className="bi bi-arrow-right"></i>
                     </button>
                 </div>
             </div>

@@ -731,7 +731,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                     <Grid item xs={12} md={6}>
                                         <Box sx={{ textAlign: 'right' }}>
                                             <Typography variant="h4" color="primary" gutterBottom>
-                                                ${selectedRate?.rate.toFixed(2)}
+                                                ${(selectedRate?.price || 0).toFixed(2)}
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
                                                 Total Charges
@@ -746,7 +746,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Freight Charges
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${selectedRate?.freightCharges.toFixed(2)}
+                                            ${(selectedRate?.originalRate?.freightCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={6} md={3}>
@@ -754,7 +754,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Fuel Surcharge
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${selectedRate?.fuelCharges.toFixed(2)}
+                                            ${(selectedRate?.originalRate?.fuelCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={6} md={3}>
@@ -762,7 +762,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Accessorial Charges
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${selectedRate?.accessorialCharges.toFixed(2)}
+                                            ${(selectedRate?.originalRate?.accessorialCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={6} md={3}>
@@ -770,7 +770,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Service Charges
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${selectedRate?.serviceCharges.toFixed(2)}
+                                            ${(selectedRate?.originalRate?.serviceCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                 </Grid>
