@@ -338,6 +338,12 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         onNext();
     }, [selectedCustomer, selectedAddressId, formData, onNext, onDataChange]);
 
+    const handleClearCustomer = () => {
+        setSelectedCustomer(null);
+        setSelectedAddressId(null);
+        setCustomerAddresses([]);
+    };
+
     const renderCustomerSearch = () => (
         <div className="customer-search mb-4">
             <Autocomplete
@@ -620,18 +626,25 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             {selectedCustomer && (
                 <>
                     <div className="selected-customer mb-4">
-                        <div className="customer-info">
-                            <div className="customer-avatar">
-                                {selectedCustomer.name?.charAt(0) || 'C'}
+                        <div className="d-flex justify-content-between align-items-start w-100">
+                            <div className="customer-info">
+                                <div>
+                                    <h3>{selectedCustomer.name}</h3>
+                                    {selectedCustomer.contacts?.[0] && (
+                                        <p className="text-muted mb-0">
+                                            <i className="bi bi-person me-1"></i> {selectedCustomer.contacts[0].name}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <h3>{selectedCustomer.name}</h3>
-                                {selectedCustomer.contacts?.[0] && (
-                                    <p className="text-muted mb-0">
-                                        <i className="bi bi-person me-1"></i> {selectedCustomer.contacts[0].name}
-                                    </p>
-                                )}
-                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm"
+                                onClick={handleClearCustomer}
+                                aria-label="Clear selected customer"
+                            >
+                                <i className="bi bi-x-lg"></i> Change Customer
+                            </button>
                         </div>
                     </div>
 
