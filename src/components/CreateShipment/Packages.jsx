@@ -214,7 +214,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                         onChange={(e) => updatePackage(index, 'packagingQuantity', e.target.value)}
                                         label="Qty"
                                     >
-                                        {[...Array(100)].map((_, i) => (
+                                        {[...Array(20)].map((_, i) => (
                                             <MenuItem key={i + 1} value={i + 1}>
                                                 {i + 1}
                                             </MenuItem>

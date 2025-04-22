@@ -267,7 +267,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                 <Box sx={{ mb: 4 }}>
                     <Typography variant="h6" sx={{ mb: 2 }}>Reference Information</Typography>
                     <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
+                        <Grid item xs={12}>
                             <div className="form-group">
                                 <label className="form-label" htmlFor="shipperReferenceNumber">
                                     Reference Number
@@ -284,26 +284,6 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                     value={formData.shipperReferenceNumber}
                                     onChange={handleInputChange}
                                     placeholder="Enter reference number"
-                                />
-                            </div>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="bookingReferenceNumber">
-                                    Booking Reference
-                                    <Tooltip title="Carrier booking reference if available">
-                                        <IconButton size="small" sx={{ ml: 0.5 }}>
-                                            <InfoIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                </label>
-                                <input
-                                    type="text"
-                                    id="bookingReferenceNumber"
-                                    className="form-control"
-                                    value={formData.bookingReferenceNumber}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter booking reference"
                                 />
                             </div>
                         </Grid>
