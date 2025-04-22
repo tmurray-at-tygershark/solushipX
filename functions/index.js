@@ -1,67 +1,37 @@
 const functions = require('firebase-functions/v2');
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-require('dotenv').config();
+const admin = require('firebase-admin');
+const serviceAccount = require('./solushipx-firebase-adminsdk-fbsvc-77f1f80481.json');
 
-// Import the eShipPlus function
+// Initialize with the specific service account
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+console.log('Initialized Admin SDK with service account');
+
+// Import function handlers
 const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
+const { getCompany } = require('./src/getCompany');
+const { getCompanyShipmentOrigins } = require('./src/getCompanyShipmentOrigins');
 
-// Create Express app
-const app = express();
-
-// Middleware
-app.use(cors({
-    origin: ['https://solushipx.web.app', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
-
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-    res.json({ status: "healthy" });
-});
-
-// Endpoint to get Google Maps API key
-app.get('/api/config/maps-key', (req, res) => {
-  try {
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-    if (!apiKey) {
-      console.error('Google Maps API key not found in environment variables');
-      return res.status(500).json({ error: 'Google Maps API key not configured' });
-    }
-    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
-    res.json({ key: apiKey });
-  } catch (error) {
-    console.error('Error serving Google Maps API key:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Endpoint to calculate route
-app.post('/route', async (req, res) => {
-    try {
-        const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-        if (!apiKey) {
-            console.error('Google Maps API key not found in environment variables');
-            return res.status(500).json({ error: 'Google Maps API key not configured' });
-        }
-
-        const response = await axios.post(`https://routes.googleapis.com/maps/v2/computeRoutes?key=${apiKey}`, req.body, {
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
-            }
-        });
-
-        res.json(response.data);
-    } catch (error) {
-        console.error('Error calculating route:', error);
-        res.status(500).json({ error: 'Failed to calculate route' });
-    }
-});
-
-// Export the function
+// Export the original rate function
 exports.getRatesEShipPlus = getRatesEShipPlus;
+
+// Export getCompany callable function
+exports.getCompany = functions.https.onCall({
+  cors: true,
+  region: 'us-central1'
+}, getCompany);
+
+// Export getCompanyShipmentOrigins callable function with necessary configuration
+exports.getCompanyShipmentOrigins = functions.https.onCall({
+  region: 'us-central1',
+  cors: true,
+  enforceAppCheck: false,
+  invoker: 'public',
+  maxInstances: 10,
+  timeoutSeconds: 120,
+  memory: '256MiB',
+}, (data, context) => {
+  // The function runs with admin privileges regardless of the calling user
+  return getCompanyShipmentOrigins(data, context);
+});

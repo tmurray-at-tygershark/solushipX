@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Script to deploy Firebase functions for eShipPlus API
+# Script to deploy Firebase functions for SolushipX application
 
-echo "🚀 Deploying Firebase functions for eShipPlus API..."
+echo "🚀 Deploying Firebase functions for SolushipX..."
 
 # Make sure firebase-tools is installed
 if ! command -v firebase &> /dev/null
@@ -29,16 +29,18 @@ cd functions
 npm install
 cd ..
 
-# Deploy the eShipPlus function
+# Deploy all functions
 echo "🔥 Deploying to Firebase..."
-firebase deploy --only functions:getRatesEShipPlus
+firebase deploy --only functions
 
 echo "✅ Deployment complete!"
-echo "API endpoint: https://us-central1-solushipx.cloudfunctions.net/getRatesEShipPlus"
+echo "API endpoints:"
+echo "- https://us-central1-solushipx.cloudfunctions.net/getRatesEShipPlus"
+echo "- https://us-central1-solushipx.cloudfunctions.net/getCompany"
+echo "- https://us-central1-solushipx.cloudfunctions.net/getCompanyShipmentOrigins"
 echo ""
-echo "To call the API, use:"
+echo "To call the eShipPlus API, use:"
 echo "curl -X POST https://us-central1-solushipx.cloudfunctions.net/getRatesEShipPlus \\"
 echo "  -H 'Content-Type: application/json' \\"
 echo "  -d '{\"apiKey\": \"$REACT_APP_ESHIP_PLUS_API_KEY\", ...}'"
-echo ""
-echo "Note: We've streamlined the code to only use one function for better maintainability." 
+echo "" 

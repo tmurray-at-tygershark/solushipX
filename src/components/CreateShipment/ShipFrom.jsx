@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc, updateDoc, arrayUnion, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../../contexts/AuthContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import './ShipFrom.css';
 
-const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
+const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
     const { currentUser } = useAuth();
     const [formData, setFormData] = useState({
         name: '',
@@ -47,13 +48,19 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
         isDefault: false
     });
 
-    // Fetch company data and addresses
+    // Fetch company data and addresses using cloud functions
     useEffect(() => {
         const fetchCompanyData = async () => {
             try {
                 console.log('Current user:', currentUser);
 
-                // First, fetch the user's data from the users collection
+                if (!currentUser) {
+                    setError('User not logged in. Please log in to continue.');
+                    setLoading(false);
+                    return;
+                }
+
+                // First, fetch the user's data from the users collection to get the company ID
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                 if (!userDoc.exists()) {
                     console.log('User document not found');
@@ -83,31 +90,87 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                     return;
                 }
 
-                // First try to find the company by companyID field
-                console.log('Fetching company document for ID:', companyId);
-                const companiesRef = collection(db, 'companies');
-                const q = query(companiesRef, where('companyID', '==', companyId));
-                const querySnapshot = await getDocs(q);
+                try {
+                    // Use the Firebase Functions SDK to call our cloud function
+                    const functions = getFunctions();
 
-                if (querySnapshot.empty) {
-                    console.log('No company found with companyID:', companyId);
-                    setError('Company data not found. Please contact support.');
-                    setLoading(false);
-                    return;
-                }
+                    // Configure region if needed
+                    // const functions = getFunctions(app, 'us-central1');
 
-                const companyDoc = querySnapshot.docs[0];
-                console.log('Company document exists:', companyDoc.exists());
-                const data = companyDoc.data();
-                console.log('Company data:', data);
-                setCompanyAddresses(data.shipFromAddresses || []);
+                    const getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
 
-                // Find and set default address
-                const defaultAddress = data.shipFromAddresses?.find(addr => addr.isDefault);
-                if (defaultAddress) {
-                    setSelectedAddressId(defaultAddress.id);
-                    setFormData(defaultAddress);
-                    console.log('Default address set:', defaultAddress);
+                    // Create object with just companyId - no API key needed
+                    const requestData = {
+                        companyId: companyId
+                    };
+
+                    console.log('Making cloud function call with company ID:', companyId);
+
+                    // Implement a retry mechanism
+                    let response;
+                    let retryCount = 0;
+                    const maxRetries = 3;
+
+                    while (retryCount < maxRetries) {
+                        try {
+                            // Call the function with the request data
+                            console.log(`Attempt ${retryCount + 1}: Calling function with data:`, JSON.stringify(requestData));
+
+                            // Set a timeout to prevent hanging forever
+                            const timeoutPromise = new Promise((_, reject) =>
+                                setTimeout(() => reject(new Error('Function call timed out')), 30000)
+                            );
+
+                            // Race between the function call and timeout
+                            response = await Promise.race([
+                                getCompanyShipmentOriginsFunction(requestData),
+                                timeoutPromise
+                            ]);
+
+                            console.log('Cloud function response received:', response);
+                            break; // Success, exit the retry loop
+                        } catch (callError) {
+                            retryCount++;
+                            console.error(`Cloud function call attempt ${retryCount} failed:`, callError);
+                            console.error('Error details:', {
+                                message: callError.message,
+                                code: callError.code,
+                                details: callError.details,
+                                stack: callError.stack
+                            });
+
+                            if (retryCount >= maxRetries) {
+                                throw callError; // Rethrow if max retries reached
+                            }
+
+                            // Wait before retrying (exponential backoff)
+                            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
+                        }
+                    }
+
+                    // Check if the call was successful
+                    if (!response.data.success) {
+                        throw new Error(response.data.error?.message || 'Failed to fetch company addresses');
+                    }
+
+                    // Get the data from the response
+                    const { shipFromAddresses } = response.data.data;
+
+                    console.log('Received shipFromAddresses:', shipFromAddresses);
+
+                    // Update state with the addresses
+                    setCompanyAddresses(shipFromAddresses || []);
+
+                    // Find and set default address
+                    const defaultAddress = shipFromAddresses?.find(addr => addr.isDefault);
+                    if (defaultAddress) {
+                        setSelectedAddressId(defaultAddress.id);
+                        setFormData(defaultAddress);
+                        console.log('Default address set:', defaultAddress);
+                    }
+                } catch (err) {
+                    console.error('Error fetching company data:', err);
+                    setError('Failed to load company data. Please try again or contact support.');
                 }
             } catch (err) {
                 console.error('Error fetching company data:', err);
@@ -121,6 +184,15 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
             fetchCompanyData();
         }
     }, [currentUser]);
+
+    // Debug log to confirm API key is properly passed from parent
+    console.log('ShipFrom component received API key:', {
+        received: !!apiKey,
+        length: apiKey?.length || 0,
+        firstFive: apiKey ? apiKey.substring(0, 5) : 'undefined',
+        lastFive: apiKey ? apiKey.substring(apiKey.length - 5) : 'undefined',
+        type: typeof apiKey
+    });
 
     const handleAddressChange = useCallback((addressId) => {
         const selectedAddress = companyAddresses.find(addr => addr.id === addressId);
@@ -221,6 +293,19 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                 throw new Error('This address already exists in your address book');
             }
 
+            // Get the user's data to find company ID
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (!userDoc.exists()) {
+                throw new Error('User data not found. Please contact support.');
+            }
+
+            const userData = userDoc.data();
+            const companyId = userData.connectedCompanies?.companies?.[0];
+
+            if (!companyId) {
+                throw new Error('No company ID found. Please contact support.');
+            }
+
             const addressId = uuidv4();
             const addressToAdd = {
                 ...newAddress,
@@ -235,10 +320,6 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                     isDefault: false
                 }));
                 updatedAddresses.push({ ...addressToAdd, isDefault: true });
-                const companyId = currentUser?.connectedCompanies?.companies?.[0];
-                if (!companyId) {
-                    throw new Error('No company ID found. Please contact support.');
-                }
                 await updateDoc(doc(db, 'companies', companyId), {
                     shipFromAddresses: updatedAddresses
                 });
@@ -247,10 +328,6 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious }) => {
                 setFormData(addressToAdd);
                 setTimeout(() => onDataChange(addressToAdd), 0);
             } else {
-                const companyId = currentUser?.connectedCompanies?.companies?.[0];
-                if (!companyId) {
-                    throw new Error('No company ID found. Please contact support.');
-                }
                 await updateDoc(doc(db, 'companies', companyId), {
                     shipFromAddresses: arrayUnion(addressToAdd)
                 });
