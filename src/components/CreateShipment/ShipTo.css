@@ -468,4 +468,18 @@
     .btn-navigation {
         width: 100%;
     }
+}
+
+/* Add styles for customer avatar in the table */
+.customer-avatar-sm {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: #3f51b5;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 500;
+    font-size: 14px;
 } 

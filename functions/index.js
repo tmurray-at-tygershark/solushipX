@@ -44,6 +44,7 @@ const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
 const { getCompany } = require('./src/getCompany');
 const { getCompanyShipmentOrigins } = require('./src/getCompanyShipmentOrigins');
 const { getCompanyCustomers } = require('./src/getCompanyCustomers');
+const { getCompanyCustomerDestinations } = require('./src/getCompanyCustomerDestinations');
 
 // Input validation
 function validateShipmentData(data) {
@@ -660,4 +661,18 @@ exports.getCompanyCustomers = functions.https.onCall({
 }, (data, context) => {
   // The function runs with admin privileges regardless of the calling user
   return getCompanyCustomers(data, context);
+});
+
+// Export getCompanyCustomerDestinations callable function with necessary configuration
+exports.getCompanyCustomerDestinations = functions.https.onCall({
+  region: 'us-central1',
+  cors: true,
+  enforceAppCheck: false,
+  invoker: 'public',
+  maxInstances: 10,
+  timeoutSeconds: 120,
+  memory: '256MiB',
+}, (data, context) => {
+  // The function runs with admin privileges regardless of the calling user
+  return getCompanyCustomerDestinations(data, context);
 });

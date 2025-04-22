@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import './ShipTo.css';
-import { Autocomplete, TextField, Box, Typography, Chip } from '@mui/material';
+import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination } from '@mui/material';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     const { currentUser } = useAuth();
@@ -24,159 +24,275 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         contactEmail: '',
         specialInstructions: ''
     });
+
+    // State for customers and destinations
     const [customers, setCustomers] = useState([]);
+    const [customerDestinations, setCustomerDestinations] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [customerAddresses, setCustomerAddresses] = useState([]);
     const [selectedAddressId, setSelectedAddressId] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [success, setSuccess] = useState(null);
-    const [showAddAddressForm, setShowAddAddressForm] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
-    const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage] = useState(50);
-    const [newAddress, setNewAddress] = useState({
-        name: '',
-        company: '',
-        attention: '',
-        street: '',
-        street2: '',
-        city: '',
-        state: '',
-        postalCode: '',
-        country: 'US',
-        contactName: '',
-        contactPhone: '',
-        contactEmail: '',
-        isDefault: false
-    });
 
-    // Fetch customers for the company
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 50;
+    const [totalPages, setTotalPages] = useState(1);
+
+    // State for loading and errors
+    const [loading, setLoading] = useState(false);
+    const [initialLoading, setInitialLoading] = useState(true);
+    const [loadingDestinations, setLoadingDestinations] = useState(false);
+    const [error, setError] = useState(null);
+    const [companyId, setCompanyId] = useState(null);
+
+    // Firebase functions references
+    const functions = getFunctions();
+    const getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
+    const getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
+
+    // Calculate total pages when customers array changes
     useEffect(() => {
-        const fetchCustomers = async () => {
+        setTotalPages(Math.ceil(customers.length / itemsPerPage));
+    }, [customers, itemsPerPage]);
+
+    // Fetch company ID for the current user
+    useEffect(() => {
+        const fetchCompanyId = async () => {
             try {
-                setLoading(true);
-                setError(null);
+                setInitialLoading(true);
 
                 // Get the current user's data
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                 if (!userDoc.exists()) {
                     setError('User data not found.');
-                    setLoading(false);
+                    setInitialLoading(false);
                     return;
                 }
 
                 const userData = userDoc.data();
-                console.log('User data:', userData);
-                console.log('Connected companies:', userData.connectedCompanies);
-                console.log('Companies array:', userData.companies);
 
                 // Get company ID from either connectedCompanies map or companies array
-                let companyId = null;
+                let id = null;
                 if (userData.connectedCompanies && userData.connectedCompanies.companies && userData.connectedCompanies.companies.length > 0) {
-                    // Get the first company ID from the connectedCompanies.companies array
-                    companyId = userData.connectedCompanies.companies[0];
-                    console.log('Using company ID from connectedCompanies.companies:', companyId);
+                    id = userData.connectedCompanies.companies[0];
+                    console.log('Using company ID from connectedCompanies.companies:', id);
                 } else if (userData.companies && userData.companies.length > 0) {
-                    // Get the first company ID from the companies array
-                    companyId = userData.companies[0];
-                    console.log('Using company ID from companies array:', companyId);
+                    id = userData.companies[0];
+                    console.log('Using company ID from companies array:', id);
                 }
 
-                if (!companyId) {
+                if (!id) {
                     console.log('No company ID found in user data');
                     setError('No company associated with this user.');
-                    setLoading(false);
+                    setInitialLoading(false);
                     return;
                 }
 
-                // Fetch customers for the company
-                const customersRef = collection(db, 'customers');
-                const q = query(customersRef, where('companyId', '==', companyId));
-                console.log('Querying customers with companyId:', companyId);
-                const querySnapshot = await getDocs(q);
-                console.log('Query result:', querySnapshot.empty ? 'No customers found' : `${querySnapshot.size} customers found`);
+                setCompanyId(id);
 
-                if (querySnapshot.empty) {
-                    setError('No customers found for this company.');
-                    setLoading(false);
-                    return;
-                }
+                // Initial fetch of customers
+                await fetchCustomers(id);
 
-                const customersData = querySnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-
-                setCustomers(customersData);
             } catch (err) {
-                console.error('Error fetching customers:', err);
-                setError('Failed to load customers. Please try again.');
+                console.error('Error fetching company ID:', err);
+                setError('Failed to load company data. Please try again.');
             } finally {
-                setLoading(false);
+                setInitialLoading(false);
             }
         };
 
         if (currentUser) {
-            fetchCustomers();
+            fetchCompanyId();
         }
     }, [currentUser]);
 
-    // Filter customers based on search query
-    const filteredCustomers = customers.filter(customer => {
-        const searchLower = searchQuery.toLowerCase();
-        return (
-            customer.name?.toLowerCase().includes(searchLower) ||
-            customer.company?.toLowerCase().includes(searchLower) ||
-            customer.contacts?.some(contact =>
-                contact.name?.toLowerCase().includes(searchLower) ||
-                contact.email?.toLowerCase().includes(searchLower)
-            ) ||
-            customer.addresses?.some(address =>
-                address.city?.toLowerCase().includes(searchLower) ||
-                address.state?.toLowerCase().includes(searchLower)
-            )
-        );
-    });
+    // Fetch customers for the company
+    const fetchCustomers = async (id) => {
+        if (!id) return;
 
-    // Pagination logic
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = filteredCustomers.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
+        try {
+            setLoading(true);
+            setError(null);
 
-    const handlePageChange = (pageNumber) => {
-        setCurrentPage(pageNumber);
+            console.log('Calling getCompanyCustomers with companyId:', id);
+            const customersResult = await getCompanyCustomersFunction({ companyId: id });
+
+            if (!customersResult.data.success) {
+                throw new Error(customersResult.data.error || 'Failed to fetch customers');
+            }
+
+            const customersData = customersResult.data.data.customers || [];
+            console.log('Retrieved customers:', customersData.length);
+
+            // Sort customers alphabetically by name
+            const sortedCustomers = [...customersData].sort((a, b) =>
+                (a.name || '').localeCompare(b.name || '')
+            );
+
+            setCustomers(sortedCustomers);
+            setCurrentPage(1); // Reset to first page when new customers are loaded
+
+            // Also fetch all destinations in background for faster searching
+            fetchAllDestinations(id);
+
+        } catch (err) {
+            console.error('Error fetching customers:', err);
+            setError('Failed to load customers. Please try again.');
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const toggleViewMode = () => {
-        setViewMode(viewMode === 'grid' ? 'list' : 'grid');
+    // Fetch all destinations for company (to have them cached for faster UI)
+    const fetchAllDestinations = async (id) => {
+        try {
+            console.log('Fetching all destinations for company:', id);
+            const destinationsResult = await getDestinationsFunction({
+                companyId: id,
+                includeAllTypes: true
+            });
+
+            if (!destinationsResult.data.success) {
+                console.error('Error fetching all destinations:', destinationsResult.data.error);
+                return;
+            }
+
+            const destinations = destinationsResult.data.data.destinations || [];
+            console.log('Retrieved all destinations:', destinations.length);
+            setCustomerDestinations(destinations);
+
+        } catch (err) {
+            console.error('Error fetching all destinations:', err);
+        }
     };
 
-    const handleCustomerSelect = (customer) => {
-        setSelectedCustomer(customer);
-        setCustomerAddresses(customer.addresses || []);
-        setShowAddressSuggestions(true);
+    // Fetch destinations for a specific customer
+    const fetchCustomerDestinations = async (customer) => {
+        if (!customer || !customer.id) return;
+
+        try {
+            setLoadingDestinations(true);
+            console.log('===== FETCHING DESTINATIONS =====');
+            console.log('Customer ID:', customer.id);
+            console.log('Customer Name:', customer.name);
+
+            // First try to use already cached destinations
+            if (customerDestinations.length > 0) {
+                const filteredDestinations = customerDestinations.filter(
+                    dest => dest.customerId === customer.id
+                );
+
+                console.log('Cached destinations for this customer:', filteredDestinations.length);
+
+                if (filteredDestinations.length > 0) {
+                    console.log('Using cached destinations');
+                    processDestinations(customer, filteredDestinations);
+                    setLoadingDestinations(false);
+                    return;
+                }
+            }
+
+            // If not cached or none found, fetch from server
+            console.log('Fetching destinations from server with params:', {
+                companyId,
+                includeAllTypes: true
+            });
+
+            const destinationsResult = await getDestinationsFunction({
+                companyId,
+                includeAllTypes: true
+            });
+
+            console.log('Server response:', destinationsResult.data);
+
+            if (!destinationsResult.data.success) {
+                throw new Error(destinationsResult.data.error || 'Failed to fetch destinations');
+            }
+
+            const allDestinations = destinationsResult.data.data.destinations || [];
+            console.log('All destinations from server:', allDestinations.length);
+
+            // Filter for this customer
+            const customerSpecificDestinations = allDestinations.filter(
+                dest => dest.customerId === customer.id
+            );
+
+            console.log('Filtered destinations for customer:', customerSpecificDestinations.length);
+            console.log('Destination details:', customerSpecificDestinations);
+
+            // Update full destination cache
+            setCustomerDestinations(allDestinations);
+
+            // Process destinations for this customer
+            processDestinations(customer, customerSpecificDestinations);
+
+        } catch (err) {
+            console.error('Error fetching customer destinations:', err);
+            setError('Failed to load destination addresses. Please try again.');
+            setCustomerAddresses([]);
+        } finally {
+            setLoadingDestinations(false);
+        }
+    };
+
+    // Process customer destinations into a usable format
+    const processDestinations = (customer, destinations) => {
+        console.log('===== PROCESSING DESTINATIONS =====');
+        console.log('Customer:', customer.name);
+        console.log('Raw destinations from API:', destinations);
+
+        // Filter out billing addresses and format addresses for display
+        const formattedAddresses = destinations
+            .filter(dest => dest.address.type !== 'billing') // Filter out billing addresses
+            .map(dest => ({
+                ...dest.address,
+                id: dest.id,
+                attention: dest.address.attention || '',
+                name: dest.address.name || customer.name,
+                contactName: dest.contact?.name || customer.contacts?.[0]?.name || '',
+                contactPhone: dest.contact?.phone || customer.contacts?.[0]?.phone || '',
+                contactEmail: dest.contact?.email || customer.contacts?.[0]?.email || '',
+            }));
+
+        // Sort addresses - put default addresses first
+        formattedAddresses.sort((a, b) => {
+            if (a.default === true && !b.default) return -1;
+            if (!a.default && b.default === true) return 1;
+            return 0;
+        });
+
+        console.log('Formatted addresses (billing filtered, default first):', formattedAddresses);
+        setCustomerAddresses(formattedAddresses);
+
         // Set default address if available
-        const defaultAddress = customer.addresses?.find(addr => addr.default);
+        const defaultAddress = formattedAddresses.find(addr => addr.default === true);
         if (defaultAddress) {
-            setSelectedAddressId(customer.addresses.indexOf(defaultAddress));
+            console.log('Found default address:', defaultAddress);
+            const defaultIndex = formattedAddresses.indexOf(defaultAddress);
+            handleAddressChange(defaultIndex);
+        } else if (formattedAddresses.length > 0) {
+            // If no default but addresses exist, select the first one
+            console.log('No default address, selecting first:', formattedAddresses[0]);
+            handleAddressChange(0);
         } else {
+            console.log('No addresses available for selection');
             setSelectedAddressId(null);
         }
     };
 
+    const handleCustomerSelect = (customer) => {
+        setSelectedCustomer(customer);
+        setSelectedAddressId(null);
+        fetchCustomerDestinations(customer);
+    };
+
     const handleAddressChange = useCallback((addressIndex) => {
-        // Find the address by index instead of ID
+        // Find the address by index
         const selectedAddress = customerAddresses[addressIndex];
         if (selectedAddress) {
             setSelectedAddressId(addressIndex);
             const updatedFormData = {
                 name: selectedAddress.name || '',
-                company: selectedCustomer.name || '',
+                company: selectedCustomer?.name || '',
                 attention: selectedAddress.attention || '',
                 street: selectedAddress.street || '',
                 street2: selectedAddress.street2 || '',
@@ -184,96 +300,15 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 state: selectedAddress.state || '',
                 postalCode: selectedAddress.zip || selectedAddress.postalCode || '',
                 country: selectedAddress.country || 'US',
-                contactName: selectedCustomer.contacts?.[0]?.name || '',
-                contactPhone: selectedCustomer.contacts?.[0]?.phone || '',
-                contactEmail: selectedCustomer.contacts?.[0]?.email || '',
+                contactName: selectedAddress.contactName || selectedCustomer?.contacts?.[0]?.name || '',
+                contactPhone: selectedAddress.contactPhone || selectedCustomer?.contacts?.[0]?.phone || '',
+                contactEmail: selectedAddress.contactEmail || selectedCustomer?.contacts?.[0]?.email || '',
                 specialInstructions: selectedAddress.specialInstructions || ''
             };
             setFormData(updatedFormData);
             onDataChange(updatedFormData);
         }
     }, [customerAddresses, selectedCustomer, onDataChange]);
-
-    const handleInputChange = useCallback((e) => {
-        const { name, value } = e.target;
-        setFormData(prev => {
-            const newData = { ...prev, [name]: value };
-            setTimeout(() => onDataChange(newData), 0);
-            return newData;
-        });
-    }, [onDataChange]);
-
-    const handleNewAddressChange = useCallback((e) => {
-        const { name, value, type, checked } = e.target;
-        setNewAddress(prev => ({
-            ...prev,
-            [name]: type === 'checkbox' ? checked : value
-        }));
-    }, []);
-
-    const handleCloseForm = () => {
-        setShowAddAddressForm(false);
-        setNewAddress({
-            name: '',
-            company: '',
-            attention: '',
-            street: '',
-            street2: '',
-            city: '',
-            state: '',
-            postalCode: '',
-            country: 'US',
-            contactName: '',
-            contactPhone: '',
-            contactEmail: '',
-            isDefault: false
-        });
-    };
-
-    const handleAddAddress = async () => {
-        try {
-            setIsSubmitting(true);
-            setError(null);
-
-            // Validate required fields
-            const requiredFields = ['name', 'company', 'street', 'city', 'state', 'postalCode', 'contactName', 'contactPhone', 'contactEmail'];
-            const missingFields = requiredFields.filter(field => !newAddress[field]);
-
-            if (missingFields.length > 0) {
-                setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
-                return;
-            }
-
-            // Create new address object
-            const addressData = {
-                ...newAddress,
-                id: Date.now().toString(), // Temporary ID generation
-                type: 'shipping',
-                default: newAddress.isDefault
-            };
-
-            // Add to customer addresses
-            const updatedAddresses = [...customerAddresses, addressData];
-            setCustomerAddresses(updatedAddresses);
-
-            // If this is the first address or marked as default, select it
-            if (updatedAddresses.length === 1 || newAddress.isDefault) {
-                handleAddressChange(0);
-            }
-
-            // Close form and reset
-            handleCloseForm();
-            setSuccess('Address added successfully');
-
-            // Clear success message after 3 seconds
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            console.error('Error adding address:', err);
-            setError('Failed to add address. Please try again.');
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
 
     const handleSubmit = useCallback(() => {
         if (!selectedCustomer) {
@@ -282,8 +317,8 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         }
 
         // Check if we have a selected address or if we're using form data
-        if (!selectedAddressId && !formData.street) {
-            setError('Please select or add a shipping address');
+        if (selectedAddressId === null && !formData.street) {
+            setError('Please select a shipping address');
             return;
         }
 
@@ -307,7 +342,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         <div className="customer-search mb-4">
             <Autocomplete
                 options={customers}
-                getOptionLabel={(option) => option.name}
+                getOptionLabel={(option) => option.name || ''}
                 value={selectedCustomer}
                 onChange={(event, newValue) => {
                     if (newValue) {
@@ -321,6 +356,15 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         variant="outlined"
                         fullWidth
                         placeholder="Start typing to search customers..."
+                        InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                                <>
+                                    {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                                    {params.InputProps.endAdornment}
+                                </>
+                            ),
+                        }}
                         sx={{
                             '& .MuiOutlinedInput-root': {
                                 backgroundColor: 'white',
@@ -349,11 +393,12 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                     </Box>
                 )}
                 filterOptions={(options, { inputValue }) => {
+                    const searchValue = inputValue.toLowerCase();
                     return options.filter(option =>
-                        option.name.toLowerCase().includes(inputValue.toLowerCase()) ||
+                        option.name?.toLowerCase().includes(searchValue) ||
                         option.contacts?.some(contact =>
-                            contact.name?.toLowerCase().includes(inputValue.toLowerCase()) ||
-                            contact.email?.toLowerCase().includes(inputValue.toLowerCase())
+                            contact.name?.toLowerCase().includes(searchValue) ||
+                            contact.email?.toLowerCase().includes(searchValue)
                         )
                     );
                 }}
@@ -375,25 +420,115 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         </div>
     );
 
+    // Get current page customers
+    const getCurrentPageCustomers = () => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        return customers.slice(startIndex, endIndex);
+    };
+
+    // Render the customer list with pagination
+    const renderCustomerList = () => {
+        const currentCustomers = getCurrentPageCustomers();
+
+        return (
+            <div className="customer-list-container mb-4">
+                <div className="card">
+                    <div className="card-header bg-light d-flex align-items-center">
+                        <div className="d-flex align-items-center">
+                            <i className="bi bi-building me-2"></i>
+                            <h6 className="mb-0">Customer List</h6>
+                        </div>
+                    </div>
+                    <div className="card-body p-0">
+                        {loading ? (
+                            <div className="text-center py-4">
+                                <CircularProgress size={30} />
+                                <p className="text-muted mt-2">Loading customers...</p>
+                            </div>
+                        ) : customers.length === 0 ? (
+                            <div className="text-center py-4">
+                                <p className="text-muted">No customers found</p>
+                            </div>
+                        ) : (
+                            <div className="table-responsive">
+                                <table className="table table-hover">
+                                    <thead className="table-light">
+                                        <tr>
+                                            <th>Customer Name</th>
+                                            <th>Contact Person</th>
+                                            <th>Contact Email</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {currentCustomers.map((customer) => (
+                                            <tr key={customer.id} className={selectedCustomer?.id === customer.id ? 'table-primary' : ''}>
+                                                <td>
+                                                    <div className="d-flex align-items-center">
+                                                        <div className="customer-avatar-sm me-2">
+                                                            {customer.name?.charAt(0) || 'C'}
+                                                        </div>
+                                                        <span>{customer.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td>{customer.contacts?.[0]?.name || 'N/A'}</td>
+                                                <td>{customer.contacts?.[0]?.email || 'N/A'}</td>
+                                                <td>
+                                                    <button
+                                                        className="btn btn-sm btn-outline-primary"
+                                                        onClick={() => handleCustomerSelect(customer)}
+                                                        disabled={selectedCustomer?.id === customer.id}
+                                                    >
+                                                        {selectedCustomer?.id === customer.id ? 'Selected' : 'Select'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                    {customers.length > 0 && (
+                        <div className="card-footer d-flex justify-content-center py-3">
+                            <Pagination
+                                count={totalPages}
+                                page={currentPage}
+                                onChange={(event, value) => setCurrentPage(value)}
+                                color="primary"
+                                size="medium"
+                                showFirstButton
+                                showLastButton
+                            />
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     const renderAddressSuggestions = () => (
         <div className="address-suggestions mb-4">
             <div className="card border-primary">
-                <div className="card-header bg-light d-flex align-items-center">
-                    <LocationOnIcon className="me-2" />
-                    <h6 className="mb-0">Select Shipping Destination</h6>
+                <div className="card-header bg-light d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center">
+                        <LocationOnIcon className="me-2" />
+                        <h6 className="mb-0">Select Shipping Destination</h6>
+                    </div>
+                    {loadingDestinations && (
+                        <CircularProgress size={20} />
+                    )}
                 </div>
                 <div className="card-body p-0">
                     <div className="address-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                        {customerAddresses.length === 0 ? (
+                        {loadingDestinations ? (
+                            <div className="text-center py-4">
+                                <p className="text-muted">Loading destination addresses...</p>
+                            </div>
+                        ) : customerAddresses.length === 0 ? (
                             <div className="text-center py-4">
                                 <p className="text-muted mb-3">No saved addresses found</p>
-                                <button
-                                    type="button"
-                                    className="btn btn-primary"
-                                    onClick={() => setShowAddAddressForm(true)}
-                                >
-                                    <i className="bi bi-plus-lg me-1"></i> Add Your First Address
-                                </button>
                             </div>
                         ) : (
                             <div className="row g-3 p-3">
@@ -407,13 +542,15 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                             <div className="card-body">
                                                 <div className="d-flex justify-content-between align-items-start mb-2">
                                                     <h6 className="card-title mb-0">{address.street}</h6>
-                                                    {address.default && (
-                                                        <Chip
-                                                            label="Default"
-                                                            color="primary"
-                                                            size="small"
-                                                        />
-                                                    )}
+                                                    <div className="d-flex">
+                                                        {address.default && (
+                                                            <Chip
+                                                                label="Default"
+                                                                color="primary"
+                                                                size="small"
+                                                            />
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 {address.street2 && (
                                                     <Typography variant="body2" className="mb-1">
@@ -421,7 +558,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                     </Typography>
                                                 )}
                                                 <Typography variant="body2" className="mb-2">
-                                                    {address.city}, {address.state} {address.zip}
+                                                    {address.city}, {address.state} {address.zip || address.postalCode}
                                                 </Typography>
                                                 <div className="mt-2 pt-2 border-top">
                                                     {address.attention && (
@@ -452,7 +589,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         </div>
     );
 
-    if (loading) {
+    if (initialLoading) {
         return (
             <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '200px' }}>
                 <div className="spinner-border text-primary" role="status">
@@ -469,7 +606,16 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 <p className="text-muted">Select or search for a customer to ship to</p>
             </div>
 
+            {error && (
+                <div className="alert alert-danger mb-3" role="alert">
+                    <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                    {error}
+                </div>
+            )}
+
             {renderCustomerSearch()}
+
+            {!selectedCustomer && renderCustomerList()}
 
             {selectedCustomer && (
                 <>
@@ -511,13 +657,13 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                     type="button"
                     className="btn btn-primary btn-navigation"
                     onClick={handleSubmit}
-                    disabled={selectedAddressId === null}
+                    disabled={!selectedCustomer || (selectedAddressId === null && !formData.street)}
                 >
                     Next <i className="bi bi-arrow-right"></i>
                 </button>
             </div>
 
-            {selectedCustomer && selectedAddressId === null && (
+            {selectedCustomer && selectedAddressId === null && !formData.street && (
                 <div className="text-center mt-3">
                     <small className="text-danger">
                         <i className="bi bi-exclamation-triangle-fill me-1"></i>
