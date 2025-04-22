@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useFormContext } from '../../contexts/FormDataContext';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useFormContext } from '../../contexts/FormDataContext';
 import ReactMarkdown from 'react-markdown';
 import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid } from '@mui/material';
 import { Divider } from '@mui/material';
@@ -572,7 +572,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
         } finally {
             setIsLoading(false);
         }
-    }, [formData, onRateSelect, selectedRate]);
+    }, [formData]);
 
     useEffect(() => {
         if (formData) {
