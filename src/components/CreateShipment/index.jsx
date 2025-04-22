@@ -11,6 +11,7 @@ import ShipTo from './ShipTo';
 import Packages from './Packages';
 import Rates from './Rates';
 import Review from './Review';
+import ChatBot from './ChatBot';
 import './CreateShipment.css';
 
 // API key should be loaded from environment variables with a fallback
@@ -315,6 +316,7 @@ const CreateShipment = () => {
                     </div>
                 </div>
             </div>
+            <ChatBot onShipmentComplete={handleSubmit} />
         </div>
     );
 };

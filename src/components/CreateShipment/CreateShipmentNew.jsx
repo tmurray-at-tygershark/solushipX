@@ -63,6 +63,7 @@ import { useTeam } from '../../contexts/TeamContext';
 import { useRole } from '../../contexts/RoleContext';
 import { usePermission } from '../../contexts/PermissionContext';
 import { useAccess } from '../../contexts/AccessContext';
+import ChatBot from './ChatBot';
 
 const STEP_ROUTES = {
     details: 'details',
@@ -311,32 +312,36 @@ const CreateShipment = () => {
     };
 
     return (
-        <Container maxWidth="lg">
-            <Box sx={{ py: 4 }}>
-                <Paper elevation={3} sx={{ p: 4 }}>
-                    <Typography variant="h4" component="h1" gutterBottom>
-                        Create Shipment
-                    </Typography>
+        <Box sx={{ position: 'relative', minHeight: '100vh' }}>
+            <Container maxWidth="lg">
+                <Box sx={{ py: 4 }}>
+                    <Paper elevation={3} sx={{ p: 4 }}>
+                        <Typography variant="h4" component="h1" gutterBottom>
+                            Create Shipment
+                        </Typography>
 
-                    <Stepper activeStep={Object.values(STEP_ROUTES).indexOf(step)} sx={{ mb: 4 }}>
-                        {Object.values(STEP_ROUTES).map((stepRoute) => (
-                            <Step key={stepRoute}>
-                                <StepLabel>{STEP_NAMES[stepRoute]}</StepLabel>
-                            </Step>
-                        ))}
-                    </Stepper>
+                        <Stepper activeStep={Object.values(STEP_ROUTES).indexOf(step)} sx={{ mb: 4 }}>
+                            {Object.values(STEP_ROUTES).map((stepRoute) => (
+                                <Step key={stepRoute}>
+                                    <StepLabel>{STEP_NAMES[stepRoute]}</StepLabel>
+                                </Step>
+                            ))}
+                        </Stepper>
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        {renderStep()}
-                    </motion.div>
-                </Paper>
-            </Box>
-        </Container>
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            transition={{ duration: 0.3 }}
+                        >
+                            {renderStep()}
+                        </motion.div>
+                    </Paper>
+                </Box>
+            </Container>
+
+            <ChatBot />
+        </Box>
     );
 };
 
