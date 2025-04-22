@@ -498,6 +498,33 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                     <p className="text-muted">Select a customer to view their addresses</p>
                 </div>
             )}
+
+            <div className="navigation-buttons">
+                <button
+                    type="button"
+                    className="btn btn-outline-primary btn-navigation"
+                    onClick={onPrevious}
+                >
+                    <i className="bi bi-arrow-left"></i> Previous
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-primary btn-navigation"
+                    onClick={handleSubmit}
+                    disabled={selectedAddressId === null}
+                >
+                    Next <i className="bi bi-arrow-right"></i>
+                </button>
+            </div>
+
+            {selectedCustomer && selectedAddressId === null && (
+                <div className="text-center mt-3">
+                    <small className="text-danger">
+                        <i className="bi bi-exclamation-triangle-fill me-1"></i>
+                        Please select a destination address to continue
+                    </small>
+                </div>
+            )}
         </div>
     );
 };

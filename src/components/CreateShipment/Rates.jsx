@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid } from '@mui/material';
 import { Divider } from '@mui/material';
@@ -455,7 +456,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
             });
 
             console.log('📍 From Address:', rateRequestData.fromAddress);
-            console.log('�� To Address:', rateRequestData.toAddress);
+            console.log('📍 To Address:', rateRequestData.toAddress);
 
             console.log('📦 Packages:', rateRequestData.items.map(item => ({
                 name: item.name,
@@ -588,7 +589,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
             setRatesLoaded(true);
             setIsLoading(false);
         }
-    };
+    }, [formData]);
 
     useEffect(() => {
         if (formData) {
