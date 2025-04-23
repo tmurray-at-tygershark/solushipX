@@ -207,22 +207,14 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
         <div className="form-section">
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                 <Typography variant="h5" component="h3" className="form-section-title">
-                    Shipment Details
+                    Shipment Info
                 </Typography>
             </Box>
 
             <form onSubmit={handleSubmit} noValidate>
                 {/* Shipment Type Selection */}
                 <Box sx={{ mb: 4 }}>
-                    <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-                        <LocalShippingIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                        Shipment Type
-                        <Tooltip title="Select the type of shipment service you need">
-                            <IconButton size="small" sx={{ ml: 1 }}>
-                                <InfoIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                    </Typography>
+
                     <Grid container spacing={2}>
                         <Grid item xs={12} sm={6}>
                             <div
@@ -265,7 +257,6 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
 
                 {/* Reference Information */}
                 <Box sx={{ mb: 4 }}>
-                    <Typography variant="h6" sx={{ mb: 2 }}>Reference Information</Typography>
                     <Grid container spacing={2}>
                         <Grid item xs={12}>
                             <div className="form-group">
@@ -289,8 +280,6 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                         </Grid>
                     </Grid>
                 </Box>
-
-                <Divider sx={{ my: 3 }} />
 
                 {/* Schedule */}
                 <Box sx={{ mb: 4 }}>

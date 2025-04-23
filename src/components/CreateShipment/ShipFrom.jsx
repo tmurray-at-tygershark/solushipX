@@ -5,6 +5,8 @@ import { db } from '../../firebase';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../../contexts/AuthContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
+import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button } from '@mui/material';
+import { Add as AddIcon } from '@mui/icons-material';
 import './ShipFrom.css';
 
 const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
@@ -47,6 +49,7 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         contactEmail: '',
         isDefault: false
     });
+    const [isAddressesLoading, setIsAddressesLoading] = useState(true);
 
     // Fetch company data and addresses using cloud functions
     useEffect(() => {
@@ -158,25 +161,48 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
 
                     console.log('Received shipFromAddresses:', shipFromAddresses);
 
-                    // Update state with the addresses
-                    setCompanyAddresses(shipFromAddresses || []);
+                    // Update state with the addresses and ensure all addresses have IDs
+                    const processedAddresses = (shipFromAddresses || []).map((addr, index) => {
+                        // Ensure each address has an ID (use index as fallback)
+                        if (!addr.id) {
+                            console.log(`Address "${addr.name}" is missing ID, using index ${index} as fallback`);
+                            return { ...addr, id: `address_${index}` };
+                        }
+                        return addr;
+                    });
+                    setCompanyAddresses(processedAddresses);
 
                     // Find and set default address
-                    const defaultAddress = shipFromAddresses?.find(addr => addr.isDefault);
-                    if (defaultAddress) {
-                        setSelectedAddressId(defaultAddress.id);
-                        setFormData(defaultAddress);
-                        console.log('Default address set:', defaultAddress);
+                    const defaultAddress = processedAddresses.find(addr => addr.isDefault);
+                    if (defaultAddress?.id) {
+                        // Convert ID to string without trimming
+                        const defaultAddressId = String(defaultAddress.id);
+                        console.log(`Setting default address ID to: "${defaultAddressId}"`);
+
+                        // Verify the default address exists in the list before setting it
+                        if (processedAddresses.some(addr => addr.id && String(addr.id) === defaultAddressId)) {
+                            // Set the selected address ID directly without setting to null first
+                            setSelectedAddressId(defaultAddressId);
+                            console.log(`Default address verified and set to: ${defaultAddressId}`);
+
+                            // Update form data with the default address
+                            setFormData(defaultAddress);
+                        } else {
+                            console.warn('Default address ID not found in loaded addresses');
+                        }
                     }
                 } catch (err) {
                     console.error('Error fetching company data:', err);
                     setError('Failed to load company data. Please try again or contact support.');
+                } finally {
+                    setLoading(false);
+                    setIsAddressesLoading(false);
                 }
             } catch (err) {
                 console.error('Error fetching company data:', err);
                 setError('Failed to load company data. Please try again or contact support.');
-            } finally {
                 setLoading(false);
+                setIsAddressesLoading(false);
             }
         };
 
@@ -194,13 +220,55 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         type: typeof apiKey
     });
 
-    const handleAddressChange = useCallback((addressId) => {
-        const selectedAddress = companyAddresses.find(addr => addr.id === addressId);
+    // Debug log to see the current selectedAddressId in component state
+    console.log('Current selectedAddressId in component state:', {
+        selectedAddressId,
+        type: typeof selectedAddressId,
+        nullCheck: selectedAddressId === null,
+        length: selectedAddressId?.length || 0
+    });
+
+    const handleAddressChange = useCallback((addressId, addressIndex) => {
+        // If addressId is null/undefined but index is provided, use index as fallback
+        if ((!addressId || addressId === 'undefined') && addressIndex !== undefined) {
+            addressId = `address_${addressIndex}`;
+            console.log(`Using fallback ID: ${addressId} based on index ${addressIndex}`);
+        }
+
+        // Simple validation and conversion
+        if (!addressId) {
+            console.error('Address ID is null or undefined and no index fallback provided');
+            return;
+        }
+
+        // Convert to string format consistently
+        const addressIdStr = String(addressId);
+        console.log(`Attempting to set selected address ID to: "${addressIdStr}"`);
+
+        // Set the state directly
+        setSelectedAddressId(addressIdStr);
+        console.log(`Set selectedAddressId state to: "${addressIdStr}"`);
+
+        // Find and update form data - try ID first, then fallback to position
+        let selectedAddress = companyAddresses.find(addr =>
+            addr.id && String(addr.id) === addressIdStr
+        );
+
+        // If not found by ID, try to find by index if it was an index-based ID
+        if (!selectedAddress && addressIdStr.startsWith('address_')) {
+            const index = parseInt(addressIdStr.replace('address_', ''));
+            if (!isNaN(index) && index < companyAddresses.length) {
+                selectedAddress = companyAddresses[index];
+            }
+        }
+
         if (selectedAddress) {
-            setSelectedAddressId(addressId);
             setFormData(selectedAddress);
-            console.log('Selected address:', selectedAddress);
-            setTimeout(() => onDataChange(selectedAddress), 0);
+            // Notify parent component
+            onDataChange(selectedAddress);
+            console.log('Selected address found and form updated:', selectedAddress.name);
+        } else {
+            console.error('No matching address found for ID:', addressIdStr);
         }
     }, [companyAddresses, onDataChange]);
 
@@ -356,9 +424,56 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
 
     if (loading) {
         return (
-            <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '200px' }}>
-                <div className="spinner-border text-primary" role="status">
-                    <span className="visually-hidden">Loading...</span>
+            <div className="ship-from-skeleton">
+                <div className="card shadow-sm mb-4">
+                    <div className="card-body">
+                        <Skeleton variant="text" width="40%" height={40} style={{ marginBottom: '24px' }} />
+
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                            <Skeleton variant="text" width="30%" height={30} />
+                            <Skeleton variant="rectangular" width={150} height={36} />
+                        </div>
+
+                        <div className="address-list-skeleton">
+                            {isAddressesLoading && (
+                                <div className="address-list-skeleton">
+                                    {[1, 2, 3].map((key) => (
+                                        <div key={key} className="mb-2">
+                                            <Card sx={{ width: '100%', p: 2 }}>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={12} sm={3}>
+                                                        <Skeleton variant="text" width="70%" height={28} />
+                                                        <Skeleton variant="text" width="50%" />
+                                                    </Grid>
+                                                    <Grid item xs={12} sm={4}>
+                                                        <Skeleton variant="text" width="90%" />
+                                                        <Skeleton variant="text" width="60%" />
+                                                    </Grid>
+                                                    <Grid item xs={12} sm={3}>
+                                                        <Skeleton variant="text" width="80%" />
+                                                        <Skeleton variant="text" width="70%" />
+                                                    </Grid>
+                                                    <Grid item xs={12} sm={2} sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+                                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ ml: { xs: 0, sm: 'auto' } }} />
+                                                    </Grid>
+                                                </Grid>
+                                            </Card>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="mt-4">
+                            <Skeleton variant="text" width="30%" height={24} style={{ marginBottom: '8px' }} />
+                            <Skeleton variant="rectangular" width="100%" height={100} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="navigation-buttons d-flex justify-content-between mt-4">
+                    <Skeleton variant="rectangular" width={120} height={40} />
+                    <Skeleton variant="rectangular" width={120} height={40} />
                 </div>
             </div>
         );
@@ -641,49 +756,165 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                             </div>
                         ) : (
                             <div className="address-list">
-                                {companyAddresses.length === 0 ? (
-                                    <div className="text-center py-4">
-                                        <p className="text-muted mb-3">No saved addresses found</p>
-                                        <button
-                                            type="button"
-                                            className="btn btn-primary"
-                                            onClick={() => setShowAddAddressForm(true)}
-                                        >
-                                            <i className="bi bi-plus-lg me-1"></i> Add Your First Address
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="row g-3">
-                                        {companyAddresses.map((address) => (
-                                            <div key={address.id} className="col-md-6">
-                                                <div
-                                                    className={`card h-100 address-card ${selectedAddressId === address.id ? 'selected' : ''}`}
-                                                    style={{ cursor: 'pointer' }}
-                                                    onClick={() => handleAddressChange(address.id)}
-                                                >
-                                                    <div className="card-body">
-                                                        <div className="d-flex justify-content-between align-items-start mb-2">
-                                                            <h6 className="card-title mb-0">{address.name}</h6>
-                                                            {address.isDefault && (
-                                                                <span className="badge bg-primary">Default</span>
-                                                            )}
-                                                        </div>
-                                                        <p className="card-text small mb-1">{address.company}</p>
-                                                        <p className="card-text small mb-1">
-                                                            {address.street}
-                                                            {address.street2 && <>, {address.street2}</>}
-                                                        </p>
-                                                        <p className="card-text small mb-1">
-                                                            {address.city}, {address.state} {address.postalCode}
-                                                        </p>
-                                                        <p className="card-text small mb-0">
-                                                            {address.contactName} • {address.contactPhone}
-                                                        </p>
-                                                    </div>
-                                                </div>
+                                {isAddressesLoading && (
+                                    <div className="address-list-skeleton">
+                                        {[1, 2, 3].map((key) => (
+                                            <div key={key} className="mb-2">
+                                                <Card sx={{ width: '100%', p: 2 }}>
+                                                    <Grid container spacing={2}>
+                                                        <Grid item xs={12} sm={3}>
+                                                            <Skeleton variant="text" width="70%" height={28} />
+                                                            <Skeleton variant="text" width="50%" />
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={4}>
+                                                            <Skeleton variant="text" width="90%" />
+                                                            <Skeleton variant="text" width="60%" />
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={3}>
+                                                            <Skeleton variant="text" width="80%" />
+                                                            <Skeleton variant="text" width="70%" />
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={2} sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+                                                            <Skeleton variant="rectangular" width={80} height={32} sx={{ ml: { xs: 0, sm: 'auto' } }} />
+                                                        </Grid>
+                                                    </Grid>
+                                                </Card>
                                             </div>
                                         ))}
                                     </div>
+                                )}
+
+                                {!isAddressesLoading && (
+                                    <>
+                                        {companyAddresses.length > 0 ? (
+                                            <div className="address-list">
+                                                {companyAddresses.map((address, index) => {
+                                                    // Generate a fallback ID if needed
+                                                    const addressId = address.id || `address_${index}`;
+                                                    // Simple string conversion for comparison
+                                                    const stateId = String(selectedAddressId || '');
+                                                    const isSelected = addressId === stateId && selectedAddressId !== null;
+
+                                                    // Log selection state for debugging
+                                                    console.log(`Address ${address.name} (${addressId}): isSelected=${isSelected}, selectedId=${stateId}`);
+
+                                                    return (
+                                                        <div key={addressId} className="mb-2">
+                                                            <Card
+                                                                sx={{
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.3s ease',
+                                                                    borderRadius: '8px',
+                                                                    width: '100%',
+                                                                    mb: 2,
+                                                                    ...(isSelected
+                                                                        ? {
+                                                                            borderColor: '#6b46c1 !important',
+                                                                            border: '3px solid #6b46c1 !important',
+                                                                            borderLeft: '8px solid #6b46c1 !important',
+                                                                            bgcolor: 'rgba(107, 70, 193, 0.12) !important',
+                                                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                                            transform: 'scale(1.02) !important',
+                                                                            position: 'relative',
+                                                                            '&:hover': {
+                                                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                                                borderColor: '#6b46c1 !important',
+                                                                                borderLeft: '8px solid #6b46c1 !important',
+                                                                            },
+                                                                            '&::after': {
+                                                                                content: '""',
+                                                                                position: 'absolute',
+                                                                                top: '15px',
+                                                                                right: '15px',
+                                                                                width: '20px',
+                                                                                height: '20px',
+                                                                                borderRadius: '50%',
+                                                                                backgroundColor: '#6b46c1',
+                                                                                backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
+                                                                                backgroundSize: '14px 14px',
+                                                                                backgroundPosition: 'center',
+                                                                                backgroundRepeat: 'no-repeat',
+                                                                            }
+                                                                        }
+                                                                        : {
+                                                                            borderColor: 'rgba(0, 0, 0, 0.12) !important',
+                                                                            border: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                                            borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                                            bgcolor: 'transparent !important',
+                                                                            background: 'none !important',
+                                                                            boxShadow: 'none !important',
+                                                                            transform: 'none !important',
+                                                                            '&:hover': {
+                                                                                boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+                                                                                transform: 'translateY(-4px)',
+                                                                                borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
+                                                                            }
+                                                                        })
+                                                                }}
+                                                                onClick={() => handleAddressChange(addressId, index)}
+                                                                data-selected={isSelected ? "true" : "false"}
+                                                                data-address-id={addressId}
+                                                            >
+                                                                <CardContent sx={{ p: 2 }}>
+                                                                    <Grid container alignItems="center" spacing={2}>
+                                                                        <Grid item xs={12} sm={4}>
+                                                                            <Box display="flex" alignItems="center">
+                                                                                <Typography variant="subtitle1" fontWeight="500" sx={{ mr: 1 }}>
+                                                                                    {address.name}
+                                                                                </Typography>
+                                                                                {address.isDefault && (
+                                                                                    <Chip
+                                                                                        size="small"
+                                                                                        label="Default"
+                                                                                        color="primary"
+                                                                                        sx={{ height: 22 }}
+                                                                                    />
+                                                                                )}
+                                                                            </Box>
+                                                                            <Typography variant="body2" color="text.secondary">
+                                                                                {address.company}
+                                                                            </Typography>
+                                                                        </Grid>
+                                                                        <Grid item xs={12} sm={4}>
+                                                                            <Typography variant="body2">
+                                                                                {address.street}
+                                                                                {address.street2 && <>, {address.street2}</>}
+                                                                            </Typography>
+                                                                            <Typography variant="body2">
+                                                                                {address.city}, {address.state} {address.postalCode}
+                                                                            </Typography>
+                                                                        </Grid>
+                                                                        <Grid item xs={12} sm={4}>
+                                                                            <Typography variant="body2">
+                                                                                <Box component="span" fontWeight="500">Contact:</Box> {address.contactName}
+                                                                            </Typography>
+                                                                            <Typography variant="body2">
+                                                                                <Box component="span" fontWeight="500">Phone:</Box> {address.contactPhone}
+                                                                            </Typography>
+                                                                        </Grid>
+                                                                    </Grid>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-4">
+                                                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                                                    No saved addresses found
+                                                </Typography>
+                                                <Button
+                                                    variant="contained"
+                                                    color="primary"
+                                                    startIcon={<AddIcon />}
+                                                    onClick={() => setShowAddAddressForm(true)}
+                                                >
+                                                    Add Your First Address
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}
