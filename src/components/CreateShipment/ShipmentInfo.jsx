@@ -11,7 +11,8 @@ import {
     FormHelperText,
     Alert,
     Snackbar,
-    Button
+    Button,
+    Skeleton
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
@@ -47,6 +48,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
     const [showErrorSnackbar, setShowErrorSnackbar] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const prevFormDataRef = useRef(formData);
+    const [loading, setLoading] = useState(true);
 
     // Update form data when data prop changes
     useEffect(() => {
@@ -87,6 +89,14 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
             prevFormDataRef.current = formData;
         }
     }, [formData, onDataChange]);
+
+    // Add loading effect
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setLoading(false);
+        }, 1000); // Simulate loading for 1 second
+        return () => clearTimeout(timer);
+    }, []);
 
     const handleInputChange = (e) => {
         const { id, value, type } = e.target;
@@ -202,6 +212,60 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
     const handleCloseSnackbar = () => {
         setShowErrorSnackbar(false);
     };
+
+    if (loading) {
+        return (
+            <div className="form-section">
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                    <Skeleton variant="text" width={200} height={40} />
+                </Box>
+
+                <Box sx={{ mb: 4 }}>
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                            <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 2 }} />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 2 }} />
+                        </Grid>
+                    </Grid>
+                </Box>
+
+                <Box sx={{ mb: 4 }}>
+                    <Skeleton variant="text" width={150} height={30} sx={{ mb: 2 }} />
+                    <Skeleton variant="rectangular" height={56} sx={{ mb: 2 }} />
+                </Box>
+
+                <Box sx={{ mb: 4 }}>
+                    <Skeleton variant="text" width={150} height={30} sx={{ mb: 2 }} />
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                            <Skeleton variant="rectangular" height={56} />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <Skeleton variant="rectangular" height={56} />
+                        </Grid>
+                    </Grid>
+                </Box>
+
+                <Box sx={{ mb: 4 }}>
+                    <Skeleton variant="text" width={150} height={30} sx={{ mb: 2 }} />
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                            <Skeleton variant="rectangular" height={56} />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <Skeleton variant="rectangular" height={56} />
+                        </Grid>
+                    </Grid>
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
+                    <Skeleton variant="rectangular" width={120} height={40} />
+                </Box>
+            </div>
+        );
+    }
 
     return (
         <div className="form-section">
