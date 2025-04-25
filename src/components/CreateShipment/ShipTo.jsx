@@ -3,7 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import './ShipTo.css';
-import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination } from '@mui/material';
+import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton } from '@mui/material';
 import {
     LocationOn as LocationOnIcon,
     LocalPhone as LocalPhoneIcon,
@@ -49,7 +49,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     const [totalPages, setTotalPages] = useState(1);
 
     // State for loading and errors
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [initialLoading, setInitialLoading] = useState(true);
     const [loadingDestinations, setLoadingDestinations] = useState(false);
     const [error, setError] = useState(null);
@@ -1053,6 +1053,49 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             </Grid>
         );
     };
+
+    if (loading) {
+        return (
+            <div className="ship-to-container">
+                <div className="section-title mb-4">
+                    <Skeleton variant="text" width={200} height={40} />
+                    <Skeleton variant="text" width={300} height={20} />
+                </div>
+
+                <Box sx={{ mb: 4 }}>
+                    <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
+                </Box>
+
+                <Grid container spacing={2}>
+                    {[1, 2, 3].map((index) => (
+                        <Grid item xs={12} key={index}>
+                            <Card sx={{ mb: 2 }}>
+                                <CardContent>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6}>
+                                            <Skeleton variant="text" width={200} height={30} />
+                                            <Skeleton variant="text" width={150} height={20} />
+                                            <Skeleton variant="text" width={180} height={20} />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <Skeleton variant="text" width={200} height={20} />
+                                            <Skeleton variant="text" width={180} height={20} />
+                                            <Skeleton variant="text" width={160} height={20} />
+                                        </Grid>
+                                    </Grid>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+                    <Skeleton variant="rectangular" width={120} height={40} />
+                    <Skeleton variant="rectangular" width={120} height={40} />
+                </Box>
+            </div>
+        );
+    }
 
     if (initialLoading) {
         return (
