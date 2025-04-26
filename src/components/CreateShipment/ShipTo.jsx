@@ -12,7 +12,8 @@ import {
     Home as HomeIcon,
     Add as AddIcon,
     Search as SearchIcon,
-    Clear as ClearIcon
+    Clear as ClearIcon,
+    Person as PersonIcon
 } from '@mui/icons-material';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -700,6 +701,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         const isSelected = selectedCustomer && selectedCustomer.id === customer.id;
                         const customerName = customer.name || 'Unnamed Customer';
                         const customerCompany = customer.company || '';
+                        const primaryContact = customer.contacts?.[0] || {};
 
                         return (
                             <Grid item xs={12} key={index}>
@@ -713,16 +715,14 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                         ...(isSelected
                                             ? {
                                                 borderColor: '#6b46c1 !important',
-                                                border: '3px solid #6b46c1 !important',
-                                                borderLeft: '8px solid #6b46c1 !important',
+                                                border: '2px solid #6b46c1 !important',
                                                 bgcolor: 'rgba(107, 70, 193, 0.12) !important',
                                                 boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                transform: 'scale(1.02) !important',
+                                                transform: 'scale(1.01) !important',
                                                 position: 'relative',
                                                 '&:hover': {
                                                     boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
                                                     borderColor: '#6b46c1 !important',
-                                                    borderLeft: '8px solid #6b46c1 !important',
                                                 },
                                                 '&::after': {
                                                     content: '""',
@@ -740,17 +740,15 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                 }
                                             }
                                             : {
-                                                borderColor: 'rgba(0, 0, 0, 0.12) !important',
-                                                border: '1px solid rgba(0, 0, 0, 0.12) !important',
-                                                borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
-                                                bgcolor: 'transparent !important',
-                                                background: 'none !important',
-                                                boxShadow: 'none !important',
-                                                transform: 'none !important',
+                                                borderColor: 'rgba(0, 0, 0, 0.12)',
+                                                border: '1px solid rgba(0, 0, 0, 0.12)',
+                                                bgcolor: 'transparent',
+                                                background: 'none',
+                                                boxShadow: 'none',
+                                                transform: 'none',
                                                 '&:hover': {
                                                     boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
                                                     transform: 'translateY(-4px)',
-                                                    borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
                                                 }
                                             })
                                     }}
@@ -761,55 +759,73 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                     <CardContent>
                                         <Grid container spacing={2}>
                                             <Grid item xs={12} sm={6}>
-                                                <Typography variant="subtitle1" component="div" fontWeight="bold">
-                                                    {customerName}
-                                                    {customerCompany && (
-                                                        <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                                                            ({customerCompany})
-                                                        </Typography>
-                                                    )}
-                                                </Typography>
+                                                <Box sx={{ mb: 1 }}>
+                                                    <Typography
+                                                        variant="subtitle1"
+                                                        component="div"
+                                                        sx={{
+                                                            fontWeight: 600,
+                                                            color: 'text.primary',
+                                                            fontSize: '1.1rem'
+                                                        }}
+                                                    >
+                                                        {customerName}
+                                                    </Typography>
+                                                    <Typography
+                                                        variant="body2"
+                                                        color="text.secondary"
+                                                        sx={{
+                                                            fontSize: '0.75rem',
+                                                            letterSpacing: '0.5px',
+                                                            textTransform: 'uppercase'
+                                                        }}
+                                                    >
+                                                        ID: {customer.id}
+                                                    </Typography>
+                                                </Box>
 
-                                                {customer.address && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1, mt: 1 }}>
-                                                        <LocationOnIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary', mt: 0.3 }} />
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {customer.address}
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-
-                                                {(customer.type || customer.customerType) && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                        {(customer.type === 'business' || customer.customerType === 'business') ? (
-                                                            <BusinessIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                                                        ) : (
-                                                            <HomeIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                                                        )}
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {(customer.type || customer.customerType) === 'business' ? 'Business' : 'Residential'}
-                                                        </Typography>
-                                                    </Box>
+                                                {customerCompany && (
+                                                    <Typography
+                                                        variant="body2"
+                                                        color="text.secondary"
+                                                        sx={{
+                                                            mb: 1
+                                                        }}
+                                                    >
+                                                        {customerCompany}
+                                                    </Typography>
                                                 )}
                                             </Grid>
 
                                             <Grid item xs={12} sm={6}>
-                                                {customer.phone && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                        <LocalPhoneIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {customer.phone}
-                                                        </Typography>
-                                                    </Box>
+                                                {primaryContact.name && (
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                            mb: 1
+                                                        }}
+                                                    >
+                                                        {primaryContact.name}
+                                                    </Typography>
                                                 )}
 
-                                                {customer.email && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                        <EmailIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {customer.email}
-                                                        </Typography>
-                                                    </Box>
+                                                {primaryContact.email && (
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                            mb: 1
+                                                        }}
+                                                    >
+                                                        {primaryContact.email}
+                                                    </Typography>
+                                                )}
+
+                                                {primaryContact.phone && (
+                                                    <Typography
+                                                        variant="body2"
+                                                    >
+                                                        {primaryContact.phone}
+                                                    </Typography>
                                                 )}
                                             </Grid>
                                         </Grid>
