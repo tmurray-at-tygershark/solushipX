@@ -298,12 +298,28 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         // Set selectedAddressId state first
         setSelectedAddressId(addressIdStr);
 
-        // The address update will happen in the useEffect above
+        // Find the selected address from customerAddresses
+        const selectedAddress = customerAddresses.find(addr => String(addr.id) === String(addressIdStr));
 
-        // Avoid direct update here to prevent race conditions
-        // The effect will handle finding the address and updating the form
-
-    }, []);
+        if (selectedAddress) {
+            // Update formData with the selected address information
+            setFormData({
+                name: selectedAddress.name || '',
+                company: selectedCustomer?.company || '',
+                attention: selectedAddress.attention || '',
+                street: selectedAddress.street || '',
+                street2: selectedAddress.street2 || '',
+                city: selectedAddress.city || '',
+                state: selectedAddress.state || '',
+                postalCode: selectedAddress.postalCode || '',
+                country: selectedAddress.country || 'US',
+                contactName: selectedAddress.contactName || '',
+                contactPhone: selectedAddress.contactPhone || '',
+                contactEmail: selectedAddress.contactEmail || '',
+                specialInstructions: selectedAddress.specialInstructions || ''
+            });
+        }
+    }, [customerAddresses, selectedCustomer]);
 
     const handleSubmit = useCallback(() => {
         if (!selectedCustomer) {
