@@ -3,7 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import './ShipTo.css';
-import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton } from '@mui/material';
+import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton, IconButton } from '@mui/material';
 import {
     LocationOn as LocationOnIcon,
     LocalPhone as LocalPhoneIcon,
@@ -66,8 +66,9 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     // Fetch company ID for the current user
     useEffect(() => {
         const fetchCompanyId = async () => {
+            if (!currentUser) return;
+
             try {
-                setLoading(true);
                 setError(null);
 
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -101,9 +102,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             }
         };
 
-        if (currentUser) {
-            fetchCompanyId();
-        }
+        fetchCompanyId();
     }, [currentUser]);
 
     // Fetch customers for the company
@@ -111,7 +110,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         if (!id) return;
 
         try {
-            setLoading(true);
             setError(null);
 
             const customersResult = await getCompanyCustomersFunction({
@@ -134,8 +132,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         } catch (err) {
             console.error('Error fetching customers:', err);
             setError('Failed to load customers. Please try again.');
-        } finally {
-            setLoading(false);
         }
     };
 
@@ -524,6 +520,32 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
         return (
             <>
+                <Box sx={{ mb: 3 }}>
+                    <TextField
+                        fullWidth
+                        variant="outlined"
+                        placeholder="Search customers by name, company, or contact info..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        InputProps={{
+                            startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />,
+                            endAdornment: searchQuery && (
+                                <IconButton size="small" onClick={() => setSearchQuery('')}>
+                                    <ClearIcon />
+                                </IconButton>
+                            ),
+                        }}
+                        sx={{
+                            backgroundColor: 'white',
+                            '& .MuiOutlinedInput-root': {
+                                '&:hover': {
+                                    backgroundColor: 'white',
+                                },
+                            },
+                        }}
+                    />
+                </Box>
+
                 <Grid container spacing={2}>
                     {currentCustomers.map((customer, index) => {
                         const isSelected = selectedCustomer && selectedCustomer.customerId === customer.customerId;
@@ -867,6 +889,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         );
     };
 
+    // Show skeleton UI immediately
     if (loading) {
         return (
             <div className="ship-to-container">
