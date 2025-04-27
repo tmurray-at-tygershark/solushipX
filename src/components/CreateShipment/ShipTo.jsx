@@ -249,13 +249,13 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 ?.filter(addr => addr.type === 'shipping')
                 .map((addr, index) => {
                     // Get the primary contact from customer if available
-                    const primaryContact = customer.contacts?.find(contact => contact.primary === true) || customer.contacts?.[0] || {};
+                    const primaryContact = customer.contacts?.find(contact => contact.isPrimary === true) || customer.contacts?.[0] || {};
 
                     const formattedAddress = {
                         id: addr.id || `addr_${index}`,
                         customerId: customer.customerId,
                         attention: addr.attention || '',
-                        name: customer.name || '',
+                        name: addr.name || customer.name || '',
                         contactName: primaryContact.name || '',
                         contactPhone: primaryContact.phone || '',
                         contactEmail: primaryContact.email || '',
@@ -463,7 +463,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         sx={{ mt: 2 }}
                         onClick={handleAddCustomerClick}
                     >
-                        Add New Customer
+                        Add Customer
                     </Button>
                 </Box>
             );
@@ -510,7 +510,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             <>
                 <Grid container spacing={2}>
                     {currentCustomers.map((customer, index) => {
-                        const isSelected = selectedCustomer && selectedCustomer.id === customer.id;
+                        const isSelected = selectedCustomer && selectedCustomer.customerId === customer.customerId;
                         const customerName = customer.name || 'Unnamed Customer';
                         const customerCompany = customer.company || '';
                         const primaryContact = customer.contacts?.[0] || {};
@@ -566,7 +566,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                     }}
                                     onClick={() => handleCustomerSelect(customer)}
                                     data-selected={isSelected ? "true" : "false"}
-                                    data-customer-id={customer.id}
+                                    data-customer-id={customer.customerId}
                                 >
                                     <CardContent>
                                         <Grid container spacing={2}>
@@ -592,7 +592,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                                             textTransform: 'uppercase'
                                                         }}
                                                     >
-                                                        ID: {customer.id}
+                                                        ID: {customer.customerId}
                                                     </Typography>
                                                 </Box>
 
@@ -658,17 +658,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         />
                     </Box>
                 )}
-
-                <Button
-                    variant="outlined"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={handleAddCustomerClick}
-                    fullWidth
-                    sx={{ mt: 2 }}
-                >
-                    Add New Customer
-                </Button>
             </>
         );
     };
@@ -921,8 +910,20 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     return (
         <div className="ship-to-container">
             <div className="section-title mb-4">
-                <h2>Ship To</h2>
-                <p className="text-muted">Select or search for a customer to ship to</p>
+                <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2>Ship To</h2>
+                        <p className="text-muted">Select or search for a customer to ship to</p>
+                    </div>
+                    <Button
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddCustomerClick}
+                    >
+                        Add Customer
+                    </Button>
+                </div>
             </div>
 
             {error && (
@@ -963,12 +964,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
                     {renderAddressSuggestions()}
                 </>
-            )}
-
-            {!selectedCustomer && (
-                <div className="text-center mt-4">
-                    <p className="text-muted">Select a customer to view their addresses</p>
-                </div>
             )}
 
             <div className="navigation-buttons">
