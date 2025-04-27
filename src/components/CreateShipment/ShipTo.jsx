@@ -37,7 +37,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
     // State for customers and destinations
     const [customers, setCustomers] = useState([]);
-    const [customerDestinations, setCustomerDestinations] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [customerAddresses, setCustomerAddresses] = useState([]);
     const [selectedAddressId, setSelectedAddressId] = useState(null);
@@ -45,13 +44,11 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
     // Search and pagination state
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const [customersPerPage] = useState(5); // Fixed number of customers per page
-    const itemsPerPage = 50;
+    const [customersPerPage] = useState(5);
     const [totalPages, setTotalPages] = useState(1);
 
     // State for loading and errors
     const [loading, setLoading] = useState(true);
-    const [initialLoading, setInitialLoading] = useState(true);
     const [loadingDestinations, setLoadingDestinations] = useState(false);
     const [error, setError] = useState(null);
     const [companyId, setCompanyId] = useState(null);
@@ -63,52 +60,44 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
     // Calculate total pages when customers array changes
     useEffect(() => {
-        setTotalPages(Math.ceil(customers.length / itemsPerPage));
-    }, [customers, itemsPerPage]);
+        setTotalPages(Math.ceil(customers.length / customersPerPage));
+    }, [customers, customersPerPage]);
 
     // Fetch company ID for the current user
     useEffect(() => {
         const fetchCompanyId = async () => {
             try {
-                setInitialLoading(true);
+                setLoading(true);
+                setError(null);
 
-                // Get the current user's data
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                 if (!userDoc.exists()) {
                     setError('User data not found.');
-                    setInitialLoading(false);
                     return;
                 }
 
                 const userData = userDoc.data();
-
-                // Get company ID from either connectedCompanies map or companies array
                 let id = null;
-                if (userData.connectedCompanies && userData.connectedCompanies.companies && userData.connectedCompanies.companies.length > 0) {
+
+                if (userData.connectedCompanies?.companies?.length > 0) {
                     id = userData.connectedCompanies.companies[0];
-                    console.log('Using company ID from connectedCompanies.companies:', id);
-                } else if (userData.companies && userData.companies.length > 0) {
+                } else if (userData.companies?.length > 0) {
                     id = userData.companies[0];
-                    console.log('Using company ID from companies array:', id);
                 }
 
                 if (!id) {
-                    console.log('No company ID found in user data');
                     setError('No company associated with this user.');
-                    setInitialLoading(false);
                     return;
                 }
 
                 setCompanyId(id);
-
-                // Initial fetch of customers
                 await fetchCustomers(id);
 
             } catch (err) {
                 console.error('Error fetching company ID:', err);
                 setError('Failed to load company data. Please try again.');
             } finally {
-                setInitialLoading(false);
+                setLoading(false);
             }
         };
 
@@ -125,26 +114,22 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             setLoading(true);
             setError(null);
 
-            console.log('Calling getCompanyCustomers with companyId:', id);
-            const customersResult = await getCompanyCustomersFunction({ companyId: id });
+            const customersResult = await getCompanyCustomersFunction({
+                companyId: id,
+                includeAllCompanies: false // Ensure we only get customers for this company
+            });
 
             if (!customersResult.data.success) {
                 throw new Error(customersResult.data.error || 'Failed to fetch customers');
             }
 
             const customersData = customersResult.data.data.customers || [];
-            console.log('Retrieved customers:', customersData.length);
-
-            // Sort customers alphabetically by name
             const sortedCustomers = [...customersData].sort((a, b) =>
                 (a.name || '').localeCompare(b.name || '')
             );
 
             setCustomers(sortedCustomers);
-            setCurrentPage(1); // Reset to first page when new customers are loaded
-
-            // Also fetch all destinations in background for faster searching
-            fetchAllDestinations(id);
+            setCurrentPage(1);
 
         } catch (err) {
             console.error('Error fetching customers:', err);
@@ -154,88 +139,38 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         }
     };
 
-    // Fetch all destinations for company (to have them cached for faster UI)
-    const fetchAllDestinations = async (id) => {
-        try {
-            console.log('Fetching all destinations for company:', id);
-            const destinationsResult = await getDestinationsFunction({
-                companyId: id,
-                includeAllTypes: true
-            });
-
-            if (!destinationsResult.data.success) {
-                console.error('Error fetching all destinations:', destinationsResult.data.error);
-                return;
-            }
-
-            const destinations = destinationsResult.data.data.destinations || [];
-            console.log('Retrieved all destinations:', destinations.length);
-            setCustomerDestinations(destinations);
-
-        } catch (err) {
-            console.error('Error fetching all destinations:', err);
-        }
-    };
-
     // Fetch destinations for a specific customer
     const fetchCustomerDestinations = async (customer) => {
-        if (!customer || !customer.id) return;
+        if (!customer || !customer.customerId) {
+            console.error('Invalid customer data:', customer);
+            return;
+        }
 
         try {
             setLoadingDestinations(true);
-            console.log('===== FETCHING DESTINATIONS =====');
-            console.log('Customer ID:', customer.id);
-            console.log('Customer Name:', customer.name);
+            setError(null);
 
-            // First try to use already cached destinations
-            if (customerDestinations.length > 0) {
-                const filteredDestinations = customerDestinations.filter(
-                    dest => dest.customerId === customer.id
-                );
-
-                console.log('Cached destinations for this customer:', filteredDestinations.length);
-
-                if (filteredDestinations.length > 0) {
-                    console.log('Using cached destinations');
-                    processDestinations(customer, filteredDestinations);
-                    setLoadingDestinations(false);
-                    return;
-                }
-            }
-
-            // If not cached or none found, fetch from server
-            console.log('Fetching destinations from server with params:', {
-                companyId,
-                includeAllTypes: true
-            });
-
+            console.log('Fetching destinations for customer:', customer.customerId);
             const destinationsResult = await getDestinationsFunction({
-                companyId,
-                includeAllTypes: true
+                companyId: customer.companyId,
+                customerId: customer.customerId,
+                includeAllTypes: false
             });
 
-            console.log('Server response:', destinationsResult.data);
+            console.log('Destinations API response:', destinationsResult);
 
             if (!destinationsResult.data.success) {
                 throw new Error(destinationsResult.data.error || 'Failed to fetch destinations');
             }
 
-            const allDestinations = destinationsResult.data.data.destinations || [];
-            console.log('All destinations from server:', allDestinations.length);
+            const destinations = destinationsResult.data.data.destinations || [];
+            console.log('Fetched destinations:', destinations);
 
-            // Filter for this customer
-            const customerSpecificDestinations = allDestinations.filter(
-                dest => dest.customerId === customer.id
-            );
+            if (destinations.length === 0) {
+                console.log('No destinations found for customer:', customer.customerId);
+            }
 
-            console.log('Filtered destinations for customer:', customerSpecificDestinations.length);
-            console.log('Destination details:', customerSpecificDestinations);
-
-            // Update full destination cache
-            setCustomerDestinations(allDestinations);
-
-            // Process destinations for this customer
-            processDestinations(customer, customerSpecificDestinations);
+            processDestinations(customer, destinations);
 
         } catch (err) {
             console.error('Error fetching customer destinations:', err);
@@ -248,234 +183,111 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
     // Process customer destinations into a usable format
     const processDestinations = (customer, destinations) => {
-        console.log('===== PROCESSING DESTINATIONS =====');
-        console.log('Customer:', customer.name);
-        console.log('Raw destinations from API:', destinations);
+        console.log('Processing destinations for customer:', customer);
+        console.log('Raw destinations data:', destinations);
 
-        // Filter out billing addresses and format addresses for display
         const formattedAddresses = destinations
-            .filter(dest => (!dest.address.type || dest.address.type !== 'billing')) // Filter out billing addresses
-            .map((dest, index) => ({
-                ...dest.address,
-                // Generate an index-based ID if none exists
-                id: index.toString(),
-                customerId: customer.id,
-                attention: dest.address.attention || '',
-                name: dest.address.name || customer.name,
-                contactName: dest.contact?.name || customer.contacts?.[0]?.name || '',
-                contactPhone: dest.contact?.phone || customer.contacts?.[0]?.phone || '',
-                contactEmail: dest.contact?.email || customer.contacts?.[0]?.email || '',
-                // Ensure default flag is properly carried over
-                default: dest.address.default === true || false
-            }));
+            .filter(dest => {
+                console.log('Checking destination:', dest);
+                return dest.address?.type === 'shipping';
+            })
+            .map((dest, index) => {
+                // Get the primary contact from customer if available
+                const primaryContact = customer.contacts?.find(contact => contact.primary === true) || customer.contacts?.[0] || {};
 
-        // Log parsed addresses for debugging
-        console.log('Processed addresses with index IDs:', formattedAddresses.map((addr, idx) => ({
-            index: idx,
-            id: addr.id,
-            name: addr.name,
-            default: addr.default
-        })));
+                const formattedAddress = {
+                    id: dest.id || `addr_${index}`,
+                    customerId: customer.customerId,
+                    attention: dest.address?.attention || '',
+                    name: customer.name || '',
+                    // Handle contact information from primary contact
+                    contactName: primaryContact.name || '',
+                    contactPhone: primaryContact.phone || '',
+                    contactEmail: primaryContact.email || '',
+                    default: dest.address?.default || false,
+                    // Map address fields from the nested address object
+                    street: dest.address?.street || '',
+                    street2: dest.address?.street2 || '',
+                    city: dest.address?.city || '',
+                    state: dest.address?.state || '',
+                    postalCode: dest.address?.zip || '',
+                    country: dest.address?.country || 'US',
+                    specialInstructions: dest.address?.specialInstructions || ''
+                };
 
-        // Sort addresses - put default addresses first
+                console.log('Formatted address:', formattedAddress);
+                return formattedAddress;
+            });
+
+        console.log('All formatted addresses:', formattedAddresses);
+
+        // Sort addresses to put default address first
         formattedAddresses.sort((a, b) => {
             if (a.default === true && b.default !== true) return -1;
             if (a.default !== true && b.default === true) return 1;
             return 0;
         });
 
-        console.log('Sorted addresses (default first):', formattedAddresses.map((addr, idx) => ({
-            id: addr.id,
-            name: addr.name,
-            default: addr.default
-        })));
-
-        // Set customer addresses before selecting default
+        console.log('Final sorted addresses:', formattedAddresses);
         setCustomerAddresses(formattedAddresses);
 
-        // Immediately find and select the default address
-        const defaultAddress = formattedAddresses.find(addr => addr.default === true);
-
-        // Use setTimeout to ensure state is updated before selection
-        setTimeout(() => {
-            if (defaultAddress) {
-                console.log('Found default address to pre-select:', defaultAddress.name, 'with ID:', defaultAddress.id);
-                handleAddressChange(defaultAddress.id);
-            } else if (formattedAddresses.length > 0) {
-                // If no default but addresses exist, select the first one
-                console.log('No default address found, selecting first address:', formattedAddresses[0].name, 'with ID:', formattedAddresses[0].id);
-                handleAddressChange(formattedAddresses[0].id);
-            } else {
-                console.log('No addresses available for selection');
-                setSelectedAddressId(null);
-            }
-        }, 10); // Slight delay to ensure state updates
+        // Select the default address or the first address if available
+        if (formattedAddresses.length > 0) {
+            const defaultAddress = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
+            handleAddressChange(defaultAddress.id);
+        }
     };
 
     const handleCustomerSelect = (customer) => {
         setSelectedCustomer(customer);
         setSelectedAddressId(null);
-
-        // Reset addresses immediately to prevent stale data
         setCustomerAddresses([]);
 
-        // Use the addresses directly from the customer object instead of fetching separately
-        console.log('Customer selected:', customer.name, customer);
+        if (customer) {
+            // Process addresses directly from the customer record
+            const formattedAddresses = customer.addresses
+                ?.filter(addr => addr.type === 'shipping')
+                .map((addr, index) => {
+                    // Get the primary contact from customer if available
+                    const primaryContact = customer.contacts?.find(contact => contact.primary === true) || customer.contacts?.[0] || {};
 
-        if (customer.addresses && Array.isArray(customer.addresses) && customer.addresses.length > 0) {
-            console.log('Customer has addresses array with', customer.addresses.length, 'items');
-            processAddressesFromCustomer(customer);
-        } else {
-            console.log('No addresses found on customer object, falling back to fetch method');
-            // Fallback to original method if no addresses found directly on customer
-            fetchCustomerDestinations(customer);
-        }
-    };
+                    const formattedAddress = {
+                        id: addr.id || `addr_${index}`,
+                        customerId: customer.customerId,
+                        attention: addr.attention || '',
+                        name: customer.name || '',
+                        contactName: primaryContact.name || '',
+                        contactPhone: primaryContact.phone || '',
+                        contactEmail: primaryContact.email || '',
+                        default: addr.default || false,
+                        street: addr.street || '',
+                        street2: addr.street2 || '',
+                        city: addr.city || '',
+                        state: addr.state || '',
+                        postalCode: addr.zip || '',
+                        country: addr.country || 'US',
+                        specialInstructions: addr.specialInstructions || ''
+                    };
 
-    // New function to process addresses directly from customer object
-    const processAddressesFromCustomer = (customer) => {
-        console.log('===== PROCESSING CUSTOMER ADDRESSES =====');
-        console.log('Customer:', customer.name);
-        console.log('Raw addresses from customer:', customer.addresses);
+                    return formattedAddress;
+                }) || [];
 
-        if (!customer.addresses || !Array.isArray(customer.addresses)) {
-            console.log('No valid addresses array on customer');
-            setCustomerAddresses([]);
-            return;
-        }
+            // Sort addresses to put default address first
+            formattedAddresses.sort((a, b) => {
+                if (a.default === true && b.default !== true) return -1;
+                if (a.default !== true && b.default === true) return 1;
+                return 0;
+            });
 
-        // Format addresses for display, adding index-based IDs
-        const formattedAddresses = customer.addresses
-            .filter(addr => addr.type !== 'billing') // Filter out billing addresses
-            .map((addr, index) => ({
-                ...addr,
-                id: index.toString(),
-                customerId: customer.id,
-                name: addr.name || `Address ${index + 1}`,
-                contactName: customer.contacts?.[0]?.name || '',
-                contactPhone: customer.contacts?.[0]?.phone || '',
-                contactEmail: customer.contacts?.[0]?.email || '',
-            }));
+            setCustomerAddresses(formattedAddresses);
 
-        // Log parsed addresses for debugging
-        console.log('Processed customer addresses with index IDs:', formattedAddresses.map((addr, idx) => ({
-            index: idx,
-            id: addr.id,
-            name: addr.name || `Address ${idx + 1}`,
-            default: addr.default
-        })));
-
-        // Sort addresses - put default addresses first
-        formattedAddresses.sort((a, b) => {
-            if (a.default === true && b.default !== true) return -1;
-            if (a.default !== true && b.default === true) return 1;
-            return 0;
-        });
-
-        console.log('Sorted addresses (default first):', formattedAddresses.map(addr => ({
-            id: addr.id,
-            name: addr.name,
-            default: addr.default
-        })));
-
-        // Set customer addresses
-        setCustomerAddresses(formattedAddresses);
-        setLoadingDestinations(false);
-
-        // Wait until next render cycle to select an address using useEffect
-        if (formattedAddresses.length > 0) {
-            // Find default address if available
-            const defaultAddress = formattedAddresses.find(addr => addr.default === true);
-            const addressToSelect = defaultAddress || formattedAddresses[0];
-
-            console.log('Address to pre-select:',
-                addressToSelect.name,
-                'with ID:',
-                addressToSelect.id,
-                'Default:',
-                !!addressToSelect.default
-            );
-
-            // Use setTimeout with a longer delay to ensure state has updated
-            setTimeout(() => {
-                setSelectedAddressId(addressToSelect.id);
-
-                // Update form data directly here as a backup
-                updateFormWithAddress(addressToSelect);
-            }, 100);
-        } else {
-            console.log('No addresses available for selection');
-        }
-    };
-
-    // New helper function to update form with address data
-    const updateFormWithAddress = (address) => {
-        if (!address) {
-            console.log("Cannot update form: no address provided");
-            return;
-        }
-
-        console.log("Directly updating form with address:", address);
-
-        const newData = {
-            name: address.name || '',
-            company: selectedCustomer?.name || address.company || '',
-            attention: address.attention || '',
-            street: address.street || address.address1 || '',
-            street2: address.street2 || address.address2 || '',
-            city: address.city || '',
-            state: address.state || '',
-            postalCode: address.postalCode || address.zip || '',
-            country: address.country || 'US',
-            contactName: address.contactName || '',
-            contactPhone: address.contactPhone || address.phone || '',
-            contactEmail: address.contactEmail || address.email || '',
-            specialInstructions: address.specialInstructions || '',
-            shipToAddressId: address.id,
-            shipToAddress: address
-        };
-
-        setFormData(newData);
-        onDataChange(newData);
-    };
-
-    // Add an effect to handle address selection after addresses are loaded
-    useEffect(() => {
-        if (selectedAddressId && customerAddresses.length > 0) {
-            const selectedAddress = customerAddresses.find(addr => String(addr.id) === String(selectedAddressId));
-
-            if (selectedAddress) {
-                console.log("Effect: Found selected address:", selectedAddress.name);
-                updateFormWithAddress(selectedAddress);
-            } else {
-                console.log("Effect: Selected address not found with ID:", selectedAddressId);
-                console.log("Effect: Available addresses:", customerAddresses.map(a => a.id));
-
-                // If the selected address is not found but we have addresses, select the first one
-                if (customerAddresses.length > 0) {
-                    console.log("Effect: Selecting first available address instead");
-                    setSelectedAddressId(customerAddresses[0].id);
-                }
+            // Select the default address or the first address if available
+            if (formattedAddresses.length > 0) {
+                const defaultAddress = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
+                handleAddressChange(defaultAddress.id);
             }
         }
-        // Remove onDataChange from the dependency array to prevent loops
-    }, [selectedAddressId, customerAddresses, selectedCustomer]);
-
-    // Create a ref to track the previous address ID to prevent infinite loops
-    const prevAddressIdRef = useRef(null);
-
-    // Add a separate effect to update form data when address changes
-    useEffect(() => {
-        if (selectedAddressId && customerAddresses.length > 0 && prevAddressIdRef.current !== selectedAddressId) {
-            prevAddressIdRef.current = selectedAddressId;
-            const selectedAddress = customerAddresses.find(addr => String(addr.id) === String(selectedAddressId));
-            if (selectedAddress) {
-                console.log("Form update effect: Updating form with address:", selectedAddress.name);
-                updateFormWithAddress(selectedAddress);
-            }
-        }
-        // Intentionally exclude onDataChange from dependencies
-    }, [selectedAddressId, customerAddresses]);
+    };
 
     const handleAddressChange = useCallback((addressId) => {
         console.log("Changing address to ID:", addressId);
@@ -623,8 +435,8 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
     // Get current page customers
     const getCurrentPageCustomers = () => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
+        const startIndex = (currentPage - 1) * customersPerPage;
+        const endIndex = startIndex + customersPerPage;
         return customers.slice(startIndex, endIndex);
     };
 
@@ -1001,49 +813,42 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                                         </Grid>
                                         <Grid item xs={12} sm={4}>
                                             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                {address.address1 || address.street1 || address.street || "(Address Line 1 Missing)"}
+                                                {address.street || "(Address Line 1 Missing)"}
                                             </Typography>
-                                            {(address.address2 || address.street2) && (
+                                            {address.street2 && (
                                                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    {address.address2 || address.street2}
+                                                    {address.street2}
                                                 </Typography>
                                             )}
                                             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                {address.city || "(City Missing)"}, {address.state || "(State Missing)"} {address.postalCode || address.zip || "(Postal Code Missing)"}
+                                                {address.city || "(City Missing)"}, {address.state || "(State Missing)"} {address.postalCode || "(Postal Code Missing)"}
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                                 {address.country || "US"}
                                             </Typography>
+                                            {address.specialInstructions && (
+                                                <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1, fontStyle: 'italic' }}>
+                                                    Note: {address.specialInstructions}
+                                                </Typography>
+                                            )}
                                         </Grid>
                                         <Grid item xs={12} sm={4}>
-                                            {(address.contact || address.contactName) && (
+                                            {(typeof address.contactName === 'string' || typeof address.contact?.name === 'string') && (
                                                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                                     <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Contact:</Box>
-                                                    {address.contact || address.contactName}
+                                                    {address.contactName || address.contact?.name}
                                                 </Typography>
                                             )}
-                                            {address.phone && (
+                                            {(typeof address.contactPhone === 'string' || typeof address.contact?.phone === 'string') && (
                                                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                                     <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Phone:</Box>
-                                                    {address.phone}
+                                                    {address.contactPhone || address.contact?.phone}
                                                 </Typography>
                                             )}
-                                            {address.email && (
+                                            {(typeof address.contactEmail === 'string' || typeof address.contact?.email === 'string') && (
                                                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                                     <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Email:</Box>
-                                                    {address.email}
-                                                </Typography>
-                                            )}
-                                            {address.contactPhone && address.contactPhone !== address.phone && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Contact Phone:</Box>
-                                                    {address.contactPhone}
-                                                </Typography>
-                                            )}
-                                            {address.contactEmail && address.contactEmail !== address.email && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Contact Email:</Box>
-                                                    {address.contactEmail}
+                                                    {address.contactEmail || address.contact?.email}
                                                 </Typography>
                                             )}
                                         </Grid>
@@ -1109,16 +914,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                     <Skeleton variant="rectangular" width={120} height={40} />
                     <Skeleton variant="rectangular" width={120} height={40} />
                 </Box>
-            </div>
-        );
-    }
-
-    if (initialLoading) {
-        return (
-            <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '200px' }}>
-                <div className="spinner-border text-primary" role="status">
-                    <span className="visually-hidden">Loading...</span>
-                </div>
             </div>
         );
     }
