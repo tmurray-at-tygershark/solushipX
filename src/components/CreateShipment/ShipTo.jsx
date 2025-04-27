@@ -277,10 +277,28 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
 
             setCustomerAddresses(formattedAddresses);
 
-            // Select the default address or the first address if available
+            // Pre-select the default address or the first address if available
             if (formattedAddresses.length > 0) {
                 const defaultAddress = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
-                handleAddressChange(defaultAddress.id);
+                if (defaultAddress) {
+                    setSelectedAddressId(defaultAddress.id);
+                    // Update formData with the default address information
+                    setFormData({
+                        name: defaultAddress.name || '',
+                        company: customer.company || '',
+                        attention: defaultAddress.attention || '',
+                        street: defaultAddress.street || '',
+                        street2: defaultAddress.street2 || '',
+                        city: defaultAddress.city || '',
+                        state: defaultAddress.state || '',
+                        postalCode: defaultAddress.postalCode || '',
+                        country: defaultAddress.country || 'US',
+                        contactName: defaultAddress.contactName || '',
+                        contactPhone: defaultAddress.contactPhone || '',
+                        contactEmail: defaultAddress.contactEmail || '',
+                        specialInstructions: defaultAddress.specialInstructions || ''
+                    });
+                }
             }
         }
     };
