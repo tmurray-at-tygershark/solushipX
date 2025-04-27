@@ -847,19 +847,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         </Grid>
                     );
                 })}
-
-                <Grid item xs={12}>
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        startIcon={<AddIcon />}
-                        onClick={handleAddAddressClick}
-                        fullWidth
-                        sx={{ mt: 1 }}
-                    >
-                        Add New Address
-                    </Button>
-                </Grid>
             </Grid>
         );
     };
@@ -919,9 +906,9 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                         variant="outlined"
                         color="primary"
                         startIcon={<AddIcon />}
-                        onClick={handleAddCustomerClick}
+                        onClick={selectedCustomer ? handleAddAddressClick : handleAddCustomerClick}
                     >
-                        Add Customer
+                        {selectedCustomer ? "Add Address" : "Add Customer"}
                     </Button>
                 </div>
             </div>
