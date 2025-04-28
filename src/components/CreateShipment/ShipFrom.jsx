@@ -4,30 +4,17 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../../contexts/AuthContext';
+import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button } from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
 import './ShipFrom.css';
 
-const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
+const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
     const { currentUser } = useAuth();
-    const [formData, setFormData] = useState({
-        name: '',
-        company: '',
-        attention: '',
-        street: '',
-        street2: '',
-        city: '',
-        state: '',
-        postalCode: '',
-        country: 'US',
-        contactName: '',
-        contactPhone: '',
-        contactEmail: '',
-        specialInstructions: ''
-    });
+    const { formData, updateFormSection } = useShipmentForm();
     const [companyAddresses, setCompanyAddresses] = useState([]);
-    const [selectedAddressId, setSelectedAddressId] = useState(null);
+    const [selectedAddressId, setSelectedAddressId] = useState(formData.shipFrom?.id || null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
@@ -51,24 +38,32 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
     });
     const [isAddressesLoading, setIsAddressesLoading] = useState(true);
 
-    // Fetch company data and addresses using cloud functions
+    useEffect(() => {
+        if (formData.shipFrom?.id) {
+            setSelectedAddressId(formData.shipFrom.id);
+        }
+    }, [formData.shipFrom?.id]);
+
     useEffect(() => {
         const fetchCompanyData = async () => {
             try {
                 console.log('Current user:', currentUser);
+                setError(null);
+                setIsAddressesLoading(true);
 
                 if (!currentUser) {
                     setError('User not logged in. Please log in to continue.');
                     setLoading(false);
+                    setIsAddressesLoading(false);
                     return;
                 }
 
-                // First, fetch the user's data from the users collection to get the company ID
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                 if (!userDoc.exists()) {
                     console.log('User document not found');
                     setError('User data not found. Please contact support.');
                     setLoading(false);
+                    setIsAddressesLoading(false);
                     return;
                 }
 
@@ -79,10 +74,10 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                     console.log('No connected companies found for user');
                     setError('No company associated with this account. Please contact support.');
                     setLoading(false);
+                    setIsAddressesLoading(false);
                     return;
                 }
 
-                // Get the first company ID from the companies array
                 const companyId = userData.connectedCompanies.companies[0];
                 console.log('Using company ID:', companyId);
 
@@ -90,107 +85,67 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                     console.log('No company ID found in connectedCompanies');
                     setError('No company associated with this account. Please contact support.');
                     setLoading(false);
+                    setIsAddressesLoading(false);
                     return;
                 }
 
                 try {
-                    // Use the Firebase Functions SDK to call our cloud function
                     const functions = getFunctions();
-
-                    // Configure region if needed
-                    // const functions = getFunctions(app, 'us-central1');
-
                     const getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
 
-                    // Create object with just companyId - no API key needed
-                    const requestData = {
-                        companyId: companyId
-                    };
-
+                    const requestData = { companyId: companyId };
                     console.log('Making cloud function call with company ID:', companyId);
 
-                    // Implement a retry mechanism
                     let response;
                     let retryCount = 0;
                     const maxRetries = 3;
 
                     while (retryCount < maxRetries) {
                         try {
-                            // Call the function with the request data
                             console.log(`Attempt ${retryCount + 1}: Calling function with data:`, JSON.stringify(requestData));
-
-                            // Set a timeout to prevent hanging forever
                             const timeoutPromise = new Promise((_, reject) =>
                                 setTimeout(() => reject(new Error('Function call timed out')), 30000)
                             );
-
-                            // Race between the function call and timeout
                             response = await Promise.race([
                                 getCompanyShipmentOriginsFunction(requestData),
                                 timeoutPromise
                             ]);
-
                             console.log('Cloud function response received:', response);
-                            break; // Success, exit the retry loop
+                            break;
                         } catch (callError) {
                             retryCount++;
                             console.error(`Cloud function call attempt ${retryCount} failed:`, callError);
-                            console.error('Error details:', {
-                                message: callError.message,
-                                code: callError.code,
-                                details: callError.details,
-                                stack: callError.stack
-                            });
-
-                            if (retryCount >= maxRetries) {
-                                throw callError; // Rethrow if max retries reached
-                            }
-
-                            // Wait before retrying (exponential backoff)
+                            if (retryCount >= maxRetries) throw callError;
                             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
                         }
                     }
 
-                    // Check if the call was successful
                     if (!response.data.success) {
                         throw new Error(response.data.error?.message || 'Failed to fetch company addresses');
                     }
 
-                    // Get the data from the response
                     const { shipFromAddresses } = response.data.data;
-
                     console.log('Received shipFromAddresses:', shipFromAddresses);
 
-                    // Update state with the addresses and ensure all addresses have IDs
-                    const processedAddresses = (shipFromAddresses || []).map((addr, index) => {
-                        // Ensure each address has an ID (use index as fallback)
-                        if (!addr.id) {
-                            console.log(`Address "${addr.name}" is missing ID, using index ${index} as fallback`);
-                            return { ...addr, id: `address_${index}` };
-                        }
-                        return addr;
-                    });
+                    const processedAddresses = (shipFromAddresses || []).map((addr, index) => ({
+                        ...addr,
+                        id: addr.id || `address_${index}`
+                    }));
                     setCompanyAddresses(processedAddresses);
 
-                    // Find and set default address
-                    const defaultAddress = processedAddresses.find(addr => addr.isDefault);
-                    if (defaultAddress?.id) {
-                        // Convert ID to string without trimming
-                        const defaultAddressId = String(defaultAddress.id);
-                        console.log(`Setting default address ID to: "${defaultAddressId}"`);
-
-                        // Verify the default address exists in the list before setting it
-                        if (processedAddresses.some(addr => addr.id && String(addr.id) === defaultAddressId)) {
-                            // Set the selected address ID directly without setting to null first
-                            setSelectedAddressId(defaultAddressId);
-                            console.log(`Default address verified and set to: ${defaultAddressId}`);
-
-                            // Update form data with the default address
-                            setFormData(defaultAddress);
-                        } else {
-                            console.warn('Default address ID not found in loaded addresses');
+                    if (!formData.shipFrom?.id) {
+                        const defaultAddress = processedAddresses.find(addr => addr.isDefault);
+                        if (defaultAddress?.id) {
+                            const defaultAddressId = String(defaultAddress.id);
+                            if (processedAddresses.some(addr => String(addr.id) === defaultAddressId)) {
+                                setSelectedAddressId(defaultAddressId);
+                                updateFormSection('shipFrom', defaultAddress);
+                            } else {
+                                console.warn('Default address ID not found in loaded addresses');
+                            }
                         }
                     }
+
                 } catch (err) {
                     console.error('Error fetching company data:', err);
                     setError('Failed to load company data. Please try again or contact support.');
@@ -199,7 +154,7 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                     setIsAddressesLoading(false);
                 }
             } catch (err) {
-                console.error('Error fetching company data:', err);
+                console.error('Error fetching user/company data:', err);
                 setError('Failed to load company data. Please try again or contact support.');
                 setLoading(false);
                 setIsAddressesLoading(false);
@@ -211,7 +166,6 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         }
     }, [currentUser]);
 
-    // Debug log to confirm API key is properly passed from parent
     console.log('ShipFrom component received API key:', {
         received: !!apiKey,
         length: apiKey?.length || 0,
@@ -220,7 +174,6 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         type: typeof apiKey
     });
 
-    // Debug log to see the current selectedAddressId in component state
     console.log('Current selectedAddressId in component state:', {
         selectedAddressId,
         type: typeof selectedAddressId,
@@ -229,32 +182,15 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
     });
 
     const handleAddressChange = useCallback((addressId, addressIndex) => {
-        // If addressId is null/undefined but index is provided, use index as fallback
         if ((!addressId || addressId === 'undefined') && addressIndex !== undefined) {
             addressId = `address_${addressIndex}`;
-            console.log(`Using fallback ID: ${addressId} based on index ${addressIndex}`);
         }
+        if (!addressId) return;
 
-        // Simple validation and conversion
-        if (!addressId) {
-            console.error('Address ID is null or undefined and no index fallback provided');
-            return;
-        }
-
-        // Convert to string format consistently
         const addressIdStr = String(addressId);
-        console.log(`Attempting to set selected address ID to: "${addressIdStr}"`);
-
-        // Set the state directly
         setSelectedAddressId(addressIdStr);
-        console.log(`Set selectedAddressId state to: "${addressIdStr}"`);
 
-        // Find and update form data - try ID first, then fallback to position
-        let selectedAddress = companyAddresses.find(addr =>
-            addr.id && String(addr.id) === addressIdStr
-        );
-
-        // If not found by ID, try to find by index if it was an index-based ID
+        let selectedAddress = companyAddresses.find(addr => addr.id && String(addr.id) === addressIdStr);
         if (!selectedAddress && addressIdStr.startsWith('address_')) {
             const index = parseInt(addressIdStr.replace('address_', ''));
             if (!isNaN(index) && index < companyAddresses.length) {
@@ -263,23 +199,17 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         }
 
         if (selectedAddress) {
-            setFormData(selectedAddress);
-            // Notify parent component
-            onDataChange(selectedAddress);
-            console.log('Selected address found and form updated:', selectedAddress.name);
+            updateFormSection('shipFrom', selectedAddress);
+            console.log('Selected address found and context updated:', selectedAddress.name);
         } else {
             console.error('No matching address found for ID:', addressIdStr);
         }
-    }, [companyAddresses, onDataChange]);
+    }, [companyAddresses, updateFormSection]);
 
     const handleInputChange = useCallback((e) => {
         const { name, value } = e.target;
-        setFormData(prev => {
-            const newData = { ...prev, [name]: value };
-            setTimeout(() => onDataChange(newData), 0);
-            return newData;
-        });
-    }, [onDataChange]);
+        updateFormSection('shipFrom', { [name]: value });
+    }, [updateFormSection]);
 
     const handleNewAddressChange = useCallback((e) => {
         const { name, value, type, checked } = e.target;
@@ -298,15 +228,15 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         );
     }, [companyAddresses]);
 
-    const nextStep = () => {
+    const nextLocalStep = () => {
         setCurrentStep(prev => Math.min(prev + 1, 3));
     };
 
-    const prevStep = () => {
+    const prevLocalStep = () => {
         setCurrentStep(prev => Math.max(prev - 1, 1));
     };
 
-    const resetForm = () => {
+    const resetLocalForm = () => {
         setNewAddress({
             name: '',
             company: '',
@@ -325,23 +255,9 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         setCurrentStep(1);
     };
 
-    const handleCloseForm = () => {
+    const handleCloseLocalForm = () => {
         setShowAddAddressForm(false);
-        setNewAddress({
-            name: '',
-            company: '',
-            attention: '',
-            street: '',
-            street2: '',
-            city: '',
-            state: '',
-            postalCode: '',
-            country: 'US',
-            contactName: '',
-            contactPhone: '',
-            contactEmail: '',
-            isDefault: false
-        });
+        resetLocalForm();
     };
 
     const handleAddAddress = useCallback(async () => {
@@ -349,29 +265,23 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
             setIsSubmitting(true);
             setError(null);
 
-            // Validate required fields
             const requiredFields = ['name', 'company', 'street', 'city', 'state', 'postalCode', 'contactName', 'contactPhone', 'contactEmail'];
             const missingFields = requiredFields.filter(field => !newAddress[field]);
             if (missingFields.length > 0) {
                 throw new Error(`Please fill in all required fields: ${missingFields.join(', ')}`);
             }
-
-            // Check for duplicate address
             if (checkDuplicateAddress(newAddress)) {
                 throw new Error('This address already exists in your address book');
             }
 
-            // Get the user's data to find company ID
             const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
             if (!userDoc.exists()) {
-                throw new Error('User data not found. Please contact support.');
+                throw new Error('User data not found.');
             }
-
             const userData = userDoc.data();
             const companyId = userData.connectedCompanies?.companies?.[0];
-
             if (!companyId) {
-                throw new Error('No company ID found. Please contact support.');
+                throw new Error('No company ID found.');
             }
 
             const addressId = uuidv4();
@@ -381,29 +291,24 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                 createdAt: new Date().toISOString()
             };
 
-            // If this is the first address or marked as default, update other addresses
+            let updatedAddresses = [...companyAddresses];
             if (addressToAdd.isDefault || companyAddresses.length === 0) {
-                const updatedAddresses = companyAddresses.map(addr => ({
-                    ...addr,
-                    isDefault: false
-                }));
+                updatedAddresses = updatedAddresses.map(addr => ({ ...addr, isDefault: false }));
                 updatedAddresses.push({ ...addressToAdd, isDefault: true });
-                await updateDoc(doc(db, 'companies', companyId), {
-                    shipFromAddresses: updatedAddresses
-                });
-                setCompanyAddresses(updatedAddresses);
-                setSelectedAddressId(addressId);
-                setFormData(addressToAdd);
-                setTimeout(() => onDataChange(addressToAdd), 0);
             } else {
-                await updateDoc(doc(db, 'companies', companyId), {
-                    shipFromAddresses: arrayUnion(addressToAdd)
-                });
-                setCompanyAddresses(prev => [...prev, addressToAdd]);
+                updatedAddresses.push(addressToAdd);
             }
 
+            await updateDoc(doc(db, 'companies', companyId), {
+                shipFromAddresses: updatedAddresses
+            });
+
+            setCompanyAddresses(updatedAddresses);
+            setSelectedAddressId(addressId);
+            updateFormSection('shipFrom', addressToAdd);
+
             setShowAddAddressForm(false);
-            resetForm();
+            resetLocalForm();
             setSuccess('Address added successfully');
             setTimeout(() => setSuccess(null), 3000);
         } catch (err) {
@@ -412,7 +317,7 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         } finally {
             setIsSubmitting(false);
         }
-    }, [newAddress, companyAddresses, currentUser, checkDuplicateAddress, onDataChange]);
+    }, [newAddress, companyAddresses, currentUser, checkDuplicateAddress, updateFormSection]);
 
     const handleSubmit = useCallback(() => {
         if (!selectedAddressId) {
@@ -479,6 +384,8 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
         );
     }
 
+    const currentShipFromData = formData.shipFrom || {};
+
     return (
         <form className="ship-from-form">
             {error && (
@@ -520,7 +427,7 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                                         <button
                                             type="button"
                                             className="btn-close"
-                                            onClick={handleCloseForm}
+                                            onClick={handleCloseLocalForm}
                                             disabled={isSubmitting}
                                         ></button>
                                     </div>
@@ -728,7 +635,7 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                                             <button
                                                 type="button"
                                                 className="btn btn-secondary"
-                                                onClick={handleCloseForm}
+                                                onClick={handleCloseLocalForm}
                                                 disabled={isSubmitting}
                                             >
                                                 Cancel
@@ -789,14 +696,10 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                                         {companyAddresses.length > 0 ? (
                                             <div className="address-list">
                                                 {companyAddresses.map((address, index) => {
-                                                    // Generate a fallback ID if needed
                                                     const addressId = address.id || `address_${index}`;
-                                                    // Simple string conversion for comparison
-                                                    const stateId = String(selectedAddressId || '');
-                                                    const isSelected = addressId === stateId && selectedAddressId !== null;
+                                                    const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
 
-                                                    // Log selection state for debugging
-                                                    console.log(`Address ${address.name} (${addressId}): isSelected=${isSelected}, selectedId=${stateId}`);
+                                                    console.log(`Address ${address.name} (${addressId}): isSelected=${isSelected}, selectedId=${selectedAddressId}`);
 
                                                     return (
                                                         <div key={addressId} className="mb-2">
@@ -925,7 +828,7 @@ const ShipFrom = ({ onDataChange, onNext, onPrevious, apiKey }) => {
                         <textarea
                             name="specialInstructions"
                             className="form-control"
-                            value={formData.specialInstructions}
+                            value={currentShipFromData.specialInstructions || ''}
                             onChange={handleInputChange}
                             rows="3"
                             placeholder="Enter any special handling instructions or notes for the carrier"

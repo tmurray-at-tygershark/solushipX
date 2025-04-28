@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../contexts/AuthContext';
+import { ShipmentFormProvider, useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import StepperComponent from './Stepper';
@@ -55,18 +56,14 @@ const STEP_SLUGS = {
     6: 'review'
 };
 
-const CreateShipment = () => {
+// Component that uses the context
+const CreateShipmentContent = () => {
     const { step: urlStep } = useParams();
     const navigate = useNavigate();
     const { currentUser } = useAuth();
+    // Use context state
+    const { formData, updateFormSection, clearFormData } = useShipmentForm();
     const [currentStep, setCurrentStep] = useState(urlStep ? STEPS[urlStep] || 1 : 1);
-    const [formData, setFormData] = useState({
-        shipmentInfo: {},
-        shipFrom: {},
-        shipTo: {},
-        packages: [],
-    });
-    const [selectedRate, setSelectedRate] = useState(null);
     const [companyData, setCompanyData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -170,42 +167,35 @@ const CreateShipment = () => {
         }
     };
 
-    const handleFormDataChange = (section, data) => {
-        console.log('Form data changed for section:', section, data);
-        setFormData(prev => {
-            const newData = {
-                ...prev,
-                [section]: data
-            };
-            console.log('Updated form data:', newData);
-            return newData;
-        });
-    };
-
+    // handleRateSelect is simplified as the rate is set via context in Rates component
     const handleRateSelect = (rate) => {
-        setSelectedRate(rate);
+        // Rate is already set in context by the Rates component via updateFormSection
+        // We just need to navigate
         handleNext();
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        // Handle final submission
-        console.log('Final form data:', { ...formData, selectedRate });
+        // Handle final submission - potentially call context.completeShipment()
+        console.log('Final form data from context:', formData);
+        // Call the clear form function from context after successful submission
+        // clearFormData();
     };
 
     const renderStep = () => {
-        console.log('Rendering step:', currentStep, 'with form data:', formData);
+        console.log('Rendering step:', currentStep, 'with form data from context:', formData);
         // Ensure API key is available, use hardcoded fallback if needed
         const safeApiKey = API_KEY || 'e61c3e150511db70aa0f2d2476ab8511';
         console.log(`Using API key: ${safeApiKey.substring(0, 3)}...${safeApiKey.substring(safeApiKey.length - 3)}`);
 
+        // Pass navigation handlers and API key, but not data/onDataChange
         switch (currentStep) {
             case 1:
                 return (
                     <ShipmentInfo
                         key="shipment-info"
-                        data={formData.shipmentInfo}
-                        onDataChange={(data) => handleFormDataChange('shipmentInfo', data)}
+                        // data={formData.shipmentInfo} // Removed - reads from context
+                        // onDataChange={(data) => handleFormDataChange('shipmentInfo', data)} // Removed - updates context directly
                         onNext={handleNext}
                         apiKey={safeApiKey}
                     />
@@ -214,8 +204,8 @@ const CreateShipment = () => {
                 return (
                     <ShipFrom
                         key="ship-from"
-                        data={formData.shipFrom}
-                        onDataChange={(data) => handleFormDataChange('shipFrom', data)}
+                        // data={formData.shipFrom} // Removed
+                        // onDataChange={(data) => handleFormDataChange('shipFrom', data)} // Removed
                         onNext={handleNext}
                         onPrevious={handlePrevious}
                         apiKey={safeApiKey}
@@ -225,8 +215,8 @@ const CreateShipment = () => {
                 return (
                     <ShipTo
                         key="ship-to"
-                        data={formData.shipTo}
-                        onDataChange={(data) => handleFormDataChange('shipTo', data)}
+                        // data={formData.shipTo} // Removed
+                        // onDataChange={(data) => handleFormDataChange('shipTo', data)} // Removed
                         onNext={handleNext}
                         onPrevious={handlePrevious}
                         apiKey={safeApiKey}
@@ -236,30 +226,33 @@ const CreateShipment = () => {
                 return (
                     <Packages
                         key="packages"
-                        data={formData.packages}
-                        onDataChange={(data) => handleFormDataChange('packages', data)}
+                        // data={formData.packages} // Removed
+                        // onDataChange={(data) => handleFormDataChange('packages', data)} // Removed
                         onNext={handleNext}
                         onPrevious={handlePrevious}
                         apiKey={safeApiKey}
                     />
                 );
             case 5:
+                // Rates component needs the full formData to fetch rates
+                // but will use context to set the selectedRate
                 return (
                     <Rates
                         key="rates"
-                        formData={formData}
-                        onRateSelect={handleRateSelect}
-                        onNext={handleNext}
+                        formData={formData} // Pass full form data for rate fetching
+                        // onRateSelect={handleRateSelect} // Removed - uses context to set rate
+                        onNext={handleNext} // Pass navigation handler
                         onPrevious={handlePrevious}
                         apiKey={safeApiKey}
                     />
                 );
             case 6:
+                // Review reads formData and selectedRate from context
                 return (
                     <Review
                         key="review"
-                        formData={formData}
-                        selectedRate={selectedRate}
+                        // formData={formData} // Removed
+                        // selectedRate={selectedRate} // Removed
                         onSubmit={handleSubmit}
                         onPrevious={handlePrevious}
                         apiKey={safeApiKey}
@@ -318,6 +311,15 @@ const CreateShipment = () => {
             </div>
             <ChatBot onShipmentComplete={handleSubmit} />
         </div>
+    );
+};
+
+// Wrap the main content with the provider
+const CreateShipment = () => {
+    return (
+        <ShipmentFormProvider>
+            <CreateShipmentContent />
+        </ShipmentFormProvider>
     );
 };
 

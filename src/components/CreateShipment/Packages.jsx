@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
+import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 
-const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
+const Packages = ({ onNext, onPrevious }) => {
+    const { formData, updateFormSection } = useShipmentForm();
+
     const defaultPackage = {
+        id: Date.now().toString(),
         itemDescription: '',
         packagingType: 258,
         packagingQuantity: 1,
@@ -15,38 +19,34 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
         length: '',
         freightClass: "50",
         declaredValue: 0.00,
-        currency: 'USD' // Default currency
+        currency: 'USD'
     };
 
-    const [packages, setPackages] = useState(data?.length ? data : [defaultPackage]);
-    const [unitSystem, setUnitSystem] = useState('imperial'); // 'imperial' or 'metric'
+    const [packages, setPackages] = useState(formData.packages?.length ? formData.packages : [defaultPackage]);
+    const [unitSystem, setUnitSystem] = useState('imperial');
     const [currencies] = useState([
         { code: 'USD', symbol: '$', name: 'US Dollar' },
         { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' }
     ]);
 
-    // Only handle initial data load and data prop changes
     useEffect(() => {
-        if (data && data.length > 0) {
-            setPackages(data);
-        } else if (packages.length === 0) {
-            setPackages([defaultPackage]);
-        }
-    }, [data]);
+        setPackages(formData.packages?.length ? formData.packages : [defaultPackage]);
+    }, [formData.packages]);
 
-    // Conversion functions
+    const updateContext = (newPackages) => {
+        updateFormSection('packages', newPackages);
+    };
+
     const lbsToKg = (lbs) => (lbs * 0.453592).toFixed(2);
     const kgToLbs = (kg) => (kg * 2.20462).toFixed(2);
     const inchesToCm = (inches) => (inches * 2.54).toFixed(1);
     const cmToInches = (cm) => (cm / 2.54).toFixed(1);
 
-    const handleUnitChange = (event, newUnitSystem) => {
-        if (newUnitSystem !== null) {
-            // Convert all package measurements
+    const handleUnitChange = (event) => {
+        const newUnitSystem = event.target.checked ? 'metric' : 'imperial';
+        if (newUnitSystem !== unitSystem) {
             const updatedPackages = packages.map(pkg => {
                 const updatedPkg = { ...pkg };
-
-                // Convert weight
                 if (pkg.weight) {
                     if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
                         updatedPkg.weight = lbsToKg(pkg.weight);
@@ -54,8 +54,6 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                         updatedPkg.weight = kgToLbs(pkg.weight);
                     }
                 }
-
-                // Convert dimensions
                 if (pkg.length) {
                     if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
                         updatedPkg.length = inchesToCm(pkg.length);
@@ -63,7 +61,6 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                         updatedPkg.length = cmToInches(pkg.length);
                     }
                 }
-
                 if (pkg.width) {
                     if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
                         updatedPkg.width = inchesToCm(pkg.width);
@@ -71,7 +68,6 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                         updatedPkg.width = cmToInches(pkg.width);
                     }
                 }
-
                 if (pkg.height) {
                     if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
                         updatedPkg.height = inchesToCm(pkg.height);
@@ -79,58 +75,61 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                         updatedPkg.height = cmToInches(pkg.height);
                     }
                 }
-
                 return updatedPkg;
             });
 
             setPackages(updatedPackages);
-            onDataChange(updatedPackages);
-            setUnitSystem(event.target.checked ? 'metric' : 'imperial');
+            updateContext(updatedPackages);
+            setUnitSystem(newUnitSystem);
         }
     };
 
     const addPackage = () => {
-        const newPackages = [...packages, {
-            itemDescription: '',
-            packagingType: 258,
-            packagingQuantity: 1,
-            packageReferenceID: '',
-            stackable: true,
-            weight: '',
-            height: '',
-            width: '',
-            length: '',
-            freightClass: "50",
-            declaredValue: 0.00,
-            currency: 'USD' // Default currency
-        }];
+        const newPackage = {
+            ...defaultPackage,
+            id: Date.now().toString()
+        };
+        const newPackages = [...packages, newPackage];
         setPackages(newPackages);
-        onDataChange(newPackages);
+        updateContext(newPackages);
     };
 
     const removePackage = (index) => {
         const newPackages = packages.filter((_, i) => i !== index);
-        setPackages(newPackages);
-        onDataChange(newPackages);
+        if (newPackages.length === 0) {
+            const firstPackage = { ...defaultPackage, id: Date.now().toString() };
+            setPackages([firstPackage]);
+            updateContext([firstPackage]);
+        } else {
+            setPackages(newPackages);
+            updateContext(newPackages);
+        }
     };
 
     const updatePackage = (index, field, value) => {
-        const updatedPackages = [...packages];
-        updatedPackages[index] = {
-            ...updatedPackages[index],
-            [field]: value
-        };
+        const updatedPackages = packages.map((pkg, i) => {
+            if (i === index) {
+                return { ...pkg, [field]: value };
+            }
+            return pkg;
+        });
         setPackages(updatedPackages);
-        onDataChange(updatedPackages);
+        updateContext(updatedPackages);
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const form = e.target.closest('form');
-        if (form.checkValidity()) {
-            onNext();
+        const hasEmptyFields = packages.some(pkg =>
+            !pkg.itemDescription || !pkg.packagingType || !pkg.packagingQuantity ||
+            !pkg.weight || !pkg.height || !pkg.width || !pkg.length
+        );
+
+        if (hasEmptyFields) {
+            alert('Please fill in all required fields for each package.');
+            return;
         }
-        form.classList.add('was-validated');
+
+        onNext();
     };
 
     return (
@@ -147,7 +146,7 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
             <div className="package-list">
                 {packages.map((pkg, index) => (
                     <Paper
-                        key={index}
+                        key={pkg.id || index}
                         elevation={2}
                         sx={{
                             p: 3,
@@ -233,7 +232,6 @@ const Packages = ({ data, onDataChange, onNext, onPrevious }) => {
                                 />
                             </Grid>
 
-                            {/* Unit Toggle and Dimensions Section */}
                             <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth

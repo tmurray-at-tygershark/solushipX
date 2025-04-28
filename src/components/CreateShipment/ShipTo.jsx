@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import './ShipTo.css';
 import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton, IconButton } from '@mui/material';
 import {
@@ -17,83 +18,67 @@ import {
 } from '@mui/icons-material';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
-const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
+const ShipTo = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
-    const [formData, setFormData] = useState({
-        name: '',
-        company: '',
-        attention: '',
-        street: '',
-        street2: '',
-        city: '',
-        state: '',
-        postalCode: '',
-        country: 'US',
-        contactName: '',
-        contactPhone: '',
-        contactEmail: '',
-        specialInstructions: ''
-    });
+    const { formData, updateFormSection } = useShipmentForm();
 
-    // State for customers and destinations
     const [customers, setCustomers] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [customerAddresses, setCustomerAddresses] = useState([]);
     const [selectedAddressId, setSelectedAddressId] = useState(null);
 
-    // Search and pagination state
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [customersPerPage] = useState(5);
     const [totalPages, setTotalPages] = useState(1);
 
-    // State for loading and errors
     const [loading, setLoading] = useState(true);
     const [loadingDestinations, setLoadingDestinations] = useState(false);
     const [error, setError] = useState(null);
     const [companyId, setCompanyId] = useState(null);
 
-    // Firebase functions references
     const functions = getFunctions();
     const getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
     const getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
 
-    // Calculate total pages when customers array changes
+    useEffect(() => {
+        if (formData.shipTo?.selectedCustomer) {
+            setSelectedCustomer(formData.shipTo.selectedCustomer);
+        }
+        if (formData.shipTo?.selectedAddressId) {
+            setSelectedAddressId(formData.shipTo.selectedAddressId);
+        }
+    }, [formData.shipTo?.selectedCustomer, formData.shipTo?.selectedAddressId]);
+
     useEffect(() => {
         setTotalPages(Math.ceil(customers.length / customersPerPage));
     }, [customers, customersPerPage]);
 
-    // Fetch company ID for the current user
     useEffect(() => {
         const fetchCompanyId = async () => {
             if (!currentUser) return;
-
             try {
                 setError(null);
-
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                 if (!userDoc.exists()) {
                     setError('User data not found.');
+                    setLoading(false);
                     return;
                 }
-
                 const userData = userDoc.data();
                 let id = null;
-
                 if (userData.connectedCompanies?.companies?.length > 0) {
                     id = userData.connectedCompanies.companies[0];
                 } else if (userData.companies?.length > 0) {
                     id = userData.companies[0];
                 }
-
                 if (!id) {
                     setError('No company associated with this user.');
+                    setLoading(false);
                     return;
                 }
-
                 setCompanyId(id);
                 await fetchCustomers(id);
-
             } catch (err) {
                 console.error('Error fetching company ID:', err);
                 setError('Failed to load company data. Please try again.');
@@ -101,174 +86,82 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 setLoading(false);
             }
         };
-
         fetchCompanyId();
     }, [currentUser]);
 
-    // Fetch customers for the company
-    const fetchCustomers = async (id) => {
+    const fetchCustomers = useCallback(async (id) => {
         if (!id) return;
-
         try {
             setError(null);
-
             const customersResult = await getCompanyCustomersFunction({
                 companyId: id,
-                includeAllCompanies: false // Ensure we only get customers for this company
+                includeAllCompanies: false
             });
-
             if (!customersResult.data.success) {
                 throw new Error(customersResult.data.error || 'Failed to fetch customers');
             }
-
             const customersData = customersResult.data.data.customers || [];
             const sortedCustomers = [...customersData].sort((a, b) =>
                 (a.name || '').localeCompare(b.name || '')
             );
-
             setCustomers(sortedCustomers);
             setCurrentPage(1);
-
         } catch (err) {
             console.error('Error fetching customers:', err);
             setError('Failed to load customers. Please try again.');
         }
-    };
+    }, []);
 
-    // Fetch destinations for a specific customer
-    const fetchCustomerDestinations = async (customer) => {
+    const loadAndProcessAddresses = useCallback(async (customer) => {
         if (!customer || !customer.customerId) {
-            console.error('Invalid customer data:', customer);
+            setCustomerAddresses([]);
             return;
         }
 
+        setLoadingDestinations(true);
+        setError(null);
+
         try {
-            setLoadingDestinations(true);
-            setError(null);
-
-            console.log('Fetching destinations for customer:', customer.customerId);
-            const destinationsResult = await getDestinationsFunction({
-                companyId: customer.companyId,
-                customerId: customer.customerId,
-                includeAllTypes: false
-            });
-
-            console.log('Destinations API response:', destinationsResult);
-
-            if (!destinationsResult.data.success) {
-                throw new Error(destinationsResult.data.error || 'Failed to fetch destinations');
-            }
-
-            const destinations = destinationsResult.data.data.destinations || [];
-            console.log('Fetched destinations:', destinations);
-
-            if (destinations.length === 0) {
-                console.log('No destinations found for customer:', customer.customerId);
-            }
-
-            processDestinations(customer, destinations);
-
-        } catch (err) {
-            console.error('Error fetching customer destinations:', err);
-            setError('Failed to load destination addresses. Please try again.');
-            setCustomerAddresses([]);
-        } finally {
-            setLoadingDestinations(false);
-        }
-    };
-
-    // Process customer destinations into a usable format
-    const processDestinations = (customer, destinations) => {
-        console.log('Processing destinations for customer:', customer);
-        console.log('Raw destinations data:', destinations);
-
-        const formattedAddresses = destinations
-            .filter(dest => {
-                console.log('Checking destination:', dest);
-                return dest.address?.type === 'shipping';
-            })
-            .map((dest, index) => {
-                // Get the primary contact from customer if available
-                const primaryContact = customer.contacts?.find(contact => contact.primary === true) || customer.contacts?.[0] || {};
-
-                const formattedAddress = {
-                    id: dest.id || `addr_${index}`,
+            let addressesToProcess = [];
+            if (customer.addresses && customer.addresses.length > 0 && customer.addresses[0]?.street) {
+                console.log('Using addresses directly from customer object:', customer.addresses);
+                addressesToProcess = customer.addresses;
+            } else {
+                console.log('Fetching destinations separately for customer:', customer.customerId);
+                const destinationsResult = await getDestinationsFunction({
+                    companyId: customer.companyId,
                     customerId: customer.customerId,
-                    attention: dest.address?.attention || '',
-                    name: customer.name || '',
-                    // Handle contact information from primary contact
+                    includeAllTypes: false
+                });
+
+                if (!destinationsResult.data.success) {
+                    throw new Error(destinationsResult.data.error || 'Failed to fetch destinations');
+                }
+                addressesToProcess = destinationsResult.data.data.destinations?.map(d => d.address) || [];
+                console.log('Fetched destination addresses:', addressesToProcess);
+            }
+
+            const primaryContact = customer.contacts?.find(contact => contact.isPrimary === true) || customer.contacts?.[0] || {};
+            const formattedAddresses = addressesToProcess
+                .filter(addr => addr?.type === 'shipping')
+                .map((addr, index) => ({
+                    id: addr.id || `addr_${index}`,
+                    customerId: customer.customerId,
+                    attention: addr.attention || '',
+                    name: addr.name || customer.name || '',
                     contactName: primaryContact.name || '',
                     contactPhone: primaryContact.phone || '',
                     contactEmail: primaryContact.email || '',
-                    default: dest.address?.default || false,
-                    // Map address fields from the nested address object
-                    street: dest.address?.street || '',
-                    street2: dest.address?.street2 || '',
-                    city: dest.address?.city || '',
-                    state: dest.address?.state || '',
-                    postalCode: dest.address?.zip || '',
-                    country: dest.address?.country || 'US',
-                    specialInstructions: dest.address?.specialInstructions || ''
-                };
+                    default: addr.default || false,
+                    street: addr.street || '',
+                    street2: addr.street2 || '',
+                    city: addr.city || '',
+                    state: addr.state || '',
+                    postalCode: addr.zip || addr.postalCode || '',
+                    country: addr.country || 'US',
+                    specialInstructions: addr.specialInstructions || ''
+                }));
 
-                console.log('Formatted address:', formattedAddress);
-                return formattedAddress;
-            });
-
-        console.log('All formatted addresses:', formattedAddresses);
-
-        // Sort addresses to put default address first
-        formattedAddresses.sort((a, b) => {
-            if (a.default === true && b.default !== true) return -1;
-            if (a.default !== true && b.default === true) return 1;
-            return 0;
-        });
-
-        console.log('Final sorted addresses:', formattedAddresses);
-        setCustomerAddresses(formattedAddresses);
-
-        // Select the default address or the first address if available
-        if (formattedAddresses.length > 0) {
-            const defaultAddress = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
-            handleAddressChange(defaultAddress.id);
-        }
-    };
-
-    const handleCustomerSelect = (customer) => {
-        setSelectedCustomer(customer);
-        setSelectedAddressId(null);
-        setCustomerAddresses([]);
-
-        if (customer) {
-            // Process addresses directly from the customer record
-            const formattedAddresses = customer.addresses
-                ?.filter(addr => addr.type === 'shipping')
-                .map((addr, index) => {
-                    // Get the primary contact from customer if available
-                    const primaryContact = customer.contacts?.find(contact => contact.isPrimary === true) || customer.contacts?.[0] || {};
-
-                    const formattedAddress = {
-                        id: addr.id || `addr_${index}`,
-                        customerId: customer.customerId,
-                        attention: addr.attention || '',
-                        name: addr.name || customer.name || '',
-                        contactName: primaryContact.name || '',
-                        contactPhone: primaryContact.phone || '',
-                        contactEmail: primaryContact.email || '',
-                        default: addr.default || false,
-                        street: addr.street || '',
-                        street2: addr.street2 || '',
-                        city: addr.city || '',
-                        state: addr.state || '',
-                        postalCode: addr.zip || '',
-                        country: addr.country || 'US',
-                        specialInstructions: addr.specialInstructions || ''
-                    };
-
-                    return formattedAddress;
-                }) || [];
-
-            // Sort addresses to put default address first
             formattedAddresses.sort((a, b) => {
                 if (a.default === true && b.default !== true) return -1;
                 if (a.default !== true && b.default === true) return 1;
@@ -276,48 +169,142 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             });
 
             setCustomerAddresses(formattedAddresses);
+            console.log('Processed and sorted addresses:', formattedAddresses);
 
-            // Pre-select the default address or the first address if available
-            if (formattedAddresses.length > 0) {
-                const defaultAddress = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
-                if (defaultAddress) {
-                    setSelectedAddressId(defaultAddress.id);
-                    // Update formData with the default address information
-                    setFormData({
-                        name: defaultAddress.name || '',
-                        company: customer.company || '',
-                        attention: defaultAddress.attention || '',
-                        street: defaultAddress.street || '',
-                        street2: defaultAddress.street2 || '',
-                        city: defaultAddress.city || '',
-                        state: defaultAddress.state || '',
-                        postalCode: defaultAddress.postalCode || '',
-                        country: defaultAddress.country || 'US',
-                        contactName: defaultAddress.contactName || '',
-                        contactPhone: defaultAddress.contactPhone || '',
-                        contactEmail: defaultAddress.contactEmail || '',
-                        specialInstructions: defaultAddress.specialInstructions || ''
+            let addressToSelect = null;
+            const contextAddressId = formData.shipTo?.selectedAddressId;
+
+            if (contextAddressId) {
+                addressToSelect = formattedAddresses.find(addr => String(addr.id) === String(contextAddressId));
+                console.log(`Address Selection: Found match for context ID (${contextAddressId})?`, !!addressToSelect);
+            }
+
+            if (!addressToSelect && formattedAddresses.length > 0) {
+                addressToSelect = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
+                console.log('Address Selection: Using default/first address:', addressToSelect?.id);
+            }
+
+            if (addressToSelect) {
+                setSelectedAddressId(String(addressToSelect.id));
+                const needsContextUpdate = (
+                    !formData.shipTo?.selectedAddressId ||
+                    String(formData.shipTo.selectedAddressId) !== String(addressToSelect.id) ||
+                    !formData.shipTo?.street
+                );
+
+                if (needsContextUpdate) {
+                    console.log(`Updating context with details for address ID: ${addressToSelect.id}`);
+                    updateFormSection('shipTo', {
+                        selectedCustomer: customer,
+                        selectedAddressId: String(addressToSelect.id),
+                        name: addressToSelect.name || '', company: customer.company || '', attention: addressToSelect.attention || '',
+                        street: addressToSelect.street || '', street2: addressToSelect.street2 || '', city: addressToSelect.city || '', state: addressToSelect.state || '',
+                        postalCode: addressToSelect.postalCode || '', country: addressToSelect.country || 'US', contactName: addressToSelect.contactName || '',
+                        contactPhone: addressToSelect.contactPhone || '', contactEmail: addressToSelect.contactEmail || '', specialInstructions: addressToSelect.specialInstructions || ''
                     });
+                } else {
+                    console.log("Context already reflects selected address, no update needed.");
+                }
+
+            } else if (formattedAddresses.length === 0) {
+                console.log("No addresses found, clearing address in context.");
+                setSelectedAddressId(null);
+                updateFormSection('shipTo', {
+                    selectedCustomer: customer,
+                    selectedAddressId: null,
+                    name: '', company: '', attention: '', street: '', street2: '',
+                    city: '', state: '', postalCode: '', country: 'US',
+                    contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
+                });
+            }
+
+        } catch (err) {
+            console.error('Error loading/processing addresses:', err);
+            setError(`Failed to load addresses: ${err.message}`);
+            setCustomerAddresses([]);
+        } finally {
+            setLoadingDestinations(false);
+        }
+    }, [updateFormSection, getDestinationsFunction, formData.shipTo]);
+
+    useEffect(() => {
+        const customerFromContext = formData.shipTo?.selectedCustomer;
+        const addressIdFromContext = formData.shipTo?.selectedAddressId;
+
+        console.log("Context Sync Effect Triggered:", { customerId: customerFromContext?.customerId, addressIdFromContext });
+
+        let needsAddressLoad = false;
+
+        if (customerFromContext) {
+            if (selectedCustomer?.customerId !== customerFromContext.customerId) {
+                console.log("Syncing local customer state from context", customerFromContext.customerId);
+                setSelectedCustomer(customerFromContext);
+                needsAddressLoad = true;
+            }
+
+            if (selectedAddressId !== addressIdFromContext) {
+                console.log("Syncing local address ID state from context", addressIdFromContext);
+                setSelectedAddressId(addressIdFromContext);
+                if (customerAddresses.length === 0 || customerAddresses[0]?.customerId !== customerFromContext.customerId) {
+                    needsAddressLoad = true;
                 }
             }
+
+            if (!needsAddressLoad && (customerAddresses.length === 0 || customerAddresses[0]?.customerId !== customerFromContext.customerId)) {
+                console.log("Addresses missing or mismatch customer, triggering load");
+                needsAddressLoad = true;
+            }
+
+        } else {
+            if (selectedCustomer) setSelectedCustomer(null);
+            if (selectedAddressId) setSelectedAddressId(null);
+            if (customerAddresses.length > 0) setCustomerAddresses([]);
         }
-    };
+
+        if (needsAddressLoad && customerFromContext) {
+            console.log("Triggering address load from sync effect");
+            loadAndProcessAddresses(customerFromContext);
+        }
+    }, [formData.shipTo?.selectedCustomer, formData.shipTo?.selectedAddressId, loadAndProcessAddresses]);
+
+    const handleCustomerSelect = useCallback((customer) => {
+        console.log("Customer selected interactively:", customer?.customerId);
+        if (!customer) {
+            setSelectedCustomer(null);
+            setSelectedAddressId(null);
+            setCustomerAddresses([]);
+            updateFormSection('shipTo', {
+                selectedCustomer: null, selectedAddressId: null, name: '', company: '', attention: '',
+                street: '', street2: '', city: '', state: '', postalCode: '', country: 'US',
+                contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
+            });
+            return;
+        }
+
+        setSelectedCustomer(customer);
+        setSelectedAddressId(null);
+        setCustomerAddresses([]);
+
+        updateFormSection('shipTo', { selectedCustomer: customer, selectedAddressId: null });
+
+        loadAndProcessAddresses(customer);
+
+    }, [updateFormSection, loadAndProcessAddresses]);
 
     const handleAddressChange = useCallback((addressId) => {
-        console.log("Changing address to ID:", addressId);
-
-        // Ensure addressId is a string
+        console.log("Address selected interactively, ID:", addressId);
         const addressIdStr = addressId ? String(addressId) : null;
+        if (!addressIdStr || !selectedCustomer) return;
 
-        // Set selectedAddressId state first
         setSelectedAddressId(addressIdStr);
 
-        // Find the selected address from customerAddresses
-        const selectedAddress = customerAddresses.find(addr => String(addr.id) === String(addressIdStr));
+        const selectedAddress = customerAddresses.find(addr => String(addr.id) === addressIdStr);
 
         if (selectedAddress) {
-            // Update formData with the selected address information
-            setFormData({
+            console.log("Found matching address in local state:", selectedAddress);
+            updateFormSection('shipTo', {
+                selectedCustomer: selectedCustomer,
+                selectedAddressId: addressIdStr,
                 name: selectedAddress.name || '',
                 company: selectedCustomer?.company || '',
                 attention: selectedAddress.attention || '',
@@ -332,53 +319,48 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 contactEmail: selectedAddress.contactEmail || '',
                 specialInstructions: selectedAddress.specialInstructions || ''
             });
+        } else {
+            console.error("Selected address ID not found in local customerAddresses state:", addressIdStr);
         }
-    }, [customerAddresses, selectedCustomer]);
+    }, [customerAddresses, selectedCustomer, updateFormSection]);
 
     const handleSubmit = useCallback(() => {
-        if (!selectedCustomer) {
+        const currentShipToData = formData.shipTo || {};
+        setError(null);
+
+        if (!currentShipToData.selectedCustomer) {
             setError('Please select a customer');
             return;
         }
-
-        // Check if we have a selected address or if we're using form data
-        if (selectedAddressId === null && !formData.street) {
-            setError('Please select a shipping address');
+        if (!currentShipToData.selectedAddressId && !currentShipToData.street) {
+            setError('Please select or confirm a shipping address');
             return;
         }
-
-        // Validate required fields in formData
         const requiredFields = ['street', 'city', 'state', 'postalCode', 'country'];
-        const missingFields = requiredFields.filter(field => !formData[field]);
-
+        const missingFields = requiredFields.filter(field => !currentShipToData[field]);
         if (missingFields.length > 0) {
             setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
             return;
         }
-
-        // Ensure form data is passed to parent before proceeding
-        onDataChange(formData);
-
-        // If all validations pass, proceed to next step
         onNext();
-    }, [selectedCustomer, selectedAddressId, formData, onNext, onDataChange]);
+    }, [formData.shipTo, onNext]);
 
-    const handleClearCustomer = () => {
+    const handleClearCustomer = useCallback(() => {
         setSelectedCustomer(null);
         setSelectedAddressId(null);
         setCustomerAddresses([]);
-    };
+        updateFormSection('shipTo', {
+            selectedCustomer: null, selectedAddressId: null, name: '', company: '', attention: '', street: '', street2: '',
+            city: '', state: '', postalCode: '', country: 'US', contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
+        });
+    }, [updateFormSection]);
 
     const handleAddCustomerClick = () => {
-        // Function to handle adding a new customer
         console.log("Add new customer clicked");
-        // Implement the functionality to add a new customer
     };
 
     const handleAddAddressClick = () => {
-        // Function to handle adding a new address
         console.log("Add new address clicked", selectedCustomer?.id);
-        // Implement the functionality to add a new address for the selected customer
     };
 
     const renderCustomerSearch = () => (
@@ -388,9 +370,7 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 getOptionLabel={(option) => option.name || ''}
                 value={selectedCustomer}
                 onChange={(event, newValue) => {
-                    if (newValue) {
-                        handleCustomerSelect(newValue);
-                    }
+                    handleCustomerSelect(newValue);
                 }}
                 renderInput={(params) => (
                     <TextField
@@ -463,14 +443,12 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         </div>
     );
 
-    // Get current page customers
     const getCurrentPageCustomers = () => {
         const startIndex = (currentPage - 1) * customersPerPage;
         const endIndex = startIndex + customersPerPage;
         return customers.slice(startIndex, endIndex);
     };
 
-    // Render the customer list with pagination
     const renderCustomerList = () => {
         if (loading) {
             return (
@@ -511,7 +489,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             )
             : customers;
 
-        // Pagination
         const indexOfLastCustomer = currentPage * customersPerPage;
         const indexOfFirstCustomer = indexOfLastCustomer - customersPerPage;
         const currentCustomers = filteredCustomers.slice(indexOfFirstCustomer, indexOfLastCustomer);
@@ -756,7 +733,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             );
         }
 
-        // Debug address structure
         console.log("Address objects structure:", customerAddresses);
         if (customerAddresses.length > 0) {
             console.log("First address fields:",
@@ -769,7 +745,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                 {customerAddresses.map((address, index) => {
                     const isSelected = String(selectedAddressId) === String(address.id);
 
-                    // Debug log for selection status
                     if (isSelected) {
                         console.log(`Selected address ${index}: ${address.name} (ID: ${address.id}, default: ${address.default})`);
                     }
@@ -907,7 +882,6 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
         );
     };
 
-    // Show skeleton UI immediately
     if (loading) {
         return (
             <div className="ship-to-container">
@@ -950,6 +924,8 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
             </div>
         );
     }
+
+    const currentShipToData = formData.shipTo || {};
 
     return (
         <div className="ship-to-container">
@@ -1022,13 +998,13 @@ const ShipTo = ({ onDataChange, onNext, onPrevious }) => {
                     type="button"
                     className="btn btn-primary btn-navigation"
                     onClick={handleSubmit}
-                    disabled={!selectedCustomer || (selectedAddressId === null && !formData.street)}
+                    disabled={!selectedCustomer || (!currentShipToData.selectedAddressId && !currentShipToData.street)}
                 >
                     Next <i className="bi bi-arrow-right"></i>
                 </button>
             </div>
 
-            {selectedCustomer && selectedAddressId === null && !formData.street && (
+            {selectedCustomer && !currentShipToData.selectedAddressId && !currentShipToData.street && (
                 <div className="text-center mt-3">
                     <small className="text-danger">
                         <i className="bi bi-exclamation-triangle-fill me-1"></i>

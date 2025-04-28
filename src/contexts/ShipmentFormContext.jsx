@@ -69,7 +69,12 @@ export const ShipmentFormProvider = ({ children }) => {
         const savedData = localStorage.getItem(STORAGE_KEY);
         if (savedData) {
             try {
-                return JSON.parse(savedData);
+                // Ensure packages is always an array after loading from storage
+                const parsedData = JSON.parse(savedData);
+                if (!Array.isArray(parsedData.packages)) {
+                    parsedData.packages = [];
+                }
+                return parsedData;
             } catch (error) {
                 console.error('Failed to parse saved form data:', error);
                 return initialFormState;
@@ -83,15 +88,30 @@ export const ShipmentFormProvider = ({ children }) => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
     }, [formData]);
 
-    // Update specific section of the form
+    // Update specific section of the form - handles objects and arrays
     const updateFormSection = (section, data) => {
-        setFormData(prevData => ({
-            ...prevData,
-            [section]: {
-                ...prevData[section],
-                ...data
+        setFormData(prevData => {
+            let updatedSectionData;
+            // Handle specific sections that are arrays or direct values
+            if (section === 'packages') {
+                // Ensure data is an array before setting
+                updatedSectionData = Array.isArray(data) ? data : [];
+            } else if (section === 'selectedRate') {
+                // Directly replace the value for selectedRate (can be object or null)
+                updatedSectionData = data;
+            } else {
+                // Default: merge objects for sections like shipFrom, shipTo, shipmentInfo
+                updatedSectionData = {
+                    ...(prevData[section] || {}), // Ensure previous section exists
+                    ...data
+                };
             }
-        }));
+
+            return {
+                ...prevData,
+                [section]: updatedSectionData
+            };
+        });
     };
 
     // Clear form data (for when shipment is complete or user wants to start over)

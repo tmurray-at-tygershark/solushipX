@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useFormContext } from '../../contexts/FormDataContext';
+import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import ReactMarkdown from 'react-markdown';
 import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid } from '@mui/material';
 import { Divider } from '@mui/material';
@@ -8,11 +8,12 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
-const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
+const Rates = ({ formData, onPrevious, onNext }) => {
+    const { updateFormSection } = useShipmentForm();
     const [isLoading, setIsLoading] = useState(true);
     const [rates, setRates] = useState([]);
     const [filteredRates, setFilteredRates] = useState([]);
-    const [selectedRate, setSelectedRate] = useState(null);
+    const [selectedRate, setSelectedRate] = useState(formData.selectedRate || null);
     const [error, setError] = useState(null);
     const [sortBy, setSortBy] = useState('price');
     const [serviceFilter, setServiceFilter] = useState('all');
@@ -25,7 +26,10 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
     const navigate = useNavigate();
 
-    // Add CSS styles
+    useEffect(() => {
+        setSelectedRate(formData.selectedRate || null);
+    }, [formData.selectedRate]);
+
     const styles = `
         .card {
             border: 1px solid #e9ecef;
@@ -353,12 +357,9 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     `;
 
     useEffect(() => {
-        // Add styles to document
         const styleSheet = document.createElement("style");
         styleSheet.innerText = styles;
         document.head.appendChild(styleSheet);
-
-        // Cleanup
         return () => {
             document.head.removeChild(styleSheet);
         };
@@ -575,7 +576,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
     }, [formData]);
 
     useEffect(() => {
-        if (formData) {
+        if (formData && Object.keys(formData.shipFrom || {}).length > 0 && Object.keys(formData.shipTo || {}).length > 0) {
             fetchRates();
         }
     }, [formData, fetchRates]);
@@ -605,7 +606,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
         filtered.sort((a, b) => {
             switch (sortBy) {
                 case 'price':
-                    return (a.rate || 0) - (b.rate || 0);
+                    return (a.price || 0) - (b.price || 0);
                 case 'transit':
                     return (a.transitDays || 0) - (b.transitDays || 0);
                 case 'carrier':
@@ -624,33 +625,32 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
             alert('Please select a rate before submitting');
             return;
         }
-        onRateSelect(selectedRate);
         onNext();
     };
 
-    // Add function to handle guarantee selection
     const handleGuaranteeChange = (rate, checked) => {
+        let updatedRateData;
         if (checked) {
-            setSelectedRate({
+            updatedRateData = {
                 ...rate,
                 rate: rate.rate + (rate.guaranteeCharge || 0),
                 guaranteed: true
-            });
+            };
         } else {
-            setSelectedRate({
+            updatedRateData = {
                 ...rate,
                 rate: rate.rate - (rate.guaranteeCharge || 0),
                 guaranteed: false
-            });
+            };
         }
+        setSelectedRate(updatedRateData);
+        updateFormSection('selectedRate', updatedRateData);
     };
 
-    // Function to handle rate details toggle for all cards
     const toggleAllRateDetails = () => {
         setShowRateDetails(!showRateDetails);
     };
 
-    // Add effect for loading dots animation
     useEffect(() => {
         let interval;
         if (isLoading) {
@@ -663,17 +663,14 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
     const handleRateSelect = (rate) => {
         if (selectedRate?.id === rate.id) {
-            // If clicking the same rate, deselect it
             setSelectedRate(null);
-            onRateSelect(null);
+            updateFormSection('selectedRate', null);
         } else {
-            // Select the new rate without moving to next step
             setSelectedRate(rate);
-            onRateSelect(rate);
+            updateFormSection('selectedRate', rate);
         }
     };
 
-    // Add AI Analysis handler
     const handleAnalyzeRates = async () => {
         if (!rates || rates.length === 0) {
             setAnalysisError('No rates available for analysis. Please calculate rates first.');
@@ -682,7 +679,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
 
         setIsAnalyzing(true);
         setAnalysisError(null);
-        setAnalysisResult(''); // Clear previous result
+        setAnalysisResult('');
 
         try {
             const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/analyzeRatesWithAI', {
@@ -697,7 +694,6 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                 throw new Error(`Failed to analyze rates: ${response.status}`);
             }
 
-            // Create a reader for the streaming response
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
@@ -705,7 +701,6 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                 const { value, done } = await reader.read();
                 if (done) break;
 
-                // Process the stream data
                 const chunk = decoder.decode(value);
                 const lines = chunk.split('\n');
 
@@ -719,16 +714,13 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                             }
 
                             if (data.chunk) {
-                                // Append the new chunk to the existing analysis
                                 setAnalysisResult(prev => {
                                     const newResult = prev + data.chunk;
-                                    // Force a re-render of the markdown component
                                     return newResult;
                                 });
                             }
 
                             if (data.done) {
-                                // Analysis is complete
                                 setIsAnalyzing(false);
                                 break;
                             }
@@ -818,7 +810,6 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                 </div>
                             </div>
 
-                            {/* AI Analysis Container */}
                             <Card sx={{ mb: 3, backgroundColor: '#f5f5f5' }}>
                                 <CardHeader
                                     onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
@@ -941,7 +932,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                                     <div className="amount">${rate.price.toFixed(2)} <span className="currency-code">{rate.currency}</span></div>
                                                 </div>
 
-                                                {rate.guaranteed && (
+                                                {rate.guaranteedOptionAvailable && (
                                                     <div className="guarantee-option">
                                                         <div className="form-check">
                                                             <input
@@ -952,7 +943,7 @@ const Rates = ({ formData, onPrevious, onRateSelect, onNext }) => {
                                                                 onChange={(e) => handleGuaranteeChange(rate, e.target.checked)}
                                                             />
                                                             <label className="form-check-label" htmlFor={`guarantee-${rate.id}`}>
-                                                                Add Guarantee (+${rate.guaranteeCharge?.toFixed(2) || '0.00'})
+                                                                Add Guarantee (+${rate.guaranteedPrice?.toFixed(2) || '0.00'})
                                                             </label>
                                                         </div>
                                                     </div>

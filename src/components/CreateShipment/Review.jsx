@@ -13,7 +13,8 @@ import {
     useTheme,
     CircularProgress,
     Grid,
-    Container
+    Container,
+    Alert
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -32,6 +33,7 @@ import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs } from 'fi
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
+import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
@@ -174,8 +176,11 @@ const SimpleMap = React.memo(({ address, title }) => {
     );
 });
 
-const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNext, onRateSelect }) => {
+const Review = ({ onPrevious, onNext }) => {
     const theme = useTheme();
+    const { formData, clearFormData } = useShipmentForm();
+    const { selectedRate } = formData;
+
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [loadingDots, setLoadingDots] = useState('');
@@ -193,11 +198,9 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
         packages: true,
         rate: true
     });
-    const [selectedRate, setSelectedRate] = useState(initialSelectedRate);
     const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
     const [isMapReady, setIsMapReady] = useState(false);
 
-    // Fetch Maps API key when component mounts
     useEffect(() => {
         const fetchMapsApiKey = async () => {
             try {
@@ -224,7 +227,6 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
         fetchMapsApiKey();
     }, []);
 
-    // Wait for Maps API to load
     const handleGoogleMapsLoaded = useCallback(() => {
         console.log('Google Maps API loaded');
         setIsGoogleMapsLoaded(true);
@@ -304,7 +306,6 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
         updateGeocodedAddresses();
     }, [formData.shipFrom, formData.shipTo, isGoogleMapsLoaded, mapsApiKey]);
 
-    // Add effect for loading dots animation
     useEffect(() => {
         let interval;
         if (isLoading) {
@@ -338,72 +339,42 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
             return;
         }
 
+        setIsLoading(true);
+        setError(null);
+
         try {
-            const shipmentData = {
+            const shipmentDataToSave = {
                 ...formData,
                 selectedRate,
-                status: 'pending',
+                status: 'booked',
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
 
-            const shipmentRef = await addDoc(collection(db, 'shipments'), shipmentData);
+            console.log("Attempting to save shipment: ", shipmentDataToSave);
+
+            const shipmentRef = await addDoc(collection(db, 'shipments'), shipmentDataToSave);
             const shipmentId = shipmentRef.id;
 
-            // Update the shipment with the ID
             await updateDoc(doc(db, 'shipments', shipmentId), {
                 shipmentId
             });
 
+            console.log("Shipment booked successfully with ID: ", shipmentId);
+
+            clearFormData();
+
             onNext();
         } catch (error) {
             console.error('Error saving shipment:', error);
+            setError('Failed to save shipment. Please try again.');
             alert('Failed to save shipment. Please try again.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    const handleGuaranteeChange = (rate, checked) => {
-        // Update the rate's guarantee option
-        const updatedRate = {
-            ...rate,
-            guaranteeSelected: checked
-        };
-        // Update the selectedRate
-        setSelectedRate(updatedRate);
-        // Notify parent component
-        onRateSelect(updatedRate);
-    };
-
-    const handleRateSelect = async (rate) => {
-        try {
-            if (selectedRate && selectedRate.id === rate.id) {
-                // If clicking the same rate, deselect it
-                onRateSelect(null);
-            } else {
-                // Select the new rate and save to Firebase
-                onRateSelect(rate);
-
-                // Save the rate to Firebase if we have a shipment ID
-                if (formData.shipmentId) {
-                    try {
-                        const shipmentRef = doc(db, 'shipments', formData.shipmentId);
-                        await updateDoc(shipmentRef, {
-                            selectedRate: rate,
-                            updatedAt: serverTimestamp()
-                        });
-                    } catch (error) {
-                        console.error('Error saving rate to Firebase:', error);
-                    }
-                }
-
-                // Automatically move to next step
-                onNext();
-            }
-        } catch (error) {
-            console.error('Error selecting rate:', error);
-            setError('Failed to select rate. Please try again.');
-        }
-    };
+    const { shipmentInfo = {}, shipFrom = {}, shipTo = {}, packages = [] } = formData;
 
     return (
         <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -419,7 +390,10 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                         </Typography>
                     </Box>
 
-                    {/* Shipment Information */}
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
+                    )}
+
                     <Paper sx={{ mb: 3, overflow: 'hidden' }}>
                         <Box
                             sx={{
@@ -450,7 +424,6 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                         <Collapse in={expandedSections.shipment}>
                             <Box sx={{ p: 3 }}>
                                 <Grid container spacing={3}>
-                                    {/* Basic Information Card */}
                                     <Grid item xs={12} md={4}>
                                         <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
                                             <Typography variant="h6" gutterBottom color="black" sx={{
@@ -465,7 +438,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Shipment Type
                                                     </Typography>
                                                     <Typography variant="body1">
-                                                        {formData.shipmentInfo?.shipmentType || 'N/A'}
+                                                        {shipmentInfo.shipmentType || 'N/A'}
                                                     </Typography>
                                                 </Box>
                                                 <Box>
@@ -473,7 +446,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Reference Number
                                                     </Typography>
                                                     <Typography variant="body1">
-                                                        {formData.shipmentInfo?.referenceNumber || 'N/A'}
+                                                        {shipmentInfo.referenceNumber || 'N/A'}
                                                     </Typography>
                                                 </Box>
                                                 <Box>
@@ -481,14 +454,12 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Bill Type
                                                     </Typography>
                                                     <Typography variant="body1">
-                                                        {formData.shipmentInfo?.billType || 'Prepaid'}
+                                                        {shipmentInfo.billType || 'Prepaid'}
                                                     </Typography>
                                                 </Box>
                                             </Box>
                                         </Paper>
                                     </Grid>
-
-                                    {/* Timing Information Card */}
                                     <Grid item xs={12} md={4}>
                                         <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
                                             <Typography variant="h6" gutterBottom color="black" sx={{
@@ -503,7 +474,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Shipment Date
                                                     </Typography>
                                                     <Typography variant="body1">
-                                                        {formData.shipmentInfo?.shipmentDate || 'N/A'}
+                                                        {shipmentInfo.shipmentDate || 'N/A'}
                                                     </Typography>
                                                 </Box>
                                                 <Box>
@@ -511,7 +482,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Pickup Window
                                                     </Typography>
                                                     <Typography variant="body1">
-                                                        {formData.shipmentInfo?.earliestPickup || '09:00'} - {formData.shipmentInfo?.latestPickup || '17:00'}
+                                                        {shipmentInfo.earliestPickup || '09:00'} - {shipmentInfo.latestPickup || '17:00'}
                                                     </Typography>
                                                 </Box>
                                                 <Box>
@@ -519,14 +490,12 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Delivery Window
                                                     </Typography>
                                                     <Typography variant="body1">
-                                                        {formData.shipmentInfo?.earliestDelivery || '09:00'} - {formData.shipmentInfo?.latestDelivery || '17:00'}
+                                                        {shipmentInfo.earliestDelivery || '09:00'} - {shipmentInfo.latestDelivery || '17:00'}
                                                     </Typography>
                                                 </Box>
                                             </Box>
                                         </Paper>
                                     </Grid>
-
-                                    {/* Service Options Card */}
                                     <Grid item xs={12} md={4}>
                                         <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
                                             <Typography variant="h6" gutterBottom color="black" sx={{
@@ -541,8 +510,8 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Hold for Pickup
                                                     </Typography>
                                                     <Chip
-                                                        label={formData.shipmentInfo?.holdForPickup ? "Yes" : "No"}
-                                                        color={formData.shipmentInfo?.holdForPickup ? "primary" : "default"}
+                                                        label={shipmentInfo.holdForPickup ? "Yes" : "No"}
+                                                        color={shipmentInfo.holdForPickup ? "primary" : "default"}
                                                         size="small"
                                                         sx={{ minWidth: 60 }}
                                                     />
@@ -552,8 +521,8 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         International
                                                     </Typography>
                                                     <Chip
-                                                        label={formData.shipmentInfo?.international ? "Yes" : "No"}
-                                                        color={formData.shipmentInfo?.international ? "primary" : "default"}
+                                                        label={shipmentInfo.international ? "Yes" : "No"}
+                                                        color={shipmentInfo.international ? "primary" : "default"}
                                                         size="small"
                                                         sx={{ minWidth: 60 }}
                                                     />
@@ -563,8 +532,8 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Saturday Delivery
                                                     </Typography>
                                                     <Chip
-                                                        label={formData.shipmentInfo?.saturdayDelivery ? "Yes" : "No"}
-                                                        color={formData.shipmentInfo?.saturdayDelivery ? "primary" : "default"}
+                                                        label={shipmentInfo.saturdayDelivery ? "Yes" : "No"}
+                                                        color={shipmentInfo.saturdayDelivery ? "primary" : "default"}
                                                         size="small"
                                                         sx={{ minWidth: 60 }}
                                                     />
@@ -574,8 +543,8 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                                         Signature Required
                                                     </Typography>
                                                     <Chip
-                                                        label={formData.shipmentInfo?.signatureRequired ? "Yes" : "No"}
-                                                        color={formData.shipmentInfo?.signatureRequired ? "primary" : "default"}
+                                                        label={shipmentInfo.signatureRequired ? "Yes" : "No"}
+                                                        color={shipmentInfo.signatureRequired ? "primary" : "default"}
                                                         size="small"
                                                         sx={{ minWidth: 60 }}
                                                     />
@@ -588,7 +557,6 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                         </Collapse>
                     </Paper>
 
-                    {/* Locations */}
                     <Grid container spacing={3} sx={{ mb: 3 }}>
                         <Grid item xs={12} md={6}>
                             <Paper sx={{ height: '100%' }}>
@@ -600,19 +568,19 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                 </Box>
                                 <Box sx={{ p: 2 }}>
                                     <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                                        {formData.shipFrom.company}
+                                        {shipFrom.company}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                        {formatAddress(formData.shipFrom)}
+                                        {formatAddress(shipFrom)}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Contact: {formData.shipFrom.contactName}
+                                        Contact: {shipFrom.contactName}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Phone: {formatPhone(formData.shipFrom.contactPhone)}
+                                        Phone: {formatPhone(shipFrom.contactPhone)}
                                     </Typography>
                                     <Box sx={{ mt: 2 }}>
-                                        <SimpleMap address={formData.shipFrom} />
+                                        <SimpleMap address={shipFrom} />
                                     </Box>
                                 </Box>
                             </Paper>
@@ -627,34 +595,33 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                 </Box>
                                 <Box sx={{ p: 2 }}>
                                     <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                                        {formData.shipTo.company}
+                                        {shipTo.company}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                        {formatAddress(formData.shipTo)}
+                                        {formatAddress(shipTo)}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Contact: {formData.shipTo.contactName}
+                                        Contact: {shipTo.contactName}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Phone: {formatPhone(formData.shipTo.contactPhone)}
+                                        Phone: {formatPhone(shipTo.contactPhone)}
                                     </Typography>
                                     <Box sx={{ mt: 2 }}>
-                                        <SimpleMap address={formData.shipTo} />
+                                        <SimpleMap address={shipTo} />
                                     </Box>
                                 </Box>
                             </Paper>
                         </Grid>
                     </Grid>
 
-                    {/* Packages */}
                     <Paper sx={{ mb: 3 }}>
                         <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
                             <Typography variant="h6">Package Details</Typography>
                         </Box>
                         <Box sx={{ p: 2 }}>
                             <Grid container spacing={3}>
-                                {formData.packages.map((pkg, index) => (
-                                    <Grid item xs={12} md={6} key={index}>
+                                {packages.map((pkg, index) => (
+                                    <Grid item xs={12} md={6} key={pkg.id || index}>
                                         <Paper
                                             elevation={0}
                                             sx={{
@@ -707,8 +674,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                         </Box>
                     </Paper>
 
-                    {/* Selected Rate */}
-                    {selectedRate && (
+                    {selectedRate ? (
                         <Paper sx={{ mb: 4 }}>
                             <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
                                 <Typography variant="h6">Rate Details</Typography>
@@ -717,21 +683,21 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                 <Grid container spacing={3}>
                                     <Grid item xs={12} md={6}>
                                         <Typography variant="h5" gutterBottom>
-                                            {selectedRate?.carrier}
+                                            {selectedRate.carrier}
                                         </Typography>
                                         <Chip
-                                            label={selectedRate?.service}
+                                            label={selectedRate.service}
                                             color="primary"
                                             sx={{ mb: 2 }}
                                         />
                                         <Typography variant="body2" color="text.secondary">
-                                            Transit Time: {selectedRate?.transitDays} days
+                                            Transit Time: {selectedRate.transitDays} days
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={12} md={6}>
                                         <Box sx={{ textAlign: 'right' }}>
                                             <Typography variant="h4" color="primary" gutterBottom>
-                                                ${(selectedRate?.price || 0).toFixed(2)}
+                                                ${(selectedRate.price || 0).toFixed(2)}
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
                                                 Total Charges
@@ -746,7 +712,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Freight Charges
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${(selectedRate?.originalRate?.freightCharges || 0).toFixed(2)}
+                                            ${(selectedRate.originalRate?.freightCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={6} md={3}>
@@ -754,7 +720,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Fuel Surcharge
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${(selectedRate?.originalRate?.fuelCharges || 0).toFixed(2)}
+                                            ${(selectedRate.originalRate?.fuelCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={6} md={3}>
@@ -762,7 +728,7 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Accessorial Charges
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${(selectedRate?.originalRate?.accessorialCharges || 0).toFixed(2)}
+                                            ${(selectedRate.originalRate?.accessorialCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={6} md={3}>
@@ -770,15 +736,13 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                             Service Charges
                                         </Typography>
                                         <Typography variant="body1">
-                                            ${(selectedRate?.originalRate?.serviceCharges || 0).toFixed(2)}
+                                            ${(selectedRate.originalRate?.serviceCharges || 0).toFixed(2)}
                                         </Typography>
                                     </Grid>
                                 </Grid>
                             </Box>
                         </Paper>
-                    )}
-
-                    {!selectedRate && (
+                    ) : (
                         <Paper sx={{ mb: 4, p: 3, textAlign: 'center' }}>
                             <Typography variant="h6" color="error">
                                 No rate selected. Please go back and select a rate.
@@ -786,7 +750,6 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                         </Paper>
                     )}
 
-                    {/* Navigation Buttons */}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
                         <motion.button
                             whileHover={{ scale: 1.02 }}
@@ -812,14 +775,14 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                             onClick={handleSubmit}
-                            disabled={!selectedRate}
+                            disabled={!selectedRate || isLoading}
                             style={{
                                 padding: '12px 24px',
                                 borderRadius: '8px',
                                 border: 'none',
-                                background: !selectedRate ? '#cccccc' : '#1a237e',
+                                background: (!selectedRate || isLoading) ? '#cccccc' : '#1a237e',
                                 color: 'white',
-                                cursor: !selectedRate ? 'not-allowed' : 'pointer',
+                                cursor: (!selectedRate || isLoading) ? 'not-allowed' : 'pointer',
                                 fontSize: '16px',
                                 fontWeight: 500,
                                 display: 'flex',
@@ -827,14 +790,14 @@ const Review = ({ formData, selectedRate: initialSelectedRate, onPrevious, onNex
                                 gap: '8px'
                             }}
                         >
-                            <CheckCircleIcon sx={{ fontSize: 20 }} />
-                            Book Shipment
+                            {isLoading ? <CircularProgress size={24} color="inherit" /> : <CheckCircleIcon sx={{ fontSize: 20 }} />}
+                            {isLoading ? 'Booking...' : 'Book Shipment'}
                         </motion.button>
                     </Box>
                 </LoadScript>
             ) : (
                 <Typography variant="body1" color="error">
-                    {mapError}
+                    {mapError || 'Loading Map...'}
                 </Typography>
             )}
         </Container>

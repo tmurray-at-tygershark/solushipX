@@ -20,75 +20,21 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import './ShipmentInfo.css';
+import { useShipmentForm } from '../../contexts/ShipmentFormContext'; // Import the context hook
 
-const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
+// Removed data and onDataChange from props
+const ShipmentInfo = ({ onNext, onPrevious }) => {
     console.log('deploy test confirmed - ShipmentInfo component loaded');
-    const [formData, setFormData] = useState({
-        shipmentType: data?.shipmentType || 'courier',
-        internationalShipment: data?.internationalShipment || false,
-        shipperReferenceNumber: data?.shipperReferenceNumber || '',
-        bookingReferenceNumber: data?.bookingReferenceNumber || '',
-        bookingReferenceType: 'Shipment',
-        shipmentBillType: 'DefaultLogisticsPlus',
-        shipmentDate: data?.shipmentDate || '',
-        earliestPickupTime: data?.earliestPickupTime || '05:00',
-        latestPickupTime: data?.latestPickupTime || '17:00',
-        earliestDeliveryTime: data?.earliestDeliveryTime || '09:00',
-        latestDeliveryTime: data?.latestDeliveryTime || '22:00',
-        dangerousGoodsType: data?.dangerousGoodsType || 'none',
-        signatureServiceType: data?.signatureServiceType || 'none',
-        holdForPickup: data?.holdForPickup || false,
-        saturdayDelivery: data?.saturdayDelivery || false,
-        dutibleAmount: 0.00,
-        dutibleCurrency: 'CDN',
-        numberOfPackages: 1
-    });
-
+    // Get state and update function from context
+    const { formData, updateFormSection } = useShipmentForm();
+    // Use a local state for errors, still managed locally
     const [errors, setErrors] = useState({});
     const [showErrorSnackbar, setShowErrorSnackbar] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
-    const prevFormDataRef = useRef(formData);
     const [loading, setLoading] = useState(true);
 
-    // Update form data when data prop changes
-    useEffect(() => {
-        if (data && Object.keys(data).length > 0) {
-            console.log('Updating form data from props:', data);
-            setFormData(prevData => {
-                // Only update if the data is different
-                if (JSON.stringify(prevData) !== JSON.stringify(data)) {
-                    return {
-                        shipmentType: data.shipmentType || 'courier',
-                        internationalShipment: data.internationalShipment || false,
-                        shipperReferenceNumber: data.shipperReferenceNumber || '',
-                        bookingReferenceNumber: data.bookingReferenceNumber || '',
-                        shipmentDate: data.shipmentDate || '',
-                        earliestPickupTime: data.earliestPickupTime || '05:00',
-                        latestPickupTime: data.latestPickupTime || '17:00',
-                        earliestDeliveryTime: data.earliestDeliveryTime || '09:00',
-                        latestDeliveryTime: data.latestDeliveryTime || '22:00',
-                        holdForPickup: data.holdForPickup || false,
-                        saturdayDelivery: data.saturdayDelivery || false,
-                        dangerousGoodsType: data.dangerousGoodsType || 'none',
-                        signatureServiceType: data.signatureServiceType || 'none'
-                    };
-                }
-                return prevData;
-            });
-        }
-    }, [data]);
-
-    // Only call onDataChange when formData actually changes
-    useEffect(() => {
-        const formDataString = JSON.stringify(formData);
-        const prevFormDataString = JSON.stringify(prevFormDataRef.current);
-
-        if (formDataString !== prevFormDataString) {
-            console.log('Form data changed, updating parent:', formData);
-            onDataChange(formData);
-            prevFormDataRef.current = formData;
-        }
-    }, [formData, onDataChange]);
+    // No need for useEffect to sync props to local state anymore
+    // No need for useEffect to call onDataChange anymore
 
     // Add loading effect
     useEffect(() => {
@@ -102,10 +48,8 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
         const { id, value, type } = e.target;
         const newValue = type === 'checkbox' ? e.target.checked : value;
         console.log('Input changed:', id, newValue);
-        setFormData(prev => ({
-            ...prev,
-            [id]: newValue
-        }));
+        // Update context directly
+        updateFormSection('shipmentInfo', { [id]: newValue });
         // Clear error when field is modified
         if (errors[id]) {
             setErrors(prev => ({ ...prev, [id]: null }));
@@ -114,55 +58,57 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
 
     const handleShipmentTypeChange = (type) => {
         console.log('Shipment type changed:', type);
-        setFormData(prev => ({
-            ...prev,
-            shipmentType: type
-        }));
+        // Update context directly
+        updateFormSection('shipmentInfo', { shipmentType: type });
         if (errors.shipmentType) {
             setErrors(prev => ({ ...prev, shipmentType: null }));
         }
     };
 
     const validateForm = () => {
-        console.log('Validating form with data:', formData);
+        // Validate using formData from context
+        console.log('Validating form with data from context:', formData.shipmentInfo);
         const newErrors = {};
+        const currentData = formData.shipmentInfo || {}; // Use context data
 
         // Check if any required field is empty
         const requiredFields = ['shipmentType', 'shipmentDate'];
-        const hasEmptyRequiredFields = requiredFields.some(field => !formData[field]);
+        const hasEmptyRequiredFields = requiredFields.some(field => !currentData[field]);
 
         if (hasEmptyRequiredFields) {
             setErrorMessage('Please fill in all required fields');
             setShowErrorSnackbar(true);
-            return false;
-        }
-
-        // Check required fields
-        if (!formData.shipmentType) {
-            newErrors.shipmentType = 'Please select a shipment type';
-        }
-
-        if (!formData.shipmentDate) {
-            newErrors.shipmentDate = 'Please select a shipment date';
+            // Still set individual errors for fields
+            if (!currentData.shipmentType) newErrors.shipmentType = 'Please select a shipment type';
+            if (!currentData.shipmentDate) newErrors.shipmentDate = 'Please select a shipment date';
         } else {
-            // Validate shipment date is not in the past
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const selectedDate = new Date(formData.shipmentDate);
-            if (selectedDate < today) {
-                newErrors.shipmentDate = 'Shipment date cannot be in the past';
+            // Check required fields specifically if overall check passed
+            if (!currentData.shipmentType) {
+                newErrors.shipmentType = 'Please select a shipment type';
+            }
+
+            if (!currentData.shipmentDate) {
+                newErrors.shipmentDate = 'Please select a shipment date';
+            } else {
+                // Validate shipment date is not in the past
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const selectedDate = new Date(currentData.shipmentDate);
+                if (selectedDate < today) {
+                    newErrors.shipmentDate = 'Shipment date cannot be in the past';
+                }
             }
         }
 
-        // Validate time windows
-        const earliestPickup = new Date(`2000-01-01T${formData.earliestPickupTime}`);
-        const latestPickup = new Date(`2000-01-01T${formData.latestPickupTime}`);
+        // Validate time windows using context data
+        const earliestPickup = new Date(`2000-01-01T${currentData.earliestPickupTime || '00:00'}`);
+        const latestPickup = new Date(`2000-01-01T${currentData.latestPickupTime || '00:00'}`);
         if (earliestPickup >= latestPickup) {
             newErrors.pickupTime = 'Latest pickup time must be after earliest pickup time';
         }
 
-        const earliestDelivery = new Date(`2000-01-01T${formData.earliestDeliveryTime}`);
-        const latestDelivery = new Date(`2000-01-01T${formData.latestDeliveryTime}`);
+        const earliestDelivery = new Date(`2000-01-01T${currentData.earliestDeliveryTime || '00:00'}`);
+        const latestDelivery = new Date(`2000-01-01T${currentData.latestDeliveryTime || '00:00'}`);
         if (earliestDelivery >= latestDelivery) {
             newErrors.deliveryTime = 'Latest delivery time must be after earliest delivery time';
         }
@@ -170,6 +116,11 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
         setErrors(newErrors);
         const isValid = Object.keys(newErrors).length === 0;
         console.log('Form validation result:', isValid, newErrors);
+        // Show snackbar only if there are errors after validation attempt
+        if (!isValid && !hasEmptyRequiredFields) {
+            setErrorMessage('Please correct the errors highlighted below.');
+            setShowErrorSnackbar(true);
+        }
         return isValid;
     };
 
@@ -177,15 +128,19 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
         e.preventDefault();
         e.stopPropagation();
 
-        console.log('Form submitted with data:', formData);
+        // Use context data for submission check
+        console.log('Form submitted attempt with context data:', formData.shipmentInfo);
 
-        // Check if form data is empty
-        const isEmpty = Object.values(formData).every(value =>
+        // Check if form data is empty - Reading from context
+        const currentShipmentInfo = formData.shipmentInfo || {};
+        const isEmpty = Object.values(currentShipmentInfo).every(value =>
             value === '' || value === false || value === null || value === undefined
+            // We might need a better check depending on the initial state vs truly empty fields
         );
 
-        if (isEmpty) {
-            setErrorMessage('Please fill in at least one field before proceeding');
+        // Basic check - refine if needed based on required fields
+        if (!currentShipmentInfo.shipmentType && !currentShipmentInfo.shipmentDate) {
+            setErrorMessage('Please fill in the required fields before proceeding');
             setShowErrorSnackbar(true);
             return;
         }
@@ -197,15 +152,18 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
             const firstErrorField = Object.keys(errors)[0];
             if (firstErrorField) {
                 const element = document.getElementById(firstErrorField);
+                // Need to check if element exists before scrolling
                 if (element) {
                     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    // If element not found (e.g., shipmentType card), maybe scroll to top
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
             }
             return;
         }
 
-        // Only proceed if validation passes
-        onDataChange(formData);
+        // No need for onDataChange(formData);
         onNext();
     };
 
@@ -267,6 +225,9 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
         );
     }
 
+    // Read values directly from context for rendering
+    const currentData = formData.shipmentInfo || {};
+
     return (
         <div className="form-section">
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
@@ -282,7 +243,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                     <Grid container spacing={2}>
                         <Grid item xs={12} sm={6}>
                             <div
-                                className={`shipment-type-card ${formData.shipmentType === 'courier' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
+                                className={`shipment-type-card ${currentData.shipmentType === 'courier' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
                                 onClick={() => handleShipmentTypeChange('courier')}
                                 role="button"
                                 tabIndex={0}
@@ -302,7 +263,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                         </Grid>
                         <Grid item xs={12} sm={6}>
                             <div
-                                className={`shipment-type-card ${formData.shipmentType === 'freight' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
+                                className={`shipment-type-card ${currentData.shipmentType === 'freight' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
                                 onClick={() => handleShipmentTypeChange('freight')}
                                 role="button"
                                 tabIndex={0}
@@ -336,7 +297,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                     type="text"
                                     id="shipperReferenceNumber"
                                     className="form-control"
-                                    value={formData.shipperReferenceNumber}
+                                    value={currentData.shipperReferenceNumber || ''} // Read from context
                                     onChange={handleInputChange}
                                     placeholder="Enter reference number"
                                 />
@@ -359,7 +320,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                 type="date"
                                 id="shipmentDate"
                                 label="Shipment Date"
-                                value={formData.shipmentDate}
+                                value={currentData.shipmentDate || ''} // Read from context
                                 onChange={handleInputChange}
                                 error={!!errors.shipmentDate}
                                 helperText={errors.shipmentDate}
@@ -376,7 +337,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                             type="time"
                                             id="earliestPickupTime"
                                             label="Earliest"
-                                            value={formData.earliestPickupTime}
+                                            value={currentData.earliestPickupTime || '05:00'} // Read from context
                                             onChange={handleInputChange}
                                             InputLabelProps={{ shrink: true }}
                                         />
@@ -387,7 +348,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                             type="time"
                                             id="latestPickupTime"
                                             label="Latest"
-                                            value={formData.latestPickupTime}
+                                            value={currentData.latestPickupTime || '17:00'} // Read from context
                                             onChange={handleInputChange}
                                             InputLabelProps={{ shrink: true }}
                                         />
@@ -411,7 +372,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                             type="time"
                                             id="earliestDeliveryTime"
                                             label="Earliest"
-                                            value={formData.earliestDeliveryTime}
+                                            value={currentData.earliestDeliveryTime || '09:00'} // Read from context
                                             onChange={handleInputChange}
                                             InputLabelProps={{ shrink: true }}
                                         />
@@ -422,7 +383,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                             type="time"
                                             id="latestDeliveryTime"
                                             label="Latest"
-                                            value={formData.latestDeliveryTime}
+                                            value={currentData.latestDeliveryTime || '22:00'} // Read from context
                                             onChange={handleInputChange}
                                             InputLabelProps={{ shrink: true }}
                                         />
@@ -458,7 +419,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                 <select
                                     id="dangerousGoodsType"
                                     className="form-control"
-                                    value={formData.dangerousGoodsType}
+                                    value={currentData.dangerousGoodsType || 'none'} // Read from context
                                     onChange={handleInputChange}
                                 >
                                     <option value="none">None</option>
@@ -480,7 +441,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                 <select
                                     id="signatureServiceType"
                                     className="form-control"
-                                    value={formData.signatureServiceType}
+                                    value={currentData.signatureServiceType || 'none'} // Read from context
                                     onChange={handleInputChange}
                                 >
                                     <option value="none">None</option>
@@ -497,7 +458,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                             type="checkbox"
                                             id="holdForPickup"
                                             className="form-check-input"
-                                            checked={formData.holdForPickup}
+                                            checked={currentData.holdForPickup || false} // Read from context
                                             onChange={handleInputChange}
                                         />
                                         <label className="form-check-label" htmlFor="holdForPickup">
@@ -514,7 +475,7 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                                             type="checkbox"
                                             id="saturdayDelivery"
                                             className="form-check-input"
-                                            checked={formData.saturdayDelivery}
+                                            checked={currentData.saturdayDelivery || false} // Read from context
                                             onChange={handleInputChange}
                                         />
                                         <label className="form-check-label" htmlFor="saturdayDelivery">
@@ -538,6 +499,8 @@ const ShipmentInfo = ({ data, onDataChange, onNext, onPrevious }) => {
                     mt: 4,
                     gap: 2
                 }}>
+                    {/* Previous button logic might need to be added/passed if this isn't the first step */}
+                    {/* <Button variant="outlined" onClick={onPrevious}>Previous</Button> */}
                     <Button
                         variant="contained"
                         color="primary"
