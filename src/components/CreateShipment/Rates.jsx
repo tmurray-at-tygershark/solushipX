@@ -738,6 +738,11 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         }
     };
 
+    // --- Helper to calculate total packages ---
+    const totalPackages = useMemo(() => {
+        return formData.packages?.reduce((sum, pkg) => sum + (Number(pkg.packagingQuantity) || 0), 0) || 0;
+    }, [formData.packages]);
+
     return (
         <div className="container mt-4">
             <h2>Available Rates</h2>
@@ -750,17 +755,53 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                     )}
 
                     {!ratesLoaded ? (
-                        <div style={{ textAlign: 'center', padding: '20px' }}>
+                        <Box sx={{ textAlign: 'center', padding: '20px', width: '100%' }}>
+                            {/* Shipment Summary Card during loading */}
+                            <Card variant="outlined" sx={{ mb: 3, textAlign: 'left', bgcolor: 'grey.100' }}>
+                                <CardContent sx={{ p: 2 }}>
+                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
+                                        Fetching Rates For:
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Origin:</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {formData.shipFrom?.city}, {formData.shipFrom?.state} {formData.shipFrom?.postalCode}
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Destination:</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {formData.shipTo?.city}, {formData.shipTo?.state} {formData.shipTo?.postalCode}
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Packages:</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {totalPackages} Total Piece(s)
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Ship Date:</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {formData.shipmentInfo?.shipmentDate || 'N/A'}
+                                            </Typography>
+                                        </Grid>
+                                    </Grid>
+                                </CardContent>
+                            </Card>
+
+                            {/* Existing Loading Animation */}
                             <img
                                 src="/animations/truck.gif"
                                 alt="Loading rates"
-                                style={{ width: '300px', height: '300px', margin: '0 auto' }}
+                                style={{ width: '250px', height: '250px', margin: '0 auto' }} // Slightly smaller
                             />
-                            <p style={{ marginTop: '10px', color: '#666' }}>
-                                <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                            <Typography sx={{ marginTop: '10px', color: 'text.secondary' }}>
+                                <CircularProgress size={16} sx={{ mr: 1, verticalAlign: 'middle' }} />
                                 Searching All Carrier Rates{loadingDots}
-                            </p>
-                        </div>
+                            </Typography>
+                        </Box>
                     ) : (
                         <>
                             <div className="rate-filters mb-3">
