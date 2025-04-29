@@ -498,6 +498,10 @@ const Rates = ({ formData, onPrevious, onNext }) => {
             const result = await getRatesFunction(rateRequestData);
             const data = result.data;
 
+            // --- BEGIN LOG --- 
+            console.log("Raw Rate Response Object:", data);
+            // --- END LOG --- 
+
             // Process the response data
             if (data.success && data.data) {
                 // Add detailed logging
@@ -523,15 +527,18 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                         return;
                     }
 
+                    console.log('Available Rates:', availableRates);
+
                     // Transform the rate data
                     const transformedRates = availableRates.map(rate => {
                         // Calculate the total days for delivery
                         const transitTimeDisplay = String(rate.transitTime || '1-2 business days');
-
-                        // Extract just the number from the transit time display
                         const transitDays = transitTimeDisplay.match(/\d+/)?.[0] || '1';
 
-                        console.log(`Processing rate: ${rate.service} with transit time: ${transitTimeDisplay}, extracted days: ${transitDays}`);
+                        // Access EstimatedDeliveryDate - use exact case from sample, provide fallback
+                        const rawDeliveryDate = rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate; // Check both cases
+                        const formattedDeliveryDate = rawDeliveryDate ? rawDeliveryDate.split('T')[0] : 'N/A';
+                        console.log(`Rate ID ${rate.id}, Raw Date: ${rawDeliveryDate}, Formatted Date: ${formattedDeliveryDate}`); // Add log for debugging
 
                         // Create a standardized object for each rate
                         return {
@@ -540,6 +547,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                             service: rate.service || 'Standard',
                             transitDays: parseInt(transitDays),
                             transitTime: transitTimeDisplay,
+                            estimatedDeliveryDate: formattedDeliveryDate,
                             price: parseFloat(rate.totalCharges) || 0,
                             currency: rate.currency || 'USD',
                             guaranteeOption: rate.guaranteed || false,
@@ -743,6 +751,13 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         return formData.packages?.reduce((sum, pkg) => sum + (Number(pkg.packagingQuantity) || 0), 0) || 0;
     }, [formData.packages]);
 
+    // --- Helper to calculate total weight ---
+    const totalWeight = useMemo(() => {
+        const weight = formData.packages?.reduce((sum, pkg) => sum + (Number(pkg.weight) || 0), 0) || 0;
+        // Assuming imperial units for display here, adjust if unitSystem is tracked
+        return `${weight.toFixed(2)} lbs`;
+    }, [formData.packages]);
+
     return (
         <div className="container mt-4">
             <h2>Available Rates</h2>
@@ -756,48 +771,104 @@ const Rates = ({ formData, onPrevious, onNext }) => {
 
                     {!ratesLoaded ? (
                         <Box sx={{ textAlign: 'center', padding: '20px', width: '100%' }}>
-                            {/* Shipment Summary Card during loading */}
-                            <Card variant="outlined" sx={{ mb: 3, textAlign: 'left', bgcolor: 'grey.100' }}>
-                                <CardContent sx={{ p: 2 }}>
-                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
+                            {/* Enhanced Shipment Summary Card */}
+                            <Card variant="outlined" sx={{ mb: 3, textAlign: 'left', bgcolor: 'grey.50', borderRadius: 2 }}>
+                                <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 500, fontSize: '1.1rem' }}>
                                         Fetching Rates For:
                                     </Typography>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Origin:</Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {formData.shipFrom?.city}, {formData.shipFrom?.state} {formData.shipFrom?.postalCode}
+                                    {/* --- Location Info --- */}
+                                    <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 1 }}>
+                                        <Grid item xs={12} md={6}>
+                                            <Typography variant="overline" display="block" color="text.secondary" sx={{ lineHeight: 1.2, mb: 0.5 }}>Origin</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                {formData.shipFrom?.company || formData.shipFrom?.name || 'N/A'}<br />
+                                                {formData.shipFrom?.street || 'N/A'}
+                                                {formData.shipFrom?.street2 && <><br />{formData.shipFrom.street2}</>}<br />
+                                                {formData.shipFrom?.city || 'N/A'}, {formData.shipFrom?.state || 'N/A'} {formData.shipFrom?.postalCode || ''}
                                             </Typography>
                                         </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Destination:</Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {formData.shipTo?.city}, {formData.shipTo?.state} {formData.shipTo?.postalCode}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Packages:</Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {totalPackages} Total Piece(s)
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Ship Date:</Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {formData.shipmentInfo?.shipmentDate || 'N/A'}
+                                        <Grid item xs={12} md={6}>
+                                            <Typography variant="overline" display="block" color="text.secondary" sx={{ lineHeight: 1.2, mb: 0.5 }}>Destination</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                {formData.shipTo?.company || formData.shipTo?.name || 'N/A'}<br />
+                                                {formData.shipTo?.street || 'N/A'}
+                                                {formData.shipTo?.street2 && <><br />{formData.shipTo.street2}</>}<br />
+                                                {formData.shipTo?.city || 'N/A'}, {formData.shipTo?.state || 'N/A'} {formData.shipTo?.postalCode || ''}
                                             </Typography>
                                         </Grid>
                                     </Grid>
+                                    <Divider sx={{ my: 1.5 }} />
+                                    {/* --- Shipment Info --- */}
+                                    <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 1 }}>
+                                        <Grid item xs={6} sm={3}>
+                                            <Typography variant="caption" display="block" color="text.secondary">Ship Date</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                {formData.shipmentInfo?.shipmentDate || 'N/A'}
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item xs={6} sm={3}>
+                                            <Typography variant="caption" display="block" color="text.secondary">Type</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                {formData.shipmentInfo?.shipmentType?.toUpperCase() || 'N/A'}
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="caption" display="block" color="text.secondary">Reference</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {formData.shipmentInfo?.shipperReferenceNumber || '-'}
+                                            </Typography>
+                                        </Grid>
+                                    </Grid>
+                                    <Divider sx={{ my: 1.5 }} />
+                                    {/* --- Package Summary --- */}
+                                    <Typography variant="overline" display="block" color="text.secondary" sx={{ lineHeight: 1.2, mb: 1 }}>Packages</Typography>
+                                    {formData.packages?.map((pkg, index) => (
+                                        <Box key={pkg.id || index} sx={{ mb: index < formData.packages.length - 1 ? 1.5 : 0 }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                                {pkg.packagingQuantity || 1} x {pkg.itemDescription || `Package ${index + 1}`}
+                                            </Typography>
+                                            <Grid container spacing={{ xs: 1, sm: 2 }}>
+                                                <Grid item xs={6} sm={4}>
+                                                    <Typography variant="caption" display="block" color="text.secondary">Dimensions (LxWxH)</Typography>
+                                                    <Typography variant="body2">
+                                                        {`${pkg.length || '?'}" x ${pkg.width || '?'}" x ${pkg.height || '?'}"`}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} sm={3}>
+                                                    <Typography variant="caption" display="block" color="text.secondary">Weight</Typography>
+                                                    <Typography variant="body2">{`${pkg.weight || '?'} lbs`}</Typography>
+                                                </Grid>
+                                                <Grid item xs={6} sm={3}>
+                                                    <Typography variant="caption" display="block" color="text.secondary">Freight Class</Typography>
+                                                    <Typography variant="body2">{pkg.freightClass || 'N/A'}</Typography>
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    ))}
+                                    {/* Display total weight/pieces if needed, but individual breakdown is often more useful */}
+                                    {/*
+                                     <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mt: 1 }}>
+                                         <Grid item xs={6} sm={3}>
+                                            <Typography variant="caption" display="block" color="text.secondary">Pieces</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{totalPackages}</Typography>
+                                        </Grid>
+                                        <Grid item xs={6} sm={3}>
+                                            <Typography variant="caption" display="block" color="text.secondary">Total Weight</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{totalWeight}</Typography>
+                                        </Grid>
+                                    </Grid>
+                                    */}
                                 </CardContent>
                             </Card>
 
-                            {/* Existing Loading Animation */}
+                            {/* Loading Animation */}
                             <img
                                 src="/animations/truck.gif"
                                 alt="Loading rates"
-                                style={{ width: '250px', height: '250px', margin: '0 auto' }} // Slightly smaller
+                                style={{ width: '200px', height: '200px', margin: '10px auto 0 auto' }} // Smaller size
                             />
-                            <Typography sx={{ marginTop: '10px', color: 'text.secondary' }}>
+                            <Typography sx={{ marginTop: '5px', color: 'text.secondary' }}>
                                 <CircularProgress size={16} sx={{ mr: 1, verticalAlign: 'middle' }} />
                                 Searching All Carrier Rates{loadingDots}
                             </Typography>
@@ -965,7 +1036,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                                                 </div>
 
                                                 <div className="mb-3">
-                                                    <div className="text-muted small">Est. Delivery: {rate.deliveryDate}</div>
+                                                    <div className="text-muted small">Est. Delivery: {rate.estimatedDeliveryDate}</div>
                                                 </div>
 
                                                 <div className="total-charges">
