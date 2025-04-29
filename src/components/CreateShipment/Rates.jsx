@@ -676,6 +676,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         } else {
             setSelectedRate(rate);
             updateFormSection('selectedRate', rate);
+            onNext();
         }
     };
 
