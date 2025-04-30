@@ -37,8 +37,8 @@ exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.getCompany = functions.https.onCall({ /* ... */ }, getCompany);
 exports.getCompanyShipmentOrigins = functions.https.onCall({ /* ... */ }, (data, context) => { /* ... */ });
 exports.getCompanyCustomers = functions.https.onCall({ 
-  minInstances: 0,
-  timeoutSeconds: 60,
+    minInstances: 0,
+    timeoutSeconds: 60,
   memory: '256MiB'
 }, (data, context) => {
   // Safely log only primitive data without circular references

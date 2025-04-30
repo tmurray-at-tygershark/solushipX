@@ -431,4 +431,4 @@ const Packages = ({ onNext, onPrevious }) => {
     );
 };
 
-export default Packages; 
+export default Packages;
