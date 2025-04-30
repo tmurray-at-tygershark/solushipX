@@ -38,8 +38,34 @@ const ShipTo = ({ onNext, onPrevious }) => {
     const [companyId, setCompanyId] = useState(null);
 
     const functions = getFunctions();
-    const getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
-    const getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
+    let getCompanyCustomersFunction;
+    let getDestinationsFunction;
+
+    // Try to set up the getCompanyCustomers function with fallbacks
+    try {
+        // First check if the function exists with standard name
+        getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
+        console.log('Standard customers function name appears to be valid');
+    } catch (fnErr) {
+        console.error('Error getting standard customers function reference:', fnErr);
+        try {
+            // Try alternate name (lowercase)
+            getCompanyCustomersFunction = httpsCallable(functions, 'getcompanycustomers');
+            console.log('Lowercase customers function name appears to be valid');
+        } catch (fnErr2) {
+            console.error('Error getting lowercase customers function reference:', fnErr2);
+            // Fall back to the original function name even if it failed
+            getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
+        }
+    }
+
+    // Set up destinations function
+    try {
+        getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
+    } catch (fnErr) {
+        console.error('Error getting destinations function reference:', fnErr);
+        getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
+    }
 
     useEffect(() => {
         if (formData.shipTo?.selectedCustomer) {
@@ -93,24 +119,87 @@ const ShipTo = ({ onNext, onPrevious }) => {
         if (!id) return;
         try {
             setError(null);
-            const customersResult = await getCompanyCustomersFunction({
+            console.log("Fetching customers for company ID:", id);
+
+            // Log the function reference before calling
+            console.log("Function reference check:", {
+                functionName: "getCompanyCustomers",
+                functionExists: !!getCompanyCustomersFunction,
+                functionType: typeof getCompanyCustomersFunction
+            });
+
+            // Log the parameters we're sending
+            const params = {
                 companyId: id,
                 includeAllCompanies: false
+            };
+            console.log("Sending parameters to getCompanyCustomers:", params);
+
+            const customersResult = await getCompanyCustomersFunction(params);
+
+            // Log detailed response information
+            console.log("RAW CUSTOMERS RESPONSE:", {
+                resultType: typeof customersResult,
+                hasData: customersResult !== null,
+                dataType: customersResult ? typeof customersResult.data : 'N/A',
+                fullResponse: JSON.stringify(customersResult),
+                responseKeys: customersResult ? Object.keys(customersResult) : []
             });
-            if (!customersResult.data.success) {
-                throw new Error(customersResult.data.error || 'Failed to fetch customers');
+
+            console.log("Raw customersResult:", JSON.stringify(customersResult));
+
+            // Handle various possible response structures
+            let customersData = [];
+
+            if (customersResult.data && customersResult.data.success && customersResult.data.data && customersResult.data.data.customers) {
+                // New structure: { data: { success: true, data: { customers: [...] } } }
+                console.log("Using new response structure with success property");
+                customersData = customersResult.data.data.customers || [];
+            } else if (customersResult.data && customersResult.data.customers) {
+                // Alternative structure: { data: { customers: [...] } }
+                console.log("Using alternative response structure with direct customers property");
+                customersData = customersResult.data.customers || [];
+            } else if (customersResult.success && customersResult.data && customersResult.data.customers) {
+                // Old structure: { success: true, data: { customers: [...] } }
+                console.log("Using old response structure");
+                customersData = customersResult.data.customers || [];
+            } else {
+                console.warn("Using empty customer array - no customer data found in response:", customersResult);
+
+                // If customersResult.data is null, this could be a backend error
+                if (customersResult.data === null) {
+                    console.error('Null data received from Cloud Function - check logs for errors');
+                }
+
+                customersData = [];
             }
-            const customersData = customersResult.data.data.customers || [];
+
+            console.log('Raw customersData received:', customersData);
+
+            if (Array.isArray(customersData) && customersData.length === 0) {
+                console.log('No customers found for this company ID. You may need to add customers first.');
+            }
+
             const sortedCustomers = [...customersData].sort((a, b) =>
                 (a.name || '').localeCompare(b.name || '')
             );
+            console.log('Sorted customers before setting state:', sortedCustomers);
+
             setCustomers(sortedCustomers);
             setCurrentPage(1);
         } catch (err) {
-            console.error('Error fetching customers:', err);
+            console.error('Error fetching customers - Exception details:', {
+                message: err.message,
+                name: err.name,
+                stack: err.stack,
+                code: err.code,
+                fullError: err
+            });
             setError('Failed to load customers. Please try again.');
+            // Set empty customers array rather than leaving in loading state
+            setCustomers([]);
         }
-    }, []);
+    }, [getCompanyCustomersFunction]);
 
     const loadAndProcessAddresses = useCallback(async (customer) => {
         if (!customer || !customer.customerId) {
@@ -230,42 +319,37 @@ const ShipTo = ({ onNext, onPrevious }) => {
     useEffect(() => {
         const customerFromContext = formData.shipTo?.selectedCustomer;
         const addressIdFromContext = formData.shipTo?.selectedAddressId;
+        console.log("Context Sync Effect: Checking context...");
 
-        console.log("Context Sync Effect Triggered:", { customerId: customerFromContext?.customerId, addressIdFromContext });
+        if (selectedCustomer?.customerId !== customerFromContext?.customerId) {
+            console.log(`Context Sync Effect: Updating local customer from ${selectedCustomer?.customerId} to ${customerFromContext?.customerId}`);
+            setSelectedCustomer(customerFromContext || null);
+        }
 
-        let needsAddressLoad = false;
+        if (selectedAddressId !== addressIdFromContext) {
+            console.log(`Context Sync Effect: Updating local address ID from ${selectedAddressId} to ${addressIdFromContext}`);
+            setSelectedAddressId(addressIdFromContext || null);
+        }
+    }, [formData.shipTo?.selectedCustomer, formData.shipTo?.selectedAddressId]);
 
-        if (customerFromContext) {
-            if (selectedCustomer?.customerId !== customerFromContext.customerId) {
-                console.log("Syncing local customer state from context", customerFromContext.customerId);
-                setSelectedCustomer(customerFromContext);
-                needsAddressLoad = true;
+    useEffect(() => {
+        if (selectedCustomer && selectedCustomer.customerId) {
+            const addressesLoadedForThisCustomer = customerAddresses.length > 0 &&
+                customerAddresses[0]?.customerId === selectedCustomer.customerId;
+
+            if (!addressesLoadedForThisCustomer) {
+                console.log(`Load Address Effect: Triggering address load for customer ${selectedCustomer.customerId}`);
+                loadAndProcessAddresses(selectedCustomer);
+            } else {
+                console.log(`Load Address Effect: Addresses seem already loaded for customer ${selectedCustomer.customerId}`);
             }
-
-            if (selectedAddressId !== addressIdFromContext) {
-                console.log("Syncing local address ID state from context", addressIdFromContext);
-                setSelectedAddressId(addressIdFromContext);
-                if (customerAddresses.length === 0 || customerAddresses[0]?.customerId !== customerFromContext.customerId) {
-                    needsAddressLoad = true;
-                }
-            }
-
-            if (!needsAddressLoad && (customerAddresses.length === 0 || customerAddresses[0]?.customerId !== customerFromContext.customerId)) {
-                console.log("Addresses missing or mismatch customer, triggering load");
-                needsAddressLoad = true;
-            }
-
         } else {
-            if (selectedCustomer) setSelectedCustomer(null);
-            if (selectedAddressId) setSelectedAddressId(null);
-            if (customerAddresses.length > 0) setCustomerAddresses([]);
+            if (customerAddresses.length > 0) {
+                console.log("Load Address Effect: No selected customer, clearing addresses.");
+                setCustomerAddresses([]);
+            }
         }
-
-        if (needsAddressLoad && customerFromContext) {
-            console.log("Triggering address load from sync effect");
-            loadAndProcessAddresses(customerFromContext);
-        }
-    }, [formData.shipTo?.selectedCustomer, formData.shipTo?.selectedAddressId, loadAndProcessAddresses]);
+    }, [selectedCustomer, loadAndProcessAddresses]);
 
     const handleCustomerSelect = useCallback((customer) => {
         console.log("Customer selected interactively:", customer?.customerId);

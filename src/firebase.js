@@ -26,7 +26,6 @@ const db = getFirestore(app);
 const functions = getFunctions(app);
 
 // Define callable functions
-const getShippingRates = httpsCallable(functions, 'getShippingRates');
 const analyzeRatesWithAI = httpsCallable(functions, 'analyzeRatesWithAI');
 const getMapsApiKey = httpsCallable(functions, 'getMapsApiKey');
 
@@ -37,21 +36,21 @@ if (process.env.NODE_ENV === 'development') {
     connectFirestoreEmulator(db, 'localhost', 8080);
 }
 
-// Add error handling for functions
-const wrapCallable = (callable) => {
-    return async (...args) => {
+// Helper function to wrap callable functions (can be kept if used elsewhere)
+const wrapCallable = (func) => {
+    return async (data) => {
         try {
-            const result = await callable(...args);
-            return result.data;
+            const result = await func(data);
+            return result.data; // Assuming functions return { data: ... }
         } catch (error) {
-            console.error('Firebase function error:', error);
-            throw error;
+            console.error(`Error calling function ${func.name}:`, error);
+            throw error; // Re-throw for components to handle
         }
     };
 };
 
-// Export wrapped functions
-const wrappedGetShippingRates = wrapCallable(getShippingRates);
+// Define wrapped functions (Remove getShippingRates)
+// const wrappedGetShippingRates = wrapCallable(getShippingRates); // Removed
 const wrappedAnalyzeRatesWithAI = wrapCallable(analyzeRatesWithAI);
 const wrappedGetMapsApiKey = wrapCallable(getMapsApiKey);
 
@@ -59,7 +58,7 @@ export {
     auth,
     db,
     functions,
-    wrappedGetShippingRates,
+    // wrappedGetShippingRates, // Removed export
     wrappedAnalyzeRatesWithAI,
     wrappedGetMapsApiKey
 }; 

@@ -36,5 +36,21 @@ exports.getRatesEShipPlus = getRatesEShipPlus;
 // Export other Callable functions
 exports.getCompany = functions.https.onCall({ /* ... */ }, getCompany);
 exports.getCompanyShipmentOrigins = functions.https.onCall({ /* ... */ }, (data, context) => { /* ... */ });
-exports.getCompanyCustomers = functions.https.onCall({ /* ... */ }, (data, context) => { /* ... */ });
+exports.getCompanyCustomers = functions.https.onCall({ 
+  minInstances: 0,
+  timeoutSeconds: 60,
+  memory: '256MiB'
+}, (data, context) => {
+  // Safely log only primitive data without circular references
+  console.log("getCompanyCustomers called with companyId:", 
+    data?.companyId || (data?.data && data.data.companyId) || 'No ID provided');
+  
+  // Add a try-catch wrapper to ensure errors are properly logged
+  try {
+    return getCompanyCustomers(data, context);
+  } catch (error) {
+    console.error("getCompanyCustomers function error:", error.message);
+    throw error;
+  }
+});
 exports.getCompanyCustomerDestinations = functions.https.onCall({ /* ... */ }, (data, context) => { /* ... */ });

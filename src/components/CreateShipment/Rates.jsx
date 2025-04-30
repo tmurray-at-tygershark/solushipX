@@ -538,7 +538,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                         // Access EstimatedDeliveryDate - use exact case from sample, provide fallback
                         const rawDeliveryDate = rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate; // Check both cases
                         const formattedDeliveryDate = rawDeliveryDate ? rawDeliveryDate.split('T')[0] : 'N/A';
-                        console.log(`Rate ID ${rate.id}, Raw Date: ${rawDeliveryDate}, Formatted Date: ${formattedDeliveryDate}`); // Add log for debugging
+                        console.log(`Rate Quote ID ${rate.id}, Raw Date: ${rawDeliveryDate}, Formatted Date: ${formattedDeliveryDate}`); // Add log for debugging
 
                         // Create a standardized object for each rate
                         return {

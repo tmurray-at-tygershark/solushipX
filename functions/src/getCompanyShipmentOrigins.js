@@ -12,8 +12,8 @@ async function getCompanyShipmentOrigins(data, context) {
   console.log('Function called with auth:', context.auth ? 'Authenticated' : 'Not authenticated');
   
   try {
-    // Extract companyId from the request data
-    const companyId = data?.companyId || (data?.data && data.data.companyId);
+    // Simplify companyId extraction assuming direct data object from callable function
+    const companyId = data?.companyId;
     
     // Validate companyId
     if (!companyId) {
@@ -47,14 +47,17 @@ async function getCompanyShipmentOrigins(data, context) {
           ...addr,
           id: addr.id || `address_${index}` // Add the ID if missing
       }));
-      
-      return {
+
+      const response = {
         success: true,
         data: {
           companyId: companyData.companyID || companyId,
           shipFromAddresses: shipFromAddressesWithId
         }
       };
+      
+      console.log(`ORIGINS: Attempting to return success: ${shipFromAddressesWithId.length} addresses found`);
+      return response;
     }
     
     // If not found, try by document ID
@@ -75,7 +78,7 @@ async function getCompanyShipmentOrigins(data, context) {
           id: addr.id || `address_${index}` // Add the ID if missing
       }));
       
-      return {
+      const response = {
         success: true,
         data: {
           companyId: companyData.companyID || companyId,
@@ -83,6 +86,9 @@ async function getCompanyShipmentOrigins(data, context) {
           shipFromAddresses: shipFromAddressesWithId
         }
       };
+
+      console.log(`ORIGINS: Attempting to return success: ${shipFromAddressesWithId.length} addresses found by document ID`);
+      return response;
     }
     
     // Not found by any method

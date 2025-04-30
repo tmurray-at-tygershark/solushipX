@@ -93,62 +93,114 @@ const CreateShipmentContent = () => {
                 // --- 2. Fetch Basic Company Info (Optional - could get name from origins call too) ---
                 const functions = getFunctions();
                 const getCompanyFunction = httpsCallable(functions, 'getCompany');
-                const getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
+
+                // Log available function names and verify the function exists
+                console.log('DEBUGGING FUNCTIONS:', {
+                    functions: functions,
+                    regionUrl: functions.region ? functions.region.url : 'not available'
+                });
+
+                // Try multiple possible function names for origins
+                let getCompanyShipmentOriginsFunction;
+
+                try {
+                    // First check if the function exists with standard name
+                    getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
+                    console.log('Standard function name appears to be valid');
+                } catch (fnErr) {
+                    console.error('Error getting standard function reference:', fnErr);
+                    try {
+                        // Try alternate name (lowercase)
+                        getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getcompanyshipmentorigins');
+                        console.log('Lowercase function name appears to be valid');
+                    } catch (fnErr2) {
+                        console.error('Error getting lowercase function reference:', fnErr2);
+                        // Fall back to the original function name even if it failed
+                        getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
+                    }
+                }
 
                 // Fetch basic company data (e.g., for header display)
                 try {
                     const companyResult = await getCompanyFunction({ companyId });
-                    if (companyResult.data.success) {
-                        setCompanyData(companyResult.data.data);
-                        console.log('Basic company data retrieved successfully:', companyResult.data.data);
+                    console.log('Raw companyResult:', JSON.stringify(companyResult));
+
+                    let companyData = null;
+                    let shipFromAddresses = [];
+
+                    if (companyResult.data && companyResult.data.success && companyResult.data.data) {
+                        // New structure: { data: { success: true, data: {...} } }
+                        console.log("Using new response structure for company data");
+                        companyData = companyResult.data.data;
+
+                        // Extract shipFromAddresses directly from the company data
+                        shipFromAddresses = companyData.shipFromAddresses || [];
+                        console.log(`Found ${shipFromAddresses.length} ship from addresses directly in company data`);
+
+                    } else if (companyResult.data && companyResult.data.name) {
+                        // Alternative structure: { data: {...} }
+                        console.log("Using alternative response structure for company data");
+                        companyData = companyResult.data;
+                        shipFromAddresses = companyData.shipFromAddresses || [];
+                    } else if (companyResult.success && companyResult.data) {
+                        // Old structure: { success: true, data: {...} }
+                        console.log("Using old response structure for company data");
+                        companyData = companyResult.data;
+                        shipFromAddresses = companyData.shipFromAddresses || [];
                     } else {
-                        console.warn('Could not fetch basic company details:', companyResult.data.error);
+                        console.warn('Could not parse company details:', companyResult);
+                    }
+
+                    if (companyData) {
+                        setCompanyData(companyData);
+                        console.log('Basic company data retrieved successfully:', companyData);
+
+                        // Process the shipFromAddresses directly
+                        console.log('Ship From Addresses count:', shipFromAddresses.length);
+
+                        // --- 4. Determine Default Address & Prepare Context Update ---
+                        let finalShipFromData = {
+                            company: companyData.name || '',
+                            shipFromAddresses: shipFromAddresses,
+                            id: null,
+                            name: '', attention: '', street: '', street2: '', city: '',
+                            state: '', postalCode: '', country: 'US', contactName: '',
+                            contactPhone: '', contactEmail: '', specialInstructions: ''
+                        };
+
+                        if (shipFromAddresses.length > 0) {
+                            const defaultAddress = shipFromAddresses.find(addr => addr.isDefault);
+                            if (defaultAddress) {
+                                console.log("Default Ship From address found:", defaultAddress);
+                                finalShipFromData = {
+                                    ...finalShipFromData,
+                                    ...defaultAddress,
+                                    id: defaultAddress.id
+                                };
+                            } else {
+                                console.log("No default Ship From address found.");
+                                // Select first address if no default is marked
+                                finalShipFromData = {
+                                    ...finalShipFromData,
+                                    ...shipFromAddresses[0],
+                                    id: shipFromAddresses[0].id
+                                };
+                                console.log("Selected first address as default:", shipFromAddresses[0]);
+                            }
+                        } else {
+                            console.warn("NO ADDRESSES FOUND IN RESPONSE");
+                        }
+
+                        // --- 5. Update Context ONCE ---
+                        console.log("Updating context with final shipFrom data:", finalShipFromData);
+                        updateFormSection('shipFrom', finalShipFromData);
                     }
                 } catch (companyErr) {
                     console.warn('Error fetching basic company details:', companyErr);
+                    setError(`Failed to load company data: ${companyErr.message}`);
                 }
 
-                // --- 3. Fetch Ship From Addresses ---
-                console.log('Calling getCompanyShipmentOrigins function with companyId:', companyId);
-                const originsResult = await getCompanyShipmentOriginsFunction({ companyId });
-                if (!originsResult?.data) throw new Error('Invalid response structure from getCompanyShipmentOrigins');
-                if (!originsResult.data.success) throw new Error(originsResult.data.error?.message || 'Failed to fetch shipment origins');
-
-                const fetchedShipFromAddresses = originsResult.data.data?.shipFromAddresses || [];
-                console.log('Ship From Addresses fetched successfully:', fetchedShipFromAddresses);
-
-                // --- 4. Determine Default Address & Prepare Context Update ---
-                let finalShipFromData = {
-                    company: companyData?.name || originsResult.data.data?.companyName || '', // Use fetched name
-                    shipFromAddresses: fetchedShipFromAddresses,
-                    id: null, // Default to no selection
-                    // Reset other fields unless pre-filled
-                    name: '', attention: '', street: '', street2: '', city: '',
-                    state: '', postalCode: '', country: 'US', contactName: '',
-                    contactPhone: '', contactEmail: '', specialInstructions: ''
-                };
-
-                if (fetchedShipFromAddresses.length > 0) {
-                    const defaultAddress = fetchedShipFromAddresses.find(addr => addr.isDefault);
-                    if (defaultAddress) {
-                        console.log("Default Ship From address found:", defaultAddress);
-                        // Overwrite fields with default address details
-                        finalShipFromData = {
-                            ...finalShipFromData,
-                            ...defaultAddress, // Spread default address fields
-                            id: defaultAddress.id // Set selected ID
-                        };
-                    } else {
-                        console.log("No default Ship From address found.");
-                        // Optionally select the *first* address if no default?
-                        // finalShipFromData = { ...finalShipFromData, ...fetchedShipFromAddresses[0], id: fetchedShipFromAddresses[0].id }; 
-                    }
-                }
-
-                // --- 5. Update Context ONCE ---
-                console.log("Updating context with final shipFrom data:", finalShipFromData);
-                updateFormSection('shipFrom', finalShipFromData);
-
+                // SKIP separate origins fetch - we already have the data from getCompany!
             } catch (err) {
                 console.error('Error during initial data fetch:', err);
                 setError(err.message || 'Failed to load initial data');
