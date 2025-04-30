@@ -42,11 +42,17 @@ async function getCompanyShipmentOrigins(data, context) {
       
       const shipFromAddresses = companyData.shipFromAddresses || [];
       
+      // Ensure each address has an ID matching the frontend generation logic
+      const shipFromAddressesWithId = shipFromAddresses.map((addr, index) => ({
+          ...addr,
+          id: addr.id || `address_${index}` // Add the ID if missing
+      }));
+      
       return {
         success: true,
         data: {
           companyId: companyData.companyID || companyId,
-          shipFromAddresses
+          shipFromAddresses: shipFromAddressesWithId
         }
       };
     }
@@ -63,12 +69,18 @@ async function getCompanyShipmentOrigins(data, context) {
       
       const shipFromAddresses = companyData.shipFromAddresses || [];
       
+      // Ensure each address has an ID matching the frontend generation logic
+      const shipFromAddressesWithId = shipFromAddresses.map((addr, index) => ({
+          ...addr,
+          id: addr.id || `address_${index}` // Add the ID if missing
+      }));
+      
       return {
         success: true,
         data: {
           companyId: companyData.companyID || companyId,
           companyName: companyData.name || 'Unknown Company',
-          shipFromAddresses
+          shipFromAddresses: shipFromAddressesWithId
         }
       };
     }

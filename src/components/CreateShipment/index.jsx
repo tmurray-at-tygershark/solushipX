@@ -12,7 +12,6 @@ import ShipTo from './ShipTo';
 import Packages from './Packages';
 import Rates from './Rates';
 import Review from './Review';
-import ChatBot from './ChatBot';
 import './CreateShipment.css';
 
 // API key should be loaded from environment variables with a fallback
@@ -70,57 +69,97 @@ const CreateShipmentContent = () => {
     const hasLogged = useRef(false);
     const isNavigating = useRef(false);
 
-    // Fetch company data when component loads
+    // Fetch company data and initial Ship From addresses when component loads
     useEffect(() => {
-        const fetchCompanyData = async () => {
+        const fetchCompanyDataAndOrigins = async () => {
             if (!currentUser) {
                 console.log('User not logged in');
+                setIsLoading(false); // Stop loading if no user
                 return;
             }
 
+            setIsLoading(true);
+            setError(null);
+
             try {
-                setIsLoading(true);
-                setError(null);
-
-                // Get user's company ID
+                // --- 1. Get Company ID ---
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                if (!userDoc.exists()) {
-                    throw new Error('User data not found');
-                }
-
+                if (!userDoc.exists()) throw new Error('User data not found');
                 const userData = userDoc.data();
-                if (!userData.connectedCompanies?.companies || userData.connectedCompanies.companies.length === 0) {
-                    throw new Error('No company associated with this account');
-                }
-
-                const companyId = userData.connectedCompanies.companies[0];
+                const companyId = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+                if (!companyId) throw new Error('No company associated with this account');
                 console.log('Using company ID:', companyId);
 
-                // Call the getCompany function
+                // --- 2. Fetch Basic Company Info (Optional - could get name from origins call too) ---
                 const functions = getFunctions();
                 const getCompanyFunction = httpsCallable(functions, 'getCompany');
+                const getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
 
-                console.log('Calling getCompany function with companyId:', companyId);
-                const result = await getCompanyFunction({ companyId });
-
-                if (!result.data.success) {
-                    throw new Error(result.data.error || 'Failed to fetch company data');
+                // Fetch basic company data (e.g., for header display)
+                try {
+                    const companyResult = await getCompanyFunction({ companyId });
+                    if (companyResult.data.success) {
+                        setCompanyData(companyResult.data.data);
+                        console.log('Basic company data retrieved successfully:', companyResult.data.data);
+                    } else {
+                        console.warn('Could not fetch basic company details:', companyResult.data.error);
+                    }
+                } catch (companyErr) {
+                    console.warn('Error fetching basic company details:', companyErr);
                 }
 
-                const company = result.data.data;
-                console.log('Company data retrieved successfully:', company);
-                setCompanyData(company);
+                // --- 3. Fetch Ship From Addresses ---
+                console.log('Calling getCompanyShipmentOrigins function with companyId:', companyId);
+                const originsResult = await getCompanyShipmentOriginsFunction({ companyId });
+                if (!originsResult?.data) throw new Error('Invalid response structure from getCompanyShipmentOrigins');
+                if (!originsResult.data.success) throw new Error(originsResult.data.error?.message || 'Failed to fetch shipment origins');
+
+                const fetchedShipFromAddresses = originsResult.data.data?.shipFromAddresses || [];
+                console.log('Ship From Addresses fetched successfully:', fetchedShipFromAddresses);
+
+                // --- 4. Determine Default Address & Prepare Context Update ---
+                let finalShipFromData = {
+                    company: companyData?.name || originsResult.data.data?.companyName || '', // Use fetched name
+                    shipFromAddresses: fetchedShipFromAddresses,
+                    id: null, // Default to no selection
+                    // Reset other fields unless pre-filled
+                    name: '', attention: '', street: '', street2: '', city: '',
+                    state: '', postalCode: '', country: 'US', contactName: '',
+                    contactPhone: '', contactEmail: '', specialInstructions: ''
+                };
+
+                if (fetchedShipFromAddresses.length > 0) {
+                    const defaultAddress = fetchedShipFromAddresses.find(addr => addr.isDefault);
+                    if (defaultAddress) {
+                        console.log("Default Ship From address found:", defaultAddress);
+                        // Overwrite fields with default address details
+                        finalShipFromData = {
+                            ...finalShipFromData,
+                            ...defaultAddress, // Spread default address fields
+                            id: defaultAddress.id // Set selected ID
+                        };
+                    } else {
+                        console.log("No default Ship From address found.");
+                        // Optionally select the *first* address if no default?
+                        // finalShipFromData = { ...finalShipFromData, ...fetchedShipFromAddresses[0], id: fetchedShipFromAddresses[0].id }; 
+                    }
+                }
+
+                // --- 5. Update Context ONCE ---
+                console.log("Updating context with final shipFrom data:", finalShipFromData);
+                updateFormSection('shipFrom', finalShipFromData);
 
             } catch (err) {
-                console.error('Error fetching company data:', err);
-                setError(err.message || 'Failed to load company data');
+                console.error('Error during initial data fetch:', err);
+                setError(err.message || 'Failed to load initial data');
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchCompanyData();
-    }, [currentUser]);
+        fetchCompanyDataAndOrigins();
+        // Dependency array includes currentUser and the update function from context
+    }, [currentUser, updateFormSection]);
 
     // Only sync URL when it changes externally
     useEffect(() => {
@@ -309,7 +348,6 @@ const CreateShipmentContent = () => {
                     </div>
                 </div>
             </div>
-            <ChatBot onShipmentComplete={handleSubmit} />
         </div>
     );
 };

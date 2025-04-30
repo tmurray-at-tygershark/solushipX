@@ -10,12 +10,11 @@ import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button } from
 import { Add as AddIcon } from '@mui/icons-material';
 import './ShipFrom.css';
 
-const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
+const ShipFrom = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
     const { formData, updateFormSection } = useShipmentForm();
-    const [companyAddresses, setCompanyAddresses] = useState([]);
+    const shipFromAddresses = formData.shipFrom?.shipFromAddresses || [];
     const [selectedAddressId, setSelectedAddressId] = useState(formData.shipFrom?.id || null);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
     const [showAddAddressForm, setShowAddAddressForm] = useState(false);
@@ -36,175 +35,27 @@ const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
         contactEmail: '',
         isDefault: false
     });
-    const [isAddressesLoading, setIsAddressesLoading] = useState(true);
 
-    useEffect(() => {
-        if (formData.shipFrom?.id) {
-            setSelectedAddressId(formData.shipFrom.id);
-        }
-    }, [formData.shipFrom?.id]);
+    const handleAddressChange = useCallback((addressId) => {
+        const addressIdStr = addressId ? String(addressId) : null;
+        console.log(`ShipFrom: handleAddressChange called with ID: "${addressIdStr}"`);
+        if (!addressIdStr) return;
 
-    useEffect(() => {
-        const fetchCompanyData = async () => {
-            try {
-                console.log('Current user:', currentUser);
-                setError(null);
-                setIsAddressesLoading(true);
-
-                if (!currentUser) {
-                    setError('User not logged in. Please log in to continue.');
-                    setLoading(false);
-                    setIsAddressesLoading(false);
-                    return;
-                }
-
-                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                if (!userDoc.exists()) {
-                    console.log('User document not found');
-                    setError('User data not found. Please contact support.');
-                    setLoading(false);
-                    setIsAddressesLoading(false);
-                    return;
-                }
-
-                const userData = userDoc.data();
-                console.log('User data:', userData);
-
-                if (!userData.connectedCompanies?.companies || userData.connectedCompanies.companies.length === 0) {
-                    console.log('No connected companies found for user');
-                    setError('No company associated with this account. Please contact support.');
-                    setLoading(false);
-                    setIsAddressesLoading(false);
-                    return;
-                }
-
-                const companyId = userData.connectedCompanies.companies[0];
-                console.log('Using company ID:', companyId);
-
-                if (!companyId) {
-                    console.log('No company ID found in connectedCompanies');
-                    setError('No company associated with this account. Please contact support.');
-                    setLoading(false);
-                    setIsAddressesLoading(false);
-                    return;
-                }
-
-                try {
-                    const functions = getFunctions();
-                    const getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
-
-                    const requestData = { companyId: companyId };
-                    console.log('Making cloud function call with company ID:', companyId);
-
-                    let response;
-                    let retryCount = 0;
-                    const maxRetries = 3;
-
-                    while (retryCount < maxRetries) {
-                        try {
-                            console.log(`Attempt ${retryCount + 1}: Calling function with data:`, JSON.stringify(requestData));
-                            const timeoutPromise = new Promise((_, reject) =>
-                                setTimeout(() => reject(new Error('Function call timed out')), 30000)
-                            );
-                            response = await Promise.race([
-                                getCompanyShipmentOriginsFunction(requestData),
-                                timeoutPromise
-                            ]);
-                            console.log('Cloud function response received:', response);
-                            break;
-                        } catch (callError) {
-                            retryCount++;
-                            console.error(`Cloud function call attempt ${retryCount} failed:`, callError);
-                            if (retryCount >= maxRetries) throw callError;
-                            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
-                        }
-                    }
-
-                    if (!response.data.success) {
-                        throw new Error(response.data.error?.message || 'Failed to fetch company addresses');
-                    }
-
-                    const { shipFromAddresses } = response.data.data;
-                    console.log('Received shipFromAddresses:', shipFromAddresses);
-
-                    const processedAddresses = (shipFromAddresses || []).map((addr, index) => ({
-                        ...addr,
-                        id: addr.id || `address_${index}`
-                    }));
-                    setCompanyAddresses(processedAddresses);
-
-                    if (!formData.shipFrom?.id) {
-                        const defaultAddress = processedAddresses.find(addr => addr.isDefault);
-                        if (defaultAddress?.id) {
-                            const defaultAddressId = String(defaultAddress.id);
-                            if (processedAddresses.some(addr => String(addr.id) === defaultAddressId)) {
-                                setSelectedAddressId(defaultAddressId);
-                                updateFormSection('shipFrom', defaultAddress);
-                            } else {
-                                console.warn('Default address ID not found in loaded addresses');
-                            }
-                        }
-                    }
-
-                } catch (err) {
-                    console.error('Error fetching company data:', err);
-                    setError('Failed to load company data. Please try again or contact support.');
-                } finally {
-                    setLoading(false);
-                    setIsAddressesLoading(false);
-                }
-            } catch (err) {
-                console.error('Error fetching user/company data:', err);
-                setError('Failed to load company data. Please try again or contact support.');
-                setLoading(false);
-                setIsAddressesLoading(false);
-            }
-        };
-
-        if (currentUser) {
-            fetchCompanyData();
-        }
-    }, [currentUser]);
-
-    console.log('ShipFrom component received API key:', {
-        received: !!apiKey,
-        length: apiKey?.length || 0,
-        firstFive: apiKey ? apiKey.substring(0, 5) : 'undefined',
-        lastFive: apiKey ? apiKey.substring(apiKey.length - 5) : 'undefined',
-        type: typeof apiKey
-    });
-
-    console.log('Current selectedAddressId in component state:', {
-        selectedAddressId,
-        type: typeof selectedAddressId,
-        nullCheck: selectedAddressId === null,
-        length: selectedAddressId?.length || 0
-    });
-
-    const handleAddressChange = useCallback((addressId, addressIndex) => {
-        if ((!addressId || addressId === 'undefined') && addressIndex !== undefined) {
-            addressId = `address_${addressIndex}`;
-        }
-        if (!addressId) return;
-
-        const addressIdStr = String(addressId);
         setSelectedAddressId(addressIdStr);
 
-        let selectedAddress = companyAddresses.find(addr => addr.id && String(addr.id) === addressIdStr);
-        if (!selectedAddress && addressIdStr.startsWith('address_')) {
-            const index = parseInt(addressIdStr.replace('address_', ''));
-            if (!isNaN(index) && index < companyAddresses.length) {
-                selectedAddress = companyAddresses[index];
-            }
-        }
+        const selectedAddress = shipFromAddresses.find(addr => String(addr.id) === addressIdStr);
 
         if (selectedAddress) {
-            updateFormSection('shipFrom', selectedAddress);
-            console.log('Selected address found and context updated:', selectedAddress.name);
+            console.log('Selected address found in context list:', selectedAddress);
+            updateFormSection('shipFrom', {
+                ...selectedAddress,
+                id: addressIdStr,
+                shipFromAddresses: shipFromAddresses
+            });
         } else {
-            console.error('No matching address found for ID:', addressIdStr);
+            console.error('Selected address ID not found in shipFromAddresses from context:', addressIdStr);
         }
-    }, [companyAddresses, updateFormSection]);
+    }, [shipFromAddresses, updateFormSection]);
 
     const handleInputChange = useCallback((e) => {
         const { name, value } = e.target;
@@ -220,13 +71,13 @@ const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
     }, []);
 
     const checkDuplicateAddress = useCallback((address) => {
-        return companyAddresses.some(addr =>
+        return shipFromAddresses.some(addr =>
             addr.street.toLowerCase() === address.street.toLowerCase() &&
             addr.city.toLowerCase() === address.city.toLowerCase() &&
             addr.state === address.state &&
             addr.postalCode === address.postalCode
         );
-    }, [companyAddresses]);
+    }, [shipFromAddresses]);
 
     const nextLocalStep = () => {
         setCurrentStep(prev => Math.min(prev + 1, 3));
@@ -267,122 +118,57 @@ const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
 
             const requiredFields = ['name', 'company', 'street', 'city', 'state', 'postalCode', 'contactName', 'contactPhone', 'contactEmail'];
             const missingFields = requiredFields.filter(field => !newAddress[field]);
-            if (missingFields.length > 0) {
-                throw new Error(`Please fill in all required fields: ${missingFields.join(', ')}`);
-            }
-            if (checkDuplicateAddress(newAddress)) {
-                throw new Error('This address already exists in your address book');
-            }
+            if (missingFields.length > 0) throw new Error(`Please fill required fields: ${missingFields.join(', ')}`);
+            if (checkDuplicateAddress(newAddress)) throw new Error('Address already exists');
 
             const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-            if (!userDoc.exists()) {
-                throw new Error('User data not found.');
-            }
+            if (!userDoc.exists()) throw new Error('User data not found.');
             const userData = userDoc.data();
-            const companyId = userData.connectedCompanies?.companies?.[0];
-            if (!companyId) {
-                throw new Error('No company ID found.');
-            }
+            const companyIdForUpdate = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+            if (!companyIdForUpdate) throw new Error('No company ID found.');
 
             const addressId = uuidv4();
-            const addressToAdd = {
-                ...newAddress,
-                id: addressId,
-                createdAt: new Date().toISOString()
-            };
+            const addressToAdd = { ...newAddress, id: addressId, createdAt: new Date().toISOString() };
 
-            let updatedAddresses = [...companyAddresses];
-            if (addressToAdd.isDefault || companyAddresses.length === 0) {
-                updatedAddresses = updatedAddresses.map(addr => ({ ...addr, isDefault: false }));
-                updatedAddresses.push({ ...addressToAdd, isDefault: true });
+            let updatedAddressesForFirestore = [...shipFromAddresses];
+            if (addressToAdd.isDefault || updatedAddressesForFirestore.length === 0) {
+                updatedAddressesForFirestore = updatedAddressesForFirestore.map(addr => ({ ...addr, isDefault: false }));
+                updatedAddressesForFirestore.push({ ...addressToAdd, isDefault: true });
             } else {
-                updatedAddresses.push(addressToAdd);
+                updatedAddressesForFirestore.push(addressToAdd);
             }
 
-            await updateDoc(doc(db, 'companies', companyId), {
-                shipFromAddresses: updatedAddresses
+            await updateDoc(doc(db, 'companies', companyIdForUpdate), {
+                shipFromAddresses: updatedAddressesForFirestore
             });
 
-            setCompanyAddresses(updatedAddresses);
+            updateFormSection('shipFrom', {
+                ...addressToAdd,
+                id: addressId,
+                shipFromAddresses: updatedAddressesForFirestore
+            });
             setSelectedAddressId(addressId);
-            updateFormSection('shipFrom', addressToAdd);
-
             setShowAddAddressForm(false);
             resetLocalForm();
             setSuccess('Address added successfully');
             setTimeout(() => setSuccess(null), 3000);
+
         } catch (err) {
             console.error('Error adding address:', err);
             setError(err.message || 'Failed to add address. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
-    }, [newAddress, companyAddresses, currentUser, checkDuplicateAddress, updateFormSection]);
+    }, [newAddress, shipFromAddresses, currentUser, checkDuplicateAddress, updateFormSection]);
 
     const handleSubmit = useCallback(() => {
         if (!selectedAddressId) {
-            setError('Please select or add a shipping address');
+            setError('Please select or add a shipping origin address');
             return;
         }
+        setError(null);
         onNext();
     }, [selectedAddressId, onNext]);
-
-    if (loading) {
-        return (
-            <div className="ship-from-skeleton">
-                <div className="card shadow-sm mb-4">
-                    <div className="card-body">
-                        <Skeleton variant="text" width="40%" height={40} style={{ marginBottom: '24px' }} />
-
-                        <div className="d-flex justify-content-between align-items-center mb-3">
-                            <Skeleton variant="text" width="30%" height={30} />
-                            <Skeleton variant="rectangular" width={150} height={36} />
-                        </div>
-
-                        <div className="address-list-skeleton">
-                            {isAddressesLoading && (
-                                <div className="address-list-skeleton">
-                                    {[1, 2, 3].map((key) => (
-                                        <div key={key} className="mb-2">
-                                            <Card sx={{ width: '100%', p: 2 }}>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={12} sm={3}>
-                                                        <Skeleton variant="text" width="70%" height={28} />
-                                                        <Skeleton variant="text" width="50%" />
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={4}>
-                                                        <Skeleton variant="text" width="90%" />
-                                                        <Skeleton variant="text" width="60%" />
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={3}>
-                                                        <Skeleton variant="text" width="80%" />
-                                                        <Skeleton variant="text" width="70%" />
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={2} sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
-                                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ ml: { xs: 0, sm: 'auto' } }} />
-                                                    </Grid>
-                                                </Grid>
-                                            </Card>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="mt-4">
-                            <Skeleton variant="text" width="30%" height={24} style={{ marginBottom: '8px' }} />
-                            <Skeleton variant="rectangular" width="100%" height={100} />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="navigation-buttons d-flex justify-content-between mt-4">
-                    <Skeleton variant="rectangular" width={120} height={40} />
-                    <Skeleton variant="rectangular" width={120} height={40} />
-                </div>
-            </div>
-        );
-    }
 
     const currentShipFromData = formData.shipFrom || {};
 
@@ -404,7 +190,6 @@ const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
             <div className="card shadow-sm mb-4">
                 <div className="card-body">
                     <h5 className="card-title mb-4">Select Shipping Origin</h5>
-
                     <div className="address-selection mb-4">
                         <div className="d-flex justify-content-between align-items-center mb-3">
                             <label className="form-label mb-0">Saved Addresses</label>
@@ -663,161 +448,125 @@ const ShipFrom = ({ onNext, onPrevious, apiKey }) => {
                             </div>
                         ) : (
                             <div className="address-list">
-                                {isAddressesLoading && (
-                                    <div className="address-list-skeleton">
-                                        {[1, 2, 3].map((key) => (
-                                            <div key={key} className="mb-2">
-                                                <Card sx={{ width: '100%', p: 2 }}>
-                                                    <Grid container spacing={2}>
-                                                        <Grid item xs={12} sm={3}>
-                                                            <Skeleton variant="text" width="70%" height={28} />
-                                                            <Skeleton variant="text" width="50%" />
+                                {shipFromAddresses.length > 0 ? (
+                                    shipFromAddresses.map((address, index) => {
+                                        const addressId = address.id || `address_${index}`;
+                                        const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
+                                        console.log(`Address ${address.name} (${addressId}): isSelected=${isSelected}, localSelectedId=${selectedAddressId}`);
+                                        return (
+                                            <div key={addressId} className="mb-2">
+                                                <Card
+                                                    sx={{
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.3s ease',
+                                                        borderRadius: '8px',
+                                                        width: '100%',
+                                                        mb: 2,
+                                                        ...(isSelected
+                                                            ? {
+                                                                borderColor: '#6b46c1 !important',
+                                                                border: '3px solid #6b46c1 !important',
+                                                                borderLeft: '8px solid #6b46c1 !important',
+                                                                bgcolor: 'rgba(107, 70, 193, 0.12) !important',
+                                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                                transform: 'scale(1.02) !important',
+                                                                position: 'relative',
+                                                                '&:hover': {
+                                                                    boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                                    borderColor: '#6b46c1 !important',
+                                                                    borderLeft: '8px solid #6b46c1 !important',
+                                                                },
+                                                                '&::after': {
+                                                                    content: '""',
+                                                                    position: 'absolute',
+                                                                    top: '15px',
+                                                                    right: '15px',
+                                                                    width: '20px',
+                                                                    height: '20px',
+                                                                    borderRadius: '50%',
+                                                                    backgroundColor: '#6b46c1',
+                                                                    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
+                                                                    backgroundSize: '14px 14px',
+                                                                    backgroundPosition: 'center',
+                                                                    backgroundRepeat: 'no-repeat',
+                                                                }
+                                                            }
+                                                            : {
+                                                                borderColor: 'rgba(0, 0, 0, 0.12) !important',
+                                                                border: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                                borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                                bgcolor: 'transparent !important',
+                                                                background: 'none !important',
+                                                                boxShadow: 'none !important',
+                                                                transform: 'none !important',
+                                                                '&:hover': {
+                                                                    boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+                                                                    transform: 'translateY(-4px)',
+                                                                    borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
+                                                                }
+                                                            })
+                                                    }}
+                                                    onClick={() => handleAddressChange(addressId)}
+                                                    data-selected={isSelected ? "true" : "false"}
+                                                    data-address-id={addressId}
+                                                >
+                                                    <CardContent sx={{ p: 2 }}>
+                                                        <Grid container alignItems="center" spacing={2}>
+                                                            <Grid item xs={12} sm={4}>
+                                                                <Box display="flex" alignItems="center">
+                                                                    <Typography variant="subtitle1" fontWeight="500" sx={{ mr: 1 }}>
+                                                                        {address.name}
+                                                                    </Typography>
+                                                                    {address.isDefault && (
+                                                                        <Chip
+                                                                            size="small"
+                                                                            label="Default"
+                                                                            color="primary"
+                                                                            sx={{ height: 22 }}
+                                                                        />
+                                                                    )}
+                                                                </Box>
+                                                                <Typography variant="body2" color="text.secondary">
+                                                                    {address.company}
+                                                                </Typography>
+                                                            </Grid>
+                                                            <Grid item xs={12} sm={4}>
+                                                                <Typography variant="body2">
+                                                                    {address.street}
+                                                                    {address.street2 && <>, {address.street2}</>}
+                                                                </Typography>
+                                                                <Typography variant="body2">
+                                                                    {address.city}, {address.state} {address.postalCode}
+                                                                </Typography>
+                                                            </Grid>
+                                                            <Grid item xs={12} sm={4}>
+                                                                <Typography variant="body2">
+                                                                    <Box component="span" fontWeight="500">Contact:</Box> {address.contactName}
+                                                                </Typography>
+                                                                <Typography variant="body2">
+                                                                    <Box component="span" fontWeight="500">Phone:</Box> {address.contactPhone}
+                                                                </Typography>
+                                                            </Grid>
                                                         </Grid>
-                                                        <Grid item xs={12} sm={4}>
-                                                            <Skeleton variant="text" width="90%" />
-                                                            <Skeleton variant="text" width="60%" />
-                                                        </Grid>
-                                                        <Grid item xs={12} sm={3}>
-                                                            <Skeleton variant="text" width="80%" />
-                                                            <Skeleton variant="text" width="70%" />
-                                                        </Grid>
-                                                        <Grid item xs={12} sm={2} sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
-                                                            <Skeleton variant="rectangular" width={80} height={32} sx={{ ml: { xs: 0, sm: 'auto' } }} />
-                                                        </Grid>
-                                                    </Grid>
+                                                    </CardContent>
                                                 </Card>
                                             </div>
-                                        ))}
+                                        );
+                                    })
+                                ) : (
+                                    <div className="text-center py-4">
+                                        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                                            No saved origin addresses found.
+                                        </Typography>
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            startIcon={<AddIcon />}
+                                            onClick={() => setShowAddAddressForm(true)}
+                                        >
+                                            Add Origin Address
+                                        </Button>
                                     </div>
-                                )}
-
-                                {!isAddressesLoading && (
-                                    <>
-                                        {companyAddresses.length > 0 ? (
-                                            <div className="address-list">
-                                                {companyAddresses.map((address, index) => {
-                                                    const addressId = address.id || `address_${index}`;
-                                                    const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
-
-                                                    console.log(`Address ${address.name} (${addressId}): isSelected=${isSelected}, selectedId=${selectedAddressId}`);
-
-                                                    return (
-                                                        <div key={addressId} className="mb-2">
-                                                            <Card
-                                                                sx={{
-                                                                    cursor: 'pointer',
-                                                                    transition: 'all 0.3s ease',
-                                                                    borderRadius: '8px',
-                                                                    width: '100%',
-                                                                    mb: 2,
-                                                                    ...(isSelected
-                                                                        ? {
-                                                                            borderColor: '#6b46c1 !important',
-                                                                            border: '3px solid #6b46c1 !important',
-                                                                            borderLeft: '8px solid #6b46c1 !important',
-                                                                            bgcolor: 'rgba(107, 70, 193, 0.12) !important',
-                                                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                                            transform: 'scale(1.02) !important',
-                                                                            position: 'relative',
-                                                                            '&:hover': {
-                                                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                                                borderColor: '#6b46c1 !important',
-                                                                                borderLeft: '8px solid #6b46c1 !important',
-                                                                            },
-                                                                            '&::after': {
-                                                                                content: '""',
-                                                                                position: 'absolute',
-                                                                                top: '15px',
-                                                                                right: '15px',
-                                                                                width: '20px',
-                                                                                height: '20px',
-                                                                                borderRadius: '50%',
-                                                                                backgroundColor: '#6b46c1',
-                                                                                backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
-                                                                                backgroundSize: '14px 14px',
-                                                                                backgroundPosition: 'center',
-                                                                                backgroundRepeat: 'no-repeat',
-                                                                            }
-                                                                        }
-                                                                        : {
-                                                                            borderColor: 'rgba(0, 0, 0, 0.12) !important',
-                                                                            border: '1px solid rgba(0, 0, 0, 0.12) !important',
-                                                                            borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
-                                                                            bgcolor: 'transparent !important',
-                                                                            background: 'none !important',
-                                                                            boxShadow: 'none !important',
-                                                                            transform: 'none !important',
-                                                                            '&:hover': {
-                                                                                boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
-                                                                                transform: 'translateY(-4px)',
-                                                                                borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
-                                                                            }
-                                                                        })
-                                                                }}
-                                                                onClick={() => handleAddressChange(addressId, index)}
-                                                                data-selected={isSelected ? "true" : "false"}
-                                                                data-address-id={addressId}
-                                                            >
-                                                                <CardContent sx={{ p: 2 }}>
-                                                                    <Grid container alignItems="center" spacing={2}>
-                                                                        <Grid item xs={12} sm={4}>
-                                                                            <Box display="flex" alignItems="center">
-                                                                                <Typography variant="subtitle1" fontWeight="500" sx={{ mr: 1 }}>
-                                                                                    {address.name}
-                                                                                </Typography>
-                                                                                {address.isDefault && (
-                                                                                    <Chip
-                                                                                        size="small"
-                                                                                        label="Default"
-                                                                                        color="primary"
-                                                                                        sx={{ height: 22 }}
-                                                                                    />
-                                                                                )}
-                                                                            </Box>
-                                                                            <Typography variant="body2" color="text.secondary">
-                                                                                {address.company}
-                                                                            </Typography>
-                                                                        </Grid>
-                                                                        <Grid item xs={12} sm={4}>
-                                                                            <Typography variant="body2">
-                                                                                {address.street}
-                                                                                {address.street2 && <>, {address.street2}</>}
-                                                                            </Typography>
-                                                                            <Typography variant="body2">
-                                                                                {address.city}, {address.state} {address.postalCode}
-                                                                            </Typography>
-                                                                        </Grid>
-                                                                        <Grid item xs={12} sm={4}>
-                                                                            <Typography variant="body2">
-                                                                                <Box component="span" fontWeight="500">Contact:</Box> {address.contactName}
-                                                                            </Typography>
-                                                                            <Typography variant="body2">
-                                                                                <Box component="span" fontWeight="500">Phone:</Box> {address.contactPhone}
-                                                                            </Typography>
-                                                                        </Grid>
-                                                                    </Grid>
-                                                                </CardContent>
-                                                            </Card>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center py-4">
-                                                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                                                    No saved addresses found
-                                                </Typography>
-                                                <Button
-                                                    variant="contained"
-                                                    color="primary"
-                                                    startIcon={<AddIcon />}
-                                                    onClick={() => setShowAddAddressForm(true)}
-                                                >
-                                                    Add Your First Address
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </>
                                 )}
                             </div>
                         )}

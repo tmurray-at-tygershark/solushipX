@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 
 // Initial empty state for the shipment form
 const initialFormState = {
@@ -16,7 +16,9 @@ const initialFormState = {
         contactName: '',
         contactPhone: '',
         contactEmail: '',
-        specialInstructions: ''
+        specialInstructions: '',
+        id: null,
+        shipFromAddresses: []
     },
     // ShipTo data
     shipTo: {
@@ -88,54 +90,46 @@ export const ShipmentFormProvider = ({ children }) => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
     }, [formData]);
 
-    // Update specific section of the form - handles objects and arrays
-    const updateFormSection = (section, data) => {
+    // Memoize update function with useCallback
+    const updateFormSection = useCallback((section, data) => {
         setFormData(prevData => {
             let updatedSectionData;
-            // Handle specific sections that are arrays or direct values
             if (section === 'packages') {
-                // Ensure data is an array before setting
                 updatedSectionData = Array.isArray(data) ? data : [];
             } else if (section === 'selectedRate') {
-                // Directly replace the value for selectedRate (can be object or null)
                 updatedSectionData = data;
             } else {
-                // Default: merge objects for sections like shipFrom, shipTo, shipmentInfo
                 updatedSectionData = {
-                    ...(prevData[section] || {}), // Ensure previous section exists
+                    ...(prevData[section] || {}),
                     ...data
                 };
             }
-
-            return {
-                ...prevData,
-                [section]: updatedSectionData
-            };
+            return { ...prevData, [section]: updatedSectionData };
         });
-    };
+    }, []); // No dependencies needed as it only uses setFormData
 
-    // Clear form data (for when shipment is complete or user wants to start over)
-    const clearFormData = () => {
+    // Memoize clear function with useCallback
+    const clearFormData = useCallback(() => {
         localStorage.removeItem(STORAGE_KEY);
         setFormData(initialFormState);
-    };
+    }, []); // Depends only on initialFormState (stable)
 
-    // Complete form submission
-    const completeShipment = () => {
-        // Here you could implement API calls to submit the shipment
-        // Then clear the form:
+    // Memoize complete function with useCallback
+    const completeShipment = useCallback(() => {
+        console.log("Shipment complete action called. Clearing form."); // Added log
         clearFormData();
-    };
+    }, [clearFormData]); // Depends on stable clearFormData
+
+    // Memoize the context value object with useMemo
+    const contextValue = useMemo(() => ({
+        formData,
+        updateFormSection,
+        clearFormData,
+        completeShipment
+    }), [formData, updateFormSection, clearFormData, completeShipment]); // Dependencies are the state and memoized functions
 
     return (
-        <ShipmentFormContext.Provider
-            value={{
-                formData,
-                updateFormSection,
-                clearFormData,
-                completeShipment
-            }}
-        >
+        <ShipmentFormContext.Provider value={contextValue}>
             {children}
         </ShipmentFormContext.Provider>
     );
