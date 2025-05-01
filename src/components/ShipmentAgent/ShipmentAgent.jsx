@@ -592,7 +592,7 @@ const ShipmentAgent = ({
                     // Format packages as items array
                     items: packages.map(pkg => ({
                         name: pkg.description || "Package",
-                        weight: parseFloat(pkg.weight) || 1,
+                        weight: parseFloat(pkg.weight) || 1, // Weight in pounds
                         length: parseInt(pkg.length) || 12,
                         width: parseInt(pkg.width) || 12,
                         height: parseInt(pkg.height) || 12,
@@ -748,8 +748,8 @@ const ShipmentAgent = ({
                     
                     STEP 4: PACKAGE INFORMATION
                     - Ask what is being shipped
-                    - Ask for quantity, dimensions (length, width, height)
-                    - Ask for weight
+                    - Ask for quantity, dimensions (length, width, height) in inches
+                    - Ask for weight in pounds (be explicit that you need the weight in pounds)
                     - Ask for value if relevant
                     - Ask if the items are stackable
                     - Ask for freight class if applicable
@@ -824,10 +824,10 @@ const ShipmentAgent = ({
                       },
                       "packages": [
                         {
-                          "weight": 5.0,
-                          "length": 12.0,
-                          "width": 8.0,
-                          "height": 6.0,
+                          "weight": 5.0, // In pounds (lbs)
+                          "length": 12.0, // In inches
+                          "width": 8.0, // In inches
+                          "height": 6.0, // In inches
                           "quantity": 1,
                           "description": "Package description",
                           "freightClass": "50", //default is 50
