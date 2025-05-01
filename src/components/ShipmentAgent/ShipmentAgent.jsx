@@ -728,14 +728,21 @@ const ShipmentAgent = ({
                     - Ask for a booking reference number (required for getRatesEShipPlus)
                     
                     STEP 2: ORIGIN ADDRESS
-                    - Ask for the company name for pickup
+                    - Ask if the user wants to see their saved shipping origins first with "Would you like to use one of your saved shipping origins, or enter a new pickup address? I can list your available shipping origins."
+                    - If they want to see origins, call listShippingOrigins and present them as numbered options
+                    - After showing options, ask them to select one by number or name
+                    - If they choose to enter a new address, ask for the company name for pickup
                     - Ask for the full address (street, city, state, zip, country)
                     - Ask for contact information (name, phone, email)
                     - Ask for any special pickup instructions
                     
                     STEP 3: DESTINATION ADDRESS
                     - Ask who is receiving the shipment
-                    - Ask for the full address (street, city, state, zip, country)
+                    - Ask if they want to select from their saved customer addresses
+                    - If yes, first call getCompanyCustomers and ask them to select a customer
+                    - Then call getCompanyCustomerDestinations to show available addresses for that customer
+                    - Present destination addresses as numbered options
+                    - If they prefer to enter a new address, ask for the full address (street, city, state, zip, country)
                     - Ask for contact information (name, phone, email)
                     - Ask for any special delivery instructions
                     
@@ -852,7 +859,14 @@ const ShipmentAgent = ({
                     -ask follow up questions one at a time
                     -if you need more information, ask a follow up question
                     -if you have all the information you need, move on to the next step
-
+                    
+                    RESPONSE FORMATTING:
+                    -Use line breaks between different data groups for better readability
+                    -Number options when presenting choices (e.g., "1. Headquarters, 2. Distribution Center")
+                    -Use bullet points for summaries and shipping options
+                    -Bold key information like prices, dates, and transit times
+                    -When comparing rates, include a brief recommendation based on price vs. speed tradeoff
+                    
                     FINISHING UP:
                     Ensure all fields are provided with appropriate values. The addresses must include street1, city, state, zip, 
                     country, company name, contact name, phone and email. Packages must include weight, length, width, height, and quantity. 
