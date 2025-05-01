@@ -543,9 +543,9 @@ const ShipmentAgent = ({
                     companyId: actualCompanyId,
 
                     // Shipment details
-                    bookingReferenceNumber: shipmentInfo?.bookingRef || "",
-                    bookingReferenceNumberType: shipmentInfo?.bookingReferenceNumberType || "customer",
-                    shipmentBillType: shipmentInfo?.billType || "prepaid",
+                    bookingReferenceNumber: shipmentInfo?.bookingRef || "123456",
+                    bookingReferenceNumberType: "Shipment",
+                    shipmentBillType: "DefaultLogisticsPlus",
                     shipmentDate: shipmentInfo?.shipmentDate
                         ? new Date(shipmentInfo.shipmentDate).toISOString()
                         : new Date().toISOString(),
@@ -607,9 +607,9 @@ const ShipmentAgent = ({
                         shipmentDate: shipmentInfo?.shipmentDate
                             ? new Date(shipmentInfo.shipmentDate).toISOString()
                             : new Date().toISOString(),
-                        billType: shipmentInfo?.billType || "prepaid",
-                        bookingRef: shipmentInfo?.bookingRef || "",
-                        bookingReferenceNumberType: shipmentInfo?.bookingReferenceNumberType || "customer",
+                        billType: shipmentInfo?.billType || "DefaultLogisticsPlus",
+                        bookingRef: shipmentInfo?.bookingRef || "123456",
+                        bookingReferenceNumberType: "Shipment",
                         earliestPickup: shipmentInfo?.earliestPickup || "09:00",
                         latestPickup: shipmentInfo?.latestPickup || "17:00",
                         earliestDelivery: shipmentInfo?.earliestDelivery || "09:00",
@@ -723,11 +723,9 @@ const ShipmentAgent = ({
                     Follow a structured approach to collecting shipment information:
                     
                     STEP 1: SHIPMENT INFO
-                    - Ask for shipment date (when the shipment will be picked up)
-                    - Ask for pickup window (earliest and latest pickup time)
-                    - Ask for delivery window (earliest and latest delivery time) if needed
-                    - Ask for booking reference number and type if needed
-                    - Ask how the shipment will be billed (Prepaid, Third Party, Collect)
+                    - Ask "When would you like to ship this?" instead of asking for a specific date format
+                    - Ask about pickup and deliverytimes in natural language, like "What time would work best for pickup?" This is optional.
+                    - Ask for a booking reference number (required for getRatesEShipPlus)
                     
                     STEP 2: ORIGIN ADDRESS
                     - Ask for the company name for pickup
@@ -789,7 +787,7 @@ const ShipmentAgent = ({
                     
                     IMPORTANT: Maintain a shipment context object as you collect information. Never call getRatesEShipPlus
                     until you have collected ALL required information for a proper rate request. The getRatesEShipPlus
-                    function requires:
+                    function requires this structure as an example:
                     
                     {
                       "companyId": "company-id-value",
@@ -825,24 +823,37 @@ const ShipmentAgent = ({
                           "height": 6.0,
                           "quantity": 1,
                           "description": "Package description",
-                          "freightClass": "50",
-                          "value": 100.0,
-                          "stackable": false
+                          "freightClass": "50", //default is 50
+                          "value": 100.0, //Optional
+                          "stackable": false //Optional
                         }
                       ],
                       "shipmentInfo": {
                         "shipmentDate": "2023-10-31T14:00:00Z",
-                        "billType": "prepaid", // or "collect" or "third_party"
-                        "bookingRef": "123456",
-                        "bookingReferenceNumberType": "customer",
-                        "earliestPickup": "09:00",
-                        "latestPickup": "17:00",
-                        "earliestDelivery": "09:00",
-                        "latestDelivery": "17:00",
-                        "specialInstructions": "Handle with care"
+                        "billType": "third_party", //Default is third party
+                        "bookingRef": "123456", //Default is 123456
+                        "bookingReferenceNumberType": "Shipment", //default is Shipment
+                        "earliestPickup": "09:00", //Optional
+                        "latestPickup": "17:00", //Optional
+                        "earliestDelivery": "09:00", //Optional
+                        "latestDelivery": "17:00", //Optional
+                        "specialInstructions": "Handle with care" //Optional
                       }
                     }
                     
+                    WHEN ASKING ABOUT DATES AND TIMES: 
+                    - Avoid asking for specific formats (like YYYY-MM-DD)
+                    - Use conversational language like "When would you like to ship this?" or "What time works for pickup?"
+                    - Accept and correctly interpret answers like "tomorrow", "next Tuesday", "morning", etc.
+                    - If the user's response is ambiguous, ask for clarification in a friendly way
+                    
+                    WHEN ASKING QUESTIONS:
+                    -only ask one question at a time, do not ask multiple questions at once like is it stackable and is it hazardous
+                    -ask follow up questions one at a time
+                    -if you need more information, ask a follow up question
+                    -if you have all the information you need, move on to the next step
+
+                    FINISHING UP:
                     Ensure all fields are provided with appropriate values. The addresses must include street1, city, state, zip, 
                     country, company name, contact name, phone and email. Packages must include weight, length, width, height, and quantity. 
                     ShipmentInfo must include shipmentDate, billType, bookingRef, and pickup/delivery windows with earliest and latest times.`
@@ -1350,14 +1361,10 @@ const ShipmentAgent = ({
                                 onChange={e => setInputValue(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 disabled={isLoading}
-                                placeholder="Type a message..."
+                                placeholder=""
                                 rows="1"
                             />
-                            {inputValue.length > 0 && (
-                                <div className="shortcuts-hint">
-                                    Enter to send, Shift+Enter for new line
-                                </div>
-                            )}
+
                         </div>
 
                         <button

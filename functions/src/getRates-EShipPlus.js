@@ -46,6 +46,17 @@ async function processRateRequest(data) {
 
     // Validate required fields in the rate request data
     const rateRequestData = data;
+    
+    // Always ensure bookingReferenceNumber and bookingReferenceNumberType are set properly
+    rateRequestData.bookingReferenceNumber = rateRequestData.bookingReferenceNumber || "123456";
+    rateRequestData.bookingReferenceNumberType = "Shipment"; // Always use "Shipment" as the type
+    
+    // If shipmentInfo exists, ensure its values are also set properly
+    if (rateRequestData.shipmentInfo) {
+      rateRequestData.shipmentInfo.bookingRef = rateRequestData.shipmentInfo.bookingRef || "123456";
+      rateRequestData.shipmentInfo.bookingReferenceNumberType = "Shipment";
+    }
+    
     const validationError = validateRateRequest(rateRequestData);
     if (validationError) {
       throw new Error(validationError);
@@ -269,8 +280,8 @@ function buildRateRequest(shipmentData) {
       <Rate xmlns="http://www.eshipplus.com/">
         <shipment>
       <BookingReferenceNumber>${shipmentData.bookingReferenceNumber}</BookingReferenceNumber>
-      <BookingReferenceNumberType>${shipmentData.bookingReferenceNumberType}</BookingReferenceNumberType>
-      <ShipmentBillType>${shipmentData.shipmentBillType}</ShipmentBillType>
+      <BookingReferenceNumberType>Shipment</BookingReferenceNumberType>
+      <ShipmentBillType>DefaultLogisticsPlus</ShipmentBillType>
       <ShipmentDate>${shipmentData.shipmentDate}</ShipmentDate>
           <EarliestPickup>
         <Time>${shipmentData.pickupWindow.earliest}</Time>
