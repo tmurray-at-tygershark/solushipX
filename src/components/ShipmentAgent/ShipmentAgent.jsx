@@ -514,7 +514,7 @@ const ShipmentAgent = ({
                 return { error: e.message };
             }
         },
-        getRatesEShipPlus: async ({ companyId, originAddress, destinationAddress, packages }) => {
+        getRatesEShipPlus: async ({ companyId, originAddress, destinationAddress, packages, shipmentInfo }) => {
             if (!companyId) return { error: 'Missing companyId' };
             if (!originAddress) return { error: 'Missing origin address' };
             if (!destinationAddress) return { error: 'Missing destination address' };
@@ -537,15 +537,93 @@ const ShipmentAgent = ({
 
                 console.log(`Using actualCompanyId: ${actualCompanyId} for rate request`);
 
+                // Format the request data to match what the cloud function expects
+                // Based on the format in CreateShipment/Rates.jsx
+                const rateRequestData = {
+                    companyId: actualCompanyId,
+
+                    // Shipment details
+                    bookingReferenceNumber: shipmentInfo?.bookingRef || "",
+                    bookingReferenceNumberType: shipmentInfo?.bookingReferenceNumberType || "customer",
+                    shipmentBillType: shipmentInfo?.billType || "prepaid",
+                    shipmentDate: shipmentInfo?.shipmentDate
+                        ? new Date(shipmentInfo.shipmentDate).toISOString()
+                        : new Date().toISOString(),
+
+                    // Pickup/delivery windows
+                    pickupWindow: {
+                        earliest: shipmentInfo?.earliestPickup || "09:00",
+                        latest: shipmentInfo?.latestPickup || "17:00"
+                    },
+                    deliveryWindow: {
+                        earliest: shipmentInfo?.earliestDelivery || "09:00",
+                        latest: shipmentInfo?.latestDelivery || "17:00"
+                    },
+
+                    // Format the addresses to match what the cloud function expects
+                    fromAddress: {
+                        company: originAddress.company || "",
+                        street: originAddress.street1 || originAddress.street || originAddress.addressLine1 || "",
+                        street2: originAddress.street2 || originAddress.addressLine2 || "",
+                        postalCode: originAddress.zip || originAddress.postalCode || "",
+                        city: originAddress.city || "",
+                        state: originAddress.state || "",
+                        country: originAddress.country || "US",
+                        contactName: originAddress.name || originAddress.contactName || "",
+                        contactPhone: originAddress.phone || originAddress.contactPhone || "",
+                        contactEmail: originAddress.email || originAddress.contactEmail || "",
+                        specialInstructions: originAddress.specialInstructions || "none"
+                    },
+
+                    toAddress: {
+                        company: destinationAddress.company || "",
+                        street: destinationAddress.street1 || destinationAddress.street || destinationAddress.addressLine1 || "",
+                        street2: destinationAddress.street2 || destinationAddress.addressLine2 || "",
+                        postalCode: destinationAddress.zip || destinationAddress.postalCode || "",
+                        city: destinationAddress.city || "",
+                        state: destinationAddress.state || "",
+                        country: destinationAddress.country || "US",
+                        contactName: destinationAddress.name || destinationAddress.contactName || "",
+                        contactPhone: destinationAddress.phone || destinationAddress.contactPhone || "",
+                        contactEmail: destinationAddress.email || destinationAddress.contactEmail || "",
+                        specialInstructions: destinationAddress.specialInstructions || "none"
+                    },
+
+                    // Format packages as items array
+                    items: packages.map(pkg => ({
+                        name: pkg.description || "Package",
+                        weight: parseFloat(pkg.weight) || 1,
+                        length: parseInt(pkg.length) || 12,
+                        width: parseInt(pkg.width) || 12,
+                        height: parseInt(pkg.height) || 12,
+                        quantity: parseInt(pkg.quantity) || 1,
+                        freightClass: String(pkg.freightClass || "50"),
+                        value: parseFloat(pkg.value || "0"),
+                        stackable: pkg.stackable || false
+                    })),
+
+                    // Add shipmentInfo to the request
+                    shipmentInfo: {
+                        shipmentDate: shipmentInfo?.shipmentDate
+                            ? new Date(shipmentInfo.shipmentDate).toISOString()
+                            : new Date().toISOString(),
+                        billType: shipmentInfo?.billType || "prepaid",
+                        bookingRef: shipmentInfo?.bookingRef || "",
+                        bookingReferenceNumberType: shipmentInfo?.bookingReferenceNumberType || "customer",
+                        earliestPickup: shipmentInfo?.earliestPickup || "09:00",
+                        latestPickup: shipmentInfo?.latestPickup || "17:00",
+                        earliestDelivery: shipmentInfo?.earliestDelivery || "09:00",
+                        latestDelivery: shipmentInfo?.latestDelivery || "17:00"
+                    }
+                };
+
+                console.log("Rate request data:", JSON.stringify(rateRequestData, null, 2));
+
                 const fn = httpsCallable(getFunctions(), 'getRatesEShipPlus');
-                const res = await fn({
-                    companyId: actualCompanyId, // Use the actual company ID, not the document ID
-                    originAddress,
-                    destinationAddress,
-                    packages
-                });
+                const res = await fn(rateRequestData);
                 return { result: res.data };
             } catch (e) {
+                console.error("Error getting rates:", e);
                 return { error: e.message };
             }
         },
@@ -609,6 +687,27 @@ const ShipmentAgent = ({
                 parts: [{
                     text: `You are a shipping assistant for a company with ID "${companyIdProp}". 
                     
+                    CURRENT DATE/TIME CONTEXT:
+                    - Current date: ${new Date().toISOString().split('T')[0]}
+                    - Current day of week: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]}
+                    - Current time: ${new Date().toTimeString().split(' ')[0]}
+                    
+                    When users mention relative dates or times, interpret them relative to the current date:
+                    - "Today" means ${new Date().toISOString().split('T')[0]}
+                    - "Tomorrow" means ${new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                    - "Next week" means starting ${new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]}
+                    - "Next month" means starting ${new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0]}
+                    
+                    If users specify time like "noon", "3pm", "morning", etc., interpret these as:
+                    - "Morning" = 09:00
+                    - "Noon" = 12:00
+                    - "Afternoon" = 14:00
+                    - "Evening" = 18:00
+                    - "9am" = 09:00
+                    - "3pm" = 15:00
+                    
+                    Always convert relative dates/times to the specific formats needed for the system.
+                    
                     Understand shipping terminology:
                     - "Origin" or "ship from" or "shipping address" all refer to where packages are being sent from
                     - "Destination" or "ship to" refers to where packages are being delivered to
@@ -659,9 +758,10 @@ const ShipmentAgent = ({
                     - Only call getRatesEShipPlus when ALL required information has been collected
                     - Required fields for getRatesEShipPlus:
                       * companyId
-                      * originAddress (with street1, city, state, zip, country)
-                      * destinationAddress (with street1, city, state, zip, country)
-                      * packages (with weight, length, width, height)
+                      * originAddress (with street1, city, state, zip, country, company, name, phone, email)
+                      * destinationAddress (with street1, city, state, zip, country, company, name, phone, email)
+                      * packages (with weight, length, width, height, quantity)
+                      * shipmentInfo (with shipmentDate, billType, bookingRef, pickupWindow and deliveryWindow times)
                     
                     STEP 7: RATE SELECTION
                     - Present the returned rates to the user
@@ -722,13 +822,30 @@ const ShipmentAgent = ({
                           "weight": 5.0,
                           "length": 12.0,
                           "width": 8.0,
-                          "height": 6.0
+                          "height": 6.0,
+                          "quantity": 1,
+                          "description": "Package description",
+                          "freightClass": "50",
+                          "value": 100.0,
+                          "stackable": false
                         }
-                      ]
+                      ],
+                      "shipmentInfo": {
+                        "shipmentDate": "2023-10-31T14:00:00Z",
+                        "billType": "prepaid", // or "collect" or "third_party"
+                        "bookingRef": "123456",
+                        "bookingReferenceNumberType": "customer",
+                        "earliestPickup": "09:00",
+                        "latestPickup": "17:00",
+                        "earliestDelivery": "09:00",
+                        "latestDelivery": "17:00",
+                        "specialInstructions": "Handle with care"
+                      }
                     }
                     
-                    Ensure street1, city, state, zip, and country are provided for both addresses, and that
-                    at least one package with weight, length, width, and height is included.`
+                    Ensure all fields are provided with appropriate values. The addresses must include street1, city, state, zip, 
+                    country, company name, contact name, phone and email. Packages must include weight, length, width, height, and quantity. 
+                    ShipmentInfo must include shipmentDate, billType, bookingRef, and pickup/delivery windows with earliest and latest times.`
                 }]
             },
             tools
@@ -859,6 +976,10 @@ const ShipmentAgent = ({
             }]);
         } finally {
             setIsLoading(false);
+            // Keep input field focused after sending a message
+            if (inputRef.current) {
+                inputRef.current.focus();
+            }
         }
     }, [companyIdProp, handleFunctionCall]);
 
@@ -921,6 +1042,7 @@ const ShipmentAgent = ({
             e.preventDefault();
             if (inputValue.trim() && !isLoading) {
                 sendMessage(inputValue);
+                // Focus will be restored in the sendMessage function
             }
         }
 
@@ -928,6 +1050,27 @@ const ShipmentAgent = ({
         if (inputRef.current) {
             inputRef.current.style.height = 'auto';
             inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`;
+        }
+    };
+
+    // Add an additional effect to keep focus on the input field whenever messages change
+    useEffect(() => {
+        // Use a slightly longer delay to ensure React has fully updated the DOM
+        const focusTimer = setTimeout(() => {
+            if (inputRef.current && !isLoading) {
+                inputRef.current.focus();
+            }
+        }, 100);
+
+        return () => clearTimeout(focusTimer);
+    }, [messages, isLoading]);
+
+    // Modified form submission to ensure focus is maintained
+    const handleFormSubmit = (e) => {
+        e.preventDefault();
+        if (inputValue.trim() && !isLoading) {
+            sendMessageWithErrorHandling(inputValue);
+            // Focus will be restored by the useEffect above
         }
     };
 
@@ -1061,6 +1204,10 @@ const ShipmentAgent = ({
             setFailedMessage(msg);
         } finally {
             setIsLoading(false);
+            // Keep input field focused after sending a message
+            if (inputRef.current) {
+                inputRef.current.focus();
+            }
         }
     }, [companyIdProp, handleFunctionCall]);
 
@@ -1183,12 +1330,7 @@ const ShipmentAgent = ({
                 {/* Always show input form at bottom */}
                 <form
                     className="shipment-agent-input"
-                    onSubmit={e => {
-                        e.preventDefault();
-                        if (inputValue.trim() && !isLoading) {
-                            sendMessageWithErrorHandling(inputValue);
-                        }
-                    }}
+                    onSubmit={handleFormSubmit}
                 >
                     {error && (
                         <div className="error-message">
@@ -1235,3 +1377,4 @@ const ShipmentAgent = ({
 };
 
 export default ShipmentAgent;
+
