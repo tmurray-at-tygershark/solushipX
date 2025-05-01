@@ -13,6 +13,8 @@ import Packages from './Packages';
 import Rates from './Rates';
 import Review from './Review';
 import './CreateShipment.css';
+import { Paper, Box, Typography, Button } from '@mui/material';
+import ShipmentAgent from '../ShipmentAgent/ShipmentAgent';
 
 // API key should be loaded from environment variables with a fallback
 // Ensure the API key is properly formatted and has no whitespace
@@ -66,6 +68,7 @@ const CreateShipmentContent = () => {
     const [companyData, setCompanyData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [isChatOpen, setIsChatOpen] = useState(false);
     const hasLogged = useRef(false);
     const isNavigating = useRef(false);
 
@@ -273,6 +276,26 @@ const CreateShipmentContent = () => {
         // clearFormData();
     };
 
+    // Style for the Modal
+    const modalStyle = {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '90%', // Wider to accommodate the agent
+        maxWidth: '1200px', // Cap maximum width
+        height: '90vh', // Almost full height
+        minHeight: '600px', // Ensure minimum height
+        bgcolor: 'background.paper',
+        border: 'none', // Remove border
+        boxShadow: 24,
+        p: 0, // No padding
+        overflow: 'hidden', // Prevent scrolling on the modal itself
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: '8px' // Add rounded corners
+    };
+
     const renderStep = () => {
         console.log('Rendering step:', currentStep, 'with form data from context:', formData);
         // Ensure API key is available, use hardcoded fallback if needed
@@ -355,7 +378,7 @@ const CreateShipmentContent = () => {
     };
 
     return (
-        <div className="container-fluid">
+        <div className="container-fluid" style={{ position: 'relative' }}>
             <div className="row">
                 <div className="col-12">
                     <div className="container">
@@ -400,6 +423,14 @@ const CreateShipmentContent = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Render ShipmentAgent directly in page instead of in a modal */}
+            {companyData?.id && <ShipmentAgent
+                companyId={companyData?.id}
+                inModal={false}
+                isPanelOpen={isChatOpen}
+                setIsPanelOpen={setIsChatOpen}
+            />}
         </div>
     );
 };

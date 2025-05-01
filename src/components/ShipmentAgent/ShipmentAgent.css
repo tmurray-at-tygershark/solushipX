@@ -1,0 +1,477 @@
+/* Modern Chat UI Styling - Slide-out panel version */
+.shipment-agent-container {
+    display: flex;
+    flex-direction: column;
+    height: 700px; /* Increased from 600px for more message visibility */
+    width: 450px; /* Increased from 380px for more comfortable reading */
+    position: fixed;
+    bottom: 100px; /* Position above the toggle button */
+    right: 20px;
+    z-index: 100000; /* Higher than any other element */
+    box-shadow: -2px 2px 20px rgba(0, 0, 0, 0.25);
+    background-color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    transform: translateX(110%); /* Start off-screen with a bit extra to hide shadow */
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Smoother animation */
+    overflow: hidden; /* Prevent scrolling on the container itself */
+    padding-top: 0;
+    padding-bottom: 0;
+    box-sizing: border-box;
+    border-radius: 12px; /* Rounded corners */
+}
+
+/* Specific styles when inside a modal */
+.shipment-agent-container.in-modal {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform: translateX(0); /* Always visible */
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    border-radius: 0;
+}
+
+.shipment-agent-container.open {
+    transform: translateX(0); /* Slide in when open */
+}
+
+/* When in modal, adjust the chat area height */
+.shipment-agent-container.in-modal .shipment-agent-chat {
+    max-height: calc(100% - 140px);
+}
+
+/* Normal slide-out panel chat area height */
+.shipment-agent-chat {
+    flex: 1;
+    padding: 20px; /* Increased from 16px for more space */
+    padding-bottom: 24px; /* Add extra padding at bottom */
+    overflow-y: auto;
+    overflow-x: hidden; /* Prevent horizontal scrolling */
+    scroll-behavior: smooth;
+    background-color: #f9fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 16px; /* Increased from 12px for better message separation */
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+    /* Ensure this doesn't push the input area off-screen */
+    max-height: calc(100% - 150px); /* Adjusted for larger input area */
+}
+
+.shipment-agent-toggle {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4776E6 0%, #8E54E9 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 99999; /* Same as overlay */
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.shipment-agent-toggle:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.25);
+}
+
+.shipment-agent-toggle svg {
+    width: 28px;
+    height: 28px;
+}
+
+.shipment-agent-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    background: linear-gradient(90deg, #4776E6 0%, #8E54E9 100%);
+    color: white;
+    flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.header-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+.close-button {
+    background: transparent;
+    border: none;
+    color: white;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+    margin-left: 8px;
+}
+
+.close-button:hover {
+    opacity: 1;
+}
+
+.agent-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #fff;
+    color: #5c6ac4;
+}
+
+.agent-status {
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+.message {
+    display: flex;
+    margin-bottom: 16px; /* Increased from 12px for better spacing */
+    max-width: 90%; /* Increase from 80% to 90% */
+    animation: fadeIn 0.3s ease-out;
+    position: relative;
+    word-wrap: break-word;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user {
+    align-self: flex-end;
+}
+
+.message.agent {
+    align-self: flex-start;
+    width: 85%; /* Slightly smaller to avoid edge cases */
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    margin-right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.user .avatar {
+    background-color: #5c6ac4;
+    color: white;
+    order: 1;
+    margin-right: 0;
+    margin-left: 8px;
+}
+
+.agent .avatar {
+    background-color: #f2f2f7;
+    color: #5c6ac4;
+}
+
+.message-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+}
+
+.message-content {
+    padding: 14px 18px; /* Increased for better text spacing */
+    border-radius: 18px;
+    font-size: 15px;
+    line-height: 1.6; /* Increased from 1.5 for better readability */
+    white-space: pre-wrap;
+    word-break: break-word;
+    width: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.user .message-content {
+    background-color: #5c6ac4;
+    color: white;
+    border-top-right-radius: 4px;
+}
+
+.agent .message-content {
+    background-color: #f2f2f7;
+    color: #1c1c1e;
+    border-top-left-radius: 4px;
+}
+
+.typing-indicator {
+    display: flex;
+    padding: 12px 16px;
+    background-color: #f2f2f7;
+    border-radius: 18px;
+    width: fit-content;
+    border-top-left-radius: 4px;
+}
+
+.typing-dot {
+    width: 8px;
+    height: 8px;
+    margin: 0 1px;
+    background-color: #8a8a8d;
+    border-radius: 50%;
+    opacity: 0.6;
+    animation: typingAnimation 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingAnimation {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-4px); }
+}
+
+/* Ensure input area is always visible at bottom of panel */
+.shipment-agent-input {
+    padding: 20px; /* Increased padding for more space */
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+    position: relative;
+    flex-shrink: 0; /* Prevent input from shrinking */
+    z-index: 10; /* Keep above content */
+    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.05); /* Add subtle shadow to separate from chat */
+    width: 100%;
+    box-sizing: border-box;
+    bottom: 0;
+    min-height: 100px; /* Increased from 90px */
+}
+
+/* Fix form layout to ensure input is visible */
+.shipment-agent-container form {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin-left: 5px;
+    padding: 0;
+}
+
+.error-message {
+    color: #e74c3c;
+    margin-bottom: 8px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.error-message svg {
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
+.input-container {
+    display: flex;
+    flex-grow: 1;
+    position: relative;
+    border: 1px solid #e6e6e6;
+    border-radius: 24px;
+    transition: border-color 0.2s;
+    background-color: #f9fafc;
+    width: 100%;
+    margin-right: 12px; /* Increased from 8px */
+    margin-bottom: 8px; /* Added margin at bottom */
+    padding: 4px; /* Added padding around the container itself */
+}
+
+.input-container:focus-within {
+    border-color: #5c6ac4;
+    box-shadow: 0 0 0 2px rgba(92, 106, 196, 0.1);
+}
+
+textarea.chat-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 16px 22px; /* Increased padding for more space */
+    resize: none;
+    max-height: 120px;
+    min-height: 40px; /* Increased for better default height */
+    font-family: inherit;
+    font-size: 15px;
+    outline: none;
+    border-radius: 24px;
+    line-height: 1.5;
+}
+
+.send-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #5c6ac4;
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 8px;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+}
+
+.send-button:hover {
+    background-color: #4a58a3;
+}
+
+.send-button:disabled {
+    background-color: #c7cad9;
+    cursor: not-allowed;
+}
+
+.retry-button {
+    background-color: transparent;
+    color: #e74c3c;
+    border: 1px solid #e74c3c;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 4px;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+.retry-button svg {
+    margin-right: 4px;
+}
+
+.shortcuts-hint {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    color: #8a8a8d;
+    font-size: 12px;
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+/* Markdown-like formatting */
+.formatted b, .formatted strong {
+    font-weight: 600;
+}
+
+.formatted ul {
+    padding-left: 20px;
+    margin: 8px 0;
+}
+
+.formatted li {
+    margin-bottom: 4px;
+}
+
+.formatted code {
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9em;
+}
+
+/* Timestamp styling */
+.message-timestamp {
+    font-size: 11px;
+    color: #8a8a8d;
+    margin-top: 4px;
+    opacity: 0.7;
+}
+
+/* Add overlay when panel is open on mobile */
+.shipment-agent-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 99999; /* Just below the container */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.shipment-agent-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .shipment-agent-container {
+        width: 90%; /* Increased from 85% */
+    }
+}
+
+/* Add a wrapper div for the form elements to be side-by-side */
+.shipment-agent-input > form, 
+.shipment-agent-input form > div:last-of-type {
+    display: flex;
+    width: 100%;
+    align-items: flex-end;
+}
+
+/* Ensure the chat is properly displayed on all screens, especially in Firefox */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+    .shipment-agent-chat {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
+/* Fix for Firefox */
+@-moz-document url-prefix() {
+    .shipment-agent-chat {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
+/* When in modal, ensure the input form stays at the bottom */
+.shipment-agent-container.in-modal .shipment-agent-input {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: white;
+    padding: 16px;
+    border-top: 1px solid #f0f0f0;
+}
+
+/* Input container spacing when in modal */
+.shipment-agent-container.in-modal .input-container {
+    margin-bottom: 0;
+}
+
+/* Ensure form wrapper elements work correctly */
+.shipment-agent-container.in-modal .shipment-agent-input form {
+    display: flex;
+    flex-direction: column;
+} 
