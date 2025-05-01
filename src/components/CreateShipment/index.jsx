@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../contexts/AuthContext';
 import { ShipmentFormProvider, useShipmentForm } from '../../contexts/ShipmentFormContext';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import StepperComponent from './Stepper';
 import ShipmentInfo from './ShipmentInfo';
@@ -85,125 +85,150 @@ const CreateShipmentContent = () => {
             setError(null);
 
             try {
-                // --- 1. Get Company ID ---
+                // --- 1. Get Company ID from User Document ---
+                console.log('Fetching company ID for user:', currentUser.uid);
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
                 if (!userDoc.exists()) throw new Error('User data not found');
                 const userData = userDoc.data();
-                const companyId = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
-                if (!companyId) throw new Error('No company associated with this account');
-                console.log('Using company ID:', companyId);
 
-                // --- 2. Fetch Basic Company Info (Optional - could get name from origins call too) ---
-                const functions = getFunctions();
-                const getCompanyFunction = httpsCallable(functions, 'getCompany');
+                // The ID in the user document is actually the companyID field value, not the Firebase document ID
+                const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+                if (!companyIdValue) throw new Error('No company associated with this account');
+                console.log('Found companyID value:', companyIdValue);
 
-                // Log available function names and verify the function exists
-                console.log('DEBUGGING FUNCTIONS:', {
-                    functions: functions,
-                    regionUrl: functions.region ? functions.region.url : 'not available'
-                });
+                // --- 2. Find the Company Document by querying where companyID field equals the value ---
+                console.log('Querying companies collection for document where companyID =', companyIdValue);
 
-                // Try multiple possible function names for origins
-                let getCompanyShipmentOriginsFunction;
+                // Query to find the company document where companyID field equals the value we have
+                const companiesQuery = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', companyIdValue),
+                    limit(1)
+                );
 
-                try {
-                    // First check if the function exists with standard name
-                    getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
-                    console.log('Standard function name appears to be valid');
-                } catch (fnErr) {
-                    console.error('Error getting standard function reference:', fnErr);
-                    try {
-                        // Try alternate name (lowercase)
-                        getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getcompanyshipmentorigins');
-                        console.log('Lowercase function name appears to be valid');
-                    } catch (fnErr2) {
-                        console.error('Error getting lowercase function reference:', fnErr2);
-                        // Fall back to the original function name even if it failed
-                        getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
-                    }
+                const companiesSnapshot = await getDocs(companiesQuery);
+
+                if (companiesSnapshot.empty) {
+                    throw new Error(`No company found with companyID: ${companyIdValue}`);
                 }
 
-                // Fetch basic company data (e.g., for header display)
-                try {
-                    const companyResult = await getCompanyFunction({ companyId });
-                    console.log('Raw companyResult:', JSON.stringify(companyResult));
+                // Get the first matching document
+                const companyDoc = companiesSnapshot.docs[0];
+                const companyData = companyDoc.data();
+                const companyDocId = companyDoc.id;
 
-                    let companyData = null;
-                    let shipFromAddresses = [];
+                console.log('Found company document:', { id: companyDocId, ...companyData });
 
-                    if (companyResult.data && companyResult.data.success && companyResult.data.data) {
-                        // New structure: { data: { success: true, data: {...} } }
-                        console.log("Using new response structure for company data");
-                        companyData = companyResult.data.data;
+                // Get the companyID field from the document data (should match companyIdValue)
+                const addressBookCompanyId = companyData.companyID;
+                if (!addressBookCompanyId) {
+                    console.warn('Company document does not contain companyID field:', companyData);
+                }
+                console.log('Using addressBook companyID:', addressBookCompanyId);
 
-                        // Extract shipFromAddresses directly from the company data
-                        shipFromAddresses = companyData.shipFromAddresses || [];
-                        console.log(`Found ${shipFromAddresses.length} ship from addresses directly in company data`);
+                // Add the Firebase document ID to the company data
+                const companyDataWithId = {
+                    ...companyData,
+                    id: companyDocId // Ensure we store the Firebase document ID
+                };
 
-                    } else if (companyResult.data && companyResult.data.name) {
-                        // Alternative structure: { data: {...} }
-                        console.log("Using alternative response structure for company data");
-                        companyData = companyResult.data;
-                        shipFromAddresses = companyData.shipFromAddresses || [];
-                    } else if (companyResult.success && companyResult.data) {
-                        // Old structure: { success: true, data: {...} }
-                        console.log("Using old response structure for company data");
-                        companyData = companyResult.data;
-                        shipFromAddresses = companyData.shipFromAddresses || [];
+                // Save basic company data to state
+                setCompanyData(companyDataWithId);
+                console.log('Basic company data retrieved successfully:', companyDataWithId);
+
+                // --- 3. Query AddressBook Collection for Origin Addresses ---
+                let shipFromAddresses = [];
+
+                if (addressBookCompanyId) {
+                    console.log('Querying addressBook collection for origins with companyID:', addressBookCompanyId);
+                    const addressesQuery = query(
+                        collection(db, 'addressBook'),
+                        where('addressClass', '==', 'company'),
+                        where('addressType', '==', 'origin'),
+                        where('addressClassID', '==', addressBookCompanyId)
+                    );
+
+                    const addressesSnapshot = await getDocs(addressesQuery);
+
+                    if (addressesSnapshot.empty) {
+                        console.log('No shipping origin addresses found in addressBook');
                     } else {
-                        console.warn('Could not parse company details:', companyResult);
+                        // Extract addresses from documents
+                        shipFromAddresses = addressesSnapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }));
+                        console.log(`Found ${shipFromAddresses.length} shipping origin addresses in addressBook:`, shipFromAddresses);
                     }
-
-                    if (companyData) {
-                        setCompanyData(companyData);
-                        console.log('Basic company data retrieved successfully:', companyData);
-
-                        // Process the shipFromAddresses directly
-                        console.log('Ship From Addresses count:', shipFromAddresses.length);
-
-                        // --- 4. Determine Default Address & Prepare Context Update ---
-                        let finalShipFromData = {
-                            company: companyData.name || '',
-                            shipFromAddresses: shipFromAddresses,
-                            id: null,
-                            name: '', attention: '', street: '', street2: '', city: '',
-                            state: '', postalCode: '', country: 'US', contactName: '',
-                            contactPhone: '', contactEmail: '', specialInstructions: ''
-                        };
-
-                        if (shipFromAddresses.length > 0) {
-                            const defaultAddress = shipFromAddresses.find(addr => addr.isDefault);
-                            if (defaultAddress) {
-                                console.log("Default Ship From address found:", defaultAddress);
-                                finalShipFromData = {
-                                    ...finalShipFromData,
-                                    ...defaultAddress,
-                                    id: defaultAddress.id
-                                };
-                            } else {
-                                console.log("No default Ship From address found.");
-                                // Select first address if no default is marked
-                                finalShipFromData = {
-                                    ...finalShipFromData,
-                                    ...shipFromAddresses[0],
-                                    id: shipFromAddresses[0].id
-                                };
-                                console.log("Selected first address as default:", shipFromAddresses[0]);
-                            }
-                        } else {
-                            console.warn("NO ADDRESSES FOUND IN RESPONSE");
-                        }
-
-                        // --- 5. Update Context ONCE ---
-                        console.log("Updating context with final shipFrom data:", finalShipFromData);
-                        updateFormSection('shipFrom', finalShipFromData);
-                    }
-                } catch (companyErr) {
-                    console.warn('Error fetching basic company details:', companyErr);
-                    setError(`Failed to load company data: ${companyErr.message}`);
+                } else {
+                    console.warn('Cannot query addressBook: Missing companyID in company document');
                 }
 
-                // SKIP separate origins fetch - we already have the data from getCompany!
+                // --- 4. Format Addresses for Form Context ---
+                // Create a list of addresses with both new and old field formats
+                const formattedAddresses = shipFromAddresses.map(addr => ({
+                    id: addr.id,
+                    // New address format fields
+                    nickname: addr.nickname,
+                    companyName: addr.companyName,
+                    address1: addr.address1,
+                    address2: addr.address2 || '',
+                    city: addr.city,
+                    stateProv: addr.stateProv,
+                    zipPostal: addr.zipPostal,
+                    country: addr.country,
+                    firstName: addr.firstName,
+                    lastName: addr.lastName,
+                    phone: addr.phone,
+                    email: addr.email,
+                    isDefault: addr.isDefault,
+
+                    // Legacy format fields for backward compatibility
+                    name: addr.nickname,
+                    company: addr.companyName,
+                    attention: `${addr.firstName} ${addr.lastName}`.trim(),
+                    street: addr.address1,
+                    street2: addr.address2 || '',
+                    state: addr.stateProv,
+                    postalCode: addr.zipPostal,
+                    contactName: `${addr.firstName} ${addr.lastName}`.trim(),
+                    contactPhone: addr.phone,
+                    contactEmail: addr.email
+                }));
+
+                // --- 5. Determine Default Address & Prepare Context Update ---
+                let finalShipFromData = {
+                    company: companyData.name || '',
+                    shipFromAddresses: formattedAddresses,
+                    id: null,
+                    // Initialize with empty values
+                    name: '', attention: '', street: '', street2: '', city: '',
+                    state: '', postalCode: '', country: 'US', contactName: '',
+                    contactPhone: '', contactEmail: '', specialInstructions: '',
+                    // New format fields
+                    nickname: '', companyName: '', address1: '', address2: '',
+                    stateProv: '', zipPostal: '', firstName: '', lastName: '',
+                    phone: '', email: ''
+                };
+
+                if (formattedAddresses.length > 0) {
+                    // Find default address or use first one
+                    const defaultAddress = formattedAddresses.find(addr => addr.isDefault) || formattedAddresses[0];
+                    console.log("Selected address for shipFrom:", defaultAddress);
+
+                    finalShipFromData = {
+                        ...finalShipFromData,
+                        ...defaultAddress,
+                        id: defaultAddress.id
+                    };
+                } else {
+                    console.warn("NO ADDRESSES FOUND IN ADDRESSBOOK - Creating empty shipFrom data");
+                }
+
+                // --- 6. Update Context ---
+                console.log("Updating context with final shipFrom data:", finalShipFromData);
+                updateFormSection('shipFrom', finalShipFromData);
+
             } catch (err) {
                 console.error('Error during initial data fetch:', err);
                 setError(err.message || 'Failed to load initial data');
@@ -215,6 +240,13 @@ const CreateShipmentContent = () => {
         fetchCompanyDataAndOrigins();
         // Dependency array includes currentUser and the update function from context
     }, [currentUser, updateFormSection]);
+
+    // For debugging, log when addresses are added to the form context
+    useEffect(() => {
+        if (formData.shipFrom?.shipFromAddresses) {
+            console.log(`Form context updated with ${formData.shipFrom.shipFromAddresses.length} shipping addresses`);
+        }
+    }, [formData.shipFrom?.shipFromAddresses]);
 
     // Only sync URL when it changes externally
     useEffect(() => {
