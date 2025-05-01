@@ -1,5 +1,3 @@
-import { Type } from "@google/generative-ai";
-
 // TODO: Get the actual companyId from auth/context
 // const DUMMY_COMPANY_ID = "DUMMY_COMPANY_ID_REPLACE_ME";
 
@@ -164,112 +162,178 @@ export const firebaseFunctionDeclarations = [
 ];
 
 export const tools = [
-  {
-    functionDeclarations: [
-      {
-        name: "getCompany",
-        description: "Get detailed information about the user's company. ALWAYS call this function when the user asks about company information, company name, or anything related to company details.",
-        parameters: { 
-          type: "object", 
-          properties: {
-            companyId: { 
-              type: "string", 
-              description: "ID of the company to get information for"
-            }
-          }, 
-          required: ["companyId"] 
-        }
-      },
-      {
-        name: "listShippingOrigins",
-        description: "List all available shipping origins/addresses for the user. ALWAYS call this function when the user asks about origins, shipping locations, shipping addresses, or where they can ship from.",
-        parameters: { 
-          type: "object", 
-          properties: {
-            companyId: { 
-              type: "string", 
-              description: "ID of the company to get shipping origins for"
-            }
-          }, 
-          required: ["companyId"] 
-        }
-      },
-      {
-        name: "getCompanyCustomers",
-        description: "Get a list of the company's customers. Call this when the user asks about customers, shipping destinations, or recipient addresses.",
-        parameters: { 
-          type: "object", 
-          properties: {
-            companyId: { 
-              type: "string", 
-              description: "ID of the company to get customers for"
-            }
-          }, 
-          required: ["companyId"] 
-        }
-      },
-      {
-        name: "createShipment",
-        description: "Create a new shipment with the specified details",
-        parameters: {
-          type: "object",
-          properties: {
-            shipFrom: {
-              type: "object",
-              description: "The origin address for the shipment",
-              properties: {
-                name: { type: "string" },
-                companyName: { type: "string" },
-                streetAddress: { type: "string" },
-                city: { type: "string" },
-                state: { type: "string" },
-                zipCode: { type: "string" },
-                country: { type: "string" }
-              }
-            },
-            shipTo: {
-              type: "object",
-              description: "The destination address for the shipment",
-              properties: {
-                name: { type: "string" },
-                companyName: { type: "string" },
-                streetAddress: { type: "string" },
-                city: { type: "string" },
-                state: { type: "string" },
-                zipCode: { type: "string" },
-                country: { type: "string" }
-              }
-            },
-            packages: {
-              type: "array",
-              description: "Array of packages in the shipment",
-              items: {
-                type: "object",
-                properties: {
-                  weight: { type: "number" },
-                  weightUnit: { type: "string" },
-                  length: { type: "number" },
-                  width: { type: "number" },
-                  height: { type: "number" },
-                  dimensionUnit: { type: "string" }
+    {
+        functionDeclarations: [
+            {
+                name: "getCompany",
+                description: "Get information about the company",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        companyId: {
+                            type: "string",
+                            description: "The ID of the company"
+                        }
+                    },
+                    required: ["companyId"]
                 }
-              }
+            },
+            {
+                name: "listShippingOrigins",
+                description: "Get all shipping origins (ship from addresses) for a company",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        companyId: {
+                            type: "string",
+                            description: "The ID of the company"
+                        }
+                    },
+                    required: ["companyId"]
+                }
+            },
+            {
+                name: "getCompanyCustomers",
+                description: "Get all customers for a company that can be shipped to",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        companyId: {
+                            type: "string",
+                            description: "The ID of the company"
+                        }
+                    },
+                    required: ["companyId"]
+                }
+            },
+            {
+                name: "getCompanyCustomerDestinations",
+                description: "Get all shipping destinations (addresses) for a specific customer",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        companyId: {
+                            type: "string",
+                            description: "The ID of the company"
+                        },
+                        customerId: {
+                            type: "string",
+                            description: "The ID of the customer"
+                        }
+                    },
+                    required: ["companyId", "customerId"]
+                }
+            },
+            {
+                name: "getRatesEShipPlus",
+                description: "Get shipping rates from different carriers for a specific shipment",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        companyId: {
+                            type: "string",
+                            description: "The ID of the company"
+                        },
+                        originAddress: {
+                            type: "object",
+                            description: "The address to ship from",
+                            properties: {
+                                street1: { type: "string", description: "Street address line 1" },
+                                street2: { type: "string", description: "Street address line 2 (optional)" },
+                                city: { type: "string", description: "City" },
+                                state: { type: "string", description: "State or province" },
+                                zip: { type: "string", description: "ZIP or postal code" },
+                                country: { type: "string", description: "Country code (e.g., US)" },
+                                company: { type: "string", description: "Company name (optional)" },
+                                name: { type: "string", description: "Contact name (optional)" },
+                                phone: { type: "string", description: "Phone number (optional)" },
+                                email: { type: "string", description: "Email address (optional)" }
+                            },
+                            required: ["street1", "city", "state", "zip", "country"]
+                        },
+                        destinationAddress: {
+                            type: "object",
+                            description: "The address to ship to",
+                            properties: {
+                                street1: { type: "string", description: "Street address line 1" },
+                                street2: { type: "string", description: "Street address line 2 (optional)" },
+                                city: { type: "string", description: "City" },
+                                state: { type: "string", description: "State or province" },
+                                zip: { type: "string", description: "ZIP or postal code" },
+                                country: { type: "string", description: "Country code (e.g., US)" },
+                                company: { type: "string", description: "Company name (optional)" },
+                                name: { type: "string", description: "Contact name (optional)" },
+                                phone: { type: "string", description: "Phone number (optional)" },
+                                email: { type: "string", description: "Email address (optional)" }
+                            },
+                            required: ["street1", "city", "state", "zip", "country"]
+                        },
+                        packages: {
+                            type: "array",
+                            description: "List of packages in the shipment",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    weight: { type: "number", description: "Weight of the package in oz" },
+                                    length: { type: "number", description: "Length of the package in inches" },
+                                    width: { type: "number", description: "Width of the package in inches" },
+                                    height: { type: "number", description: "Height of the package in inches" }
+                                },
+                                required: ["weight", "length", "width", "height"]
+                            }
+                        }
+                    },
+                    required: ["companyId", "originAddress", "destinationAddress", "packages"]
+                }
+            },
+            {
+                name: "createShipment",
+                description: "Create a new shipment with selected carrier and service",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        companyId: {
+                            type: "string",
+                            description: "The ID of the company"
+                        },
+                        originId: {
+                            type: "string",
+                            description: "The ID of the origin address"
+                        },
+                        customerId: {
+                            type: "string",
+                            description: "The ID of the customer"
+                        },
+                        destinationId: {
+                            type: "string",
+                            description: "The ID of the destination address"
+                        },
+                        packages: {
+                            type: "array",
+                            description: "List of packages in the shipment",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    weight: { type: "number", description: "Weight of the package in oz" },
+                                    length: { type: "number", description: "Length of the package in inches" },
+                                    width: { type: "number", description: "Width of the package in inches" },
+                                    height: { type: "number", description: "Height of the package in inches" }
+                                },
+                                required: ["weight", "length", "width", "height"]
+                            }
+                        },
+                        serviceId: {
+                            type: "string",
+                            description: "The ID of the selected shipping service"
+                        },
+                        carrierId: {
+                            type: "string",
+                            description: "The ID of the selected carrier"
+                        }
+                    },
+                    required: ["companyId", "originId", "customerId", "destinationId", "packages", "serviceId", "carrierId"]
+                }
             }
-          },
-          required: ["shipFrom", "shipTo", "packages"]
-        }
-      },
-      {
-        name: "getRates",
-        description: "Get shipping rates for a shipment",
-        parameters: {
-          type: "object",
-          properties: {
-            shipmentId: { type: "string" }
-          },
-          required: ["shipmentId"]
-        }
-      }
-    ]
-  }
+        ]
+    }
 ]; 
