@@ -22,6 +22,8 @@ const ShipmentAgent = ({
     const [isLoading, setIsLoading] = useState(false);
     const [failedMessage, setFailedMessage] = useState(null);
     const [internalPanelOpen, setInternalPanelOpen] = useState(false);
+    const [showRateLoadingMessages, setShowRateLoadingMessages] = useState(false);
+    const [pendingRateCall, setPendingRateCall] = useState(null);
     const chatRef = useRef(null);
     const chatContainerRef = useRef(null);
     const inputRef = useRef(null);
@@ -1122,6 +1124,67 @@ const ShipmentAgent = ({
         setError(null);
         setFailedMessage(null);
 
+        // Check if this is a confirmation message for a rate request
+        const lowerMsg = msg.toLowerCase().trim();
+
+        // Specifically check for booking reference number patterns - either explicit mention or typical formats
+        const bookingRefPattern = /\d{5,}|[a-z0-9]{5,}|booking ref|reference number|tracking id|booking id/i;
+        const hasBookingRef = bookingRefPattern.test(msg);
+
+        // Also check if the last AI message asked for a booking reference
+        const lastAIMessage = messages.filter(m => m.role === 'agent').pop();
+        const askedForBookingRef = lastAIMessage && (
+            lastAIMessage.content.includes("booking reference") ||
+            lastAIMessage.content.includes("Before we request rates") ||
+            lastAIMessage.content.includes("Do you have a booking reference")
+        );
+
+        // If user is providing a booking reference number, trigger loading messages next
+        if (hasBookingRef && askedForBookingRef) {
+            console.log('DETECTED: User provided booking reference number');
+
+            // Add an immediate message to let the user know rates are being retrieved
+            const notificationMessage = "Thanks for providing the booking reference. I'm retrieving carrier rates for you now. This will take a moment...";
+
+            // This will be processed after the user's message is added to the thread
+            setTimeout(() => {
+                setMessages(prev => [...prev, {
+                    role: 'agent',
+                    content: notificationMessage,
+                    timestamp: new Date().toISOString()
+                }]);
+
+                // After showing the notification, enable loading messages for when the actual API call happens
+                setShowRateLoadingMessages(true);
+            }, 500);
+        }
+
+        // Keep existing confirmation logic
+        const confirmationPhrases = ['yes', 'correct', 'looks good', 'that is correct', 'proceed', 'continue', 'get rates', 'get shipping rates', 'okay', 'ok', 'sure', 'sounds good', 'i confirm'];
+
+        // Check for both confirmation phrases and shipment summary context
+        const isConfirmation = confirmationPhrases.some(phrase =>
+            lowerMsg.includes(phrase) || lowerMsg === phrase
+        ) && messages.some(m =>
+            m.role === 'agent' &&
+            (m.content.includes('Before I request shipping rates') ||
+                m.content.includes('booking reference') ||
+                m.content.includes('To summarize') ||
+                m.content.includes('summarize') && m.content.includes('shipment') ||
+                m.content.includes('provide a booking reference'))
+        );
+
+        // Also enable for direct rate requests
+        const isDirectRateRequest = lowerMsg.includes('get rates') ||
+            lowerMsg.includes('get shipping rates') ||
+            lowerMsg.includes('show me rates') ||
+            lowerMsg.includes('find rates');
+
+        if (isConfirmation || isDirectRateRequest) {
+            console.log('Setting showRateLoadingMessages to true - detected confirmation or direct rate request');
+            setShowRateLoadingMessages(true);
+        }
+
         try {
             const res = await chatRef.current.sendMessage(msg);
             let response = res.response;
@@ -1169,23 +1232,112 @@ const ShipmentAgent = ({
                 if (!args.companyId) args.companyId = companyIdProp;
                 console.log(`Calling function ${call.name} with args:`, args);
 
-                const result = await handleFunctionCall({ name: call.name, args });
-                console.log(`Function ${call.name} returned:`, result);
+                // Show progressive loading messages for rate requests
+                if (call.name === 'getRatesEShipPlus') {
+                    // Always show loading messages for rate calls, even if flag wasn't set
+                    console.log('Rate function called - showing loading messages');
 
-                // Send the raw function result back to Gemini to let it parse and interpret the data
-                try {
-                    const functionResponseText = JSON.stringify({
-                        name: call.name,
-                        response: result.error || result.result
+                    // Add initial "searching" message immediately
+                    setMessages(prev => {
+                        console.log('Adding first loading message: Searching for carriers...');
+                        return [...prev, {
+                            role: 'agent',
+                            content: "Searching for carriers...",
+                            timestamp: new Date().toISOString(),
+                            isLoading: true
+                        }];
                     });
-                    console.log("Sending function response:", functionResponseText);
 
-                    // Try a simpler format for function response
-                    const followUp = await chatRef.current.sendMessage(functionResponseText);
-                    response = followUp.response;
-                } catch (functionResponseError) {
-                    console.error("Error sending function response:", functionResponseError);
-                    throw new Error(`Error processing function response: ${functionResponseError.message}`);
+                    // Store the rate call details for delayed execution
+                    setPendingRateCall({ name: call.name, args });
+
+                    // Ensure all messages are rendered before proceeding
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Simulate progress with timed messages - ensure these run before API call
+                    const timer1 = setTimeout(() => {
+                        setMessages(prev => {
+                            console.log('Adding second loading message: Getting rates from carriers...');
+                            // Replace the last message if it was our loading message
+                            const lastMsg = prev[prev.length - 1];
+                            if (lastMsg && lastMsg.isLoading) {
+                                return [...prev.slice(0, -1), {
+                                    role: 'agent',
+                                    content: "Getting rates from carriers...",
+                                    timestamp: new Date().toISOString(),
+                                    isLoading: true
+                                }];
+                            }
+                            return prev;
+                        });
+                    }, 3000);
+
+                    // Update with third message
+                    const timer2 = setTimeout(() => {
+                        setMessages(prev => {
+                            console.log('Adding third loading message: Reviewing best shipping options...');
+                            // Replace the last message if it was our loading message
+                            const lastMsg = prev[prev.length - 1];
+                            if (lastMsg && lastMsg.isLoading) {
+                                return [...prev.slice(0, -1), {
+                                    role: 'agent',
+                                    content: "Reviewing best shipping options...",
+                                    timestamp: new Date().toISOString(),
+                                    isLoading: true
+                                }];
+                            }
+                            return prev;
+                        });
+                    }, 7000);
+
+                    // Force a long enough delay to show all loading messages before API call
+                    const delayedResult = await new Promise(resolve => {
+                        setTimeout(async () => {
+                            try {
+                                console.log('Executing actual API call after delay');
+                                const result = await handleFunctionCall({ name: call.name, args });
+                                resolve(result);
+                            } catch (err) {
+                                console.error("Error in delayed function call:", err);
+                                resolve({ error: err.message });
+                            } finally {
+                                clearTimeout(timer1);
+                                clearTimeout(timer2);
+                                setPendingRateCall(null);
+                            }
+                        }, 12000); // Increased delay to ensure messages are visible
+                    });
+
+                    // Reset the flag after handling this request
+                    console.log('Resetting showRateLoadingMessages flag');
+                    setShowRateLoadingMessages(false);
+
+                    return processApiResult(delayedResult, call.name);
+                } else {
+                    // For non-rate requests or when loading messages aren't needed, execute normally
+                    const result = await handleFunctionCall({ name: call.name, args });
+                    return processApiResult(result, call.name);
+                }
+
+                // Helper function to process API results and get response
+                async function processApiResult(result, functionName) {
+                    console.log(`Function ${functionName} returned:`, result);
+
+                    // Send the raw function result back to Gemini to let it parse and interpret the data
+                    try {
+                        const functionResponseText = JSON.stringify({
+                            name: functionName,
+                            response: result.error || result.result
+                        });
+                        console.log("Sending function response:", functionResponseText);
+
+                        // Try a simpler format for function response
+                        const followUp = await chatRef.current.sendMessage(functionResponseText);
+                        return followUp.response;
+                    } catch (functionResponseError) {
+                        console.error("Error sending function response:", functionResponseError);
+                        throw new Error(`Error processing function response: ${functionResponseError.message}`);
+                    }
                 }
             } else {
                 console.log("No function calls detected in response");
@@ -1212,20 +1364,41 @@ const ShipmentAgent = ({
                 textResponse = "I encountered an issue processing the data. Please try again.";
             }
 
-            setMessages(prev => [...prev, {
-                role: 'agent',
-                content: textResponse,
-                timestamp: new Date().toISOString()
-            }]);
+            // Check if the response is likely a shipment summary before requesting rates
+            if (textResponse.includes("Before I request shipping rates") ||
+                textResponse.includes("booking reference") ||
+                textResponse.includes("To summarize") ||
+                (textResponse.includes("summarize") && textResponse.includes("shipment")) ||
+                (textResponse.includes("summary") && textResponse.includes("shipment information"))) {
+                // Set flag so next confirmation will trigger loading messages
+                console.log('Detected shipment summary in response, setting showRateLoadingMessages flag');
+                setShowRateLoadingMessages(true);
+            }
+
+            // Replace any loading message with the final response
+            setMessages(prev => {
+                const nonLoadingMessages = prev.filter(msg => !msg.isLoading);
+                return [...nonLoadingMessages, {
+                    role: 'agent',
+                    content: textResponse,
+                    timestamp: new Date().toISOString()
+                }];
+            });
         } catch (e) {
             console.error("Top-level error in sendMessage:", e);
             setError(e.message || "An unknown error occurred");
-            setMessages(prev => [...prev, {
-                role: 'agent',
-                content: "I'm sorry, I encountered a technical issue. Please try again.",
-                timestamp: new Date().toISOString(),
-                error: true
-            }]);
+
+            // Remove any loading messages and add error message
+            setMessages(prev => {
+                const nonLoadingMessages = prev.filter(msg => !msg.isLoading);
+                return [...nonLoadingMessages, {
+                    role: 'agent',
+                    content: "I'm sorry, I encountered a technical issue. Please try again.",
+                    timestamp: new Date().toISOString(),
+                    error: true
+                }];
+            });
+
             setFailedMessage(msg);
         } finally {
             setIsLoading(false);
@@ -1234,7 +1407,7 @@ const ShipmentAgent = ({
                 inputRef.current.focus();
             }
         }
-    }, [companyIdProp, handleFunctionCall]);
+    }, [companyIdProp, handleFunctionCall, showRateLoadingMessages, messages]);
 
     // Auto-resize input on mount and when value changes
     useEffect(() => {
@@ -1314,7 +1487,7 @@ const ShipmentAgent = ({
                             )}
                             <div className="message-wrapper">
                                 <div
-                                    className={`message-content ${m.error ? 'error' : ''} formatted`}
+                                    className={`message-content ${m.error ? 'error' : ''} ${m.isLoading ? 'loading-message' : ''} formatted`}
                                     dangerouslySetInnerHTML={{ __html: formatMessageContent(m.content) }}
                                 />
                                 {m.timestamp && (
