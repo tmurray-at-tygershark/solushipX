@@ -193,24 +193,6 @@ export const tools = [
                 }
             },
             {
-                name: "getCompanyCustomerDestinations",
-                description: "Get all shipping destinations (addresses) for a specific customer",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        companyId: {
-                            type: "string",
-                            description: "The ID of the company"
-                        },
-                        customerId: {
-                            type: "string",
-                            description: "The ID of the customer"
-                        }
-                    },
-                    required: ["companyId", "customerId"]
-                }
-            },
-            {
                 name: "getRatesEShipPlus",
                 description: "Get shipping rates from different carriers for a specific shipment",
                 parameters: {

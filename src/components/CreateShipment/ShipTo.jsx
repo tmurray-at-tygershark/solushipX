@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
@@ -39,7 +39,6 @@ const ShipTo = ({ onNext, onPrevious }) => {
 
     const functions = getFunctions();
     let getCompanyCustomersFunction;
-    let getDestinationsFunction;
 
     // Try to set up the getCompanyCustomers function with fallbacks
     try {
@@ -57,14 +56,6 @@ const ShipTo = ({ onNext, onPrevious }) => {
             // Fall back to the original function name even if it failed
             getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
         }
-    }
-
-    // Set up destinations function
-    try {
-        getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
-    } catch (fnErr) {
-        console.error('Error getting destinations function reference:', fnErr);
-        getDestinationsFunction = httpsCallable(functions, 'getCompanyCustomerDestinations');
     }
 
     useEffect(() => {
@@ -216,18 +207,48 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 console.log('Using addresses directly from customer object:', customer.addresses);
                 addressesToProcess = customer.addresses;
             } else {
-                console.log('Fetching destinations separately for customer:', customer.customerId);
-                const destinationsResult = await getDestinationsFunction({
-                    companyId: customer.companyId,
-                    customerId: customer.customerId,
-                    includeAllTypes: false
-                });
+                console.log('Fetching destinations from addressBook for customer:', customer.customerId);
 
-                if (!destinationsResult.data.success) {
-                    throw new Error(destinationsResult.data.error || 'Failed to fetch destinations');
+                // Direct Firestore query for customer addresses in addressBook
+                const addressesQuery = query(
+                    collection(db, 'addressBook'),
+                    where('addressClass', '==', 'customer'),
+                    where('addressType', '==', 'destination'),
+                    where('addressClassID', '==', customer.customerId)
+                );
+
+                const addressesSnapshot = await getDocs(addressesQuery);
+                console.log(`Found ${addressesSnapshot.docs.length} addresses in addressBook for customer ${customer.customerId}`);
+
+                if (!addressesSnapshot.empty) {
+                    addressesToProcess = addressesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        type: 'shipping',
+                        street: doc.data().address1,
+                        street2: doc.data().address2 || '',
+                        city: doc.data().city,
+                        state: doc.data().stateProv,
+                        zip: doc.data().zipPostal,
+                        country: doc.data().country || 'US',
+                        attention: `${doc.data().firstName} ${doc.data().lastName}`.trim(),
+                        name: doc.data().nickname,
+                        default: doc.data().isDefault || false,
+                        specialInstructions: doc.data().specialInstructions || ''
+                    }));
+                } else {
+                    console.log('No addresses found in addressBook, checking legacy customer document');
+
+                    // If no addresses in addressBook, try the customer document directly
+                    const customerRef = doc(db, 'customers', customer.customerId);
+                    const customerDoc = await getDoc(customerRef);
+
+                    if (customerDoc.exists() && customerDoc.data().addresses && Array.isArray(customerDoc.data().addresses)) {
+                        addressesToProcess = customerDoc.data().addresses;
+                    } else {
+                        console.log('No addresses found for this customer');
+                        addressesToProcess = [];
+                    }
                 }
-                addressesToProcess = destinationsResult.data.data.destinations?.map(d => d.address) || [];
-                console.log('Fetched destination addresses:', addressesToProcess);
             }
 
             const primaryContact = customer.contacts?.find(contact => contact.isPrimary === true) || customer.contacts?.[0] || {};
@@ -314,7 +335,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
         } finally {
             setLoadingDestinations(false);
         }
-    }, [updateFormSection, getDestinationsFunction, formData.shipTo]);
+    }, [updateFormSection, formData.shipTo]);
 
     useEffect(() => {
         const customerFromContext = formData.shipTo?.selectedCustomer;

@@ -27,7 +27,6 @@ console.log('Initialized Admin SDK with service account');
 const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
 const { getCompany } = require('./src/getCompany');
 const { getCompanyCustomers } = require('./src/getCompanyCustomers');
-const { getCompanyCustomerDestinations } = require('./src/getCompanyCustomerDestinations');
 
 // Export the Callable rate function (Used by Frontend)
 exports.getRatesEShipPlus = getRatesEShipPlus;
@@ -51,4 +50,3 @@ exports.getCompanyCustomers = functions.https.onCall({
     throw error;
   }
 });
-exports.getCompanyCustomerDestinations = functions.https.onCall({ /* ... */ }, (data, context) => { /* ... */ });

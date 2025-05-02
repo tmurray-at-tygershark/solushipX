@@ -412,192 +412,102 @@ const ShipmentAgent = ({
                 const addressesSnapshot = await getDocs(addressesQuery);
                 console.log(`Found ${addressesSnapshot.docs.length} customer addresses in addressBook`);
 
+                const destinations = [];
+
                 if (addressesSnapshot.docs.length > 0) {
-                    // Map the addresses to the format expected by the function consumers
-                    const addresses = addressesSnapshot.docs.map(doc => {
+                    // Map the addresses to the format expected by the AI assistant
+                    addressesSnapshot.docs.forEach((doc, index) => {
                         const data = doc.data();
-                        // Create a version with both legacy and new field mappings
-                        return {
-                            id: doc.id,
-                            ...data,
-                            // Legacy format mappings
-                            name: data.nickname,
-                            company: data.companyName,
-                            attention: `${data.firstName} ${data.lastName}`.trim(),
-                            street: data.address1,
-                            street2: data.address2 || '',
-                            city: data.city,
-                            state: data.stateProv,
-                            postalCode: data.zipPostal,
-                            country: data.country,
-                            contactName: `${data.firstName} ${data.lastName}`.trim(),
-                            contactPhone: data.phone,
-                            contactEmail: data.email,
-                            // Ensure IDs are included
-                            companyId: actualCompanyId,
-                            customerId: customerId
-                        };
+                        destinations.push({
+                            id: `${customerId}_${index}`,
+                            customerId: customerId,
+                            customerName: data.companyName || 'Unknown Customer',
+                            address: {
+                                id: doc.id,
+                                type: 'shipping',
+                                street: data.address1,
+                                street2: data.address2 || '',
+                                city: data.city,
+                                state: data.stateProv,
+                                zip: data.zipPostal,
+                                country: data.country || 'US',
+                                attention: `${data.firstName} ${data.lastName}`.trim(),
+                                name: data.nickname,
+                                default: data.isDefault || false,
+                                postalCode: data.zipPostal,
+                                specialInstructions: data.specialInstructions || ''
+                            },
+                            contact: {
+                                name: `${data.firstName} ${data.lastName}`.trim(),
+                                phone: data.phone || '',
+                                email: data.email || ''
+                            }
+                        });
                     });
 
-                    console.log(`Mapped ${addresses.length} customer addresses from addressBook`);
-                    return { result: addresses };
-                }
-
-                // If no results in addressBook, fall back to legacy methods
-                console.log("No customer addresses found in addressBook, checking legacy locations");
-
-                // First try to get the customer document from the root collection
-                // This appears to be the structure in the provided data
-                try {
-                    console.log(`Looking for customer ${customerId} in root 'customers' collection`);
-                    const customerRef = doc(db, 'customers', customerId);
-                    const customerSnap = await getDoc(customerRef);
-
-                    if (customerSnap.exists()) {
-                        const customerData = customerSnap.data();
-                        console.log("Found customer data:", JSON.stringify(customerData, null, 2));
-
-                        // Check for addresses directly on the customer document
-                        // This seems to be how addresses are stored based on the data shown
-                        if (customerData.addresses && Array.isArray(customerData.addresses) && customerData.addresses.length > 0) {
-                            console.log(`Found ${customerData.addresses.length} addresses directly on customer document`);
-
-                            // Add logging to see exactly what addresses we found
-                            console.log("Customer addresses:", JSON.stringify(customerData.addresses, null, 2));
-
-                            return {
-                                result: customerData.addresses.map((address, index) => ({
-                                    id: `address-${index}`,
-                                    ...address,
-                                    companyId: actualCompanyId,
-                                    customerId: customerId
-                                }))
-                            };
-                        } else {
-                            console.log("No addresses array found on customer document");
-                        }
-                    } else {
-                        console.log(`Customer document not found with ID: ${customerId}`);
-                    }
-                } catch (err) {
-                    console.log("Error checking customer document in root collection:", err);
-                }
-
-                // Next, try to get the customer from the customers subcollection under company
-                try {
-                    console.log(`Looking for customer ${customerId} in company's customers subcollection`);
-                    const subCustomerRef = doc(db, 'companies', companyId, 'customers', customerId);
-                    const subCustomerSnap = await getDoc(subCustomerRef);
-
-                    if (subCustomerSnap.exists()) {
-                        const customerData = subCustomerSnap.data();
-                        console.log("Found customer data in company subcollection:", JSON.stringify(customerData, null, 2));
-
-                        // Check for addresses directly on the customer document
-                        if (customerData.addresses && Array.isArray(customerData.addresses) && customerData.addresses.length > 0) {
-                            console.log(`Found ${customerData.addresses.length} addresses in company's customer subcollection`);
-
-                            // Add logging to see exactly what addresses we found
-                            console.log("Customer addresses:", JSON.stringify(customerData.addresses, null, 2));
-
-                            return {
-                                result: customerData.addresses.map((address, index) => ({
-                                    id: `address-${index}`,
-                                    ...address,
-                                    companyId: actualCompanyId,
-                                    customerId: customerId
-                                }))
-                            };
-                        } else {
-                            console.log("No addresses array found on customer subcollection document");
-                        }
-                    } else {
-                        console.log(`Customer document not found in subcollection: ${customerId}`);
-                    }
-                } catch (err) {
-                    console.log("Error checking customer in company subcollection:", err);
-                }
-
-                // If we get here, we didn't find addresses directly on the customer
-                // Try subcollections as a fallback
-
-                // Try traditional subcollection first (document ID path)
-                console.log("Trying addresses subcollection path");
-                const colRef = collection(db, 'companies', companyId, 'customers', customerId, 'addresses');
-                let snapshot = await getDocs(colRef);
-
-                // If no results, try to find addresses in a different collection structure
-                if (snapshot.docs.length === 0) {
-                    console.log("No addresses found in subcollection. Trying alternative collection");
-
-                    // Try the customer addresses subcollection directly
-                    const altColRef = collection(db, 'customers', customerId, 'addresses');
-                    snapshot = await getDocs(altColRef);
-
-                    if (snapshot.docs.length === 0) {
-                        // Try with a separate collection of addresses
-                        console.log("Trying separate addresses collection");
-                        const addressesRef = collection(db, 'addresses');
-                        const q = query(addressesRef, where('customerId', '==', customerId));
-                        snapshot = await getDocs(q);
-                    }
-                }
-
-                console.log(`Found ${snapshot.docs.length} customer addresses in subcollections`);
-
-                if (snapshot.docs.length > 0) {
                     return {
-                        result: snapshot.docs.map(d => {
-                            const data = d.data();
-                            return {
-                                id: d.id,
-                                ...data,
+                        result: {
+                            success: true,
+                            data: {
                                 companyId: actualCompanyId,
-                                customerId: customerId
-                            };
-                        })
+                                count: destinations.length,
+                                destinations
+                            }
+                        }
                     };
                 }
 
-                // Final fallback check: maybe the customer ID we have is not the actual customerId field
-                // Let's try to query customers by name or other fields
+                // If no results in addressBook, check the customer document directly
+                console.log("No customer addresses found in addressBook, checking customer document");
+
+                // Try to get the customer document
                 try {
-                    console.log("Trying to find customer by name or other fields");
+                    const customerRef = doc(db, 'customers', customerId);
+                    const customerDoc = await getDoc(customerRef);
 
-                    // Try to find customers with this ID in the display name or other fields
-                    const customersRef = collection(db, 'customers');
-                    const nameQuery = query(customersRef, where('name', '==', "Express Freight Solutions"));
-                    const nameSnapshot = await getDocs(nameQuery);
+                    if (customerDoc.exists() && customerDoc.data().addresses) {
+                        const customerData = customerDoc.data();
+                        console.log(`Found customer with ${customerData.addresses?.length || 0} addresses`);
 
-                    if (nameSnapshot.docs.length > 0) {
-                        console.log(`Found ${nameSnapshot.docs.length} customers by name`);
+                        // Process each address for this customer
+                        if (customerData.addresses && Array.isArray(customerData.addresses)) {
+                            customerData.addresses.forEach((address, index) => {
+                                const isShippingAddress = address.type === 'shipping';
+                                const isDefaultAddress = !!address.default;
 
-                        for (const doc of nameSnapshot.docs) {
-                            const customerData = doc.data();
-                            console.log(`Checking customer ${doc.id} data:`, JSON.stringify(customerData, null, 2));
-
-                            // Check for addresses directly on the customer document
-                            if (customerData.addresses && Array.isArray(customerData.addresses) && customerData.addresses.length > 0) {
-                                console.log(`Found ${customerData.addresses.length} addresses on customer ${doc.id}`);
-
-                                return {
-                                    result: customerData.addresses.map((address, index) => ({
-                                        id: `address-${index}`,
-                                        ...address,
-                                        companyId: actualCompanyId,
-                                        customerId: customerId
-                                    }))
-                                };
-                            }
+                                if (isShippingAddress || isDefaultAddress) {
+                                    destinations.push({
+                                        id: `${customerId}_${index}`,
+                                        customerId: customerId,
+                                        customerName: customerData.name || 'Unknown Customer',
+                                        address: {
+                                            ...address,
+                                            postalCode: address.zip || address.postalCode || '',
+                                        },
+                                        contact: customerData.contacts && customerData.contacts.length > 0
+                                            ? customerData.contacts[0]
+                                            : { name: '', phone: '', email: '' }
+                                    });
+                                }
+                            });
                         }
                     }
                 } catch (err) {
-                    console.log("Error in final fallback check:", err);
+                    console.log("Error checking customer document:", err);
                 }
 
-                // If we still have no results, return an empty array
-                console.log("No customer addresses found with any method");
-                return { result: [] };
+                console.log(`Returning ${destinations.length} total destinations`);
+
+                return {
+                    result: {
+                        success: true,
+                        data: {
+                            companyId: actualCompanyId,
+                            count: destinations.length,
+                            destinations
+                        }
+                    }
+                };
 
             } catch (e) {
                 console.error("Error fetching customer destinations:", e);
@@ -824,8 +734,8 @@ const ShipmentAgent = ({
                     - Ask who is receiving the shipment
                     - Ask if they want to select from their saved customer addresses
                     - If yes, first call getCompanyCustomers and ask them to select a customer
-                    - Then call getCompanyCustomerDestinations to show available addresses for that customer
-                    - Present destination addresses as numbered options
+                    - Once a customer is selected, check if the customer object has an addresses array property
+                    - Present these customer destination addresses as numbered options if available
                     - If they prefer to enter a new address, ask for the full address (street, city, state, zip, country)
                     - Ask for contact information (name, phone, email)
                     - Ask for any special delivery instructions
@@ -864,7 +774,6 @@ const ShipmentAgent = ({
                     - Use 'getCompany' when asked about company information, addresses, zip codes, contact info, or any company details
                     - Use 'listShippingOrigins' when asked about shipping addresses, shipping origins, or where the company ships from
                     - Use 'getCompanyCustomers' when asked about customers, who the company ships to, or when needing to select a recipient
-                    - Use 'getCompanyCustomerDestinations' when asked about customer addresses, delivery locations, or where to ship to
                     - Use 'getRatesEShipPlus' when you have ALL required information to get shipping costs and carrier options
                     - Use 'createShipment' when a user has confirmed all details and is ready to book
                     
