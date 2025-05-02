@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -21,6 +22,9 @@ const auth = getAuth(app);
 
 // Initialize Firestore
 const db = getFirestore(app);
+
+// Initialize Storage
+const storage = getStorage(app);
 
 // Initialize Functions
 const functions = getFunctions(app);
@@ -57,6 +61,7 @@ const wrappedGetMapsApiKey = wrapCallable(getMapsApiKey);
 export {
     auth,
     db,
+    storage,
     functions,
     // wrappedGetShippingRates, // Removed export
     wrappedAnalyzeRatesWithAI,

@@ -72,6 +72,8 @@ import './Billing.css';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import EDIUploader from './EDIUploader';
+import EDIResults from './EDIResults';
 
 const generateMockInvoices = () => {
     const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
@@ -160,9 +162,13 @@ const BillingDashboard = () => {
     const [ediFiles, setEdiFiles] = useState([]);
     const [dragActive, setDragActive] = useState(false);
     const fileInputRef = React.useRef(null);
+    const [selectedUploadId, setSelectedUploadId] = useState(null);
+    const [showEdiResults, setShowEdiResults] = useState(false);
+    const [ediProcessedItems, setEdiProcessedItems] = useState([]);
 
     useEffect(() => {
         fetchBillingData();
+        fetchEdiHistory();
     }, [timeRange]);
 
     const fetchBillingData = async () => {
@@ -216,6 +222,29 @@ const BillingDashboard = () => {
             setError('Error fetching billing data: ' + err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchEdiHistory = async () => {
+        try {
+            // Query for processed EDI files
+            const ediRef = collection(db, 'ediUploads');
+            const q = query(
+                ediRef,
+                where('isAdmin', '==', true),
+                orderBy('uploadedAt', 'desc')
+            );
+
+            const querySnapshot = await getDocs(q);
+            const ediItems = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                uploadedAt: doc.data().uploadedAt?.toDate().toLocaleString() || 'Unknown'
+            }));
+
+            setEdiProcessedItems(ediItems);
+        } catch (err) {
+            console.error('Error fetching EDI history:', err);
         }
     };
 
@@ -405,6 +434,22 @@ const BillingDashboard = () => {
 
     const onButtonClick = () => {
         fileInputRef.current.click();
+    };
+
+    const handleEdiUploadComplete = (uploadId) => {
+        fetchEdiHistory();
+        setSelectedUploadId(uploadId);
+        setShowEdiResults(true);
+    };
+
+    const handleCloseEdiResults = () => {
+        setShowEdiResults(false);
+        setSelectedUploadId(null);
+    };
+
+    const handleViewEdiResults = (uploadId) => {
+        setSelectedUploadId(uploadId);
+        setShowEdiResults(true);
     };
 
     if (loading) {
@@ -804,184 +849,80 @@ const BillingDashboard = () => {
 
             {activeTab === 'edi' && (
                 <>
-                    <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #eee' }}>
-                        <Typography variant="h6" sx={{ mb: 2 }}>Search EDI</Typography>
-                        <Grid container spacing={3}>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                    <DatePicker
-                                        label="From Date"
-                                        value={fromDate}
-                                        onChange={setFromDate}
-                                        renderInput={(params) => <TextField {...params} fullWidth />}
-                                    />
-                                </LocalizationProvider>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                    <DatePicker
-                                        label="To Date"
-                                        value={toDate}
-                                        onChange={setToDate}
-                                        renderInput={(params) => <TextField {...params} fullWidth />}
-                                    />
-                                </LocalizationProvider>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <TextField
-                                    fullWidth
-                                    label="Invoice #"
-                                    value={invoiceNumber}
-                                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                                    InputProps={{
-                                        endAdornment: (
-                                            <IconButton size="small">
-                                                <SearchIcon />
-                                            </IconButton>
-                                        ),
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth>
-                                    <InputLabel>File Name</InputLabel>
-                                    <Select
-                                        value=""
-                                        label="File Name"
-                                    >
-                                        <MenuItem value="">
-                                            <em>Any</em>
-                                        </MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Carrier</InputLabel>
-                                    <Select
-                                        value=""
-                                        label="Carrier"
-                                    >
-                                        <MenuItem value="">
-                                            <em>Any</em>
-                                        </MenuItem>
-                                        <MenuItem value="fedex">FedEx</MenuItem>
-                                        <MenuItem value="ups">UPS</MenuItem>
-                                        <MenuItem value="usps">USPS</MenuItem>
-                                        <MenuItem value="dhl">DHL</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Status</InputLabel>
-                                    <Select
-                                        value=""
-                                        label="Status"
-                                    >
-                                        <MenuItem value="">
-                                            <em>Any</em>
-                                        </MenuItem>
-                                        <MenuItem value="processed">Processed</MenuItem>
-                                        <MenuItem value="pending">Pending</MenuItem>
-                                        <MenuItem value="failed">Failed</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                        </Grid>
-                    </Paper>
-
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            border: '1px solid #eee',
-                            borderRadius: 1,
-                            mb: 3,
-                            p: 3,
-                            backgroundColor: dragActive ? 'action.hover' : 'background.paper',
-                            transition: 'background-color 0.3s ease'
-                        }}
-                        onDragEnter={handleDrag}
-                        onDragLeave={handleDrag}
-                        onDragOver={handleDrag}
-                        onDrop={handleDrop}
-                    >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                p: 4,
-                                border: '2px dashed',
-                                borderColor: dragActive ? 'primary.main' : 'divider',
-                                borderRadius: 1,
-                                cursor: 'pointer',
-                            }}
-                            onClick={onButtonClick}
-                        >
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                multiple
-                                accept=".pdf,.csv,.xlsx,.xls"
-                                onChange={handleFileInputChange}
-                                style={{ display: 'none' }}
+                    {showEdiResults ? (
+                        <Box sx={{ mb: 3 }}>
+                            <Button
+                                variant="outlined"
+                                onClick={handleCloseEdiResults}
+                                sx={{ mb: 2 }}
+                            >
+                                Back to Upload
+                            </Button>
+                            <EDIResults
+                                uploadId={selectedUploadId}
+                                onClose={handleCloseEdiResults}
                             />
-                            <CloudUploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                            <Typography variant="h6" gutterBottom>
-                                Drop EDI files here
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" align="center">
-                                or click to select files (PDF, CSV, Excel)
-                            </Typography>
                         </Box>
-                    </Paper>
+                    ) : (
+                        <>
+                            <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #eee' }}>
+                                <Typography variant="h6" sx={{ mb: 2 }}>Upload EDI Files</Typography>
+                                <EDIUploader onUploadComplete={handleEdiUploadComplete} />
+                            </Paper>
 
-                    {ediFiles.length > 0 && (
-                        <Paper elevation={0} sx={{ border: '1px solid #eee' }}>
-                            <TableContainer>
-                                <Table>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>File Name</TableCell>
-                                            <TableCell>Type</TableCell>
-                                            <TableCell>Size</TableCell>
-                                            <TableCell>Upload Date</TableCell>
-                                            <TableCell>Status</TableCell>
-                                            <TableCell align="right">Actions</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {ediFiles.map((file, index) => (
-                                            <TableRow key={index}>
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <DocumentIcon color="primary" />
-                                                        {file.name}
-                                                    </Box>
-                                                </TableCell>
-                                                <TableCell>{file.type || 'Unknown'}</TableCell>
-                                                <TableCell>{(file.size / 1024).toFixed(2)} KB</TableCell>
-                                                <TableCell>{new Date(file.lastModified).toLocaleString()}</TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={file.status}
-                                                        size="small"
-                                                        color={file.status === 'processed' ? 'success' :
-                                                            file.status === 'failed' ? 'error' : 'warning'}
-                                                    />
-                                                </TableCell>
-                                                <TableCell align="right">
-                                                    <IconButton size="small">
-                                                        <MoreVertIcon />
-                                                    </IconButton>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        </Paper>
+                            {ediProcessedItems.length > 0 && (
+                                <Paper elevation={0} sx={{ border: '1px solid #eee' }}>
+                                    <Box sx={{ p: 2 }}>
+                                        <Typography variant="h6">EDI Processing History</Typography>
+                                    </Box>
+                                    <TableContainer>
+                                        <Table>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>File Name</TableCell>
+                                                    <TableCell>Upload Date</TableCell>
+                                                    <TableCell>Status</TableCell>
+                                                    <TableCell align="right">Actions</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {ediProcessedItems.map((item) => (
+                                                    <TableRow key={item.id} hover>
+                                                        <TableCell>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <FileIcon color="primary" />
+                                                                {item.fileName}
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell>{item.uploadedAt}</TableCell>
+                                                        <TableCell>
+                                                            <Chip
+                                                                label={item.processingStatus}
+                                                                size="small"
+                                                                color={
+                                                                    item.processingStatus === 'completed' ? 'success' :
+                                                                        item.processingStatus === 'failed' ? 'error' :
+                                                                            item.processingStatus === 'processing' ? 'primary' : 'default'
+                                                                }
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell align="right">
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleViewEdiResults(item.id)}
+                                                                disabled={item.processingStatus === 'queued'}
+                                                            >
+                                                                View Results
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                </Paper>
+                            )}
+                        </>
                     )}
                 </>
             )}

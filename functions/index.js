@@ -28,14 +28,21 @@ const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
 const { getCompany } = require('./src/getCompany');
 const { getCompanyCustomers } = require('./src/getCompanyCustomers');
 
+// Import EDI processing functions
+const ediProcessing = require('./src/edi-processing');
+
 // Export the Callable rate function (Used by Frontend)
 exports.getRatesEShipPlus = getRatesEShipPlus;
 
-// Export other Callable functions
-exports.getCompany = functions.https.onCall({ /* ... */ }, getCompany);
-exports.getCompanyCustomers = functions.https.onCall({ 
-    minInstances: 0,
-    timeoutSeconds: 60,
+// Export other Callable functions using v2 syntax
+exports.getCompany = functions.https.onCall({
+  region: 'us-central1'
+}, getCompany);
+
+exports.getCompanyCustomers = functions.https.onCall({
+  region: 'us-central1',
+  minInstances: 0,
+  timeoutSeconds: 60,
   memory: '256MiB'
 }, (data, context) => {
   // Safely log only primitive data without circular references
@@ -50,3 +57,8 @@ exports.getCompanyCustomers = functions.https.onCall({
     throw error;
   }
 });
+
+// Export EDI processing functions
+exports.onFileUploaded = ediProcessing.onFileUploaded;
+exports.processEdiFile = ediProcessing.processEdiFile;
+exports.processEdiHttp = ediProcessing.processEdiHttp;
