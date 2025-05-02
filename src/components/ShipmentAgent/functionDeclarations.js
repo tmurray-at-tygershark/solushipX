@@ -14,19 +14,6 @@ export const getCompanyDeclaration = {
     },
 };
 
-// Function declaration for getCompanyShipmentOrigins
-export const getCompanyShipmentOriginsDeclaration = {
-    name: "getCompanyShipmentOrigins",
-    description: "Fetches a list of saved shipment origin addresses for the company.",
-    parameters: {
-        type: "object",
-        properties: {
-           // Assuming companyId is handled implicitly
-        },
-        required: []
-    },
-};
-
 // Function declaration for getCompanyCustomers
 export const getCompanyCustomersDeclaration = {
     name: "getCompanyCustomers",
@@ -155,7 +142,6 @@ export const getRatesEShipPlusDeclaration = {
 // Combine all declarations for the tool configuration
 export const firebaseFunctionDeclarations = [
     getCompanyDeclaration,
-    getCompanyShipmentOriginsDeclaration,
     getCompanyCustomersDeclaration,
     getRatesEShipPlusDeclaration,
     // Add declarations for any other Firebase functions the agent might call

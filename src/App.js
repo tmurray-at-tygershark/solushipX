@@ -4,6 +4,7 @@ import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { AuthProvider } from './contexts/AuthContext';
+import { CompanyProvider } from './contexts/CompanyContext';
 import Navigation from './components/Navigation/Header';
 import Footer from './components/Footer/Footer';
 import NotificationBar from './components/NotificationBar/NotificationBar';
@@ -163,33 +164,35 @@ function App() {
     return (
         <ErrorBoundary>
             <AuthProvider>
-                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                    <Router>
-                        <CssBaseline />
-                        <Box sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            minHeight: '100vh',
-                            width: '100%'
-                        }}>
-                            <NotificationBar />
-                            <Navigation />
-                            <Box
-                                component="main"
-                                className="main-content"
-                                sx={{
-                                    flexGrow: 1,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    width: '100%'
-                                }}
-                            >
-                                <AppRoutes />
+                <CompanyProvider>
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                        <Router>
+                            <CssBaseline />
+                            <Box sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                minHeight: '100vh',
+                                width: '100%'
+                            }}>
+                                <NotificationBar />
+                                <Navigation />
+                                <Box
+                                    component="main"
+                                    className="main-content"
+                                    sx={{
+                                        flexGrow: 1,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        width: '100%'
+                                    }}
+                                >
+                                    <AppRoutes />
+                                </Box>
+                                <Footer />
                             </Box>
-                            <Footer />
-                        </Box>
-                    </Router>
-                </LocalizationProvider>
+                        </Router>
+                    </LocalizationProvider>
+                </CompanyProvider>
             </AuthProvider>
         </ErrorBoundary>
     );

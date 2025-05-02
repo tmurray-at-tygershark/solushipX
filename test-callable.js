@@ -17,8 +17,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const functions = getFunctions(app, 'us-central1');
 
-// Create callable function reference
-const getCompanyShipmentOrigins = httpsCallable(functions, 'getCompanyShipmentOrigins');
+// Create callable function reference - use a different function that still exists
+const getCompany = httpsCallable(functions, 'getCompany');
 
 // Call the function with a company ID
 const companyId = 'OSJ4266';
@@ -29,8 +29,8 @@ async function testFunction() {
     console.log('Skipping authentication for testing...');
     
     // Call the function with a company ID
-    console.log(`Testing getCompanyShipmentOrigins with companyId: ${companyId}`);
-    const result = await getCompanyShipmentOrigins({ companyId });
+    console.log(`Testing getCompany with companyId: ${companyId}`);
+    const result = await getCompany({ companyId });
     console.log('Function call successful!');
     console.log('Result:', JSON.stringify(result.data, null, 2));
   } catch (error) {

@@ -26,7 +26,6 @@ console.log('Initialized Admin SDK with service account');
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
 const { getCompany } = require('./src/getCompany');
-const { getCompanyShipmentOrigins } = require('./src/getCompanyShipmentOrigins');
 const { getCompanyCustomers } = require('./src/getCompanyCustomers');
 const { getCompanyCustomerDestinations } = require('./src/getCompanyCustomerDestinations');
 
@@ -35,7 +34,6 @@ exports.getRatesEShipPlus = getRatesEShipPlus;
 
 // Export other Callable functions
 exports.getCompany = functions.https.onCall({ /* ... */ }, getCompany);
-exports.getCompanyShipmentOrigins = functions.https.onCall({ /* ... */ }, (data, context) => { /* ... */ });
 exports.getCompanyCustomers = functions.https.onCall({ 
     minInstances: 0,
     timeoutSeconds: 60,

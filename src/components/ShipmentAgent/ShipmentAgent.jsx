@@ -965,17 +965,6 @@ const ShipmentAgent = ({
         setMessages([{
             role: 'agent', content: "Hi! I'm your shipping assistant. How can I help today?"
         }]);
-
-        // For testing - try to fetch shipping origins directly
-        setTimeout(async () => {
-            try {
-                console.log("TEST: Directly fetching shipping origins...");
-                const result = await availableFunctions.listShippingOrigins({ companyId: companyIdProp });
-                console.log("TEST RESULT:", result);
-            } catch (e) {
-                console.error("TEST ERROR:", e);
-            }
-        }, 2000);
     }, [companyIdProp, currentUser, availableFunctions]);
 
     const sendMessage = useCallback(async (msg) => {

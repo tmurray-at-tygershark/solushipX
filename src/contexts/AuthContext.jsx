@@ -168,6 +168,11 @@ export const AuthProvider = ({ children }) => {
             setUser(null);
             setUserRole(null);
 
+            // Clear company data from localStorage
+            localStorage.removeItem('solushipx_company_data');
+            localStorage.removeItem('solushipx_company_id_for_address');
+            console.log('AuthContext - Cleared company data from localStorage');
+
             // Wait for a moment to ensure state is cleared
             await new Promise(resolve => setTimeout(resolve, 100));
 

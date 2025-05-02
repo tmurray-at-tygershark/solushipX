@@ -14,7 +14,7 @@ const firebaseConfig = {
 };
 
 // Test function - this will run when you execute the script
-async function testGetCompanyShipmentOrigins() {
+async function testGetCompany() {
   console.log('Initializing Firebase...');
   
   // Initialize Firebase
@@ -41,24 +41,19 @@ async function testGetCompanyShipmentOrigins() {
     
     // Get the cloud function
     console.log('Getting function reference...');
-    const getCompanyShipmentOriginsFunction = httpsCallable(functions, 'getCompanyShipmentOrigins');
+    const getCompanyFunction = httpsCallable(functions, 'getCompany');
     
     // Call the function with test data
-    console.log('Calling getCompanyShipmentOrigins function...');
+    console.log('Calling getCompany function...');
     const companyId = 'OSJ4266';  // Replace with a valid company ID
-    const response = await getCompanyShipmentOriginsFunction({ companyId });
+    const response = await getCompanyFunction({ companyId });
     
     console.log('Response:', JSON.stringify(response.data, null, 2));
     console.log('Success:', response.data.success);
     
     if (response.data.success) {
-      const { shipFromAddresses } = response.data.data;
-      console.log(`Found ${shipFromAddresses.length} addresses`);
-      
-      // Log the first address if available
-      if (shipFromAddresses.length > 0) {
-        console.log('First address:', shipFromAddresses[0]);
-      }
+      const companyData = response.data.data;
+      console.log(`Company data:`, companyData);
     }
   } catch (error) {
     console.error('Error calling function:', error);
@@ -75,7 +70,7 @@ async function testGetCompanyShipmentOrigins() {
 }
 
 // Run the test
-testGetCompanyShipmentOrigins()
+testGetCompany()
   .then(() => console.log('Test completed.'))
   .catch(err => console.error('Test failed:', err))
   .finally(() => process.exit()); 

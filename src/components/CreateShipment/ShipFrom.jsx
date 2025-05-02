@@ -3,6 +3,7 @@ import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, limi
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button } from '@mui/material';
@@ -11,6 +12,7 @@ import './ShipFrom.css';
 
 const ShipFrom = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
+    const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
     const { formData, updateFormSection } = useShipmentForm();
     const [shipFromAddresses, setShipFromAddresses] = useState(formData.shipFrom?.shipFromAddresses || []);
     const [selectedAddressId, setSelectedAddressId] = useState(formData.shipFrom?.id || null);
@@ -20,8 +22,6 @@ const ShipFrom = ({ onNext, onPrevious }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loading, setLoading] = useState(true);
     const [currentStep, setCurrentStep] = useState(1);
-    const [companyId, setCompanyId] = useState(null);
-    const [companyIdForAddress, setCompanyIdForAddress] = useState(null); // The companyID for use in addressBook
     const [newAddress, setNewAddress] = useState({
         nickname: '',
         companyName: '',
@@ -37,73 +37,6 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         email: '',
         isDefault: false
     });
-
-    // Fetch the company ID for the current user
-    useEffect(() => {
-        const fetchCompanyId = async () => {
-            try {
-                if (!currentUser) return;
-
-                console.log("ShipFrom: Fetching company ID for user", currentUser.uid);
-
-                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                if (!userDoc.exists()) {
-                    throw new Error('User data not found.');
-                }
-
-                const userData = userDoc.data();
-                const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
-
-                if (!companyIdValue) {
-                    throw new Error('No company ID found.');
-                }
-
-                console.log("ShipFrom: Found companyID value:", companyIdValue);
-
-                // Query for the company document where companyID field equals the value
-                console.log('ShipFrom: Querying companies collection for document where companyID =', companyIdValue);
-
-                // Query to find the company document where companyID field equals the value we have
-                const companiesQuery = query(
-                    collection(db, 'companies'),
-                    where('companyID', '==', companyIdValue),
-                    limit(1)
-                );
-
-                const companiesSnapshot = await getDocs(companiesQuery);
-
-                if (companiesSnapshot.empty) {
-                    throw new Error(`No company found with companyID: ${companyIdValue}`);
-                }
-
-                // Get the first matching document
-                const companyDoc = companiesSnapshot.docs[0];
-                const companyData = companyDoc.data();
-                const companyDocId = companyDoc.id;
-
-                console.log('ShipFrom: Found company document:', { id: companyDocId, ...companyData });
-
-                // Save the Firebase document ID
-                setCompanyId(companyDocId);
-
-                // Get the companyID field needed for addressBook
-                const addressCompanyId = companyData.companyID;
-                if (!addressCompanyId) {
-                    console.warn('Company document does not contain companyID field:', companyData);
-                }
-                console.log("ShipFrom: Using companyID for address lookup:", addressCompanyId);
-                setCompanyIdForAddress(addressCompanyId);
-
-                return { firebaseId: companyDocId, addressId: addressCompanyId };
-            } catch (err) {
-                console.error('Error fetching company ID:', err);
-                setError(err.message || 'Failed to fetch company data.');
-                return null;
-            }
-        };
-
-        fetchCompanyId();
-    }, [currentUser]);
 
     // Fetch addresses from addressBook collection
     useEffect(() => {
@@ -229,7 +162,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         };
 
         fetchAddresses();
-    }, [companyIdForAddress, updateFormSection, selectedAddressId, shipFromAddresses]);
+    }, [companyIdForAddress, updateFormSection, selectedAddressId, shipFromAddresses, formData.shipFrom]);
 
     const handleAddressChange = useCallback((addressId) => {
         const addressIdStr = addressId ? String(addressId) : null;
@@ -512,7 +445,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
     // Log the current state of the component for debugging
     useEffect(() => {
         console.log("ShipFrom: Current state:", {
-            companyId,
+            companyId: companyData?.id,
             companyIdForAddress,
             selectedAddressId,
             addressesCount: shipFromAddresses.length,
@@ -520,7 +453,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
             formDataShipFrom: formData.shipFrom,
             formDataAddressIds: formData.shipFrom?.shipFromAddresses?.map(a => a.id) || []
         });
-    }, [companyId, companyIdForAddress, selectedAddressId, shipFromAddresses, formData.shipFrom]);
+    }, [companyData?.id, companyIdForAddress, selectedAddressId, shipFromAddresses, formData.shipFrom]);
 
     return (
         <form className="ship-from-form">
