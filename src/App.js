@@ -148,6 +148,13 @@ function AppRoutes() {
                     <Route path="billing" element={<BillingDashboard />} />
                     <Route path="billing/invoice/new" element={<InvoiceForm />} />
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />
+                    <Route path="billing/edi" element={<BillingDashboard initialTab="edi" />} />
+                    <Route path="billing/edi/:uploadId" element={<BillingDashboard initialTab="edi" />} />
+                    <Route path="billing/generate" element={<BillingDashboard initialTab="generate" />} />
+                    <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
+                    <Route path="billing/not-invoiced" element={<BillingDashboard initialTab="not-invoiced" />} />
+                    <Route path="billing/pay" element={<BillingDashboard initialTab="pay" />} />
+                    <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
                     <Route path="roles" element={<RoleManagement />} />
                     <Route path="settings" element={<SystemSettings />} />
                     <Route path="carrier-keys" element={<CarrierKeys />} />

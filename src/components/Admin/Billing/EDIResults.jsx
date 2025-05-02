@@ -31,73 +31,147 @@ import {
     InfoOutlined as InfoIcon,
     CheckCircleOutline as CheckCircleIcon,
     ErrorOutline as ErrorIcon,
-    HourglassEmpty as PendingIcon
+    HourglassEmpty as PendingIcon,
+    LocalShippingOutlined as ShippingIcon,
+    ReceiptOutlined as ReceiptIcon
 } from '@mui/icons-material';
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '../../../firebase';
+import { db, adminDb } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useNavigate, useParams } from 'react-router-dom';
 
-const EDIResults = ({ uploadId, onClose }) => {
+const EDIResults = ({ uploadId: propUploadId, onClose }) => {
+    const navigate = useNavigate();
+    const params = useParams();
     const { currentUser } = useAuth();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [processingStatus, setProcessingStatus] = useState('processing');
     const [fileDetails, setFileDetails] = useState(null);
     const [extractedData, setExtractedData] = useState([]);
-    const [selectedShipment, setSelectedShipment] = useState(null);
+    const [selectedRecord, setSelectedRecord] = useState(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
 
+    // Get uploadId from props or URL params
+    const uploadId = propUploadId || params?.uploadId;
+
+    // Collection names for EDI data
+    const uploadsCollection = 'ediUploads';
+    const resultsCollection = 'ediResults';
+
+    const handleClose = () => {
+        if (onClose) {
+            onClose();
+        } else {
+            // If no onClose handler provided (direct URL access), navigate back
+            navigate('/admin/billing/edi');
+        }
+    };
+
     useEffect(() => {
-        if (!uploadId) return;
+        if (!uploadId) {
+            setError("No upload ID provided. Please select an EDI file to view results.");
+            setLoading(false);
+            return;
+        }
+
+        console.log(`Fetching EDI data for upload ID: ${uploadId}`);
 
         const fetchEdiData = async () => {
+            let unsubscribe = null;
+
             try {
                 setLoading(true);
 
-                // Get the file upload details
-                const uploadRef = doc(db, 'ediUploads', uploadId);
+                // Get the file upload details - ENSURE we're using adminDb
+                console.log(`Accessing document: ${uploadsCollection}/${uploadId} in admin database`);
+                const uploadRef = doc(adminDb, uploadsCollection, uploadId);
                 const uploadDoc = await getDoc(uploadRef);
 
                 if (!uploadDoc.exists()) {
-                    throw new Error('Upload not found');
-                }
+                    console.error(`Document ${uploadId} not found in ${uploadsCollection} collection`);
+                    // Try the regular database as fallback
+                    console.log(`Trying fallback to regular database...`);
+                    const regularUploadRef = doc(db, uploadsCollection, uploadId);
+                    const regularUploadDoc = await getDoc(regularUploadRef);
 
-                const uploadData = uploadDoc.data();
-                setFileDetails(uploadData);
+                    if (!regularUploadDoc.exists()) {
+                        throw new Error(`Upload not found in any database. ID: ${uploadId}`);
+                    } else {
+                        console.log(`Found document in regular database instead of admin database`);
+                        const uploadData = regularUploadDoc.data();
+                        setFileDetails(uploadData);
 
-                // Set up real-time listener for status updates
-                const unsubscribe = onSnapshot(uploadRef, (doc) => {
-                    if (doc.exists()) {
-                        const data = doc.data();
-                        setProcessingStatus(data.processingStatus);
-
-                        // If processing is complete, fetch the extracted data
-                        if (data.processingStatus === 'completed' && data.resultDocId) {
-                            fetchExtractedResults(data.resultDocId);
-                        } else if (data.processingStatus === 'failed') {
-                            setError(data.error || 'Processing failed');
-                            setLoading(false);
-                        }
+                        // Set up real-time listener on regular database
+                        unsubscribe = onSnapshot(regularUploadRef, handleDocumentSnapshot);
                     }
-                });
+                } else {
+                    console.log(`Found document in admin database`);
+                    const uploadData = uploadDoc.data();
+                    setFileDetails(uploadData);
 
-                return unsubscribe;
+                    // Set up real-time listener on admin database
+                    unsubscribe = onSnapshot(uploadRef, handleDocumentSnapshot);
+                }
             } catch (err) {
                 console.error('Error fetching EDI data:', err);
                 setError(err.message);
                 setLoading(false);
             }
+
+            return unsubscribe;
         };
 
-        const fetchExtractedResults = async (resultDocId) => {
+        // Handler for document snapshot updates
+        const handleDocumentSnapshot = (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                console.log(`Processing status updated: ${data.processingStatus}`);
+                setProcessingStatus(data.processingStatus);
+
+                // If processing is complete, fetch the extracted data
+                if (data.processingStatus === 'completed' && data.resultDocId) {
+                    console.log(`Processing complete. Fetching results document: ${data.resultDocId}`);
+                    fetchExtractedResults(data.resultDocId, data.isAdmin);
+                } else if (data.processingStatus === 'failed') {
+                    setError(data.error || 'Processing failed');
+                    setLoading(false);
+                }
+            }
+        };
+
+        const fetchExtractedResults = async (resultDocId, isAdmin = true) => {
             try {
-                const resultRef = doc(db, 'ediResults', resultDocId);
+                // Use the appropriate database based on isAdmin flag
+                const database = isAdmin ? adminDb : db;
+                console.log(`Fetching results from ${isAdmin ? 'admin' : 'regular'} database: ${resultsCollection}/${resultDocId}`);
+
+                const resultRef = doc(database, resultsCollection, resultDocId);
                 const resultDoc = await getDoc(resultRef);
 
                 if (resultDoc.exists()) {
                     const resultData = resultDoc.data();
-                    setExtractedData(resultData.shipments || []);
+                    // Handle both old format (shipments) and new format (records)
+                    const extractedData = resultData.records || resultData.shipments || [];
+                    console.log(`Found ${extractedData.length} records in extraction results`);
+                    setExtractedData(extractedData);
+                } else {
+                    // Try the other database as fallback
+                    const fallbackDatabase = isAdmin ? db : adminDb;
+                    console.log(`Result not found. Trying fallback database...`);
+                    const fallbackResultRef = doc(fallbackDatabase, resultsCollection, resultDocId);
+                    const fallbackResultDoc = await getDoc(fallbackResultRef);
+
+                    if (fallbackResultDoc.exists()) {
+                        console.log(`Found results in fallback database`);
+                        const resultData = fallbackResultDoc.data();
+                        const extractedData = resultData.records || resultData.shipments || [];
+                        setExtractedData(extractedData);
+                    } else {
+                        console.error(`Results document not found in either database: ${resultDocId}`);
+                        setError(`Results document not found: ${resultDocId}`);
+                    }
                 }
 
                 setLoading(false);
@@ -116,8 +190,8 @@ const EDIResults = ({ uploadId, onClose }) => {
         };
     }, [uploadId]);
 
-    const handleViewDetails = (shipment) => {
-        setSelectedShipment(shipment);
+    const handleViewDetails = (record) => {
+        setSelectedRecord(record);
         setDetailsOpen(true);
     };
 
@@ -158,6 +232,42 @@ const EDIResults = ({ uploadId, onClose }) => {
         }
     };
 
+    const getRecordTypeChip = (recordType) => {
+        if (recordType === 'charge') {
+            return <Chip
+                icon={<ReceiptIcon fontSize="small" />}
+                label="Charge"
+                color="secondary"
+                variant="outlined"
+                size="small"
+            />;
+        }
+        return <Chip
+            icon={<ShippingIcon fontSize="small" />}
+            label="Shipment"
+            color="primary"
+            variant="outlined"
+            size="small"
+        />;
+    };
+
+    // Filter data by record type
+    const getShipments = () => {
+        const shipments = extractedData.filter(record =>
+            !record.recordType || record.recordType === 'shipment'
+        );
+        console.log('Filtered shipments:', shipments);
+        return shipments;
+    };
+
+    const getCharges = () => {
+        const charges = extractedData.filter(record =>
+            record.recordType === 'charge'
+        );
+        console.log('Filtered charges:', charges);
+        return charges;
+    };
+
     // Format monetary values
     const formatCurrency = (value) => {
         if (value === undefined || value === null) return 'N/A';
@@ -186,12 +296,15 @@ const EDIResults = ({ uploadId, onClose }) => {
                 <Alert severity="error" sx={{ mb: 3 }}>
                     {error}
                 </Alert>
-                <Button variant="outlined" onClick={onClose}>
+                <Button variant="outlined" onClick={handleClose}>
                     Go Back
                 </Button>
             </Box>
         );
     }
+
+    const shipments = getShipments();
+    const charges = getCharges();
 
     return (
         <Box>
@@ -215,7 +328,7 @@ const EDIResults = ({ uploadId, onClose }) => {
 
             {extractedData.length === 0 && processingStatus === 'completed' ? (
                 <Alert severity="warning" sx={{ mb: 3 }}>
-                    No shipment data was extracted from this file.
+                    No data was extracted from this file.
                 </Alert>
             ) : (
                 <>
@@ -225,68 +338,245 @@ const EDIResults = ({ uploadId, onClose }) => {
                             onChange={handleTabChange}
                             sx={{ borderBottom: 1, borderColor: 'divider' }}
                         >
-                            <Tab label={`Shipments (${extractedData.length})`} />
+                            <Tab label={`Shipments (${shipments.length})`} />
+                            <Tab label={`Charges (${charges.length})`} />
                             <Tab label="Processing Summary" />
                             <Tab label="Raw Data" />
                         </Tabs>
 
                         {activeTab === 0 && (
-                            <TableContainer>
-                                <Table>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Reference/Tracking #</TableCell>
-                                            <TableCell>From</TableCell>
-                                            <TableCell>To</TableCell>
-                                            <TableCell>Carrier/Service</TableCell>
-                                            <TableCell>Ship Date</TableCell>
-                                            <TableCell align="right">Weight</TableCell>
-                                            <TableCell align="right">Cost</TableCell>
-                                            <TableCell align="right">Actions</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {extractedData.map((shipment, index) => (
-                                            <TableRow key={index} hover>
-                                                <TableCell>
-                                                    {shipment.trackingNumber || shipment.referenceNumber || `SHIP-${index + 1}`}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {shipment.origin?.city ?
-                                                        `${shipment.origin.city}, ${shipment.origin.state || ''}` :
-                                                        (shipment.from || 'N/A')}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {shipment.destination?.city ?
-                                                        `${shipment.destination.city}, ${shipment.destination.state || ''}` :
-                                                        (shipment.to || 'N/A')}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {shipment.carrier} {shipment.serviceType && `- ${shipment.serviceType}`}
-                                                </TableCell>
-                                                <TableCell>{shipment.shipDate || 'N/A'}</TableCell>
-                                                <TableCell align="right">
-                                                    {shipment.weight ? `${shipment.weight} ${shipment.weightUnit || 'lbs'}` : 'N/A'}
-                                                </TableCell>
-                                                <TableCell align="right">
-                                                    {formatCurrency(shipment.totalCost || shipment.cost)}
-                                                </TableCell>
-                                                <TableCell align="right">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleViewDetails(shipment)}
-                                                    >
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
+                            <>
+                                {shipments.length === 0 ? (
+                                    <Box sx={{ p: 3 }}>
+                                        <Alert severity="info">No shipment records found in this file.</Alert>
+                                    </Box>
+                                ) : (
+                                    <TableContainer>
+                                        <Table>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Tracking/Reference</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Date</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Account</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Origin</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Destination</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Carrier/Service</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Weight</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Pieces</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Cost</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Actions</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {shipments.map((shipment, index) => (
+                                                    <TableRow key={index} hover>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Box>
+                                                                <Typography variant="body2" fontWeight="medium">
+                                                                    {shipment.trackingNumber || "No tracking #"}
+                                                                </Typography>
+                                                                {shipment.shipmentReference && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Ref: {shipment.shipmentReference}
+                                                                    </Typography>
+                                                                )}
+                                                                {shipment.manifestNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Manifest: {shipment.manifestNumber}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {shipment.shipDate || shipment.manifestDate || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {shipment.accountNumber || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Box>
+                                                                {shipment.origin?.company && (
+                                                                    <Typography variant="body2" fontWeight="medium">
+                                                                        {shipment.origin.company}
+                                                                    </Typography>
+                                                                )}
+                                                                {shipment.origin?.street && (
+                                                                    <Typography variant="caption" display="block">
+                                                                        {shipment.origin.street}
+                                                                    </Typography>
+                                                                )}
+                                                                <Typography variant="caption" display="block">
+                                                                    {shipment.origin?.city ?
+                                                                        `${shipment.origin.city}${shipment.origin.state ? ', ' : ''}${shipment.origin.state || ''} ${shipment.origin.postalCode || ''}` :
+                                                                        'N/A'}
+                                                                </Typography>
+                                                                {shipment.origin?.country && (
+                                                                    <Typography variant="caption" display="block">
+                                                                        {shipment.origin.country}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Box>
+                                                                {shipment.destination?.company && (
+                                                                    <Typography variant="body2" fontWeight="medium">
+                                                                        {shipment.destination.company}
+                                                                    </Typography>
+                                                                )}
+                                                                {shipment.destination?.street && (
+                                                                    <Typography variant="caption" display="block">
+                                                                        {shipment.destination.street}
+                                                                    </Typography>
+                                                                )}
+                                                                <Typography variant="caption" display="block">
+                                                                    {shipment.destination?.city ?
+                                                                        `${shipment.destination.city}${shipment.destination.state ? ', ' : ''}${shipment.destination.state || ''} ${shipment.destination.postalCode || ''}` :
+                                                                        (shipment.postalCode ? `${shipment.postalCode}` : 'N/A')}
+                                                                </Typography>
+                                                                {shipment.destination?.country && (
+                                                                    <Typography variant="caption" display="block">
+                                                                        {shipment.destination.country}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Box>
+                                                                <Typography variant="body2">
+                                                                    {shipment.carrier || 'N/A'}
+                                                                </Typography>
+                                                                {shipment.serviceType && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        {shipment.serviceType}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            {shipment.actualWeight ?
+                                                                `${shipment.actualWeight} ${shipment.weightUnit || 'lbs'}` :
+                                                                (shipment.reportedWeight ? `${shipment.reportedWeight} ${shipment.weightUnit || 'lbs'}` : 'N/A')}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            {shipment.pieces || '0'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            <Box>
+                                                                <Typography variant="body2" fontWeight="medium">
+                                                                    {formatCurrency(shipment.totalCost || shipment.cost)}
+                                                                </Typography>
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleViewDetails(shipment)}
+                                                            >
+                                                                <InfoIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                )}
+                            </>
                         )}
 
                         {activeTab === 1 && (
+                            <>
+                                {charges.length === 0 ? (
+                                    <Box sx={{ p: 3 }}>
+                                        <Alert severity="info">No charge records found in this file.</Alert>
+                                    </Box>
+                                ) : (
+                                    <TableContainer>
+                                        <Table>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Reference</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Date</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Description</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Account/Invoice</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Postal Code</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Cost Breakdown</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Total Cost</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Actions</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {charges.map((charge, index) => (
+                                                    <TableRow key={index} hover>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {charge.shipmentReference || charge.manifestNumber || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {charge.invoiceDate || charge.shipDate || charge.manifestDate || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {charge.description || 'Additional Charge'}
+                                                            </Typography>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Box>
+                                                                {charge.accountNumber && (
+                                                                    <Typography variant="body2">
+                                                                        Acct: {charge.accountNumber}
+                                                                    </Typography>
+                                                                )}
+                                                                {charge.invoiceNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Inv: {charge.invoiceNumber}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {charge.postalCode ||
+                                                                (charge.destination && charge.destination.postalCode) || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            {charge.costs ? (
+                                                                <Box>
+                                                                    {Object.entries(charge.costs).slice(0, 2).map(([key, value]) => (
+                                                                        <Typography key={key} variant="caption" display="block">
+                                                                            {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}: {formatCurrency(value)}
+                                                                        </Typography>
+                                                                    ))}
+                                                                    {Object.keys(charge.costs).length > 2 && (
+                                                                        <Typography variant="caption" color="text.secondary">
+                                                                            +{Object.keys(charge.costs).length - 2} more
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+                                                            ) : 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {formatCurrency(charge.totalCost || charge.cost)}
+                                                            </Typography>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleViewDetails(charge)}
+                                                            >
+                                                                <InfoIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                )}
+                            </>
+                        )}
+
+                        {activeTab === 2 && (
                             <Box sx={{ p: 3 }}>
                                 <Grid container spacing={3}>
                                     <Grid item xs={12} sm={6} md={3}>
@@ -296,7 +586,7 @@ const EDIResults = ({ uploadId, onClose }) => {
                                                     {extractedData.length}
                                                 </Typography>
                                                 <Typography variant="body2" color="text.secondary">
-                                                    Total Shipments Extracted
+                                                    Total Records Extracted
                                                 </Typography>
                                             </CardContent>
                                         </Card>
@@ -310,7 +600,7 @@ const EDIResults = ({ uploadId, onClose }) => {
                                                     )}
                                                 </Typography>
                                                 <Typography variant="body2" color="text.secondary">
-                                                    Total Shipping Cost
+                                                    Total Cost
                                                 </Typography>
                                             </CardContent>
                                         </Card>
@@ -342,6 +632,22 @@ const EDIResults = ({ uploadId, onClose }) => {
                                                 </Typography>
                                             </CardContent>
                                         </Card>
+                                    </Grid>
+                                    <Grid item xs={12}>
+                                        <Typography variant="subtitle2" color="text.secondary">
+                                            AI Model Used
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            {fileDetails.aiModel || 'Gemini Pro'}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={12}>
+                                        <Typography variant="subtitle2" color="text.secondary">
+                                            Carrier
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            {fileDetails.carrier || extractedData[0]?.carrier || 'Not specified'}
+                                        </Typography>
                                     </Grid>
                                 </Grid>
 
@@ -401,7 +707,7 @@ const EDIResults = ({ uploadId, onClose }) => {
                             </Box>
                         )}
 
-                        {activeTab === 2 && (
+                        {activeTab === 3 && (
                             <Box sx={{ p: 3 }}>
                                 <Typography variant="subtitle2" gutterBottom>
                                     Raw Extracted Data (JSON)
@@ -432,148 +738,300 @@ const EDIResults = ({ uploadId, onClose }) => {
             >
                 <DialogTitle>
                     <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Typography variant="h6">Shipment Details</Typography>
+                        <Box display="flex" alignItems="center">
+                            <Typography variant="h6">Record Details</Typography>
+                            {selectedRecord && (
+                                <Box ml={2}>
+                                    {getRecordTypeChip(selectedRecord.recordType)}
+                                </Box>
+                            )}
+                        </Box>
                         <IconButton onClick={() => setDetailsOpen(false)} size="small">
                             <CloseIcon />
                         </IconButton>
                     </Box>
                 </DialogTitle>
                 <DialogContent dividers>
-                    {selectedShipment && (
+                    {selectedRecord && (
                         <Grid container spacing={3}>
                             <Grid item xs={12}>
-                                <Typography variant="h6">
-                                    {selectedShipment.trackingNumber || selectedShipment.referenceNumber || 'No Tracking Number'}
-                                </Typography>
+                                <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                                    <Box>
+                                        <Typography variant="h6">
+                                            {selectedRecord.trackingNumber ||
+                                                selectedRecord.referenceNumber ||
+                                                selectedRecord.description ||
+                                                'No Identifier'}
+                                        </Typography>
+                                        {selectedRecord.shipmentReference && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                Reference: {selectedRecord.shipmentReference}
+                                            </Typography>
+                                        )}
+                                        {selectedRecord.manifestNumber && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                Manifest: {selectedRecord.manifestNumber}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                    <Box>
+                                        {selectedRecord.accountNumber && (
+                                            <Typography variant="body2" textAlign="right">
+                                                Account: {selectedRecord.accountNumber}
+                                            </Typography>
+                                        )}
+                                        {selectedRecord.invoiceNumber && (
+                                            <Typography variant="body2" color="text.secondary" textAlign="right">
+                                                Invoice: {selectedRecord.invoiceNumber}
+                                            </Typography>
+                                        )}
+                                        {selectedRecord.invoiceDate && (
+                                            <Typography variant="body2" color="text.secondary" textAlign="right">
+                                                Invoice Date: {selectedRecord.invoiceDate}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
                                 <Divider sx={{ my: 2 }} />
                             </Grid>
 
-                            <Grid item xs={12} md={6}>
-                                <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
-                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                        Origin
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        {selectedShipment.origin?.company || selectedShipment.originCompany || 'N/A'}<br />
-                                        {selectedShipment.origin?.street || ''} {selectedShipment.origin?.street2 || ''}<br />
-                                        {selectedShipment.origin?.city || ''}{selectedShipment.origin?.city ? ', ' : ''}
-                                        {selectedShipment.origin?.state || ''} {selectedShipment.origin?.postalCode || ''}<br />
-                                        {selectedShipment.origin?.country || ''}
-                                    </Typography>
-                                </Paper>
-                            </Grid>
-
-                            <Grid item xs={12} md={6}>
-                                <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
-                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                        Destination
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        {selectedShipment.destination?.company || selectedShipment.destinationCompany || 'N/A'}<br />
-                                        {selectedShipment.destination?.street || ''} {selectedShipment.destination?.street2 || ''}<br />
-                                        {selectedShipment.destination?.city || ''}{selectedShipment.destination?.city ? ', ' : ''}
-                                        {selectedShipment.destination?.state || ''} {selectedShipment.destination?.postalCode || ''}<br />
-                                        {selectedShipment.destination?.country || ''}
-                                    </Typography>
-                                </Paper>
-                            </Grid>
-
-                            <Grid item xs={12} md={6}>
-                                <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
-                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                        Shipment Details
-                                    </Typography>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Carrier</Typography>
-                                            <Typography variant="body1">{selectedShipment.carrier || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Service</Typography>
-                                            <Typography variant="body1">{selectedShipment.serviceType || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Ship Date</Typography>
-                                            <Typography variant="body1">{selectedShipment.shipDate || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Delivery Date</Typography>
-                                            <Typography variant="body1">{selectedShipment.deliveryDate || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Weight</Typography>
-                                            <Typography variant="body1">
-                                                {selectedShipment.weight ?
-                                                    `${selectedShipment.weight} ${selectedShipment.weightUnit || 'lbs'}` : 'N/A'}
+                            {(!selectedRecord.recordType || selectedRecord.recordType === 'shipment') && (
+                                <>
+                                    <Grid item xs={12} md={6}>
+                                        <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                Origin
                                             </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Dimensions</Typography>
-                                            <Typography variant="body1">
-                                                {selectedShipment.dimensions || 'N/A'}
-                                            </Typography>
-                                        </Grid>
+                                            {selectedRecord.origin ? (
+                                                <>
+                                                    <Typography variant="body1" fontWeight="medium">
+                                                        {selectedRecord.origin.company || selectedRecord.originCompany || 'N/A'}
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedRecord.origin.street || ''} {selectedRecord.origin.street2 || ''}
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedRecord.origin.city || ''}{selectedRecord.origin.city ? ', ' : ''}
+                                                        {selectedRecord.origin.state || ''} {selectedRecord.origin.postalCode || ''}
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedRecord.origin.country || ''}
+                                                    </Typography>
+                                                </>
+                                            ) : (
+                                                <Typography variant="body1">No origin information available</Typography>
+                                            )}
+                                        </Paper>
                                     </Grid>
-                                </Paper>
-                            </Grid>
+
+                                    <Grid item xs={12} md={6}>
+                                        <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                Destination
+                                            </Typography>
+                                            {selectedRecord.destination ? (
+                                                <>
+                                                    <Typography variant="body1" fontWeight="medium">
+                                                        {selectedRecord.destination.company || selectedRecord.destinationCompany || 'N/A'}
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedRecord.destination.street || ''} {selectedRecord.destination.street2 || ''}
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedRecord.destination.city || ''}{selectedRecord.destination.city ? ', ' : ''}
+                                                        {selectedRecord.destination.state || ''} {selectedRecord.destination.postalCode || ''}
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedRecord.destination.country || ''}
+                                                    </Typography>
+                                                </>
+                                            ) : selectedRecord.postalCode ? (
+                                                <Typography variant="body1">Postal Code: {selectedRecord.postalCode}</Typography>
+                                            ) : (
+                                                <Typography variant="body1">No destination information available</Typography>
+                                            )}
+                                        </Paper>
+                                    </Grid>
+
+                                    <Grid item xs={12} md={6}>
+                                        <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                Shipment Details
+                                            </Typography>
+                                            <Grid container spacing={2}>
+                                                {selectedRecord.carrier && (
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="body2" color="text.secondary">Carrier</Typography>
+                                                        <Typography variant="body1" fontWeight="medium">{selectedRecord.carrier}</Typography>
+                                                    </Grid>
+                                                )}
+                                                {selectedRecord.serviceType && (
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="body2" color="text.secondary">Service</Typography>
+                                                        <Typography variant="body1">{selectedRecord.serviceType}</Typography>
+                                                    </Grid>
+                                                )}
+                                                {(selectedRecord.shipDate || selectedRecord.manifestDate) && (
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="body2" color="text.secondary">Ship Date</Typography>
+                                                        <Typography variant="body1">{selectedRecord.shipDate || selectedRecord.manifestDate}</Typography>
+                                                    </Grid>
+                                                )}
+                                                {selectedRecord.deliveryDate && (
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="body2" color="text.secondary">Delivery Date</Typography>
+                                                        <Typography variant="body1">{selectedRecord.deliveryDate}</Typography>
+                                                    </Grid>
+                                                )}
+                                                {(selectedRecord.actualWeight || selectedRecord.reportedWeight) && (
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="body2" color="text.secondary">Weight</Typography>
+                                                        <Typography variant="body1">
+                                                            {selectedRecord.actualWeight ?
+                                                                `${selectedRecord.actualWeight} ${selectedRecord.weightUnit || 'lbs'}` :
+                                                                (selectedRecord.reportedWeight ?
+                                                                    `${selectedRecord.reportedWeight} ${selectedRecord.weightUnit || 'lbs'}` : 'N/A')}
+                                                        </Typography>
+                                                    </Grid>
+                                                )}
+                                                {selectedRecord.pieces !== undefined && (
+                                                    <Grid item xs={6}>
+                                                        <Typography variant="body2" color="text.secondary">Pieces</Typography>
+                                                        <Typography variant="body1">{selectedRecord.pieces}</Typography>
+                                                    </Grid>
+                                                )}
+                                                {selectedRecord.dimensions && (
+                                                    <Grid item xs={12}>
+                                                        <Typography variant="body2" color="text.secondary">Dimensions</Typography>
+                                                        <Typography variant="body1">
+                                                            {selectedRecord.dimensions.length} × {selectedRecord.dimensions.width} × {selectedRecord.dimensions.height} {selectedRecord.dimensions.unit || 'in'}
+                                                        </Typography>
+                                                    </Grid>
+                                                )}
+                                            </Grid>
+                                        </Paper>
+                                    </Grid>
+                                </>
+                            )}
+
+                            {selectedRecord.recordType === 'charge' && (
+                                <Grid item xs={12} md={6}>
+                                    <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                            Charge Details
+                                        </Typography>
+                                        <Grid container spacing={2}>
+                                            {selectedRecord.description && (
+                                                <Grid item xs={12}>
+                                                    <Typography variant="body2" color="text.secondary">Description</Typography>
+                                                    <Typography variant="body1" fontWeight="medium">{selectedRecord.description}</Typography>
+                                                </Grid>
+                                            )}
+                                            {selectedRecord.chargeType && (
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">Type</Typography>
+                                                    <Typography variant="body1">{selectedRecord.chargeType}</Typography>
+                                                </Grid>
+                                            )}
+                                            {selectedRecord.shipDate && (
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">Date</Typography>
+                                                    <Typography variant="body1">{selectedRecord.shipDate}</Typography>
+                                                </Grid>
+                                            )}
+                                            {selectedRecord.postalCode && (
+                                                <Grid item xs={6}>
+                                                    <Typography variant="body2" color="text.secondary">Postal Code</Typography>
+                                                    <Typography variant="body1">{selectedRecord.postalCode}</Typography>
+                                                </Grid>
+                                            )}
+                                        </Grid>
+                                    </Paper>
+                                </Grid>
+                            )}
 
                             <Grid item xs={12} md={6}>
                                 <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
                                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                        Cost Details
+                                        Cost Breakdown
                                     </Typography>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Base Charge</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.baseCharge)}
+                                    {selectedRecord.costs && Object.keys(selectedRecord.costs).length > 0 ? (
+                                        <>
+                                            <Table size="small">
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>Item</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">Amount</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {Object.entries(selectedRecord.costs).map(([key, value]) => (
+                                                        <TableRow key={key}>
+                                                            <TableCell sx={{ verticalAlign: 'top' }}>
+                                                                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                                                            </TableCell>
+                                                            <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                                {formatCurrency(value)}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Typography variant="subtitle2">Total</Typography>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            <Typography variant="subtitle2">
+                                                                {formatCurrency(selectedRecord.totalCost ||
+                                                                    Object.values(selectedRecord.costs).reduce((sum, val) => sum + val, 0))}
+                                                            </Typography>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                            </Table>
+                                        </>
+                                    ) : (
+                                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                                            <Typography variant="body1">Total Cost</Typography>
+                                            <Typography variant="body1" fontWeight="medium">
+                                                {formatCurrency(selectedRecord.totalCost || selectedRecord.cost || 0)}
                                             </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Fuel Surcharge</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.fuelSurcharge)}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Additional Fees</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.additionalFees)}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Discounts</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.discounts)}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Tax</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.tax)}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary" fontWeight="bold">
-                                                Total Cost
-                                            </Typography>
-                                            <Typography variant="body1" fontWeight="bold">
-                                                {formatCurrency(selectedShipment.totalCost || selectedShipment.cost)}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
+                                        </Box>
+                                    )}
                                 </Paper>
                             </Grid>
 
-                            {selectedShipment.notes && (
+                            {selectedRecord.shipmentReference && (
                                 <Grid item xs={12}>
                                     <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
                                         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                            Notes
+                                            Reference Information
                                         </Typography>
-                                        <Typography variant="body1">
-                                            {selectedShipment.notes}
-                                        </Typography>
+                                        <Grid container spacing={2}>
+                                            <Grid item xs={12} sm={6} md={4}>
+                                                <Typography variant="body2" color="text.secondary">Shipment Reference</Typography>
+                                                <Typography variant="body1">
+                                                    {selectedRecord.shipmentReference}
+                                                </Typography>
+                                            </Grid>
+                                            {selectedRecord.manifestNumber && (
+                                                <Grid item xs={12} sm={6} md={4}>
+                                                    <Typography variant="body2" color="text.secondary">Manifest Number</Typography>
+                                                    <Typography variant="body1">
+                                                        {selectedRecord.manifestNumber}
+                                                    </Typography>
+                                                </Grid>
+                                            )}
+                                            {selectedRecord.trackingNumber && (
+                                                <Grid item xs={12} sm={6} md={4}>
+                                                    <Typography variant="body2" color="text.secondary">Tracking Number</Typography>
+                                                    <Typography variant="body1">
+                                                        {selectedRecord.trackingNumber}
+                                                    </Typography>
+                                                </Grid>
+                                            )}
+                                        </Grid>
                                     </Paper>
                                 </Grid>
                             )}
@@ -582,12 +1040,6 @@ const EDIResults = ({ uploadId, onClose }) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setDetailsOpen(false)}>Close</Button>
-                    <Button
-                        variant="contained"
-                        onClick={() => { /* Integration with admin actions */ }}
-                    >
-                        Create Invoice
-                    </Button>
                 </DialogActions>
             </Dialog>
         </Box>

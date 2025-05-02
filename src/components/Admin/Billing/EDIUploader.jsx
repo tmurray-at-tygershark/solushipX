@@ -12,7 +12,12 @@ import {
     Dialog,
     DialogTitle,
     DialogContent,
-    DialogActions
+    DialogActions,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    FormHelperText
 } from '@mui/material';
 import {
     CloudUpload as CloudUploadIcon,
@@ -23,9 +28,20 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../../../contexts/AuthContext';
-import { db } from '../../../firebase';
+import { db, adminDb } from '../../../firebase';
 import { getApp } from 'firebase/app';
 import { getStorage } from 'firebase/storage';
+
+// Predefined list of carriers
+const CARRIERS = [
+    "UPS CANADA",
+    "UPS USA",
+    "CANPAR",
+    "FEDEX",
+    "LOOMIS",
+    "DHL EXPRESS",
+    "PUROLATOR"
+];
 
 const EDIUploader = ({ onUploadComplete }) => {
     const { currentUser } = useAuth();
@@ -38,6 +54,12 @@ const EDIUploader = ({ onUploadComplete }) => {
     const [error, setError] = useState(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedCarrier, setSelectedCarrier] = useState('');
+    const [carrierError, setCarrierError] = useState(false);
+
+    // Use the admin database for uploads in the admin section
+    const database = adminDb;
+    const collectionName = 'ediUploads';
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -98,8 +120,20 @@ const EDIUploader = ({ onUploadComplete }) => {
         });
     };
 
+    const handleCarrierChange = (event) => {
+        setSelectedCarrier(event.target.value);
+        setCarrierError(false);
+    };
+
     const uploadFiles = async () => {
         if (files.length === 0) return;
+
+        // Validate carrier selection
+        if (!selectedCarrier) {
+            setCarrierError(true);
+            setError("Please select a carrier before uploading");
+            return;
+        }
 
         setUploading(true);
         setError(null);
@@ -133,8 +167,8 @@ const EDIUploader = ({ onUploadComplete }) => {
                             // Get download URL
                             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-                            // Create record in Firestore
-                            const docRef = await addDoc(collection(db, 'ediUploads'), {
+                            // Create record in Firestore - use admin database
+                            const docRef = await addDoc(collection(database, collectionName), {
                                 fileName: file.name,
                                 fileSize: file.size,
                                 fileType: file.type,
@@ -144,7 +178,8 @@ const EDIUploader = ({ onUploadComplete }) => {
                                 status: 'pending',
                                 processingStatus: 'queued',
                                 storagePath: `edi-uploads/${currentUser.uid}/${fileId}`,
-                                isAdmin: true
+                                isAdmin: true,
+                                carrier: selectedCarrier // Add the selected carrier to the upload document
                             });
 
                             // Update local state
@@ -195,6 +230,48 @@ const EDIUploader = ({ onUploadComplete }) => {
                     </IconButton>
                 </Alert>
             )}
+
+            {/* Carrier Selection Dropdown */}
+            <Paper
+                elevation={0}
+                sx={{
+                    border: '1px solid #eee',
+                    borderRadius: 1,
+                    mb: 3,
+                    p: 3
+                }}
+            >
+                <Typography variant="h6" gutterBottom>
+                    Select Carrier
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Choose the carrier associated with this EDI file
+                </Typography>
+
+                <FormControl
+                    fullWidth
+                    error={carrierError}
+                    sx={{ mb: carrierError ? 0 : 2 }}
+                >
+                    <InputLabel id="carrier-select-label">Carrier</InputLabel>
+                    <Select
+                        labelId="carrier-select-label"
+                        id="carrier-select"
+                        value={selectedCarrier}
+                        label="Carrier"
+                        onChange={handleCarrierChange}
+                    >
+                        {CARRIERS.map((carrier) => (
+                            <MenuItem key={carrier} value={carrier}>
+                                {carrier}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                    {carrierError && (
+                        <FormHelperText>Please select a carrier before uploading</FormHelperText>
+                    )}
+                </FormControl>
+            </Paper>
 
             <Paper
                 elevation={0}
@@ -363,6 +440,10 @@ const EDIUploader = ({ onUploadComplete }) => {
                                 <Typography variant="body1">
                                     {new Date(selectedFile.lastModified).toLocaleString()}
                                 </Typography>
+                            </Box>
+                            <Box>
+                                <Typography variant="subtitle2" color="text.secondary">Selected Carrier</Typography>
+                                <Typography variant="body1">{selectedCarrier || 'None selected'}</Typography>
                             </Box>
                             <Box>
                                 <Typography variant="subtitle2" color="text.secondary">Upload Status</Typography>

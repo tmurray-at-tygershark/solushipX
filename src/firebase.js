@@ -20,8 +20,11 @@ const app = initializeApp(firebaseConfig);
 // Initialize Auth
 const auth = getAuth(app);
 
-// Initialize Firestore
+// Initialize Firestore - Default database
 const db = getFirestore(app);
+
+// Initialize Firestore - Admin database
+const adminDb = getFirestore(app, "admin");
 
 // Initialize Storage
 const storage = getStorage(app);
@@ -38,9 +41,10 @@ if (process.env.NODE_ENV === 'development') {
     connectFunctionsEmulator(functions, 'localhost', 5001);
     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
     connectFirestoreEmulator(db, 'localhost', 8080);
+    connectFirestoreEmulator(adminDb, 'localhost', 8080);
 }
 
-// Helper function to wrap callable functions (can be kept if used elsewhere)
+// Helper function to wrap callable functions
 const wrapCallable = (func) => {
     return async (data) => {
         try {
@@ -53,17 +57,16 @@ const wrapCallable = (func) => {
     };
 };
 
-// Define wrapped functions (Remove getShippingRates)
-// const wrappedGetShippingRates = wrapCallable(getShippingRates); // Removed
+// Define wrapped functions
 const wrappedAnalyzeRatesWithAI = wrapCallable(analyzeRatesWithAI);
 const wrappedGetMapsApiKey = wrapCallable(getMapsApiKey);
 
 export {
     auth,
     db,
+    adminDb, // Export the admin database
     storage,
     functions,
-    // wrappedGetShippingRates, // Removed export
     wrappedAnalyzeRatesWithAI,
     wrappedGetMapsApiKey
 }; 

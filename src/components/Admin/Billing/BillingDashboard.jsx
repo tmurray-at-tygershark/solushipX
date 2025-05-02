@@ -66,14 +66,15 @@ import {
     Legend,
     ResponsiveContainer,
 } from 'recharts';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '../../../firebase';
+import { collection, query, where, getDocs, orderBy, limit, getDoc, doc } from 'firebase/firestore';
+import { db, adminDb } from '../../../firebase';
 import './Billing.css';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 
 const generateMockInvoices = () => {
     const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
@@ -131,8 +132,11 @@ const generateMockInvoices = () => {
     });
 };
 
-const BillingDashboard = () => {
-    const [activeTab, setActiveTab] = useState('invoices');
+const BillingDashboard = ({ initialTab = 'invoices' }) => {
+    const navigate = useNavigate();
+    const params = useParams();
+    const location = useLocation();
+    const [activeTab, setActiveTab] = useState(initialTab);
     const [fromDate, setFromDate] = useState(null);
     const [toDate, setToDate] = useState(null);
     const [customerName, setCustomerName] = useState('');
@@ -162,9 +166,44 @@ const BillingDashboard = () => {
     const [ediFiles, setEdiFiles] = useState([]);
     const [dragActive, setDragActive] = useState(false);
     const fileInputRef = React.useRef(null);
-    const [selectedUploadId, setSelectedUploadId] = useState(null);
-    const [showEdiResults, setShowEdiResults] = useState(false);
+    const [selectedUploadId, setSelectedUploadId] = useState(params.uploadId || null);
+    const [showEdiResults, setShowEdiResults] = useState(!!params.uploadId);
     const [ediProcessedItems, setEdiProcessedItems] = useState([]);
+
+    // Handle initial tab and URL params
+    useEffect(() => {
+        if (initialTab) {
+            setActiveTab(initialTab);
+        }
+
+        // If we have an uploadId in the URL, show EDI results
+        if (params.uploadId) {
+            setSelectedUploadId(params.uploadId);
+            setShowEdiResults(true);
+            setActiveTab('edi');
+        }
+    }, [initialTab, params.uploadId]);
+
+    // Listen for path changes to update the active tab
+    useEffect(() => {
+        const path = location.pathname;
+
+        if (path.includes('/admin/billing/edi')) {
+            setActiveTab('edi');
+        } else if (path.includes('/admin/billing/generate')) {
+            setActiveTab('generate');
+        } else if (path.includes('/admin/billing/business')) {
+            setActiveTab('business');
+        } else if (path.includes('/admin/billing/not-invoiced')) {
+            setActiveTab('not-invoiced');
+        } else if (path.includes('/admin/billing/pay')) {
+            setActiveTab('pay');
+        } else if (path.includes('/admin/billing/payments')) {
+            setActiveTab('payments');
+        } else if (path.includes('/admin/billing')) {
+            setActiveTab('invoices');
+        }
+    }, [location.pathname]);
 
     useEffect(() => {
         fetchBillingData();
@@ -227,24 +266,80 @@ const BillingDashboard = () => {
 
     const fetchEdiHistory = async () => {
         try {
-            // Query for processed EDI files
-            const ediRef = collection(db, 'ediUploads');
+            // Query for processed EDI files from the admin database
+            const ediRef = collection(adminDb, 'ediResults');
             const q = query(
                 ediRef,
-                where('isAdmin', '==', true),
-                orderBy('uploadedAt', 'desc')
+                orderBy('processedAt', 'desc'),
+                limit(50)
             );
 
-            const querySnapshot = await getDocs(q);
-            const ediItems = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-                uploadedAt: doc.data().uploadedAt?.toDate().toLocaleString() || 'Unknown'
-            }));
+            const snapshot = await getDocs(q);
 
-            setEdiProcessedItems(ediItems);
-        } catch (err) {
-            console.error('Error fetching EDI history:', err);
+            // Create an array to hold all the promises for fetching upload status
+            const uploadPromises = snapshot.docs.map(async (docSnapshot) => {
+                const resultData = docSnapshot.data();
+                const uploadId = resultData.uploadId || docSnapshot.id;
+
+                // Also fetch the processing status from the ediUploads collection
+                try {
+                    const uploadRef = doc(adminDb, 'ediUploads', uploadId);
+                    const uploadDoc = await getDoc(uploadRef);
+
+                    if (uploadDoc.exists()) {
+                        const uploadData = uploadDoc.data();
+                        return {
+                            id: docSnapshot.id,
+                            uploadId: uploadId,
+                            fileName: resultData.fileName || 'Unknown File',
+                            processedAt: resultData.processedAt,
+                            uploadedAt: uploadData.uploadedAt ? new Date(uploadData.uploadedAt.toDate()).toLocaleString() : 'Unknown',
+                            processingStatus: uploadData.processingStatus || 'completed',
+                            recordCount: resultData.records ? resultData.records.length :
+                                (resultData.shipments ? resultData.shipments.length : 0),
+                            carrier: resultData.carrier || uploadData.carrier || '',
+                            ...resultData
+                        };
+                    } else {
+                        // If upload document doesn't exist, use data from results
+                        return {
+                            id: docSnapshot.id,
+                            uploadId: uploadId,
+                            fileName: resultData.fileName || 'Unknown File',
+                            processedAt: resultData.processedAt,
+                            uploadedAt: resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'Unknown',
+                            processingStatus: 'completed', // Default to completed if no status found
+                            recordCount: resultData.records ? resultData.records.length :
+                                (resultData.shipments ? resultData.shipments.length : 0),
+                            carrier: resultData.carrier || '',
+                            ...resultData
+                        };
+                    }
+                } catch (err) {
+                    console.error(`Error fetching upload data for ${uploadId}:`, err);
+                    // Return partial data if upload fetch fails
+                    return {
+                        id: docSnapshot.id,
+                        uploadId: uploadId,
+                        fileName: resultData.fileName || 'Unknown File',
+                        processedAt: resultData.processedAt,
+                        uploadedAt: resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'Unknown',
+                        processingStatus: 'unknown',
+                        recordCount: resultData.records ? resultData.records.length :
+                            (resultData.shipments ? resultData.shipments.length : 0),
+                        carrier: resultData.carrier || '',
+                        ...resultData
+                    };
+                }
+            });
+
+            // Wait for all the promises to resolve
+            const ediData = await Promise.all(uploadPromises);
+            console.log('Processed EDI history data:', ediData);
+
+            setEdiProcessedItems(ediData);
+        } catch (error) {
+            console.error('Error fetching EDI history:', error);
         }
     };
 
@@ -311,6 +406,38 @@ const BillingDashboard = () => {
 
     const handleTabChange = (event, newValue) => {
         setActiveTab(newValue);
+        // Update the URL based on the selected tab
+        switch (newValue) {
+            case 'invoices':
+                navigate('/admin/billing');
+                break;
+            case 'edi':
+                // If we have a selected upload ID, include it in the URL
+                if (selectedUploadId && showEdiResults) {
+                    navigate(`/admin/billing/edi/${selectedUploadId}`);
+                } else {
+                    navigate('/admin/billing/edi');
+                    setShowEdiResults(false);
+                }
+                break;
+            case 'generate':
+                navigate('/admin/billing/generate');
+                break;
+            case 'business':
+                navigate('/admin/billing/business');
+                break;
+            case 'not-invoiced':
+                navigate('/admin/billing/not-invoiced');
+                break;
+            case 'pay':
+                navigate('/admin/billing/pay');
+                break;
+            case 'payments':
+                navigate('/admin/billing/payments');
+                break;
+            default:
+                navigate('/admin/billing');
+        }
     };
 
     const handleMenuOpen = (event) => {
@@ -440,16 +567,20 @@ const BillingDashboard = () => {
         fetchEdiHistory();
         setSelectedUploadId(uploadId);
         setShowEdiResults(true);
+        navigate(`/admin/billing/edi/${uploadId}`);
     };
 
     const handleCloseEdiResults = () => {
         setShowEdiResults(false);
         setSelectedUploadId(null);
+        navigate('/admin/billing/edi');
     };
 
     const handleViewEdiResults = (uploadId) => {
+        console.log('Viewing results for upload ID:', uploadId);
         setSelectedUploadId(uploadId);
         setShowEdiResults(true);
+        navigate(`/admin/billing/edi/${uploadId}`);
     };
 
     if (loading) {
@@ -880,7 +1011,9 @@ const BillingDashboard = () => {
                                             <TableHead>
                                                 <TableRow>
                                                     <TableCell>File Name</TableCell>
+                                                    <TableCell>Carrier</TableCell>
                                                     <TableCell>Upload Date</TableCell>
+                                                    <TableCell>Records</TableCell>
                                                     <TableCell>Status</TableCell>
                                                     <TableCell align="right">Actions</TableCell>
                                                 </TableRow>
@@ -894,29 +1027,43 @@ const BillingDashboard = () => {
                                                                 {item.fileName}
                                                             </Box>
                                                         </TableCell>
+                                                        <TableCell>{item.carrier}</TableCell>
                                                         <TableCell>{item.uploadedAt}</TableCell>
+                                                        <TableCell>{item.recordCount || 0}</TableCell>
                                                         <TableCell>
                                                             <Chip
-                                                                label={item.processingStatus}
+                                                                label={item.processingStatus || 'Unknown'}
                                                                 size="small"
                                                                 color={
                                                                     item.processingStatus === 'completed' ? 'success' :
                                                                         item.processingStatus === 'failed' ? 'error' :
-                                                                            item.processingStatus === 'processing' ? 'primary' : 'default'
+                                                                            item.processingStatus === 'processing' ? 'primary' :
+                                                                                item.processingStatus === 'queued' ? 'warning' : 'default'
                                                                 }
                                                             />
                                                         </TableCell>
                                                         <TableCell align="right">
                                                             <Button
                                                                 size="small"
-                                                                onClick={() => handleViewEdiResults(item.id)}
-                                                                disabled={item.processingStatus === 'queued'}
+                                                                onClick={() => handleViewEdiResults(item.uploadId)}
+                                                                disabled={item.processingStatus === 'queued' || item.processingStatus === 'processing'}
                                                             >
                                                                 View Results
                                                             </Button>
                                                         </TableCell>
                                                     </TableRow>
                                                 ))}
+                                                {ediProcessedItems.length === 0 && (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} align="center">
+                                                            <Box sx={{ py: 3 }}>
+                                                                <Typography variant="body1" color="text.secondary">
+                                                                    No processed EDI files found
+                                                                </Typography>
+                                                            </Box>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )}
                                             </TableBody>
                                         </Table>
                                     </TableContainer>

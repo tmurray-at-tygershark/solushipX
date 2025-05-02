@@ -62,3 +62,8 @@ exports.getCompanyCustomers = functions.https.onCall({
 exports.onFileUploaded = ediProcessing.onFileUploaded;
 exports.processEdiFile = ediProcessing.processEdiFile;
 exports.processEdiHttp = ediProcessing.processEdiHttp;
+exports.processEdiManual = ediProcessing.processEdiManual;
+
+// Export diagnostic functions
+const { checkEdiUploads } = require('./src/check-edi-uploads');
+exports.checkEdiUploads = checkEdiUploads;
