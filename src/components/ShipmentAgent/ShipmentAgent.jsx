@@ -94,6 +94,51 @@ const ShipmentAgent = ({
 
                 console.log(`Using actualCompanyId: ${actualCompanyId} for shipping origins lookup`);
 
+                // First, check the addressBook collection for origin addresses
+                console.log(`Checking addressBook collection for company origin addresses with ID: ${actualCompanyId}`);
+                const addressesQuery = query(
+                    collection(db, 'addressBook'),
+                    where('addressClass', '==', 'company'),
+                    where('addressType', '==', 'origin'),
+                    where('addressClassID', '==', actualCompanyId)
+                );
+
+                const addressesSnapshot = await getDocs(addressesQuery);
+                console.log(`Found ${addressesSnapshot.docs.length} addresses in addressBook`);
+
+                if (addressesSnapshot.docs.length > 0) {
+                    // Map the addresses to the format expected by the function consumers
+                    const addresses = addressesSnapshot.docs.map(doc => {
+                        const data = doc.data();
+                        // Create a version with both legacy and new field mappings
+                        return {
+                            id: doc.id,
+                            ...data,
+                            // Legacy format mappings
+                            name: data.nickname,
+                            company: data.companyName,
+                            attention: `${data.firstName} ${data.lastName}`.trim(),
+                            street: data.address1,
+                            street2: data.address2 || '',
+                            city: data.city,
+                            state: data.stateProv,
+                            postalCode: data.zipPostal,
+                            country: data.country,
+                            contactName: `${data.firstName} ${data.lastName}`.trim(),
+                            contactPhone: data.phone,
+                            contactEmail: data.email,
+                            // Ensure companyId is included
+                            companyId: actualCompanyId
+                        };
+                    });
+
+                    console.log(`Mapped ${addresses.length} addresses from addressBook`);
+                    return { result: addresses };
+                }
+
+                // If no results found in addressBook, fall back to legacy locations
+                console.log("No addresses found in addressBook, checking legacy locations");
+
                 // First, check if shipFromAddresses is directly on the company document
                 if (companyData.shipFromAddresses && Array.isArray(companyData.shipFromAddresses) && companyData.shipFromAddresses.length > 0) {
                     console.log(`Found ${companyData.shipFromAddresses.length} shipping origins in company document under field 'shipFromAddresses'`);
@@ -161,9 +206,6 @@ const ShipmentAgent = ({
                         };
                     }
                 }
-
-                // Rest of the function remains the same...
-                // ... [existing code for other checks] ...
 
                 // If we still have no results, return an empty array rather than an error
                 console.log("No shipping origins found in any location");
@@ -358,6 +400,52 @@ const ShipmentAgent = ({
 
                 console.log(`Using actualCompanyId: ${actualCompanyId} for customer destinations lookup`);
 
+                // First, check the addressBook collection for customer destination addresses
+                console.log(`Checking addressBook collection for customer destination addresses with ID: ${customerId}`);
+                const addressesQuery = query(
+                    collection(db, 'addressBook'),
+                    where('addressClass', '==', 'customer'),
+                    where('addressType', '==', 'destination'),
+                    where('addressClassID', '==', customerId)
+                );
+
+                const addressesSnapshot = await getDocs(addressesQuery);
+                console.log(`Found ${addressesSnapshot.docs.length} customer addresses in addressBook`);
+
+                if (addressesSnapshot.docs.length > 0) {
+                    // Map the addresses to the format expected by the function consumers
+                    const addresses = addressesSnapshot.docs.map(doc => {
+                        const data = doc.data();
+                        // Create a version with both legacy and new field mappings
+                        return {
+                            id: doc.id,
+                            ...data,
+                            // Legacy format mappings
+                            name: data.nickname,
+                            company: data.companyName,
+                            attention: `${data.firstName} ${data.lastName}`.trim(),
+                            street: data.address1,
+                            street2: data.address2 || '',
+                            city: data.city,
+                            state: data.stateProv,
+                            postalCode: data.zipPostal,
+                            country: data.country,
+                            contactName: `${data.firstName} ${data.lastName}`.trim(),
+                            contactPhone: data.phone,
+                            contactEmail: data.email,
+                            // Ensure IDs are included
+                            companyId: actualCompanyId,
+                            customerId: customerId
+                        };
+                    });
+
+                    console.log(`Mapped ${addresses.length} customer addresses from addressBook`);
+                    return { result: addresses };
+                }
+
+                // If no results in addressBook, fall back to legacy methods
+                console.log("No customer addresses found in addressBook, checking legacy locations");
+
                 // First try to get the customer document from the root collection
                 // This appears to be the structure in the provided data
                 try {
@@ -539,6 +627,25 @@ const ShipmentAgent = ({
 
                 console.log(`Using actualCompanyId: ${actualCompanyId} for rate request`);
 
+                // Helper function to handle both legacy and new address field naming
+                const formatAddress = (address) => {
+                    return {
+                        company: address.companyName || address.company || "",
+                        street: address.address1 || address.street || address.street1 || address.addressLine1 || "",
+                        street2: address.address2 || address.street2 || address.addressLine2 || "",
+                        postalCode: address.zipPostal || address.postalCode || address.zip || "",
+                        city: address.city || "",
+                        state: address.stateProv || address.state || "",
+                        country: address.country || "US",
+                        contactName: address.contactName ||
+                            (address.firstName && address.lastName ? `${address.firstName} ${address.lastName}` :
+                                (address.name || "")),
+                        contactPhone: address.phone || address.contactPhone || "",
+                        contactEmail: address.email || address.contactEmail || "",
+                        specialInstructions: address.specialInstructions || "none"
+                    };
+                };
+
                 // Format the request data to match what the cloud function expects
                 // Based on the format in CreateShipment/Rates.jsx
                 const rateRequestData = {
@@ -562,34 +669,9 @@ const ShipmentAgent = ({
                         latest: shipmentInfo?.latestDelivery || "17:00"
                     },
 
-                    // Format the addresses to match what the cloud function expects
-                    fromAddress: {
-                        company: originAddress.company || "",
-                        street: originAddress.street1 || originAddress.street || originAddress.addressLine1 || "",
-                        street2: originAddress.street2 || originAddress.addressLine2 || "",
-                        postalCode: originAddress.zip || originAddress.postalCode || "",
-                        city: originAddress.city || "",
-                        state: originAddress.state || "",
-                        country: originAddress.country || "US",
-                        contactName: originAddress.name || originAddress.contactName || "",
-                        contactPhone: originAddress.phone || originAddress.contactPhone || "",
-                        contactEmail: originAddress.email || originAddress.contactEmail || "",
-                        specialInstructions: originAddress.specialInstructions || "none"
-                    },
-
-                    toAddress: {
-                        company: destinationAddress.company || "",
-                        street: destinationAddress.street1 || destinationAddress.street || destinationAddress.addressLine1 || "",
-                        street2: destinationAddress.street2 || destinationAddress.addressLine2 || "",
-                        postalCode: destinationAddress.zip || destinationAddress.postalCode || "",
-                        city: destinationAddress.city || "",
-                        state: destinationAddress.state || "",
-                        country: destinationAddress.country || "US",
-                        contactName: destinationAddress.name || destinationAddress.contactName || "",
-                        contactPhone: destinationAddress.phone || destinationAddress.contactPhone || "",
-                        contactEmail: destinationAddress.email || destinationAddress.contactEmail || "",
-                        specialInstructions: destinationAddress.specialInstructions || "none"
-                    },
+                    // Format the addresses to match what the cloud function expects using our helper function
+                    fromAddress: formatAddress(originAddress),
+                    toAddress: formatAddress(destinationAddress),
 
                     // Format packages as items array
                     items: packages.map(pkg => ({
