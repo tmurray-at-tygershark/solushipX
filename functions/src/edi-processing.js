@@ -201,26 +201,99 @@ Your task is to:
 2. Extract key information for each shipment
 3. Return a structured JSON array with one object per shipment
 
+IMPORTANT: The CSV format will vary significantly between carrier systems. Be flexible in your extraction approach.
+- The header row may have different column names than expected
+- Some data may be in unexpected columns or positions
+- The CSV may contain extraneous information like headers, footers, or summary rows
+- Focus on extracting actual shipment line items only
+
 For each shipment, extract the following fields (when available):
-- trackingNumber: The tracking or reference number for the shipment
+- accountNumber: The account number used for the shipment
+- invoiceNumber: The invoice number for the shipment
+- invoiceDate: The date of the invoice
+- manifestNumber: The manifest number for the shipment
+- pieces: The number of pieces or quantity of the shipment (may be labeled as "Quantity")
+- trackingNumber: The tracking number or barcode for the shipment
 - carrier: The shipping carrier name (e.g., FedEx, UPS, USPS)
 - serviceType: The service level (e.g., Ground, Express, Priority)
 - shipDate: When the package was shipped
 - deliveryDate: When the package was or will be delivered
 - origin: Object containing origin address details (company, street, city, state, postalCode, country)
+- shipmentReference: Shipper/consignee reference numbers for the shipment
 - destination: Object containing destination address details
-- weight: The weight of the shipment
-- weightUnit: Unit of weight (e.g., lbs, kg)
+- reportedWeight: The initial weight submitted for the shipment
+- actualWeight: The actual weight of the shipment after carrier measurement
+- weightUnit: Unit of weight - interpret abbreviations logically (e.g., "L" means pounds/LBS, "K" means kilograms/KGS, etc.)
 - dimensions: Object with length, width, height if available
 - packages: Array of package details if multiple packages exist
-- costs: Breakdown of shipping costs (base, fuel, additional fees)
+- costs: Breakdown of shipping costs (base, fuel, freight, miscellaneous, additionalFees, serviceCharges, signatureService, surcharges, taxes)
 - totalCost: Total shipping cost
 
-If you're uncertain about a field, use the most likely value based on context and format, but include it.
-If a field is missing entirely, omit it from the JSON rather than including null values.
-Format all monetary values as numbers without currency symbols.
+GUIDELINES FOR EXTRACTION:
+1. If a field is missing entirely, omit it from the JSON rather than including null or empty values.
+2. Format all monetary values as numbers without currency symbols.
+3. Convert weights to numeric values.
+4. Ensure all dates are formatted consistently (YYYY-MM-DD or MM/DD/YYYY).
+5. Be smart about data types - use numbers for numeric values, not strings.
+6. If you're uncertain about a field but have a reasonable guess, include it and note your confidence.
+7. For addresses, combine fields intelligently if split across columns.
+8. For weight units, interpret abbreviated units - e.g., "L" or "LB" as "LBS" (pounds), "K" or "KG" as "KGS" (kilograms), "OZ" as ounces.
 
-Analyze the following CSV data and return ONLY the JSON array with extracted shipments:
+EXAMPLE OF EXPECTED OUTPUT FORMAT:
+[
+  {
+    "invoiceNumber": "INV12345",
+    "trackingNumber": "1Z999AA1234567890",
+    "carrier": "UPS",
+    "serviceType": "Ground",
+    "shipDate": "2023-05-01",
+    "origin": {
+      "company": "ACME Corp",
+      "street": "123 Shipping Lane",
+      "city": "Atlanta",
+      "state": "GA",
+      "postalCode": "30328",
+      "country": "US"
+    },
+    "destination": {
+      "company": "Widget Inc",
+      "street": "456 Receiving Dr",
+      "city": "Dallas",
+      "state": "TX",
+      "postalCode": "75201",
+      "country": "US"
+    },
+    "actualWeight": 15.4,
+    "weightUnit": "LBS", // If source shows "L", convert to "LBS"
+    "pieces": 2,
+    "costs": {
+      "base": 25.50,
+      "fuel": 5.25,
+      "surcharges": 3.00,
+      "taxes": 2.55
+    },
+    "totalCost": 36.30
+  },
+  {
+    "invoiceNumber": "INV12346",
+    "trackingNumber": "FEDEX0987654321",
+    "carrier": "FedEx",
+    "serviceType": "International",
+    "shipDate": "2023-05-02",
+    "actualWeight": 7.2,
+    "weightUnit": "KGS", // If source shows "K", convert to "KGS"
+    "dimensions": {
+      "length": 30,
+      "width": 25,
+      "height": 20,
+      "unit": "CM" // Standardize units of measure
+    },
+    "pieces": 1,
+    "totalCost": 82.15
+  }
+]
+
+Analyze the following CSV data and return ONLY the JSON array with extracted shipments, no explanations or commentary:
 
 ${csvContent}
 `;
@@ -259,19 +332,50 @@ ${csvContent}
     }
     
     const jsonString = textResponse.substring(jsonStart, jsonEnd);
-    const parsedData = JSON.parse(jsonString);
     
-    // Validate the extracted data
-    if (!Array.isArray(parsedData)) {
-      throw new Error('AI did not return an array of shipments');
+    // Attempt to fix common JSON parsing issues
+    let fixedJsonString = jsonString;
+    try {
+      const parsedData = JSON.parse(fixedJsonString);
+      
+      // Validate the extracted data
+      if (!Array.isArray(parsedData)) {
+        throw new Error('AI did not return an array of shipments');
+      }
+      
+      // Normalize the shipment data to ensure consistent field names
+      return parsedData.map(normalizeShipmentData);
+    } catch (parseError) {
+      console.error('Error parsing JSON from AI response:', parseError);
+      
+      // Try to fix common JSON syntax errors
+      if (parseError instanceof SyntaxError) {
+        // Try to fix trailing commas in objects
+        fixedJsonString = fixedJsonString.replace(/,\s*}/g, '}');
+        fixedJsonString = fixedJsonString.replace(/,\s*]/g, ']');
+        
+        // Try to fix unquoted property names
+        fixedJsonString = fixedJsonString.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+        
+        // Try to fix single quotes instead of double quotes
+        fixedJsonString = fixedJsonString.replace(/'/g, '"');
+        
+        try {
+          const parsedData = JSON.parse(fixedJsonString);
+          if (Array.isArray(parsedData)) {
+            console.log('Successfully fixed JSON parsing issues');
+            return parsedData.map(normalizeShipmentData);
+          }
+        } catch (secondError) {
+          console.error('Failed to fix JSON parsing issues:', secondError);
+        }
+      }
+      
+      throw new Error(`Failed to parse JSON from AI response: ${parseError.message}`);
     }
-    
-    // Normalize the shipment data to ensure consistent field names
-    return parsedData.map(normalizeShipmentData);
   } catch (error) {
     console.error('Error in AI processing:', error);
     // For production, you would want to implement fallback parsing logic here
-    // Either call a different model or use traditional parsing approaches
     throw error;
   }
 }
@@ -284,19 +388,33 @@ ${csvContent}
 function normalizeShipmentData(shipment) {
   // Create a standardized object with our preferred field names
   const normalized = {
-    // Use existing fields or alternates if they exist
-    trackingNumber: shipment.trackingNumber || shipment.tracking_number || shipment.referenceNumber || shipment.reference,
+    // Invoice and account fields
+    accountNumber: shipment.accountNumber || shipment.account_number || shipment.account,
+    invoiceNumber: shipment.invoiceNumber || shipment.invoice_number || shipment.invoice,
+    invoiceDate: shipment.invoiceDate || shipment.invoice_date,
+    manifestNumber: shipment.manifestNumber || shipment.manifest_number || shipment.manifest,
+    
+    // Shipment identifiers
+    trackingNumber: shipment.trackingNumber || shipment.tracking_number || shipment.barcode || 
+                    shipment.tracking || shipment.referenceNumber || shipment.reference,
+    shipmentReference: shipment.shipmentReference || shipment.reference || shipment.references || 
+                       shipment.shipment_reference,
+                       
+    // Carrier and service information
     carrier: shipment.carrier || shipment.carrierName || shipment.carrier_name,
     serviceType: shipment.serviceType || shipment.service_type || shipment.service,
+    
+    // Dates
     shipDate: shipment.shipDate || shipment.ship_date || shipment.date,
     deliveryDate: shipment.deliveryDate || shipment.delivery_date,
     
-    // Handle cost fields
-    totalCost: parseFloat(shipment.totalCost || shipment.total_cost || shipment.cost || 0),
+    // Quantity
+    pieces: parseIntSafe(shipment.pieces || shipment.quantity || shipment.items),
     
-    // Handle weight
-    weight: shipment.weight || shipment.package_weight,
-    weightUnit: shipment.weightUnit || shipment.weight_unit || 'lbs',
+    // Weight fields - attempt to convert to numbers
+    reportedWeight: parseFloatSafe(shipment.reportedWeight || shipment.reported_weight || shipment.stated_weight),
+    actualWeight: parseFloatSafe(shipment.actualWeight || shipment.actual_weight || shipment.weight),
+    weightUnit: standardizeUOM(shipment.weightUnit || shipment.weight_unit || 'lbs'),
   };
   
   // Handle origin address
@@ -337,21 +455,46 @@ function normalizeShipmentData(shipment) {
   if (shipment.costs || shipment.charges) {
     const costs = shipment.costs || shipment.charges;
     normalized.costs = {
-      base: parseFloat(costs.base || costs.freight || 0),
-      fuel: parseFloat(costs.fuel || costs.fuel_surcharge || 0),
-      additional: parseFloat(costs.additional || costs.additionalFees || 0),
-      total: parseFloat(costs.total || normalized.totalCost || 0)
+      base: parseFloatSafe(costs.base || costs.baseCharge || 0),
+      fuel: parseFloatSafe(costs.fuel || costs.fuelSurcharge || costs.fuel_surcharge || 0),
+      freight: parseFloatSafe(costs.freight || 0),
+      miscellaneous: parseFloatSafe(costs.miscellaneous || costs.misc || 0),
+      additionalFees: parseFloatSafe(costs.additionalFees || costs.additional || costs.additional_fees || 0),
+      serviceCharges: parseFloatSafe(costs.serviceCharges || costs.service || costs.service_charges || 0),
+      signatureService: parseFloatSafe(costs.signatureService || costs.signature || 0),
+      surcharges: parseFloatSafe(costs.surcharges || 0),
+      taxes: parseFloatSafe(costs.taxes || costs.tax || 0),
     };
+    
+    // Only include non-zero values
+    normalized.costs = Object.fromEntries(
+      Object.entries(normalized.costs).filter(([_, value]) => value > 0)
+    );
+  }
+  
+  // Handle total cost - calculate from costs if not provided
+  normalized.totalCost = parseFloatSafe(shipment.totalCost || shipment.total_cost || shipment.total || shipment.cost || 0);
+  
+  // If no total cost but we have costs breakdown, calculate total
+  if (normalized.totalCost === 0 && normalized.costs) {
+    normalized.totalCost = Object.values(normalized.costs).reduce((sum, val) => sum + val, 0);
   }
   
   // Handle dimensions
   if (shipment.dimensions) {
     normalized.dimensions = {
-      length: shipment.dimensions.length || 0,
-      width: shipment.dimensions.width || 0,
-      height: shipment.dimensions.height || 0,
-      unit: shipment.dimensions.unit || 'in'
+      length: parseFloatSafe(shipment.dimensions.length || 0),
+      width: parseFloatSafe(shipment.dimensions.width || 0),
+      height: parseFloatSafe(shipment.dimensions.height || 0),
+      unit: standardizeUOM(shipment.dimensions.unit || 'in')
     };
+    
+    // Only include dimensions if at least one dimension is provided
+    if (normalized.dimensions.length === 0 && 
+        normalized.dimensions.width === 0 && 
+        normalized.dimensions.height === 0) {
+      delete normalized.dimensions;
+    }
   }
   
   // Handle packages if they exist
@@ -368,6 +511,90 @@ function normalizeShipmentData(shipment) {
       return true;
     })
   );
+}
+
+/**
+ * Safely parse integer values
+ * @param {any} value - Value to parse
+ * @returns {number|undefined} - Parsed integer or undefined
+ */
+function parseIntSafe(value) {
+  if (value === undefined || value === null) return undefined;
+  
+  if (typeof value === 'number') return Math.round(value);
+  
+  if (typeof value === 'string') {
+    // Remove non-numeric characters except decimal points
+    const cleanStr = value.replace(/[^\d.-]/g, '');
+    const parsed = parseInt(cleanStr, 10);
+    return isNaN(parsed) ? undefined : parsed;
+  }
+  
+  return undefined;
+}
+
+/**
+ * Safely parse float values
+ * @param {any} value - Value to parse
+ * @returns {number|undefined} - Parsed float or undefined
+ */
+function parseFloatSafe(value) {
+  if (value === undefined || value === null) return undefined;
+  
+  if (typeof value === 'number') return value;
+  
+  if (typeof value === 'string') {
+    // Remove non-numeric characters except decimal points
+    const cleanStr = value.replace(/[^\d.-]/g, '');
+    const parsed = parseFloat(cleanStr);
+    return isNaN(parsed) ? undefined : parsed;
+  }
+  
+  return undefined;
+}
+
+/**
+ * Standardize units of measure
+ * @param {string} unit - Raw unit of measure from CSV
+ * @returns {string} - Standardized unit
+ */
+function standardizeUOM(unit) {
+  if (!unit) return 'LBS'; // Default to pounds if missing
+  
+  // Convert to uppercase for easier comparison
+  const normalizedUnit = unit.toUpperCase().trim();
+  
+  // Weight units standardization
+  // Pounds
+  if (['L', 'LB', 'LBS', 'POUND', 'POUNDS', '#', 'P'].includes(normalizedUnit)) {
+    return 'LBS';
+  }
+  
+  // Kilograms
+  if (['K', 'KG', 'KGS', 'KILO', 'KILOS', 'KILOGRAM', 'KILOGRAMS'].includes(normalizedUnit)) {
+    return 'KGS';
+  }
+  
+  // Ounces
+  if (['OZ', 'OUNCE', 'OUNCES'].includes(normalizedUnit)) {
+    return 'OZ';
+  }
+  
+  // Dimensions units standardization
+  if (['IN', 'INCH', 'INCHES', '"'].includes(normalizedUnit)) {
+    return 'IN';
+  }
+  
+  if (['CM', 'CENTIMETER', 'CENTIMETERS'].includes(normalizedUnit)) {
+    return 'CM';
+  }
+  
+  if (['M', 'METER', 'METERS'].includes(normalizedUnit)) {
+    return 'M';
+  }
+  
+  // Return the original if not recognized
+  return unit;
 }
 
 /**
