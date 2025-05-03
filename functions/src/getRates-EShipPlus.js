@@ -301,7 +301,7 @@ function buildRateRequest(shipmentData) {
         <Description>${shipmentData.fromAddress.company}</Description>
         <Street>${shipmentData.fromAddress.street}</Street>
         <StreetExtra>${shipmentData.fromAddress.street2 || ''}</StreetExtra>
-        <PostalCode>${shipmentData.fromAddress.postalCode}</PostalCode>
+        <PostalCode>${shipmentData.fromAddress.postalCode || shipmentData.fromAddress.zip || ''}</PostalCode>
         <City>${shipmentData.fromAddress.city}</City>
         <State>${shipmentData.fromAddress.state}</State>
         <Country>
@@ -318,7 +318,7 @@ function buildRateRequest(shipmentData) {
         <Description>${shipmentData.toAddress.company}</Description>
         <Street>${shipmentData.toAddress.street}</Street>
         <StreetExtra>${shipmentData.toAddress.street2 || ''}</StreetExtra>
-        <PostalCode>${shipmentData.toAddress.postalCode}</PostalCode>
+        <PostalCode>${shipmentData.toAddress.postalCode || shipmentData.toAddress.zip || ''}</PostalCode>
         <City>${shipmentData.toAddress.city}</City>
         <State>${shipmentData.toAddress.state}</State>
         <Country>
@@ -332,7 +332,7 @@ function buildRateRequest(shipmentData) {
 
       <!-- Items / Packages -->
           <Items>
-        ${shipmentData.items.map(item => `
+        ${Array.isArray(shipmentData.items) ? shipmentData.items.map(item => `
             <WSItem2>
           <Description>${item.name}</Description>
               <Weight>${typeof item.weight === 'number' ? item.weight.toFixed(2) : parseFloat(item.weight).toFixed(2)}</Weight>
@@ -345,7 +345,7 @@ function buildRateRequest(shipmentData) {
               </FreightClass>
           <DeclaredValue>${typeof item.value === 'number' ? item.value.toFixed(2) : parseFloat(item.value).toFixed(2)}</DeclaredValue>
           <Stackable>${item.stackable}</Stackable>
-        </WSItem2>`).join('\n')}
+        </WSItem2>`).join('\n') : '<!-- No items provided -->'}
           </Items>
 
       <DeclineAdditionalInsuranceIfApplicable>false</DeclineAdditionalInsuranceIfApplicable>
@@ -397,7 +397,9 @@ function validateRateRequest(data) {
 
   // Validate addresses
   const fromAddress = data.fromAddress;
-  if (!fromAddress.postalCode || fromAddress.postalCode.trim() === '') {
+  // Check for postal code in either postalCode or zip fields
+  if ((!fromAddress.postalCode || fromAddress.postalCode.trim() === '') && 
+      (!fromAddress.zip || fromAddress.zip.trim() === '')) {
     return 'Origin postal code is required';
   }
   
@@ -406,7 +408,9 @@ function validateRateRequest(data) {
   }
 
   const toAddress = data.toAddress;
-  if (!toAddress.postalCode || toAddress.postalCode.trim() === '') {
+  // Check for postal code in either postalCode or zip fields
+  if ((!toAddress.postalCode || toAddress.postalCode.trim() === '') && 
+      (!toAddress.zip || toAddress.zip.trim() === '')) {
     return 'Destination postal code is required';
   }
   
@@ -432,4 +436,4 @@ function validateRateRequest(data) {
   }
 
   return null;
-} 
+}

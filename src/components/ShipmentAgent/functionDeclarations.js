@@ -14,16 +14,19 @@ export const getCompanyDeclaration = {
     },
 };
 
-// Function declaration for getCompanyCustomers
+// Function declaration for getCompanyCustomers - now using direct Firestore access
 export const getCompanyCustomersDeclaration = {
     name: "getCompanyCustomers",
-    description: "Fetches a list of saved customer (destination) addresses for the company.",
+    description: "Fetches a list of saved customer (destination) addresses for the company using direct Firestore access.",
     parameters: {
         type: "object",
         properties: {
-            // Assuming companyId is handled implicitly
+            companyId: {
+                type: "string",
+                description: "The ID of the company"
+            }
         },
-        required: []
+        required: ["companyId"]
     },
 };
 
@@ -180,7 +183,7 @@ export const tools = [
             },
             {
                 name: "getCompanyCustomers",
-                description: "Get all customers for a company that can be shipped to",
+                description: "Get all customers for a company that can be shipped to (using direct Firestore access)",
                 parameters: {
                     type: "object",
                     properties: {

@@ -16,7 +16,6 @@ import {
     Clear as ClearIcon,
     Person as PersonIcon
 } from '@mui/icons-material';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const ShipTo = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
@@ -37,27 +36,6 @@ const ShipTo = ({ onNext, onPrevious }) => {
     const [error, setError] = useState(null);
     const [companyId, setCompanyId] = useState(null);
 
-    const functions = getFunctions();
-    let getCompanyCustomersFunction;
-
-    // Try to set up the getCompanyCustomers function with fallbacks
-    try {
-        // First check if the function exists with standard name
-        getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
-        console.log('Standard customers function name appears to be valid');
-    } catch (fnErr) {
-        console.error('Error getting standard customers function reference:', fnErr);
-        try {
-            // Try alternate name (lowercase)
-            getCompanyCustomersFunction = httpsCallable(functions, 'getcompanycustomers');
-            console.log('Lowercase customers function name appears to be valid');
-        } catch (fnErr2) {
-            console.error('Error getting lowercase customers function reference:', fnErr2);
-            // Fall back to the original function name even if it failed
-            getCompanyCustomersFunction = httpsCallable(functions, 'getCompanyCustomers');
-        }
-    }
-
     useEffect(() => {
         if (formData.shipTo?.selectedCustomer) {
             setSelectedCustomer(formData.shipTo.selectedCustomer);
@@ -71,98 +49,65 @@ const ShipTo = ({ onNext, onPrevious }) => {
         setTotalPages(Math.ceil(customers.length / customersPerPage));
     }, [customers, customersPerPage]);
 
-    useEffect(() => {
-        const fetchCompanyId = async () => {
-            if (!currentUser) return;
-            try {
-                setError(null);
-                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                if (!userDoc.exists()) {
-                    setError('User data not found.');
-                    setLoading(false);
-                    return;
-                }
-                const userData = userDoc.data();
-                let id = null;
-                if (userData.connectedCompanies?.companies?.length > 0) {
-                    id = userData.connectedCompanies.companies[0];
-                } else if (userData.companies?.length > 0) {
-                    id = userData.companies[0];
-                }
-                if (!id) {
-                    setError('No company associated with this user.');
-                    setLoading(false);
-                    return;
-                }
-                setCompanyId(id);
-                await fetchCustomers(id);
-            } catch (err) {
-                console.error('Error fetching company ID:', err);
-                setError('Failed to load company data. Please try again.');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchCompanyId();
-    }, [currentUser]);
-
+    // Define fetchCustomers before any useEffect that depends on it
     const fetchCustomers = useCallback(async (id) => {
         if (!id) return;
         try {
             setError(null);
             console.log("Fetching customers for company ID:", id);
+            console.log("Company ID type:", typeof id);
+            console.log("Company ID length:", id.length);
+            console.log("Company ID hex:", [...id].map(c => c.charCodeAt(0).toString(16)).join(' '));
 
-            // Log the function reference before calling
-            console.log("Function reference check:", {
-                functionName: "getCompanyCustomers",
-                functionExists: !!getCompanyCustomersFunction,
-                functionType: typeof getCompanyCustomersFunction
-            });
+            // Direct Firestore query using both field name variations
+            console.log(`Querying customers collection where companyID == "${id}"`);
 
-            // Log the parameters we're sending
-            const params = {
-                companyId: id,
-                includeAllCompanies: false
-            };
-            console.log("Sending parameters to getCompanyCustomers:", params);
+            // First try with uppercase field name
+            let customersSnapshot = await getDocs(
+                query(collection(db, 'customers'), where('companyID', '==', id))
+            );
 
-            const customersResult = await getCompanyCustomersFunction(params);
+            // If no results, try with lowercase field name
+            if (customersSnapshot.empty) {
+                console.log(`No results with uppercase companyID, trying lowercase companyId field...`);
+                customersSnapshot = await getDocs(
+                    query(collection(db, 'customers'), where('companyId', '==', id))
+                );
+            }
 
-            // Log detailed response information
-            console.log("RAW CUSTOMERS RESPONSE:", {
-                resultType: typeof customersResult,
-                hasData: customersResult !== null,
-                dataType: customersResult ? typeof customersResult.data : 'N/A',
-                fullResponse: JSON.stringify(customersResult),
-                responseKeys: customersResult ? Object.keys(customersResult) : []
-            });
-
-            console.log("Raw customersResult:", JSON.stringify(customersResult));
-
-            // Handle various possible response structures
+            // Process the results
             let customersData = [];
 
-            if (customersResult.data && customersResult.data.success && customersResult.data.data && customersResult.data.data.customers) {
-                // New structure: { data: { success: true, data: { customers: [...] } } }
-                console.log("Using new response structure with success property");
-                customersData = customersResult.data.data.customers || [];
-            } else if (customersResult.data && customersResult.data.customers) {
-                // Alternative structure: { data: { customers: [...] } }
-                console.log("Using alternative response structure with direct customers property");
-                customersData = customersResult.data.customers || [];
-            } else if (customersResult.success && customersResult.data && customersResult.data.customers) {
-                // Old structure: { success: true, data: { customers: [...] } }
-                console.log("Using old response structure");
-                customersData = customersResult.data.customers || [];
+            if (!customersSnapshot.empty) {
+                console.log(`Found ${customersSnapshot.size} customers for company ID: ${id}`);
+
+                customersData = customersSnapshot.docs.map(doc => {
+                    const data = doc.data();
+
+                    // Handle timestamp conversion
+                    let createdAt = null;
+                    let updatedAt = null;
+
+                    if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+                        createdAt = data.createdAt.toDate().toISOString();
+                    }
+
+                    if (data.updatedAt && typeof data.updatedAt.toDate === 'function') {
+                        updatedAt = data.updatedAt.toDate().toISOString();
+                    }
+
+                    // Create customer object
+                    return {
+                        id: doc.id,
+                        customerID: data.customerID || doc.id, // Prefer field from doc, fall back to doc ID
+                        customerId: data.customerID || doc.id, // For backward compatibility
+                        ...data,
+                        createdAt,
+                        updatedAt
+                    };
+                });
             } else {
-                console.warn("Using empty customer array - no customer data found in response:", customersResult);
-
-                // If customersResult.data is null, this could be a backend error
-                if (customersResult.data === null) {
-                    console.error('Null data received from Cloud Function - check logs for errors');
-                }
-
-                customersData = [];
+                console.log(`No customers found for company ID: ${id}`);
             }
 
             console.log('Raw customersData received:', customersData);
@@ -190,10 +135,59 @@ const ShipTo = ({ onNext, onPrevious }) => {
             // Set empty customers array rather than leaving in loading state
             setCustomers([]);
         }
-    }, [getCompanyCustomersFunction]);
+    }, []);
+
+    useEffect(() => {
+        const fetchCompanyId = async () => {
+            if (!currentUser) return;
+            try {
+                setError(null);
+                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+                if (!userDoc.exists()) {
+                    setError('User data not found.');
+                    setLoading(false);
+                    return;
+                }
+                const userData = userDoc.data();
+
+                // Look for company ID in various possible locations in the user profile
+                let id = null;
+
+                // Try different field names and locations
+                if (userData.companyID) {
+                    id = userData.companyID;
+                } else if (userData.companyId) {
+                    id = userData.companyId;
+                } else if (userData.connectedCompanies?.companies?.length > 0) {
+                    id = userData.connectedCompanies.companies[0];
+                } else if (userData.companies?.length > 0) {
+                    id = userData.companies[0];
+                }
+
+                if (!id) {
+                    setError('No company associated with this user.');
+                    setLoading(false);
+                    return;
+                }
+
+                console.log(`Found company ID in user profile: ${id}`);
+                setCompanyId(id);
+                await fetchCustomers(id);
+            } catch (err) {
+                console.error('Error fetching company ID:', err);
+                setError('Failed to load company data. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchCompanyId();
+    }, [currentUser, fetchCustomers]);
 
     const loadAndProcessAddresses = useCallback(async (customer) => {
-        if (!customer || !customer.customerId) {
+        // Support both field naming conventions for backward compatibility
+        const customerID = customer?.customerID || customer?.customerId || customer?.id;
+
+        if (!customerID) {
             setCustomerAddresses([]);
             return;
         }
@@ -207,39 +201,47 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 console.log('Using addresses directly from customer object:', customer.addresses);
                 addressesToProcess = customer.addresses;
             } else {
-                console.log('Fetching destinations from addressBook for customer:', customer.customerId);
+                console.log('Fetching destinations from addressBook for customer:', customerID);
 
                 // Direct Firestore query for customer addresses in addressBook
                 const addressesQuery = query(
                     collection(db, 'addressBook'),
                     where('addressClass', '==', 'customer'),
                     where('addressType', '==', 'destination'),
-                    where('addressClassID', '==', customer.customerId)
+                    where('addressClassID', '==', customerID)
                 );
 
                 const addressesSnapshot = await getDocs(addressesQuery);
-                console.log(`Found ${addressesSnapshot.docs.length} addresses in addressBook for customer ${customer.customerId}`);
+                console.log(`Found ${addressesSnapshot.docs.length} addresses in addressBook for customer ${customerID}`);
 
                 if (!addressesSnapshot.empty) {
-                    addressesToProcess = addressesSnapshot.docs.map(doc => ({
-                        id: doc.id,
-                        type: 'shipping',
-                        street: doc.data().address1,
-                        street2: doc.data().address2 || '',
-                        city: doc.data().city,
-                        state: doc.data().stateProv,
-                        zip: doc.data().zipPostal,
-                        country: doc.data().country || 'US',
-                        attention: `${doc.data().firstName} ${doc.data().lastName}`.trim(),
-                        name: doc.data().nickname,
-                        default: doc.data().isDefault || false,
-                        specialInstructions: doc.data().specialInstructions || ''
-                    }));
+                    // Updated mapping to match new addressBook format
+                    addressesToProcess = addressesSnapshot.docs.map(doc => {
+                        const data = doc.data();
+                        return {
+                            id: doc.id,
+                            type: 'shipping',
+                            street: data.address1, // Using address1 as street
+                            street2: data.address2 || '',
+                            city: data.city,
+                            state: data.stateProv, // Using stateProv as state
+                            zip: data.zipPostal, // Using zipPostal as zip
+                            country: data.country || 'US',
+                            attention: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+                            name: data.nickname || data.companyName, // Using nickname for name
+                            default: data.isDefault || false,
+                            specialInstructions: data.specialInstructions || '',
+                            // Include direct contact info from the address record
+                            contactName: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+                            contactPhone: data.phone || '',
+                            contactEmail: data.email || ''
+                        };
+                    });
                 } else {
                     console.log('No addresses found in addressBook, checking legacy customer document');
 
                     // If no addresses in addressBook, try the customer document directly
-                    const customerRef = doc(db, 'customers', customer.customerId);
+                    const customerRef = doc(db, 'customers', customerID);
                     const customerDoc = await getDoc(customerRef);
 
                     if (customerDoc.exists() && customerDoc.data().addresses && Array.isArray(customerDoc.data().addresses)) {
@@ -251,26 +253,39 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 }
             }
 
+            // Updated mapping for legacy addresses from customer record
             const primaryContact = customer.contacts?.find(contact => contact.isPrimary === true) || customer.contacts?.[0] || {};
             const formattedAddresses = addressesToProcess
                 .filter(addr => addr?.type === 'shipping')
-                .map((addr, index) => ({
-                    id: addr.id || `addr_${index}`,
-                    customerId: customer.customerId,
-                    attention: addr.attention || '',
-                    name: addr.name || customer.name || '',
-                    contactName: primaryContact.name || '',
-                    contactPhone: primaryContact.phone || '',
-                    contactEmail: primaryContact.email || '',
-                    default: addr.default || false,
-                    street: addr.street || '',
-                    street2: addr.street2 || '',
-                    city: addr.city || '',
-                    state: addr.state || '',
-                    postalCode: addr.zip || addr.postalCode || '',
-                    country: addr.country || 'US',
-                    specialInstructions: addr.specialInstructions || ''
-                }));
+                .map((addr, index) => {
+                    // Check if this is an addressBook record (contains contactName, contactPhone, contactEmail)
+                    const isAddressBookRecord =
+                        'contactName' in addr ||
+                        'contactPhone' in addr ||
+                        'contactEmail' in addr;
+
+                    return {
+                        id: addr.id || `addr_${index}`,
+                        customerId: customerID,
+                        attention: addr.attention || '',
+                        name: addr.name || customer.name || '',
+                        // Use contact info directly from address record if available
+                        contactName: addr.contactName ||
+                            (addr.firstName && addr.lastName ?
+                                `${addr.firstName} ${addr.lastName}`.trim() :
+                                primaryContact.name || ''),
+                        contactPhone: addr.contactPhone || addr.phone || primaryContact.phone || '',
+                        contactEmail: addr.contactEmail || addr.email || primaryContact.email || '',
+                        default: addr.default || addr.isDefault || false,
+                        street: addr.street || addr.address1 || '',
+                        street2: addr.street2 || addr.address2 || '',
+                        city: addr.city || '',
+                        state: addr.state || addr.stateProv || '',
+                        postalCode: addr.postalCode || addr.zip || addr.zipPostal || '',
+                        country: addr.country || 'US',
+                        specialInstructions: addr.specialInstructions || ''
+                    };
+                });
 
             formattedAddresses.sort((a, b) => {
                 if (a.default === true && b.default !== true) return -1;
@@ -307,10 +322,19 @@ const ShipTo = ({ onNext, onPrevious }) => {
                     updateFormSection('shipTo', {
                         selectedCustomer: customer,
                         selectedAddressId: String(addressToSelect.id),
-                        name: addressToSelect.name || '', company: customer.company || '', attention: addressToSelect.attention || '',
-                        street: addressToSelect.street || '', street2: addressToSelect.street2 || '', city: addressToSelect.city || '', state: addressToSelect.state || '',
-                        postalCode: addressToSelect.postalCode || '', country: addressToSelect.country || 'US', contactName: addressToSelect.contactName || '',
-                        contactPhone: addressToSelect.contactPhone || '', contactEmail: addressToSelect.contactEmail || '', specialInstructions: addressToSelect.specialInstructions || ''
+                        name: addressToSelect.name || '',
+                        company: customer.company || addressToSelect.companyName || '',
+                        attention: addressToSelect.attention || '',
+                        street: addressToSelect.street || '',
+                        street2: addressToSelect.street2 || '',
+                        city: addressToSelect.city || '',
+                        state: addressToSelect.state || '',
+                        postalCode: addressToSelect.postalCode || '',
+                        country: addressToSelect.country || 'US',
+                        contactName: addressToSelect.contactName || '',
+                        contactPhone: addressToSelect.contactPhone || '',
+                        contactEmail: addressToSelect.contactEmail || '',
+                        specialInstructions: addressToSelect.specialInstructions || ''
                     });
                 } else {
                     console.log("Context already reflects selected address, no update needed.");
@@ -373,8 +397,8 @@ const ShipTo = ({ onNext, onPrevious }) => {
     }, [selectedCustomer, loadAndProcessAddresses]);
 
     const handleCustomerSelect = useCallback((customer) => {
-        console.log("Customer selected interactively:", customer?.customerId);
         if (!customer) {
+            console.log("Customer selection cleared");
             setSelectedCustomer(null);
             setSelectedAddressId(null);
             setCustomerAddresses([]);
@@ -384,6 +408,18 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
             });
             return;
+        }
+
+        // Support both field naming conventions for backward compatibility
+        const customerID = customer?.customerID || customer?.customerId || customer?.id;
+
+        console.log("Customer selected interactively:", customerID);
+
+        // Ensure both field names exist for backward compatibility
+        if (customer.customerId && !customer.customerID) {
+            customer.customerID = customer.customerId;
+        } else if (customer.customerID && !customer.customerId) {
+            customer.customerId = customer.customerID;
         }
 
         setSelectedCustomer(customer);
@@ -396,9 +432,48 @@ const ShipTo = ({ onNext, onPrevious }) => {
 
     }, [updateFormSection, loadAndProcessAddresses]);
 
+    // Fix contact name issues by consistently ensuring contact fields are filled
+    useEffect(() => {
+        // If the form has an attention field but missing contactName, fix it
+        if (formData.shipTo &&
+            formData.shipTo.attention &&
+            !formData.shipTo.contactName) {
+
+            console.log("ShipTo: Found attention but no contactName, copying value:", formData.shipTo.attention);
+
+            // Update the form with the attention value copied to contactName
+            updateFormSection('shipTo', {
+                contactName: formData.shipTo.attention,
+                // If we're missing phone/email, check the database
+                contactPhone: formData.shipTo.contactPhone || formData.shipTo.phone || '',
+                contactEmail: formData.shipTo.contactEmail || formData.shipTo.email || ''
+            });
+        }
+    }, [formData.shipTo, updateFormSection]);
+
+    // Add a utility function to ensure all contact fields are properly set
+    const ensureContactFields = useCallback((data) => {
+        // Make sure contactName is set if attention exists
+        if (!data.contactName && data.attention) {
+            data.contactName = data.attention;
+        }
+
+        // Make sure contactPhone is set
+        if (!data.contactPhone && data.phone) {
+            data.contactPhone = data.phone;
+        }
+
+        // Make sure contactEmail is set
+        if (!data.contactEmail && data.email) {
+            data.contactEmail = data.email;
+        }
+
+        return data;
+    }, []);
+
     const handleAddressChange = useCallback((addressId) => {
-        console.log("Address selected interactively, ID:", addressId);
         const addressIdStr = addressId ? String(addressId) : null;
+        console.log(`Address selection changed to ID: "${addressIdStr}"`);
         if (!addressIdStr || !selectedCustomer) return;
 
         setSelectedAddressId(addressIdStr);
@@ -407,25 +482,109 @@ const ShipTo = ({ onNext, onPrevious }) => {
 
         if (selectedAddress) {
             console.log("Found matching address in local state:", selectedAddress);
-            updateFormSection('shipTo', {
-                selectedCustomer: selectedCustomer,
-                selectedAddressId: addressIdStr,
-                name: selectedAddress.name || '',
-                company: selectedCustomer?.company || '',
-                attention: selectedAddress.attention || '',
-                street: selectedAddress.street || '',
-                street2: selectedAddress.street2 || '',
-                city: selectedAddress.city || '',
-                state: selectedAddress.state || '',
-                postalCode: selectedAddress.postalCode || '',
-                country: selectedAddress.country || 'US',
-                contactName: selectedAddress.contactName || '',
-                contactPhone: selectedAddress.contactPhone || '',
-                contactEmail: selectedAddress.contactEmail || '',
-                specialInstructions: selectedAddress.specialInstructions || ''
-            });
+
+            // Directly query the address from the database to get the latest data
+            const fetchAddressDetails = async () => {
+                try {
+                    const addressRef = doc(db, 'addressBook', addressIdStr);
+                    const addressSnap = await getDoc(addressRef);
+
+                    // Get the most up-to-date contact information
+                    let firstName = selectedAddress.firstName || '';
+                    let lastName = selectedAddress.lastName || '';
+                    let phone = selectedAddress.phone || selectedAddress.contactPhone || '';
+                    let email = selectedAddress.email || selectedAddress.contactEmail || '';
+
+                    if (addressSnap.exists()) {
+                        const data = addressSnap.data();
+                        firstName = data.firstName || firstName;
+                        lastName = data.lastName || lastName;
+                        phone = data.phone || phone;
+                        email = data.email || email;
+                    }
+
+                    // Ensure contact name is properly set
+                    const contactName = firstName && lastName
+                        ? `${firstName} ${lastName}`
+                        : selectedAddress.attention || selectedAddress.contactName || selectedAddress.name || "Receiving Department";
+
+                    // If we don't have contact info from the address, try to get it from the customer's primary contact
+                    if (!phone || !email) {
+                        const primaryContact = selectedCustomer.contacts?.find(c => c.isPrimary) || selectedCustomer.contacts?.[0];
+                        if (primaryContact) {
+                            phone = phone || primaryContact.phone || '';
+                            email = email || primaryContact.email || '';
+                        }
+                    }
+
+                    const formattedAddress = {
+                        ...selectedAddress,
+                        name: selectedAddress.nickname || selectedAddress.name || '',
+                        company: selectedAddress.company || selectedAddress.companyName || '',
+                        attention: contactName,
+                        street: selectedAddress.address1 || selectedAddress.street || '',
+                        street2: selectedAddress.address2 || selectedAddress.street2 || '',
+                        city: selectedAddress.city || '',
+                        state: selectedAddress.stateProv || selectedAddress.state || '',
+                        postalCode: selectedAddress.zipPostal || selectedAddress.postalCode || '',
+                        country: selectedAddress.country || 'US',
+                        contactName: contactName,
+                        contactPhone: phone,
+                        contactEmail: email,
+                        specialInstructions: selectedAddress.specialInstructions || '',
+                        firstName,
+                        lastName,
+                        phone,
+                        email,
+                        selectedCustomer,
+                        selectedAddressId: addressIdStr
+                    };
+
+                    console.log("ShipTo: Updating form with address including contact information:", {
+                        contactName: formattedAddress.contactName,
+                        contactPhone: formattedAddress.contactPhone,
+                        contactEmail: formattedAddress.contactEmail
+                    });
+
+                    updateFormSection('shipTo', formattedAddress);
+                } catch (err) {
+                    console.error("Error fetching address details:", err);
+
+                    // Fall back to using the data we already have
+                    const contactName = selectedAddress.firstName && selectedAddress.lastName
+                        ? `${selectedAddress.firstName} ${selectedAddress.lastName}`
+                        : selectedAddress.attention || selectedAddress.contactName || selectedAddress.name || "Receiving Department";
+
+                    const primaryContact = selectedCustomer.contacts?.find(c => c.isPrimary) || selectedCustomer.contacts?.[0] || {};
+                    const phone = selectedAddress.phone || selectedAddress.contactPhone || primaryContact.phone || '';
+                    const email = selectedAddress.email || selectedAddress.contactEmail || primaryContact.email || '';
+
+                    const formattedAddress = {
+                        ...selectedAddress,
+                        name: selectedAddress.nickname || selectedAddress.name || '',
+                        company: selectedAddress.company || selectedAddress.companyName || '',
+                        attention: contactName,
+                        street: selectedAddress.address1 || selectedAddress.street || '',
+                        street2: selectedAddress.address2 || selectedAddress.street2 || '',
+                        city: selectedAddress.city || '',
+                        state: selectedAddress.stateProv || selectedAddress.state || '',
+                        postalCode: selectedAddress.zipPostal || selectedAddress.postalCode || '',
+                        country: selectedAddress.country || 'US',
+                        contactName: contactName,
+                        contactPhone: phone,
+                        contactEmail: email,
+                        specialInstructions: selectedAddress.specialInstructions || '',
+                        selectedCustomer,
+                        selectedAddressId: addressIdStr
+                    };
+
+                    updateFormSection('shipTo', formattedAddress);
+                }
+            };
+
+            fetchAddressDetails();
         } else {
-            console.error("Selected address ID not found in local customerAddresses state:", addressIdStr);
+            console.error(`No address found with ID: ${addressIdStr}`);
         }
     }, [customerAddresses, selectedCustomer, updateFormSection]);
 
@@ -620,35 +779,15 @@ const ShipTo = ({ onNext, onPrevious }) => {
 
         return (
             <>
-                <Box sx={{ mb: 3 }}>
-                    <TextField
-                        fullWidth
-                        variant="outlined"
-                        placeholder="Search customers by name, company, or contact info..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        InputProps={{
-                            startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />,
-                            endAdornment: searchQuery && (
-                                <IconButton size="small" onClick={() => setSearchQuery('')}>
-                                    <ClearIcon />
-                                </IconButton>
-                            ),
-                        }}
-                        sx={{
-                            backgroundColor: 'white',
-                            '& .MuiOutlinedInput-root': {
-                                '&:hover': {
-                                    backgroundColor: 'white',
-                                },
-                            },
-                        }}
-                    />
-                </Box>
-
                 <Grid container spacing={2}>
                     {currentCustomers.map((customer, index) => {
-                        const isSelected = selectedCustomer && selectedCustomer.customerId === customer.customerId;
+                        // Support both field naming conventions
+                        const customerID = customer?.customerID || customer?.customerId || customer?.id;
+                        const isSelected = selectedCustomer && (
+                            (selectedCustomer?.customerID && selectedCustomer.customerID === customerID) ||
+                            (selectedCustomer?.customerId && selectedCustomer.customerId === customerID) ||
+                            selectedCustomer?.id === customerID
+                        );
                         const customerName = customer.name || 'Unnamed Customer';
                         const customerCompany = customer.company || '';
                         const primaryContact = customer.contacts?.[0] || {};
@@ -704,7 +843,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                     }}
                                     onClick={() => handleCustomerSelect(customer)}
                                     data-selected={isSelected ? "true" : "false"}
-                                    data-customer-id={customer.customerId}
+                                    data-customer-id={customerID}
                                 >
                                     <CardContent>
                                         <Grid container spacing={2}>
@@ -730,7 +869,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                                             textTransform: 'uppercase'
                                                         }}
                                                     >
-                                                        ID: {customer.customerId}
+                                                        ID: {customer.customerID || customer.customerId || customer.id}
                                                     </Typography>
                                                 </Box>
 

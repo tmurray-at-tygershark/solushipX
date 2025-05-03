@@ -584,17 +584,19 @@ const ShipmentAgent = ({
                     toAddress: formatAddress(destinationAddress),
 
                     // Format packages as items array
-                    items: packages.map(pkg => ({
-                        name: pkg.description || "Package",
-                        weight: parseFloat(pkg.weight) || 1, // Weight in pounds
-                        length: parseInt(pkg.length) || 12,
-                        width: parseInt(pkg.width) || 12,
-                        height: parseInt(pkg.height) || 12,
-                        quantity: parseInt(pkg.quantity) || 1,
-                        freightClass: String(pkg.freightClass || "50"),
-                        value: parseFloat(pkg.value || "0"),
-                        stackable: pkg.stackable || false
-                    })),
+                    items: Array.isArray(packages)
+                        ? packages.map(pkg => ({
+                            name: pkg.description || "Package",
+                            weight: parseFloat(pkg.weight) || 1, // Weight in pounds
+                            length: parseInt(pkg.length) || 12,
+                            width: parseInt(pkg.width) || 12,
+                            height: parseInt(pkg.height) || 12,
+                            quantity: parseInt(pkg.quantity) || 1,
+                            freightClass: String(pkg.freightClass || "50"),
+                            value: parseFloat(pkg.value || "0"),
+                            stackable: pkg.stackable || false
+                        }))
+                        : [], // Return empty array if packages is not an array
 
                     // Add shipmentInfo to the request
                     shipmentInfo: {

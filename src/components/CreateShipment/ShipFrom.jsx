@@ -97,32 +97,39 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 setShipFromAddresses(addresses);
 
                 // Map the addressBook format to the format expected by the rest of the application
-                const formattedAddresses = addresses.map(addr => ({
-                    id: addr.id,
-                    name: addr.nickname,
-                    company: addr.companyName,
-                    attention: `${addr.firstName} ${addr.lastName}`.trim(),
-                    street: addr.address1,
-                    street2: addr.address2 || '',
-                    city: addr.city,
-                    state: addr.stateProv,
-                    postalCode: addr.zipPostal,
-                    country: addr.country,
-                    contactName: `${addr.firstName} ${addr.lastName}`.trim(),
-                    contactPhone: addr.phone,
-                    contactEmail: addr.email,
-                    isDefault: addr.isDefault,
-                    nickname: addr.nickname,
-                    companyName: addr.companyName,
-                    address1: addr.address1,
-                    address2: addr.address2 || '',
-                    stateProv: addr.stateProv,
-                    zipPostal: addr.zipPostal,
-                    firstName: addr.firstName,
-                    lastName: addr.lastName,
-                    phone: addr.phone,
-                    email: addr.email
-                }));
+                const formattedAddresses = addresses.map(addr => {
+                    // Ensure firstName and lastName are defined before concatenation
+                    const firstName = addr.firstName || '';
+                    const lastName = addr.lastName || '';
+                    const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : '';
+
+                    return {
+                        id: addr.id,
+                        name: addr.nickname,
+                        company: addr.companyName,
+                        attention: contactName,
+                        street: addr.address1,
+                        street2: addr.address2 || '',
+                        city: addr.city,
+                        state: addr.stateProv,
+                        postalCode: addr.zipPostal,
+                        country: addr.country,
+                        contactName: contactName,
+                        contactPhone: addr.phone,
+                        contactEmail: addr.email,
+                        isDefault: addr.isDefault,
+                        nickname: addr.nickname,
+                        companyName: addr.companyName,
+                        address1: addr.address1,
+                        address2: addr.address2 || '',
+                        stateProv: addr.stateProv,
+                        zipPostal: addr.zipPostal,
+                        firstName: firstName,
+                        lastName: lastName,
+                        phone: addr.phone,
+                        email: addr.email
+                    };
+                });
 
                 // If we have a default address and no address is currently selected, select the default
                 const defaultAddress = addresses.find(addr => addr.isDefault);
@@ -164,78 +171,163 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         fetchAddresses();
     }, [companyIdForAddress, updateFormSection, selectedAddressId, shipFromAddresses, formData.shipFrom]);
 
-    const handleAddressChange = useCallback((addressId) => {
-        const addressIdStr = addressId ? String(addressId) : null;
-        console.log(`ShipFrom: handleAddressChange called with ID: "${addressIdStr}"`);
-        if (!addressIdStr) return;
+    // Log the current state of the component for debugging
+    useEffect(() => {
+        console.log("ShipFrom: Current state:", {
+            companyId: companyData?.id,
+            companyIdForAddress,
+            selectedAddressId,
+            addressesCount: shipFromAddresses.length,
+            addressIds: shipFromAddresses.map(a => a.id),
+            formDataShipFrom: formData.shipFrom,
+            formDataAddressIds: formData.shipFrom?.shipFromAddresses?.map(a => a.id) || []
+        });
 
-        setSelectedAddressId(addressIdStr);
+        // Debug the currently selected address
+        if (selectedAddressId && shipFromAddresses.length > 0) {
+            const selectedAddr = shipFromAddresses.find(a => a.id === selectedAddressId);
+            if (selectedAddr) {
+                console.log("ShipFrom: Selected address raw data:", {
+                    id: selectedAddr.id,
+                    firstName: selectedAddr.firstName,
+                    lastName: selectedAddr.lastName,
+                    hasFirstName: !!selectedAddr.firstName,
+                    hasLastName: !!selectedAddr.lastName,
+                    nickname: selectedAddr.nickname
+                });
+            }
+        }
 
-        // Find the address in our state
-        const selectedAddress = shipFromAddresses.find(addr => String(addr.id) === addressIdStr);
+        // Debug form data to see what's getting passed to the UI
+        if (formData.shipFrom) {
+            console.log("ShipFrom: Form data for UI:", {
+                attention: formData.shipFrom.attention,
+                contactName: formData.shipFrom.contactName,
+                firstName: formData.shipFrom.firstName,
+                lastName: formData.shipFrom.lastName
+            });
+        }
+    }, [companyData?.id, companyIdForAddress, selectedAddressId, shipFromAddresses, formData.shipFrom]);
 
-        if (selectedAddress) {
-            console.log('Selected address found:', selectedAddress);
+    // Add a useEffect to directly update the form data when needed
+    useEffect(() => {
+        // Only run this if we have a selected address with empty contactName fields
+        if (formData.shipFrom && selectedAddressId &&
+            (!formData.shipFrom.contactName || !formData.shipFrom.attention)) {
 
-            // Create a formatted version that has both the new and old field names
-            const formattedAddress = {
-                id: selectedAddress.id,
-                name: selectedAddress.nickname,
-                company: selectedAddress.companyName,
-                attention: `${selectedAddress.firstName} ${selectedAddress.lastName}`.trim(),
-                street: selectedAddress.address1,
-                street2: selectedAddress.address2 || '',
-                city: selectedAddress.city,
-                state: selectedAddress.stateProv,
-                postalCode: selectedAddress.zipPostal,
-                country: selectedAddress.country,
-                contactName: `${selectedAddress.firstName} ${selectedAddress.lastName}`.trim(),
-                contactPhone: selectedAddress.phone,
-                contactEmail: selectedAddress.email,
-                isDefault: selectedAddress.isDefault,
-                nickname: selectedAddress.nickname,
-                companyName: selectedAddress.companyName,
-                address1: selectedAddress.address1,
-                address2: selectedAddress.address2 || '',
-                stateProv: selectedAddress.stateProv,
-                zipPostal: selectedAddress.zipPostal,
-                firstName: selectedAddress.firstName,
-                lastName: selectedAddress.lastName,
-                phone: selectedAddress.phone,
-                email: selectedAddress.email,
-                // Map the addresses in the list to the formatted version as well
-                shipFromAddresses: shipFromAddresses.map(addr => ({
-                    id: addr.id,
-                    name: addr.nickname,
-                    company: addr.companyName,
-                    attention: `${addr.firstName} ${addr.lastName}`.trim(),
-                    street: addr.address1,
-                    street2: addr.address2 || '',
-                    city: addr.city,
-                    state: addr.stateProv,
-                    postalCode: addr.zipPostal,
-                    country: addr.country,
-                    contactName: `${addr.firstName} ${addr.lastName}`.trim(),
-                    contactPhone: addr.phone,
-                    contactEmail: addr.email,
-                    isDefault: addr.isDefault,
-                    nickname: addr.nickname,
-                    companyName: addr.companyName,
-                    address1: addr.address1,
-                    address2: addr.address2 || '',
-                    stateProv: addr.stateProv,
-                    zipPostal: addr.zipPostal,
-                    firstName: addr.firstName,
-                    lastName: addr.lastName,
-                    phone: addr.phone,
-                    email: addr.email
-                }))
+            console.log("ShipFrom: Detected empty contact fields, checking database for values...");
+
+            // Directly query the address from the database to ensure we have the latest data
+            const fetchAddressDetails = async () => {
+                try {
+                    const addressRef = doc(db, 'addressBook', selectedAddressId);
+                    const addressDoc = await getDoc(addressRef);
+
+                    if (addressDoc.exists()) {
+                        const addressData = addressDoc.data();
+                        console.log("ShipFrom: Direct DB lookup for address:", addressData);
+
+                        // Get actual name fields from the database record
+                        const firstName = addressData.firstName || '';
+                        const lastName = addressData.lastName || '';
+
+                        // If we have firstName/lastName, use those
+                        if (firstName || lastName) {
+                            const contactName = `${firstName} ${lastName}`.trim();
+                            console.log("ShipFrom: Setting contactName from DB:", contactName);
+
+                            updateFormSection('shipFrom', {
+                                firstName,
+                                lastName,
+                                attention: contactName,
+                                contactName
+                            });
+                        }
+                        // Fall back to using the nickname as contactName if no firstName/lastName
+                        else if (addressData.nickname) {
+                            console.log("ShipFrom: Using nickname as contactName:", addressData.nickname);
+
+                            updateFormSection('shipFrom', {
+                                attention: addressData.nickname,
+                                contactName: addressData.nickname
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error fetching address details:", error);
+                }
             };
 
-            console.log('Updating form with formatted address:', formattedAddress);
+            fetchAddressDetails();
+        }
+    }, [formData.shipFrom, selectedAddressId, updateFormSection]);
+
+    // When an address is selected, ensure all form data is updated properly
+    const handleAddressChange = useCallback(async (addressId) => {
+        // Find the selected address in our local state
+        const selectedAddress = shipFromAddresses.find(addr => addr.id === addressId);
+        console.log('ShipFrom: Selected address:', selectedAddress);
+
+        if (selectedAddress) {
+            setSelectedAddressId(addressId);
+
+            // Directly query the database to ensure we have the latest data
+            const addressRef = doc(db, 'addressBook', addressId);
+            const addressSnap = await getDoc(addressRef);
+
+            // Get the most up-to-date firstName/lastName values
+            const firstName = addressSnap.exists()
+                ? (addressSnap.data().firstName || '')
+                : (selectedAddress.firstName || '');
+
+            const lastName = addressSnap.exists()
+                ? (addressSnap.data().lastName || '')
+                : (selectedAddress.lastName || '');
+
+            // Ensure contact name is properly set
+            const contactName = firstName && lastName
+                ? `${firstName} ${lastName}`
+                : selectedAddress.contactName || selectedAddress.attention || selectedAddress.name || "Shipping Department";
+
+            // Update all addresses in the array with proper contact information
+            const updatedAddresses = shipFromAddresses.map(addr => {
+                if (addr.id === addressId) {
+                    return {
+                        ...addr,
+                        firstName,
+                        lastName,
+                        contactName: addr.id === addressId ? contactName : addr.contactName,
+                        attention: addr.id === addressId ? contactName : addr.attention
+                    };
+                }
+                return addr;
+            });
+
+            const formattedAddress = {
+                ...selectedAddress,
+                contactName: contactName,
+                attention: contactName,
+                id: selectedAddress.id,
+                company: selectedAddress.companyName || selectedAddress.company || '',
+                name: selectedAddress.nickname || selectedAddress.name || '',
+                street: selectedAddress.address1 || selectedAddress.street || '',
+                street2: selectedAddress.address2 || selectedAddress.street2 || '',
+                city: selectedAddress.city || '',
+                state: selectedAddress.stateProv || selectedAddress.state || '',
+                postalCode: selectedAddress.zipPostal || selectedAddress.postalCode || '',
+                country: selectedAddress.country || 'US',
+                contactPhone: selectedAddress.phone || selectedAddress.contactPhone || '',
+                contactEmail: selectedAddress.email || selectedAddress.contactEmail || '',
+                specialInstructions: selectedAddress.specialInstructions || '',
+                firstName,
+                lastName,
+                shipFromAddresses: updatedAddresses,
+            };
+
+            console.log('ShipFrom: Updating form with formatted address including contactName:', formattedAddress.contactName);
+
+            // Update the form context with the comprehensive address data
             updateFormSection('shipFrom', formattedAddress);
-        } else {
-            console.error('Selected address ID not found in shipFromAddresses from context:', addressIdStr);
         }
     }, [shipFromAddresses, updateFormSection]);
 
@@ -346,19 +438,24 @@ const ShipFrom = ({ onNext, onPrevious }) => {
             const updatedAddresses = [...shipFromAddresses, addressWithId];
             setShipFromAddresses(updatedAddresses);
 
+            // Ensure firstName and lastName are defined
+            const firstName = newAddress.firstName || '';
+            const lastName = newAddress.lastName || '';
+            const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : '';
+
             // Create the formatted address with both new and old field names
             const formattedAddress = {
                 id: newAddressId,
                 name: newAddress.nickname,
                 company: newAddress.companyName,
-                attention: `${newAddress.firstName} ${newAddress.lastName}`.trim(),
+                attention: contactName,
                 street: newAddress.address1,
                 street2: newAddress.address2 || '',
                 city: newAddress.city,
                 state: newAddress.stateProv,
                 postalCode: newAddress.zipPostal,
                 country: newAddress.country,
-                contactName: `${newAddress.firstName} ${newAddress.lastName}`.trim(),
+                contactName: contactName,
                 contactPhone: newAddress.phone,
                 contactEmail: newAddress.email,
                 isDefault: newAddress.isDefault,
@@ -368,37 +465,43 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 address2: newAddress.address2 || '',
                 stateProv: newAddress.stateProv,
                 zipPostal: newAddress.zipPostal,
-                firstName: newAddress.firstName,
-                lastName: newAddress.lastName,
+                firstName: firstName,
+                lastName: lastName,
                 phone: newAddress.phone,
                 email: newAddress.email,
                 // Map all addresses in the list to have both formats
-                shipFromAddresses: updatedAddresses.map(addr => ({
-                    id: addr.id,
-                    name: addr.nickname,
-                    company: addr.companyName,
-                    attention: `${addr.firstName} ${addr.lastName}`.trim(),
-                    street: addr.address1,
-                    street2: addr.address2 || '',
-                    city: addr.city,
-                    state: addr.stateProv,
-                    postalCode: addr.zipPostal,
-                    country: addr.country,
-                    contactName: `${addr.firstName} ${addr.lastName}`.trim(),
-                    contactPhone: addr.phone,
-                    contactEmail: addr.email,
-                    isDefault: addr.isDefault,
-                    nickname: addr.nickname,
-                    companyName: addr.companyName,
-                    address1: addr.address1,
-                    address2: addr.address2 || '',
-                    stateProv: addr.stateProv,
-                    zipPostal: addr.zipPostal,
-                    firstName: addr.firstName,
-                    lastName: addr.lastName,
-                    phone: addr.phone,
-                    email: addr.email
-                }))
+                shipFromAddresses: updatedAddresses.map(addr => {
+                    const addrFirstName = addr.firstName || '';
+                    const addrLastName = addr.lastName || '';
+                    const addrContactName = addrFirstName || addrLastName ? `${addrFirstName} ${addrLastName}`.trim() : '';
+
+                    return {
+                        id: addr.id,
+                        name: addr.nickname,
+                        company: addr.companyName,
+                        attention: addrContactName,
+                        street: addr.address1,
+                        street2: addr.address2 || '',
+                        city: addr.city,
+                        state: addr.stateProv,
+                        postalCode: addr.zipPostal,
+                        country: addr.country,
+                        contactName: addrContactName,
+                        contactPhone: addr.phone,
+                        contactEmail: addr.email,
+                        isDefault: addr.isDefault,
+                        nickname: addr.nickname,
+                        companyName: addr.companyName,
+                        address1: addr.address1,
+                        address2: addr.address2 || '',
+                        stateProv: addr.stateProv,
+                        zipPostal: addr.zipPostal,
+                        firstName: addrFirstName,
+                        lastName: addrLastName,
+                        phone: addr.phone,
+                        email: addr.email
+                    };
+                })
             };
 
             // Update the form context
@@ -430,30 +533,23 @@ const ShipFrom = ({ onNext, onPrevious }) => {
 
     // Helper function to get attention line from name fields
     const getAttentionLine = useCallback((address) => {
-        if (address.firstName && address.lastName) {
-            return `${address.firstName} ${address.lastName}`;
-        } else if (address.firstName) {
-            return address.firstName;
-        } else if (address.lastName) {
-            return address.lastName;
+        if (!address) return '';
+
+        // If firstName or lastName are undefined, default to empty strings
+        const firstName = address.firstName || '';
+        const lastName = address.lastName || '';
+
+        if (firstName && lastName) {
+            return `${firstName} ${lastName}`;
+        } else if (firstName) {
+            return firstName;
+        } else if (lastName) {
+            return lastName;
         }
         return '';
     }, []);
 
     const currentShipFromData = formData.shipFrom || {};
-
-    // Log the current state of the component for debugging
-    useEffect(() => {
-        console.log("ShipFrom: Current state:", {
-            companyId: companyData?.id,
-            companyIdForAddress,
-            selectedAddressId,
-            addressesCount: shipFromAddresses.length,
-            addressIds: shipFromAddresses.map(a => a.id),
-            formDataShipFrom: formData.shipFrom,
-            formDataAddressIds: formData.shipFrom?.shipFromAddresses?.map(a => a.id) || []
-        });
-    }, [companyData?.id, companyIdForAddress, selectedAddressId, shipFromAddresses, formData.shipFrom]);
 
     return (
         <form className="ship-from-form">

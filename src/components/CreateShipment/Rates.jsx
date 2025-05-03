@@ -366,76 +366,129 @@ const Rates = ({ formData, onPrevious, onNext }) => {
     }, [styles]);
 
     const fetchRates = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        setRatesLoaded(false);
+
         try {
-            setIsLoading(true);
-            setError(null);
-            setRatesLoaded(false);
-
-            // Use a simple booking reference
-            const bookingRef = "shipment 123";
-
-            // Determine shipment bill type and booking reference type based on shipment type
-            const shipmentType = formData.shipmentInfo.shipmentType || 'courier';
-            const shipmentBillType = 'DefaultLogisticsPlus';
-            const bookingReferenceNumberType = 'Shipment';
-
+            // Convert form data to rate request format
             const rateRequestData = {
-                bookingReferenceNumber: bookingRef,
-                bookingReferenceNumberType: bookingReferenceNumberType,
-                shipmentBillType: shipmentBillType,
-                shipmentDate: formData.shipmentInfo.shipmentDate
-                    ? new Date(formData.shipmentInfo.shipmentDate).toISOString()
-                    : new Date().toISOString(),
+                // Origin Address Details
+                fromAddress: {
+                    company: formData.shipFrom?.company || '',
+                    name: formData.shipFrom?.name || '',
+                    attention: formData.shipFrom?.attention || '',
+                    streetOne: formData.shipFrom?.street || '',
+                    streetTwo: formData.shipFrom?.street2 || '',
+                    city: formData.shipFrom?.city || '',
+                    state: formData.shipFrom?.state || '',
+                    postalCode: formData.shipFrom?.postalCode || formData.shipFrom?.zipPostal || '',
+                    country: formData.shipFrom?.country || 'US',
+                    phone: formData.shipFrom?.phone || formData.shipFrom?.contactPhone || '',
+                    email: formData.shipFrom?.email || formData.shipFrom?.contactEmail || '',
+                    contactName: formData.shipFrom?.contactName || formData.shipFrom?.attention || '',
+                    specialInstructions: formData.shipFrom?.specialInstructions || 'none'
+                },
+                // Destination Address Details
+                toAddress: {
+                    company: formData.shipTo?.company || '',
+                    name: formData.shipTo?.name || '',
+                    attention: formData.shipTo?.attention || '',
+                    streetOne: formData.shipTo?.street || '',
+                    streetTwo: formData.shipTo?.street2 || '',
+                    city: formData.shipTo?.city || '',
+                    state: formData.shipTo?.state || '',
+                    postalCode: formData.shipTo?.postalCode || formData.shipTo?.zipPostal || '',
+                    country: formData.shipTo?.country || 'US',
+                    phone: formData.shipTo?.phone || formData.shipTo?.contactPhone || '',
+                    email: formData.shipTo?.email || formData.shipTo?.contactEmail || '',
+                    contactName: formData.shipTo?.contactName || formData.shipTo?.attention || '',
+                    specialInstructions: formData.shipTo?.specialInstructions || 'none'
+                },
+                // Shipment Details
+                bookingReferenceNumber: formData.shipmentInfo?.referenceNumber || '',
+                bookingReferenceNumberType: formData.shipmentInfo?.referenceType || '',
+                shipmentBillType: formData.shipmentInfo?.shipmentType || 'courier',
+                shipmentDate: formData.shipmentInfo?.shipmentDate || new Date().toISOString().split('T')[0],
                 pickupWindow: {
-                    earliest: formData.shipmentInfo.earliestPickup || "09:00",
-                    latest: formData.shipmentInfo.latestPickup || "17:00"
+                    earliest: formData.shipmentInfo?.pickupWindow?.earliest || '09:00',
+                    latest: formData.shipmentInfo?.pickupWindow?.latest || '17:00'
                 },
                 deliveryWindow: {
-                    earliest: formData.shipmentInfo.earliestDelivery || "09:00",
-                    latest: formData.shipmentInfo.latestDelivery || "17:00"
+                    earliest: formData.shipmentInfo?.deliveryWindow?.earliest || '09:00',
+                    latest: formData.shipmentInfo?.deliveryWindow?.latest || '17:00'
                 },
-                fromAddress: {
-                    company: formData.shipFrom.company || "",
-                    street: formData.shipFrom.street || "",
-                    street2: formData.shipFrom.street2 || "",
-                    postalCode: formData.shipFrom.zip || formData.shipFrom.postalCode || "",
-                    city: formData.shipFrom.city || "",
-                    state: formData.shipFrom.state || "",
-                    country: formData.shipFrom.country || "US",
-                    contactName: formData.shipFrom.contactName || "",
-                    contactPhone: formData.shipFrom.contactPhone || "",
-                    contactEmail: formData.shipFrom.contactEmail || "",
-                    specialInstructions: formData.shipFrom.specialInstructions || "none"
-                },
-                toAddress: {
-                    company: formData.shipTo.company || "",
-                    street: formData.shipTo.street || "",
-                    street2: formData.shipTo.street2 || "",
-                    postalCode: formData.shipTo.postalCode || "",
-                    city: formData.shipTo.city || "",
-                    state: formData.shipTo.state || "",
-                    country: formData.shipTo.country || "US",
-                    contactName: formData.shipTo.contactName || "",
-                    contactPhone: formData.shipTo.contactPhone || "",
-                    contactEmail: formData.shipTo.contactEmail || "",
-                    specialInstructions: formData.shipTo.specialInstructions || "none"
-                },
-                items: formData.packages.map(pkg => ({
-                    name: pkg.description || "Package",
-                    weight: parseFloat(pkg.weight) || 1,
-                    length: parseInt(pkg.length) || 12,
-                    width: parseInt(pkg.width) || 12,
-                    height: parseInt(pkg.height) || 12,
-                    quantity: parseInt(pkg.quantity) || 1,
-                    freightClass: String(pkg.freightClass || "50"),
-                    value: parseFloat(pkg.value || "0"),
-                    stackable: pkg.stackable || false
-                }))
+                // Package Details
+                items: formData.packages?.map(pkg => ({
+                    name: pkg.itemDescription || 'Package',
+                    type: parseInt(pkg.packagingType) || 258, // Default to generic package type
+                    quantity: parseInt(pkg.packagingQuantity) || 1,
+                    weight: parseFloat(pkg.weight) || 0,
+                    length: parseFloat(pkg.length) || 0,
+                    width: parseFloat(pkg.width) || 0,
+                    height: parseFloat(pkg.height) || 0,
+                    freightClass: pkg.freightClass || '50',
+                    value: parseFloat(pkg.declaredValue) || 0,
+                    currency: pkg.currency || 'USD',
+                    isSackOrMailbag: false,
+                    stackable: pkg.stackable || false,
+                    hazardous: false,
+                    commodityDescription: pkg.itemDescription || 'General Merchandise',
+                    packageReferenceID: pkg.packageReferenceID || '',
+                })) || []
             };
 
-            // Validate postal codes before making the API call
+            // Debug postal code fields
+            console.log('DEBUG - Postal Code Fields:', {
+                'shipFrom.postalCode': formData.shipFrom?.postalCode,
+                'shipFrom.zipPostal': formData.shipFrom?.zipPostal,
+                'shipFrom fields': Object.keys(formData.shipFrom || {}),
+                'fromAddress.postalCode (final)': rateRequestData.fromAddress.postalCode
+            });
+
+            // Auto-fix missing contactName fields before validation
+            if (!rateRequestData.fromAddress.contactName || rateRequestData.fromAddress.contactName.trim() === '') {
+                console.log("Auto-fixing missing origin contactName");
+                // Try to use attention, name, or company as fallbacks
+                rateRequestData.fromAddress.contactName =
+                    rateRequestData.fromAddress.attention ||
+                    rateRequestData.fromAddress.name ||
+                    rateRequestData.fromAddress.company ||
+                    "Shipping Department";
+            }
+
+            if (!rateRequestData.toAddress.contactName || rateRequestData.toAddress.contactName.trim() === '') {
+                console.log("Auto-fixing missing destination contactName");
+                // Try to use attention, name, or company as fallbacks  
+                rateRequestData.toAddress.contactName =
+                    rateRequestData.toAddress.attention ||
+                    rateRequestData.toAddress.name ||
+                    rateRequestData.toAddress.company ||
+                    "Receiving Department";
+            }
+
+            // Auto-fix missing special instructions fields
+            if (!rateRequestData.fromAddress.specialInstructions ||
+                rateRequestData.fromAddress.specialInstructions.trim() === '') {
+                rateRequestData.fromAddress.specialInstructions = 'none';
+            }
+
+            if (!rateRequestData.toAddress.specialInstructions ||
+                rateRequestData.toAddress.specialInstructions.trim() === '') {
+                rateRequestData.toAddress.specialInstructions = 'none';
+            }
+
+            // Basic validation for required fields
+            if (!rateRequestData.fromAddress.city || rateRequestData.fromAddress.city.trim() === '') {
+                throw new Error('Missing or invalid city in origin address');
+            }
+
             if (!rateRequestData.fromAddress.postalCode || rateRequestData.fromAddress.postalCode.trim() === '') {
                 throw new Error('Missing or invalid postal code in origin address');
+            }
+
+            if (!rateRequestData.toAddress.city || rateRequestData.toAddress.city.trim() === '') {
+                throw new Error('Missing or invalid city in destination address');
             }
 
             if (!rateRequestData.toAddress.postalCode || rateRequestData.toAddress.postalCode.trim() === '') {
@@ -451,20 +504,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                 throw new Error('Missing or invalid contact name in destination address');
             }
 
-            // Validate special instructions before making the API call
-            if (!rateRequestData.fromAddress.specialInstructions ||
-                (rateRequestData.fromAddress.specialInstructions.trim() === '' &&
-                    rateRequestData.fromAddress.specialInstructions !== 'none')) {
-                throw new Error('Missing or invalid specialInstructions in origin address');
-            }
-
-            if (!rateRequestData.toAddress.specialInstructions ||
-                (rateRequestData.toAddress.specialInstructions.trim() === '' &&
-                    rateRequestData.toAddress.specialInstructions !== 'none')) {
-                throw new Error('Missing or invalid specialInstructions in destination address');
-            }
-
-            // Add detailed console logging
+            // Log the complete validated request 
             console.group('🚢 Rate Request Data');
             console.log('📅 Shipment Details:', {
                 bookingReference: rateRequestData.bookingReferenceNumber,
