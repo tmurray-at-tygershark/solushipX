@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { SnackbarProvider } from 'notistack';
 import { AuthProvider } from './contexts/AuthContext';
 import { CompanyProvider } from './contexts/CompanyContext';
 import Navigation from './components/Navigation/Header';
@@ -173,31 +174,33 @@ function App() {
             <AuthProvider>
                 <CompanyProvider>
                     <LocalizationProvider dateAdapter={AdapterDayjs}>
-                        <Router>
-                            <CssBaseline />
-                            <Box sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                minHeight: '100vh',
-                                width: '100%'
-                            }}>
-                                <NotificationBar />
-                                <Navigation />
-                                <Box
-                                    component="main"
-                                    className="main-content"
-                                    sx={{
-                                        flexGrow: 1,
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        width: '100%'
-                                    }}
-                                >
-                                    <AppRoutes />
+                        <SnackbarProvider maxSnack={3} autoHideDuration={4000}>
+                            <Router>
+                                <CssBaseline />
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    minHeight: '100vh',
+                                    width: '100%'
+                                }}>
+                                    <NotificationBar />
+                                    <Navigation />
+                                    <Box
+                                        component="main"
+                                        className="main-content"
+                                        sx={{
+                                            flexGrow: 1,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            width: '100%'
+                                        }}
+                                    >
+                                        <AppRoutes />
+                                    </Box>
+                                    <Footer />
                                 </Box>
-                                <Footer />
-                            </Box>
-                        </Router>
+                            </Router>
+                        </SnackbarProvider>
                     </LocalizationProvider>
                 </CompanyProvider>
             </AuthProvider>

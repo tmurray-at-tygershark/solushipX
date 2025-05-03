@@ -76,13 +76,42 @@ const EDIUploader = ({ onUploadComplete }) => {
         e.stopPropagation();
         setDragActive(false);
 
+        // Check carrier selection before processing dropped files
+        if (!selectedCarrier) {
+            setCarrierError(true);
+            setError('You must select a carrier before uploading EDI files');
+            // Focus the carrier dropdown by scrolling to it
+            const carrierSelect = document.getElementById('carrier-select');
+            if (carrierSelect) {
+                carrierSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return;
+        }
+
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             handleFiles(e.dataTransfer.files);
         }
     };
 
-    const onButtonClick = () => {
-        fileInputRef.current.click();
+    const onButtonClick = (e) => {
+        if (e) e.stopPropagation();
+
+        // Check carrier selection here instead of after file selection
+        if (!selectedCarrier) {
+            setCarrierError(true);
+            setError('You must select a carrier before uploading EDI files');
+            // Focus the carrier dropdown by scrolling to it
+            const carrierSelect = document.getElementById('carrier-select');
+            if (carrierSelect) {
+                carrierSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return;
+        }
+
+        // Only proceed with file selection if carrier is selected
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
     };
 
     const handleFileInputChange = (e) => {
@@ -92,6 +121,8 @@ const EDIUploader = ({ onUploadComplete }) => {
     };
 
     const handleFiles = (fileList) => {
+        // We now validate carrier selection before opening file dialog
+        // First validate CSV file type
         const newFiles = Array.from(fileList).filter(file =>
             file.type === 'text/csv' ||
             file.name.endsWith('.csv')
@@ -235,23 +266,25 @@ const EDIUploader = ({ onUploadComplete }) => {
             <Paper
                 elevation={0}
                 sx={{
-                    border: '1px solid #eee',
+                    border: carrierError ? '1px solid #d32f2f' : '1px solid #eee',
                     borderRadius: 1,
                     mb: 3,
-                    p: 3
+                    p: 3,
+                    backgroundColor: carrierError ? 'rgba(211, 47, 47, 0.04)' : 'background.paper'
                 }}
             >
                 <Typography variant="h6" gutterBottom>
-                    Select Carrier
+                    Select Carrier <span style={{ color: '#d32f2f' }}>*</span>
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Choose the carrier associated with this EDI file
+                    Choose the carrier associated with this EDI file (required)
                 </Typography>
 
                 <FormControl
                     fullWidth
                     error={carrierError}
                     sx={{ mb: carrierError ? 0 : 2 }}
+                    required
                 >
                     <InputLabel id="carrier-select-label">Carrier</InputLabel>
                     <Select
@@ -261,6 +294,9 @@ const EDIUploader = ({ onUploadComplete }) => {
                         label="Carrier"
                         onChange={handleCarrierChange}
                     >
+                        <MenuItem value="" disabled>
+                            <em>Select a carrier</em>
+                        </MenuItem>
                         {CARRIERS.map((carrier) => (
                             <MenuItem key={carrier} value={carrier}>
                                 {carrier}
@@ -268,7 +304,7 @@ const EDIUploader = ({ onUploadComplete }) => {
                         ))}
                     </Select>
                     {carrierError && (
-                        <FormHelperText>Please select a carrier before uploading</FormHelperText>
+                        <FormHelperText error>Please select a carrier before uploading files</FormHelperText>
                     )}
                 </FormControl>
             </Paper>
@@ -311,10 +347,14 @@ const EDIUploader = ({ onUploadComplete }) => {
                     />
                     <CloudUploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
                     <Typography variant="h6" gutterBottom>
-                        Drop EDI/Shipment CSV files here
+                        {selectedCarrier
+                            ? 'Drop EDI/Shipment CSV files here'
+                            : 'Select a carrier first'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" align="center">
-                        or click to select files (CSV only)
+                        {selectedCarrier
+                            ? 'or click to select files (CSV only)'
+                            : 'You must select a carrier before uploading files'}
                     </Typography>
                 </Box>
             </Paper>

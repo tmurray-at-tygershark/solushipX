@@ -53,6 +53,7 @@ import {
     CloudUpload as CloudUploadIcon,
     Description as FileIcon,
     InsertDriveFile as DocumentIcon,
+    HealthAndSafety as HealthAndSafetyIcon,
 } from '@mui/icons-material';
 import {
     LineChart,
@@ -75,6 +76,8 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import axios from 'axios';
+import { useSnackbar } from 'notistack';
 
 const generateMockInvoices = () => {
     const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
@@ -169,6 +172,9 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const [selectedUploadId, setSelectedUploadId] = useState(params.uploadId || null);
     const [showEdiResults, setShowEdiResults] = useState(!!params.uploadId);
     const [ediProcessedItems, setEdiProcessedItems] = useState([]);
+    const [ediLoading, setEdiLoading] = useState(false);
+    const [ediDialogOpen, setEdiDialogOpen] = useState(false);
+    const { enqueueSnackbar } = useSnackbar();
 
     // Handle initial tab and URL params
     useEffect(() => {
@@ -266,6 +272,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
 
     const fetchEdiHistory = async () => {
         try {
+            setEdiLoading(true);
             // Query for processed EDI files from the admin database
             const ediRef = collection(adminDb, 'ediResults');
             const q = query(
@@ -293,7 +300,9 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             uploadId: uploadId,
                             fileName: resultData.fileName || 'Unknown File',
                             processedAt: resultData.processedAt,
-                            uploadedAt: uploadData.uploadedAt ? new Date(uploadData.uploadedAt.toDate()).toLocaleString() : 'Unknown',
+                            uploadedAt: uploadData.uploadedAt,
+                            formattedUploadDate: uploadData.uploadedAt ? new Date(uploadData.uploadedAt.toDate()).toLocaleString() :
+                                (resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'N/A'),
                             processingStatus: uploadData.processingStatus || 'completed',
                             recordCount: resultData.records ? resultData.records.length :
                                 (resultData.shipments ? resultData.shipments.length : 0),
@@ -307,7 +316,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             uploadId: uploadId,
                             fileName: resultData.fileName || 'Unknown File',
                             processedAt: resultData.processedAt,
-                            uploadedAt: resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'Unknown',
+                            uploadedAt: resultData.processedAt,
+                            formattedUploadDate: resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'N/A',
                             processingStatus: 'completed', // Default to completed if no status found
                             recordCount: resultData.records ? resultData.records.length :
                                 (resultData.shipments ? resultData.shipments.length : 0),
@@ -323,7 +333,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         uploadId: uploadId,
                         fileName: resultData.fileName || 'Unknown File',
                         processedAt: resultData.processedAt,
-                        uploadedAt: resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'Unknown',
+                        uploadedAt: resultData.processedAt,
+                        formattedUploadDate: resultData.processedAt ? new Date(resultData.processedAt.toDate()).toLocaleString() : 'N/A',
                         processingStatus: 'unknown',
                         recordCount: resultData.records ? resultData.records.length :
                             (resultData.shipments ? resultData.shipments.length : 0),
@@ -340,6 +351,103 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             setEdiProcessedItems(ediData);
         } catch (error) {
             console.error('Error fetching EDI history:', error);
+        } finally {
+            setEdiLoading(false);
+        }
+    };
+
+    const checkStuckEdis = async () => {
+        try {
+            setEdiLoading(true);
+
+            // First try with axios
+            try {
+                // Call the cloud function to diagnose queue
+                const response = await axios.get('https://checkediuploads-xedyh5vw7a-uc.a.run.app?action=diagnoseQueue');
+
+                // Check if there are any stuck files
+                const { stuckQueued = [], stuckProcessing = [] } = response.data || {};
+                const totalStuck = (stuckQueued?.length || 0) + (stuckProcessing?.length || 0);
+
+                if (totalStuck === 0) {
+                    enqueueSnackbar("No stuck EDI uploads found!", { variant: 'success' });
+                } else {
+                    // Show confirmation dialog
+                    if (window.confirm(`Found ${totalStuck} stuck EDI uploads. Do you want to attempt to fix them?`)) {
+                        // Fix stuck uploads
+                        const fixResponse = await axios.get('https://checkediuploads-xedyh5vw7a-uc.a.run.app?action=fixStuckQueue&limit=5');
+                        enqueueSnackbar(`Fixed ${fixResponse.data?.fixedDocuments?.length || 0} stuck uploads. They should start processing shortly.`,
+                            { variant: 'success' });
+
+                        // Refresh the list after fixing
+                        setTimeout(() => {
+                            fetchEdiHistory();
+                        }, 3000);
+                    }
+                }
+            } catch (axiosError) {
+                console.error('Axios error checking stuck EDIs:', axiosError);
+
+                // Fallback to direct fetch if axios fails due to CORS
+                try {
+                    const response = await fetch('https://checkediuploads-xedyh5vw7a-uc.a.run.app?action=diagnoseQueue', {
+                        method: 'GET',
+                        mode: 'cors',
+                        headers: {
+                            'Accept': 'application/json',
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API returned status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Check if there are any stuck files
+                    const { stuckQueued = [], stuckProcessing = [] } = data || {};
+                    const totalStuck = (stuckQueued?.length || 0) + (stuckProcessing?.length || 0);
+
+                    if (totalStuck === 0) {
+                        enqueueSnackbar("No stuck EDI uploads found!", { variant: 'success' });
+                    } else {
+                        // Show confirmation dialog
+                        if (window.confirm(`Found ${totalStuck} stuck EDI uploads. Do you want to attempt to fix them?`)) {
+                            // Fix stuck uploads
+                            const fixResponse = await fetch('https://checkediuploads-xedyh5vw7a-uc.a.run.app?action=fixStuckQueue&limit=5', {
+                                method: 'GET',
+                                mode: 'cors',
+                                headers: {
+                                    'Accept': 'application/json',
+                                }
+                            });
+
+                            if (!fixResponse.ok) {
+                                throw new Error(`Fix API returned status: ${fixResponse.status}`);
+                            }
+
+                            const fixData = await fixResponse.json();
+                            enqueueSnackbar(`Fixed ${fixData?.fixedDocuments?.length || 0} stuck uploads. They should start processing shortly.`,
+                                { variant: 'success' });
+
+                            // Refresh the list after fixing
+                            setTimeout(() => {
+                                fetchEdiHistory();
+                            }, 3000);
+                        }
+                    }
+                } catch (fetchError) {
+                    console.error('Fetch error checking stuck EDIs:', fetchError);
+                    enqueueSnackbar('Error checking stuck EDIs. The Cloud Function may be experiencing issues. Please try again later.',
+                        { variant: 'error' });
+                }
+            }
+        } catch (error) {
+            console.error('Error checking stuck EDIs:', error);
+            enqueueSnackbar('Error checking stuck EDIs. The feature may require a database index to be created first.',
+                { variant: 'error' });
+        } finally {
+            setEdiLoading(false);
         }
     };
 
@@ -581,6 +689,22 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         setSelectedUploadId(uploadId);
         setShowEdiResults(true);
         navigate(`/admin/billing/edi/${uploadId}`);
+    };
+
+    const getProcessingStatusChip = (status) => {
+        return (
+            <Chip
+                label={status || 'Unknown'}
+                size="small"
+                color={
+                    status === 'completed' ? 'success' :
+                        status === 'failed' ? 'error' :
+                            status === 'processing' ? 'primary' :
+                                status === 'queued' ? 'warning' : 'default'
+                }
+                sx={{ minWidth: '90px' }}
+            />
+        );
     };
 
     if (loading) {
@@ -997,82 +1121,119 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     ) : (
                         <>
                             <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #eee' }}>
-                                <Typography variant="h6" sx={{ mb: 2 }}>Upload EDI Files</Typography>
-                                <EDIUploader onUploadComplete={handleEdiUploadComplete} />
+                                <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                                    <Grid item xs>
+                                        <Box>
+                                            <Typography variant="h6">EDI Processing</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Upload and manage EDI files
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+                                    <Grid item>
+                                        <Button
+                                            variant="outlined"
+                                            color="primary"
+                                            size="small"
+                                            onClick={checkStuckEdis}
+                                            disabled={ediLoading}
+                                            startIcon={ediLoading ? <CircularProgress size={16} /> : <HealthAndSafetyIcon />}
+                                            sx={{ mr: 1 }}
+                                        >
+                                            Check Stuck Uploads
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            onClick={() => setEdiDialogOpen(true)}
+                                        >
+                                            Upload EDI File
+                                        </Button>
+                                    </Grid>
+                                </Grid>
                             </Paper>
 
-                            {ediProcessedItems.length > 0 && (
-                                <Paper elevation={0} sx={{ border: '1px solid #eee' }}>
-                                    <Box sx={{ p: 2 }}>
-                                        <Typography variant="h6">EDI Processing History</Typography>
-                                    </Box>
-                                    <TableContainer>
-                                        <Table>
-                                            <TableHead>
-                                                <TableRow>
-                                                    <TableCell>File Name</TableCell>
-                                                    <TableCell>Carrier</TableCell>
-                                                    <TableCell>Upload Date</TableCell>
-                                                    <TableCell>Records</TableCell>
-                                                    <TableCell>Status</TableCell>
-                                                    <TableCell align="right">Actions</TableCell>
+                            <Paper elevation={0} sx={{ p: 3, border: '1px solid #eee' }}>
+                                <Typography variant="h6" sx={{ mb: 3 }}>EDI Processing History</Typography>
+                                <TableContainer>
+                                    <Table>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell>File Name</TableCell>
+                                                <TableCell>Carrier</TableCell>
+                                                <TableCell>Upload Date</TableCell>
+                                                <TableCell>Records</TableCell>
+                                                <TableCell>Status</TableCell>
+                                                <TableCell align="right">Actions</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {ediProcessedItems.map((item) => (
+                                                <TableRow key={item.id} hover>
+                                                    <TableCell>{item.fileName}</TableCell>
+                                                    <TableCell>{item.carrier || 'Not specified'}</TableCell>
+                                                    <TableCell>
+                                                        {item.formattedUploadDate}
+                                                    </TableCell>
+                                                    <TableCell>{item.recordCount || '0'}</TableCell>
+                                                    <TableCell>
+                                                        {getProcessingStatusChip(item.processingStatus)}
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        <Button
+                                                            size="small"
+                                                            onClick={() => handleViewEdiResults(item.uploadId)}
+                                                            disabled={item.processingStatus === 'queued'}
+                                                        >
+                                                            View Results
+                                                        </Button>
+                                                    </TableCell>
                                                 </TableRow>
-                                            </TableHead>
-                                            <TableBody>
-                                                {ediProcessedItems.map((item) => (
-                                                    <TableRow key={item.id} hover>
-                                                        <TableCell>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                <FileIcon color="primary" />
-                                                                {item.fileName}
-                                                            </Box>
-                                                        </TableCell>
-                                                        <TableCell>{item.carrier}</TableCell>
-                                                        <TableCell>{item.uploadedAt}</TableCell>
-                                                        <TableCell>{item.recordCount || 0}</TableCell>
-                                                        <TableCell>
-                                                            <Chip
-                                                                label={item.processingStatus || 'Unknown'}
-                                                                size="small"
-                                                                color={
-                                                                    item.processingStatus === 'completed' ? 'success' :
-                                                                        item.processingStatus === 'failed' ? 'error' :
-                                                                            item.processingStatus === 'processing' ? 'primary' :
-                                                                                item.processingStatus === 'queued' ? 'warning' : 'default'
-                                                                }
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell align="right">
-                                                            <Button
-                                                                size="small"
-                                                                onClick={() => handleViewEdiResults(item.uploadId)}
-                                                                disabled={item.processingStatus === 'queued' || item.processingStatus === 'processing'}
-                                                            >
-                                                                View Results
-                                                            </Button>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
-                                                {ediProcessedItems.length === 0 && (
-                                                    <TableRow>
-                                                        <TableCell colSpan={6} align="center">
-                                                            <Box sx={{ py: 3 }}>
-                                                                <Typography variant="body1" color="text.secondary">
-                                                                    No processed EDI files found
-                                                                </Typography>
-                                                            </Box>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
-                                </Paper>
-                            )}
+                                            ))}
+                                            {ediProcessedItems.length === 0 && (
+                                                <TableRow>
+                                                    <TableCell colSpan={6} align="center">
+                                                        <Box sx={{ py: 3 }}>
+                                                            <Typography variant="body1" color="text.secondary">
+                                                                No processed EDI files found
+                                                            </Typography>
+                                                        </Box>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </Paper>
                         </>
                     )}
                 </>
             )}
+
+            {/* EDI Upload Dialog */}
+            <Dialog
+                open={ediDialogOpen}
+                onClose={() => setEdiDialogOpen(false)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle>
+                    <Box display="flex" alignItems="center" justifyContent="space-between">
+                        <Typography variant="h6">Upload EDI File</Typography>
+                        <IconButton onClick={() => setEdiDialogOpen(false)} size="small">
+                            <CloseIcon />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <EDIUploader
+                        onUploadComplete={(uploadId) => {
+                            handleEdiUploadComplete(uploadId);
+                            setEdiDialogOpen(false);
+                        }}
+                    />
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 };
