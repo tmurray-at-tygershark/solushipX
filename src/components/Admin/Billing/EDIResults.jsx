@@ -517,7 +517,12 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                             </TableHead>
                                             <TableBody>
                                                 {shipments.map((shipment, index) => (
-                                                    <TableRow key={index} hover>
+                                                    <TableRow
+                                                        key={index}
+                                                        hover
+                                                        onClick={() => handleViewDetails(shipment)}
+                                                        sx={{ cursor: 'pointer' }}
+                                                    >
                                                         <TableCell sx={{ verticalAlign: 'top', minWidth: '120px' }}>
                                                             {shipment.shipDate || shipment.manifestDate || 'N/A'}
                                                         </TableCell>
@@ -635,7 +640,12 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                             </TableHead>
                                             <TableBody>
                                                 {charges.map((charge, index) => (
-                                                    <TableRow key={index} hover>
+                                                    <TableRow
+                                                        key={index}
+                                                        hover
+                                                        onClick={() => handleViewDetails(charge)}
+                                                        sx={{ cursor: 'pointer' }}
+                                                    >
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             {charge.invoiceDate || charge.shipDate || charge.manifestDate || 'N/A'}
                                                         </TableCell>
