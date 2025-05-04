@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box,
     Typography,
@@ -23,7 +23,8 @@ import {
     Grid,
     Card,
     CardContent,
-    Divider
+    Divider,
+    Stack
 } from '@mui/material';
 import {
     Close as CloseIcon,
@@ -33,12 +34,37 @@ import {
     ErrorOutline as ErrorIcon,
     HourglassEmpty as PendingIcon,
     LocalShippingOutlined as ShippingIcon,
-    ReceiptOutlined as ReceiptIcon
+    ReceiptOutlined as ReceiptIcon,
+    Print as PrintIcon,
+    ArrowBack as ArrowBackIcon,
+    Link as LinkIcon
 } from '@mui/icons-material';
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, adminDb } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
+import html2pdf from 'html2pdf.js/dist/html2pdf.min.js';
+
+// Helper function to format address
+const formatAddress = (address, fallbackPostalCode) => {
+    if (!address) return 'N/A';
+
+    const street = address.street?.toUpperCase();
+    const city = address.city?.toUpperCase();
+    const state = address.state?.toUpperCase();
+    const postalCode = (address.postalCode || fallbackPostalCode)?.toUpperCase();
+    const country = address.country?.toUpperCase();
+
+    const line3Parts = [city, state].filter(Boolean);
+    const line4Parts = [postalCode, country].filter(Boolean);
+
+    const lines = [];
+    if (street) lines.push(street);
+    if (line3Parts.length > 0) lines.push(line3Parts.join(', '));
+    if (line4Parts.length > 0) lines.push(line4Parts.join(', '));
+
+    return lines.length > 0 ? lines.join('\n') : 'N/A';
+};
 
 const EDIResults = ({ uploadId: propUploadId, onClose }) => {
     const navigate = useNavigate();
@@ -52,6 +78,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
     const [selectedRecord, setSelectedRecord] = useState(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
+    const printContentRef = useRef();
 
     // Get uploadId from props or URL params
     const uploadId = propUploadId || params?.uploadId;
@@ -286,6 +313,113 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
         return `$${parseFloat(value).toFixed(2)}`;
     };
 
+    // Add Print Handler
+    const handlePrint = () => {
+        const element = printContentRef.current;
+        if (!element || !selectedRecord) return;
+
+        const recordIdentifier = selectedRecord.trackingNumber || selectedRecord.referenceNumber || selectedRecord.description || 'edi-record';
+        const filename = `${recordIdentifier}.pdf`;
+
+        const opt = {
+            margin: 0.5,
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true }, // Increase scale for better resolution
+            jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+        };
+
+        html2pdf().from(element).set(opt).save();
+    };
+
+    // --- START: CSV Export Logic ---
+    const escapeCsvCell = (cell) => {
+        if (cell === undefined || cell === null) return '';
+        let cellString = String(cell);
+        // If the cell contains a comma, double quote, or newline, enclose it in double quotes
+        if (cellString.search(/[,\"\n]/) >= 0) {
+            // Escape existing double quotes by doubling them
+            cellString = cellString.replace(/"/g, '""');
+            // Enclose the entire string in double quotes
+            cellString = `"${cellString}"`;
+        }
+        return cellString;
+    };
+
+    const handleExportData = () => {
+        if (extractedData.length === 0) return;
+
+        const headers = [
+            'RecordType', 'TrackingNumber', 'ReferenceNumber', 'ManifestNumber', 'InvoiceNumber', 'InvoiceDate', 'AccountNumber',
+            'ShipDate', 'DeliveryDate',
+            'OriginCompany', 'OriginStreet', 'OriginCity', 'OriginState', 'OriginPostalCode', 'OriginCountry',
+            'DestinationCompany', 'DestinationStreet', 'DestinationCity', 'DestinationState', 'DestinationPostalCode', 'DestinationCountry',
+            'Carrier', 'ServiceType', 'Weight', 'WeightUnit', 'Pieces',
+            'ChargeDescription', 'ChargeType', 'ChargeCost',
+            'ShipmentCost', 'TotalCost'
+        ];
+
+        const csvRows = [];
+        // Add header row
+        csvRows.push(headers.map(escapeCsvCell).join(','));
+
+        // Add data rows
+        extractedData.forEach(record => {
+            const recordType = record.recordType || 'shipment'; // Default to shipment if not specified
+            const isCharge = recordType === 'charge';
+
+            const row = [
+                recordType,
+                record.trackingNumber,
+                record.shipmentReference || record.referenceNumber, // Combine reference fields
+                record.manifestNumber,
+                record.invoiceNumber,
+                record.invoiceDate,
+                record.accountNumber,
+                record.shipDate || record.manifestDate, // Use manifestDate as fallback shipDate
+                record.deliveryDate,
+                record.origin?.company,
+                record.origin?.street,
+                record.origin?.city,
+                record.origin?.state,
+                record.origin?.postalCode,
+                record.origin?.country,
+                record.destination?.company,
+                record.destination?.street,
+                record.destination?.city,
+                record.destination?.state,
+                record.destination?.postalCode || record.postalCode, // Fallback postal code
+                record.destination?.country,
+                record.carrier || fileDetails?.carrier,
+                record.serviceType,
+                record.actualWeight || record.reportedWeight,
+                record.weightUnit,
+                record.pieces,
+                isCharge ? record.description : '', // Charge-specific fields
+                isCharge ? record.chargeType : '',
+                isCharge ? (record.totalCost || record.cost) : '', // Charge cost
+                !isCharge ? (record.totalCost || record.cost) : '', // Shipment cost
+                record.totalCost || record.cost // General total cost as fallback
+            ];
+            csvRows.push(row.map(escapeCsvCell).join(','));
+        });
+
+        const csvString = csvRows.join('\n');
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        const filename = `edi-export-${uploadId || 'data'}.csv`;
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+    // --- END: CSV Export Logic ---
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}>
@@ -320,8 +454,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
 
     return (
         <Box>
-            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">
+            <Stack direction="row" spacing={1} sx={{ mb: 3, display: 'flex', alignItems: 'center' }}>
+                <IconButton onClick={handleClose} size="small">
+                    <ArrowBackIcon />
+                </IconButton>
+                <Typography variant="h6" sx={{ flexGrow: 1 }}>
                     EDI Processing Results
                     {fileDetails && ` - ${fileDetails.fileName}`}
                 </Typography>
@@ -332,11 +469,12 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                         startIcon={<DownloadIcon />}
                         sx={{ ml: 2 }}
                         disabled={extractedData.length === 0}
+                        onClick={handleExportData}
                     >
                         Export Data
                     </Button>
                 </Box>
-            </Box>
+            </Stack>
 
             {extractedData.length === 0 && processingStatus === 'completed' ? (
                 <Alert severity="warning" sx={{ mb: 3 }}>
@@ -367,13 +505,12 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                         <Table>
                                             <TableHead>
                                                 <TableRow>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Date</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top', minWidth: '120px' }}>Date</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Tracking/Reference</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Origin</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Destination</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Carrier/Service</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Weight</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Pieces</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Weight / Pieces</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }} align="right">Cost</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }} align="right">Actions</TableCell>
                                                 </TableRow>
@@ -381,7 +518,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                             <TableBody>
                                                 {shipments.map((shipment, index) => (
                                                     <TableRow key={index} hover>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                        <TableCell sx={{ verticalAlign: 'top', minWidth: '120px' }}>
                                                             {shipment.shipDate || shipment.manifestDate || 'N/A'}
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
@@ -413,48 +550,18 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
-                                                                {shipment.origin?.company && (
-                                                                    <Typography variant="body2" fontWeight="medium">
-                                                                        {shipment.origin.company}
-                                                                    </Typography>
-                                                                )}
-                                                                {shipment.origin?.street && (
-                                                                    <Typography variant="caption" display="block">
-                                                                        {shipment.origin.street}
-                                                                    </Typography>
-                                                                )}
-                                                                <Typography variant="caption" display="block">
-                                                                    {shipment.origin?.city ?
-                                                                        `${shipment.origin.city}${shipment.origin.state ? ', ' : ''}${shipment.origin.state || ''} ${shipment.origin.postalCode || ''}` :
-                                                                        'N/A'}
-                                                                </Typography>
-                                                                {shipment.origin?.country && (
-                                                                    <Typography variant="caption" display="block">
-                                                                        {shipment.origin.country}
+                                                                {shipment.origin && (
+                                                                    <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
+                                                                        {formatAddress(shipment.origin)}
                                                                     </Typography>
                                                                 )}
                                                             </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
-                                                                {shipment.destination?.company && (
-                                                                    <Typography variant="body2" fontWeight="medium">
-                                                                        {shipment.destination.company}
-                                                                    </Typography>
-                                                                )}
-                                                                {shipment.destination?.street && (
-                                                                    <Typography variant="caption" display="block">
-                                                                        {shipment.destination.street}
-                                                                    </Typography>
-                                                                )}
-                                                                <Typography variant="caption" display="block">
-                                                                    {shipment.destination?.city ?
-                                                                        `${shipment.destination.city}${shipment.destination.state ? ', ' : ''}${shipment.destination.state || ''} ${shipment.destination.postalCode || ''}` :
-                                                                        (shipment.postalCode ? `${shipment.postalCode}` : 'N/A')}
-                                                                </Typography>
-                                                                {shipment.destination?.country && (
-                                                                    <Typography variant="caption" display="block">
-                                                                        {shipment.destination.country}
+                                                                {shipment.destination && (
+                                                                    <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
+                                                                        {formatAddress(shipment.destination, shipment.postalCode)}
                                                                     </Typography>
                                                                 )}
                                                             </Box>
@@ -472,12 +579,14 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                             </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }} align="right">
-                                                            {shipment.actualWeight ?
-                                                                `${shipment.actualWeight} ${shipment.weightUnit || 'lbs'}` :
-                                                                (shipment.reportedWeight ? `${shipment.reportedWeight} ${shipment.weightUnit || 'lbs'}` : 'N/A')}
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
-                                                            {shipment.pieces || '0'}
+                                                            <Typography variant="body2">
+                                                                {shipment.actualWeight ?
+                                                                    `${shipment.actualWeight} ${shipment.weightUnit || 'lbs'}` :
+                                                                    (shipment.reportedWeight ? `${shipment.reportedWeight} ${shipment.weightUnit || 'lbs'}` : 'N/A')}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary" display="block">
+                                                                {shipment.pieces || '0'} pcs
+                                                            </Typography>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }} align="right">
                                                             <Box>
@@ -563,56 +672,22 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                             </Typography>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {charge.origin ? (
-                                                                <Box>
-                                                                    {charge.origin.company && (
-                                                                        <Typography variant="body2" fontWeight="medium">
-                                                                            {charge.origin.company}
-                                                                        </Typography>
-                                                                    )}
-                                                                    {charge.origin.street && (
-                                                                        <Typography variant="caption" display="block">
-                                                                            {charge.origin.street}
-                                                                        </Typography>
-                                                                    )}
-                                                                    <Typography variant="caption" display="block">
-                                                                        {charge.origin.city ?
-                                                                            `${charge.origin.city}${charge.origin.state ? ', ' : ''}${charge.origin.state || ''} ${charge.origin.postalCode || ''}` :
-                                                                            'N/A'}
+                                                            <Box>
+                                                                {charge.origin && (
+                                                                    <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
+                                                                        {formatAddress(charge.origin)}
                                                                     </Typography>
-                                                                    {charge.origin.country && (
-                                                                        <Typography variant="caption" display="block">
-                                                                            {charge.origin.country}
-                                                                        </Typography>
-                                                                    )}
-                                                                </Box>
-                                                            ) : 'N/A'}
+                                                                )}
+                                                            </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {charge.destination ? (
-                                                                <Box>
-                                                                    {charge.destination.company && (
-                                                                        <Typography variant="body2" fontWeight="medium">
-                                                                            {charge.destination.company}
-                                                                        </Typography>
-                                                                    )}
-                                                                    {charge.destination.street && (
-                                                                        <Typography variant="caption" display="block">
-                                                                            {charge.destination.street}
-                                                                        </Typography>
-                                                                    )}
-                                                                    <Typography variant="caption" display="block">
-                                                                        {charge.destination.city ?
-                                                                            `${charge.destination.city}${charge.destination.state ? ', ' : ''}${charge.destination.state || ''} ${charge.destination.postalCode || ''}` :
-                                                                            (charge.postalCode ? `${charge.postalCode}` : 'N/A')}
+                                                            <Box>
+                                                                {charge.destination ? (
+                                                                    <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
+                                                                        {formatAddress(charge.destination, charge.postalCode)}
                                                                     </Typography>
-                                                                    {charge.destination.country && (
-                                                                        <Typography variant="caption" display="block">
-                                                                            {charge.destination.country}
-                                                                        </Typography>
-                                                                    )}
-                                                                </Box>
-                                                            ) : (charge.postalCode ? charge.postalCode : 'N/A')}
+                                                                ) : (charge.postalCode ? charge.postalCode : 'N/A')}
+                                                            </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
@@ -707,20 +782,72 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                             </CardContent>
                                         </Card>
                                     </Grid>
+                                    <Grid item xs={12} sm={6} md={3}>
+                                        <Card elevation={0} sx={{ border: '1px solid #eee' }}>
+                                            <CardContent>
+                                                <Typography variant="h6" sx={{ mb: 1 }}>
+                                                    {shipments.length}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Total Shipments
+                                                </Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={3}>
+                                        <Card elevation={0} sx={{ border: '1px solid #eee' }}>
+                                            <CardContent>
+                                                <Typography variant="h6" sx={{ mb: 1 }}>
+                                                    {charges.length}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Total Charges/Fees
+                                                </Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={3}>
+                                        <Card elevation={0} sx={{ border: '1px solid #eee' }}>
+                                            <CardContent>
+                                                <Typography variant="h6" sx={{ mb: 1 }}>
+                                                    {formatCurrency(shipments.reduce((sum, item) =>
+                                                        sum + (parseFloat(item.totalCost || item.cost) || 0), 0)
+                                                    )}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Total Shipment Cost
+                                                </Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={3}>
+                                        <Card elevation={0} sx={{ border: '1px solid #eee' }}>
+                                            <CardContent>
+                                                <Typography variant="h6" sx={{ mb: 1 }}>
+                                                    {formatCurrency(charges.reduce((sum, item) =>
+                                                        sum + (parseFloat(item.totalCost || item.cost) || 0), 0)
+                                                    )}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Total Charge/Fee Cost
+                                                </Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
                                 </Grid>
 
                                 <Box sx={{ mt: 4 }}>
                                     <Typography variant="h6" gutterBottom>
                                         Processing Details
                                     </Typography>
-                                    <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                    <Paper variant="outlined" sx={{ p: 2 }}>
                                         {fileDetails ? (
-                                            <Grid container spacing={2}>
+                                            <Grid container spacing={2} alignItems="center">
                                                 <Grid item xs={12} sm={6} md={3}>
                                                     <Typography variant="subtitle2" color="text.secondary">
                                                         File Name
                                                     </Typography>
-                                                    <Typography variant="body1">
+                                                    <Typography variant="body1" sx={{ wordBreak: 'break-all' }}>
                                                         {fileDetails.fileName}
                                                     </Typography>
                                                 </Grid>
@@ -763,6 +890,20 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                     <Typography variant="body1">
                                                         {fileDetails.processedAt ? new Date(fileDetails.processedAt.toDate()).toLocaleString() : 'N/A'}
                                                     </Typography>
+                                                </Grid>
+                                                <Grid item xs={12}>
+                                                    <Button
+                                                        component="a"
+                                                        href={fileDetails.downloadURL}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        variant="outlined"
+                                                        size="small"
+                                                        startIcon={<LinkIcon />}
+                                                        disabled={!fileDetails.downloadURL}
+                                                    >
+                                                        View Original File
+                                                    </Button>
                                                 </Grid>
                                             </Grid>
                                         ) : (
@@ -835,54 +976,50 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                         </IconButton>
                     </Box>
                 </DialogTitle>
-                <DialogContent dividers>
+                <DialogContent dividers ref={printContentRef} sx={{ bgcolor: 'background.paper' }}>
                     {selectedRecord && (
                         <Grid container spacing={3}>
                             <Grid item xs={12}>
-                                <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                                     <Box>
                                         <Typography variant="h6">
                                             {selectedRecord.trackingNumber ||
                                                 selectedRecord.referenceNumber ||
                                                 selectedRecord.description ||
-                                                'No Identifier'}
+                                                'No Primary Identifier'}
                                         </Typography>
-                                        {selectedRecord.shipmentReference && (
-                                            <Typography variant="body2" color="text.secondary">
-                                                Reference: {selectedRecord.shipmentReference}
-                                            </Typography>
-                                        )}
-                                        {selectedRecord.manifestNumber && (
-                                            <Typography variant="body2" color="text.secondary">
-                                                Manifest: {selectedRecord.manifestNumber}
-                                            </Typography>
-                                        )}
+                                        <Stack spacing={0.5} mt={1}>
+                                            {selectedRecord.shipmentReference && selectedRecord.shipmentReference !== selectedRecord.referenceNumber && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Reference: {selectedRecord.shipmentReference}
+                                                </Typography>
+                                            )}
+                                            {selectedRecord.manifestNumber && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Manifest: {selectedRecord.manifestNumber}
+                                                </Typography>
+                                            )}
+                                            {selectedRecord.invoiceNumber && (
+                                                <Typography variant="body2" color="text.secondary" >
+                                                    Invoice: {selectedRecord.invoiceNumber}
+                                                    {selectedRecord.invoiceDate && ` (${selectedRecord.invoiceDate})`}
+                                                </Typography>
+                                            )}
+                                            {selectedRecord.accountNumber && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Account: {selectedRecord.accountNumber}
+                                                </Typography>
+                                            )}
+                                        </Stack>
                                     </Box>
-                                    <Box>
-                                        {selectedRecord.accountNumber && (
-                                            <Typography variant="body2" textAlign="right">
-                                                Account: {selectedRecord.accountNumber}
-                                            </Typography>
-                                        )}
-                                        {selectedRecord.invoiceNumber && (
-                                            <Typography variant="body2" color="text.secondary" textAlign="right">
-                                                Invoice: {selectedRecord.invoiceNumber}
-                                            </Typography>
-                                        )}
-                                        {selectedRecord.invoiceDate && (
-                                            <Typography variant="body2" color="text.secondary" textAlign="right">
-                                                Invoice Date: {selectedRecord.invoiceDate}
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </Box>
+                                </Stack>
                                 <Divider sx={{ my: 2 }} />
                             </Grid>
 
                             {(!selectedRecord.recordType || selectedRecord.recordType === 'shipment') && (
                                 <>
                                     <Grid item xs={12} md={6}>
-                                        <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                        <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
                                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                                 Origin
                                             </Typography>
@@ -891,15 +1028,9 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                     <Typography variant="body1" fontWeight="medium">
                                                         {selectedRecord.origin.company || selectedRecord.originCompany || 'N/A'}
                                                     </Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedRecord.origin.street || ''} {selectedRecord.origin.street2 || ''}
-                                                    </Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedRecord.origin.city || ''}{selectedRecord.origin.city ? ', ' : ''}
-                                                        {selectedRecord.origin.state || ''} {selectedRecord.origin.postalCode || ''}
-                                                    </Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedRecord.origin.country || ''}
+                                                    <Typography variant="body2" color="text.secondary" mt={1}>Address</Typography>
+                                                    <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                                                        {formatAddress(selectedRecord.origin)}
                                                     </Typography>
                                                 </>
                                             ) : (
@@ -909,7 +1040,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                     </Grid>
 
                                     <Grid item xs={12} md={6}>
-                                        <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                        <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
                                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                                 Destination
                                             </Typography>
@@ -918,15 +1049,9 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                     <Typography variant="body1" fontWeight="medium">
                                                         {selectedRecord.destination.company || selectedRecord.destinationCompany || 'N/A'}
                                                     </Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedRecord.destination.street || ''} {selectedRecord.destination.street2 || ''}
-                                                    </Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedRecord.destination.city || ''}{selectedRecord.destination.city ? ', ' : ''}
-                                                        {selectedRecord.destination.state || ''} {selectedRecord.destination.postalCode || ''}
-                                                    </Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedRecord.destination.country || ''}
+                                                    <Typography variant="body2" color="text.secondary" mt={1}>Address</Typography>
+                                                    <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                                                        {formatAddress(selectedRecord.destination, selectedRecord.postalCode)}
                                                     </Typography>
                                                 </>
                                             ) : selectedRecord.postalCode ? (
@@ -938,37 +1063,37 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                     </Grid>
 
                                     <Grid item xs={12} md={6}>
-                                        <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                        <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
                                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                                 Shipment Details
                                             </Typography>
                                             <Grid container spacing={2}>
                                                 {selectedRecord.carrier && (
-                                                    <Grid item xs={6}>
+                                                    <Grid item xs={6} sm={4}>
                                                         <Typography variant="body2" color="text.secondary">Carrier</Typography>
                                                         <Typography variant="body1" fontWeight="medium">{selectedRecord.carrier}</Typography>
                                                     </Grid>
                                                 )}
                                                 {selectedRecord.serviceType && (
-                                                    <Grid item xs={6}>
+                                                    <Grid item xs={6} sm={4}>
                                                         <Typography variant="body2" color="text.secondary">Service</Typography>
                                                         <Typography variant="body1">{selectedRecord.serviceType}</Typography>
                                                     </Grid>
                                                 )}
                                                 {(selectedRecord.shipDate || selectedRecord.manifestDate) && (
-                                                    <Grid item xs={6}>
+                                                    <Grid item xs={6} sm={4}>
                                                         <Typography variant="body2" color="text.secondary">Ship Date</Typography>
                                                         <Typography variant="body1">{selectedRecord.shipDate || selectedRecord.manifestDate}</Typography>
                                                     </Grid>
                                                 )}
                                                 {selectedRecord.deliveryDate && (
-                                                    <Grid item xs={6}>
+                                                    <Grid item xs={6} sm={4}>
                                                         <Typography variant="body2" color="text.secondary">Delivery Date</Typography>
                                                         <Typography variant="body1">{selectedRecord.deliveryDate}</Typography>
                                                     </Grid>
                                                 )}
                                                 {(selectedRecord.actualWeight || selectedRecord.reportedWeight) && (
-                                                    <Grid item xs={6}>
+                                                    <Grid item xs={6} sm={4}>
                                                         <Typography variant="body2" color="text.secondary">Weight</Typography>
                                                         <Typography variant="body1">
                                                             {selectedRecord.actualWeight ?
@@ -979,7 +1104,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                     </Grid>
                                                 )}
                                                 {selectedRecord.pieces !== undefined && (
-                                                    <Grid item xs={6}>
+                                                    <Grid item xs={6} sm={4}>
                                                         <Typography variant="body2" color="text.secondary">Pieces</Typography>
                                                         <Typography variant="body1">{selectedRecord.pieces}</Typography>
                                                     </Grid>
@@ -1000,12 +1125,12 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
 
                             {selectedRecord.recordType === 'charge' && (
                                 <Grid item xs={12} md={6}>
-                                    <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                    <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
                                         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                             Charge Details
                                         </Typography>
                                         <Grid container spacing={2}>
-                                            {selectedRecord.description && (
+                                            {selectedRecord.description && selectedRecord.description !== selectedRecord.trackingNumber && selectedRecord.description !== selectedRecord.referenceNumber && (
                                                 <Grid item xs={12}>
                                                     <Typography variant="body2" color="text.secondary">Description</Typography>
                                                     <Typography variant="body1" fontWeight="medium">{selectedRecord.description}</Typography>
@@ -1035,7 +1160,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                             )}
 
                             <Grid item xs={12} md={6}>
-                                <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
+                                <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
                                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                         Cost Breakdown
                                     </Typography>
@@ -1044,17 +1169,17 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                             <Table size="small">
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>Item</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">Amount</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }}>Item</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }} align="right">Amount</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
                                                     {Object.entries(selectedRecord.costs).map(([key, value]) => (
                                                         <TableRow key={key}>
-                                                            <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }}>
                                                                 {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                                                             </TableCell>
-                                                            <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                            <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }} align="right">
                                                                 {formatCurrency(value)}
                                                             </TableCell>
                                                         </TableRow>
@@ -1062,13 +1187,13 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                 </TableBody>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                        <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', p: 0.5 }}>
                                                             <Typography variant="subtitle2">Total</Typography>
                                                         </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
+                                                        <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', p: 0.5 }} align="right">
                                                             <Typography variant="subtitle2">
                                                                 {formatCurrency(selectedRecord.totalCost ||
-                                                                    Object.values(selectedRecord.costs).reduce((sum, val) => sum + val, 0))}
+                                                                    Object.values(selectedRecord.costs).reduce((sum, val) => sum + parseFloat(val || 0), 0))}
                                                             </Typography>
                                                         </TableCell>
                                                     </TableRow>
@@ -1085,44 +1210,17 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                     )}
                                 </Paper>
                             </Grid>
-
-                            {selectedRecord.shipmentReference && (
-                                <Grid item xs={12}>
-                                    <Paper elevation={0} sx={{ p: 2, border: '1px solid #eee' }}>
-                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                            Reference Information
-                                        </Typography>
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={12} sm={6} md={4}>
-                                                <Typography variant="body2" color="text.secondary">Shipment Reference</Typography>
-                                                <Typography variant="body1">
-                                                    {selectedRecord.shipmentReference}
-                                                </Typography>
-                                            </Grid>
-                                            {selectedRecord.manifestNumber && (
-                                                <Grid item xs={12} sm={6} md={4}>
-                                                    <Typography variant="body2" color="text.secondary">Manifest Number</Typography>
-                                                    <Typography variant="body1">
-                                                        {selectedRecord.manifestNumber}
-                                                    </Typography>
-                                                </Grid>
-                                            )}
-                                            {selectedRecord.trackingNumber && (
-                                                <Grid item xs={12} sm={6} md={4}>
-                                                    <Typography variant="body2" color="text.secondary">Tracking Number</Typography>
-                                                    <Typography variant="body1">
-                                                        {selectedRecord.trackingNumber}
-                                                    </Typography>
-                                                </Grid>
-                                            )}
-                                        </Grid>
-                                    </Paper>
-                                </Grid>
-                            )}
                         </Grid>
                     )}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button
+                        onClick={handlePrint}
+                        startIcon={<PrintIcon />}
+                        disabled={!selectedRecord}
+                    >
+                        Print / Export PDF
+                    </Button>
                     <Button onClick={() => setDetailsOpen(false)}>Close</Button>
                 </DialogActions>
             </Dialog>

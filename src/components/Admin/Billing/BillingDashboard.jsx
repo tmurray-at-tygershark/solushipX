@@ -1106,13 +1106,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 <>
                     {showEdiResults ? (
                         <Box sx={{ mb: 3 }}>
-                            <Button
-                                variant="outlined"
-                                onClick={handleCloseEdiResults}
-                                sx={{ mb: 2 }}
-                            >
-                                Back to Upload
-                            </Button>
                             <EDIResults
                                 uploadId={selectedUploadId}
                                 onClose={handleCloseEdiResults}
