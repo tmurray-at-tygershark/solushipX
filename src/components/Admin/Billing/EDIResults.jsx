@@ -163,9 +163,10 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                         ...prevDetails,
                         confidenceScore: resultData.confidenceScore || (resultData.confidence ? Math.round(resultData.confidence * 100) : 99),
                         processingTimeMs: resultData.processingTimeMs || prevDetails?.processingTimeMs || 0,
-                        aiModel: resultData.aiModel || 'Gemini Pro',
+                        aiModel: resultData.aiModel || 'Gemini 1.5 Pro',
                         carrier: resultData.carrier || prevDetails?.carrier,
-                        uploadedAt: prevDetails?.uploadedAt || resultData.processedAt
+                        uploadedAt: prevDetails?.uploadedAt || resultData.processedAt,
+                        rawSample: resultData.rawSample || prevDetails?.rawSample
                     }));
                 } else {
                     // Try the other database as fallback
@@ -366,9 +367,8 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                         <Table>
                                             <TableHead>
                                                 <TableRow>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Tracking/Reference</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Date</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Account</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Tracking/Reference</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Origin</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Destination</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Carrier/Service</TableCell>
@@ -382,10 +382,18 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                 {shipments.map((shipment, index) => (
                                                     <TableRow key={index} hover>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {shipment.shipDate || shipment.manifestDate || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
                                                                 <Typography variant="body2" fontWeight="medium">
                                                                     {shipment.trackingNumber || "No tracking #"}
                                                                 </Typography>
+                                                                {shipment.invoiceNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Inv: {shipment.invoiceNumber}
+                                                                    </Typography>
+                                                                )}
                                                                 {shipment.shipmentReference && (
                                                                     <Typography variant="caption" color="text.secondary" display="block">
                                                                         Ref: {shipment.shipmentReference}
@@ -396,13 +404,12 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                                         Manifest: {shipment.manifestNumber}
                                                                     </Typography>
                                                                 )}
+                                                                {shipment.accountNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Acct: {shipment.accountNumber}
+                                                                    </Typography>
+                                                                )}
                                                             </Box>
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {shipment.shipDate || shipment.manifestDate || 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {shipment.accountNumber || 'N/A'}
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
@@ -507,13 +514,13 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                         <Table>
                                             <TableHead>
                                                 <TableRow>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Reference</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Date</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Tracking/Reference</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Description</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Account/Invoice</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Postal Code</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Cost Breakdown</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Total Cost</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Origin</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Destination</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Carrier/Service</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }} align="right">Cost</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }} align="right">Actions</TableCell>
                                                 </TableRow>
                                             </TableHead>
@@ -521,49 +528,103 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                 {charges.map((charge, index) => (
                                                     <TableRow key={index} hover>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {charge.shipmentReference || charge.manifestNumber || 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
                                                             {charge.invoiceDate || charge.shipDate || charge.manifestDate || 'N/A'}
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {charge.description || 'Additional Charge'}
-                                                            </Typography>
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
-                                                                {charge.accountNumber && (
-                                                                    <Typography variant="body2">
-                                                                        Acct: {charge.accountNumber}
-                                                                    </Typography>
-                                                                )}
+                                                                <Typography variant="body2" fontWeight="medium">
+                                                                    {charge.trackingNumber || 'No Tracking #'}
+                                                                </Typography>
                                                                 {charge.invoiceNumber && (
                                                                     <Typography variant="caption" color="text.secondary" display="block">
                                                                         Inv: {charge.invoiceNumber}
                                                                     </Typography>
                                                                 )}
+                                                                {charge.accountNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Acct: {charge.accountNumber}
+                                                                    </Typography>
+                                                                )}
+                                                                {charge.shipmentReference && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Ref: {charge.shipmentReference}
+                                                                    </Typography>
+                                                                )}
+                                                                {charge.manifestNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        Manifest: {charge.manifestNumber}
+                                                                    </Typography>
+                                                                )}
                                                             </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {charge.postalCode ||
-                                                                (charge.destination && charge.destination.postalCode) || 'N/A'}
+                                                            <Typography variant="body2">
+                                                                {charge.description || 'N/A'}
+                                                            </Typography>
                                                         </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }} align="right">
-                                                            {charge.costs ? (
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {charge.origin ? (
                                                                 <Box>
-                                                                    {Object.entries(charge.costs).slice(0, 2).map(([key, value]) => (
-                                                                        <Typography key={key} variant="caption" display="block">
-                                                                            {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}: {formatCurrency(value)}
+                                                                    {charge.origin.company && (
+                                                                        <Typography variant="body2" fontWeight="medium">
+                                                                            {charge.origin.company}
                                                                         </Typography>
-                                                                    ))}
-                                                                    {Object.keys(charge.costs).length > 2 && (
-                                                                        <Typography variant="caption" color="text.secondary">
-                                                                            +{Object.keys(charge.costs).length - 2} more
+                                                                    )}
+                                                                    {charge.origin.street && (
+                                                                        <Typography variant="caption" display="block">
+                                                                            {charge.origin.street}
+                                                                        </Typography>
+                                                                    )}
+                                                                    <Typography variant="caption" display="block">
+                                                                        {charge.origin.city ?
+                                                                            `${charge.origin.city}${charge.origin.state ? ', ' : ''}${charge.origin.state || ''} ${charge.origin.postalCode || ''}` :
+                                                                            'N/A'}
+                                                                    </Typography>
+                                                                    {charge.origin.country && (
+                                                                        <Typography variant="caption" display="block">
+                                                                            {charge.origin.country}
                                                                         </Typography>
                                                                     )}
                                                                 </Box>
                                                             ) : 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {charge.destination ? (
+                                                                <Box>
+                                                                    {charge.destination.company && (
+                                                                        <Typography variant="body2" fontWeight="medium">
+                                                                            {charge.destination.company}
+                                                                        </Typography>
+                                                                    )}
+                                                                    {charge.destination.street && (
+                                                                        <Typography variant="caption" display="block">
+                                                                            {charge.destination.street}
+                                                                        </Typography>
+                                                                    )}
+                                                                    <Typography variant="caption" display="block">
+                                                                        {charge.destination.city ?
+                                                                            `${charge.destination.city}${charge.destination.state ? ', ' : ''}${charge.destination.state || ''} ${charge.destination.postalCode || ''}` :
+                                                                            (charge.postalCode ? `${charge.postalCode}` : 'N/A')}
+                                                                    </Typography>
+                                                                    {charge.destination.country && (
+                                                                        <Typography variant="caption" display="block">
+                                                                            {charge.destination.country}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+                                                            ) : (charge.postalCode ? charge.postalCode : 'N/A')}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Box>
+                                                                <Typography variant="body2">
+                                                                    {charge.carrier || fileDetails?.carrier || 'N/A'}
+                                                                </Typography>
+                                                                {charge.serviceType && charge.serviceType !== charge.carrier && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        {charge.serviceType}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }} align="right">
                                                             <Typography variant="body2" fontWeight="medium">
@@ -729,6 +790,24 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                 >
                                     <pre>{JSON.stringify(extractedData, null, 2)}</pre>
                                 </Paper>
+                                {fileDetails?.rawSample && (
+                                    <Paper
+                                        elevation={0}
+                                        sx={{
+                                            mt: 2,
+                                            p: 2,
+                                            backgroundColor: '#f5f5f5',
+                                            borderRadius: 1,
+                                            maxHeight: '200px',
+                                            overflow: 'auto'
+                                        }}
+                                    >
+                                        <Typography variant="subtitle2" gutterBottom>
+                                            Raw File Sample (First 5KB)
+                                        </Typography>
+                                        <pre>{fileDetails.rawSample}</pre>
+                                    </Paper>
+                                )}
                             </Box>
                         )}
                     </Paper>

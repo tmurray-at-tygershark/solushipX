@@ -122,14 +122,23 @@ const EDIUploader = ({ onUploadComplete }) => {
 
     const handleFiles = (fileList) => {
         // We now validate carrier selection before opening file dialog
-        // First validate CSV file type
-        const newFiles = Array.from(fileList).filter(file =>
-            file.type === 'text/csv' ||
-            file.name.endsWith('.csv')
-        );
+        // Validate CSV or PDF file type
+        const allowedTypes = ['text/csv', 'application/pdf'];
+        const allowedExtensions = ['.csv', '.pdf'];
 
-        if (newFiles.length === 0) {
-            setError('Only CSV files are supported');
+        const newFiles = Array.from(fileList).filter(file => {
+            const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+            return allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
+        });
+
+        if (newFiles.length !== fileList.length) {
+            // Check if *any* valid files were found
+            if (newFiles.length === 0) {
+                setError('Only CSV or PDF files are supported.');
+            } else {
+                // If some were valid, warn about the ones that weren't
+                setError('Some files were ignored. Only CSV or PDF files are supported.');
+            }
             return;
         }
 
@@ -202,7 +211,7 @@ const EDIUploader = ({ onUploadComplete }) => {
                             const docRef = await addDoc(collection(database, collectionName), {
                                 fileName: file.name,
                                 fileSize: file.size,
-                                fileType: file.type,
+                                fileType: file.type || 'unknown',
                                 uploadedBy: currentUser.uid,
                                 uploadedAt: serverTimestamp(),
                                 downloadURL,
@@ -341,19 +350,19 @@ const EDIUploader = ({ onUploadComplete }) => {
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        accept=".csv"
+                        accept=".csv, .pdf"
                         onChange={handleFileInputChange}
                         style={{ display: 'none' }}
                     />
                     <CloudUploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
                     <Typography variant="h6" gutterBottom>
                         {selectedCarrier
-                            ? 'Drop EDI/Shipment CSV files here'
+                            ? 'Drop EDI/Shipment CSV or PDF files here'
                             : 'Select a carrier first'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" align="center">
                         {selectedCarrier
-                            ? 'or click to select files (CSV only)'
+                            ? 'or click to select files (CSV or PDF only)'
                             : 'You must select a carrier before uploading files'}
                     </Typography>
                 </Box>
@@ -473,7 +482,7 @@ const EDIUploader = ({ onUploadComplete }) => {
                             </Box>
                             <Box>
                                 <Typography variant="subtitle2" color="text.secondary">File Type</Typography>
-                                <Typography variant="body1">{selectedFile.type || 'text/csv'}</Typography>
+                                <Typography variant="body1">{selectedFile.type || 'unknown'}</Typography>
                             </Box>
                             <Box>
                                 <Typography variant="subtitle2" color="text.secondary">Last Modified</Typography>

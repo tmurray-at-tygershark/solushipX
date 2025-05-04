@@ -82,7 +82,8 @@ exports.onFileUploaded = functions.firestore
         docId,
         storagePath: fileData.storagePath,
         fileName: fileData.fileName,
-        isAdmin
+        isAdmin,
+        fileType: fileData.fileType || (fileData.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv') // Pass fileType
       };
       
       const dataBuffer = Buffer.from(JSON.stringify(messageData));
@@ -141,7 +142,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     console.log('Raw message from Pub/Sub:', rawMessage);
     const messageData = JSON.parse(rawMessage);
     console.log('Parsed message data:', JSON.stringify(messageData));
-    const { docId, storagePath, fileName, isAdmin } = messageData;
+    const { docId, storagePath, fileName, isAdmin, fileType: messageFileType } = messageData;
     
     console.log(`Processing document ${docId}, file: ${fileName}, isAdmin: ${isAdmin}`);
     
@@ -172,10 +173,12 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
       throw new Error(`Document ${docId} not found in collection ${collectionPath}. Please check if the document exists.`);
     }
     
-    // Get the upload data, including the carrier if specified
+    // Get the upload data, including the carrier and fileType if specified
     uploadData = docSnapshot.data();
     const carrier = uploadData.carrier || null;
+    const fileType = messageFileType || uploadData.fileType || (fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv'); // Determine file type
     console.log(`Using carrier from upload: ${carrier || 'Not specified'}`);
+    console.log(`Determined file type: ${fileType}`);
     
     // Update status to processing
     await uploadRef.update({
@@ -193,21 +196,34 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
       throw new Error('File not found in storage');
     }
     
-    // Download and parse the CSV file
-    const [fileContent] = await file.download();
-    const csvContent = fileContent.toString('utf-8');
-    
-    // Check if file is empty or invalid
-    if (!csvContent || csvContent.trim().length === 0) {
-      throw new Error('File is empty or invalid');
+    let fileContentBuffer;
+    let fileContentString;
+    let records;
+
+    // Download file content based on type
+    [fileContentBuffer] = await file.download();
+    console.log(`Successfully downloaded file, size: ${fileContentBuffer.length} bytes`);
+
+    if (fileContentBuffer.length === 0) {
+      throw new Error('File is empty');
+    }
+
+    if (fileType === 'application/pdf') {
+      // For PDFs, pass the buffer directly to the AI
+      console.log('Processing PDF file with AI...');
+      records = await processWithAI(fileContentBuffer, fileName, fileType);
+      fileContentString = `PDF content (${(fileContentBuffer.length / 1024).toFixed(2)} KB)`; // Placeholder
+    } else {
+      // For CSV (and other text types), process as string
+      fileContentString = fileContentBuffer.toString('utf-8');
+      if (!fileContentString || fileContentString.trim().length === 0) {
+        throw new Error('CSV file content is empty or invalid');
+      }
+      console.log('Processing CSV file with AI...');
+      records = await processWithAI(fileContentString, fileName, 'text/csv');
     }
     
-    console.log(`Successfully downloaded file, size: ${fileContent.length} bytes`);
-    
     // Process the file with Gemini AI
-    const records = await processWithAI(csvContent, fileName);
-    
-    // Apply the carrier to all records if it was specified in the upload
     const processedRecords = carrier 
       ? records.map(record => {
           // Only apply carrier if not already detected
@@ -222,7 +238,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     
     // Perform second-pass validation and enhancement
     const { records: enhancedRecords, confidence, confidenceScore, internalConfidenceScore, validationSummary } = 
-      await enhanceAndVerifyRecords(processedRecords, csvContent);
+      await enhanceAndVerifyRecords(processedRecords);
     
     console.log(`Enhanced ${enhancedRecords.length} records with validation data`);
     console.log(`Final display confidence score: ${confidenceScore}% (internal: ${internalConfidenceScore}%)`);
@@ -246,8 +262,8 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         internalConfidenceScore,
         processingTimeMs: Date.now() - startTime, // Ensure processing time is added
         validationSummary,
-        totalCost: enhancedRecords.reduce((sum, record) => sum + (parseFloat(record.totalCost || record.cost) || 0), 0),
-        rawCsvSample: csvContent.substring(0, 5000), // Store a sample for debugging
+        totalCost: enhancedRecords.reduce((sum, record) => sum + (record.totalCost || 0), 0),
+        rawSample: fileContentString.substring(0, 5000), // Store a sample for debugging
         isAdmin: isAdmin || false,
         aiModel: "Gemini 1.5 Pro"
       });
@@ -278,8 +294,8 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         internalConfidenceScore,
         processingTimeMs: Date.now() - startTime, // Ensure processing time is added
         validationSummary,
-        totalCost: enhancedRecords.reduce((sum, record) => sum + (parseFloat(record.totalCost || record.cost) || 0), 0),
-        rawCsvSample: csvContent.substring(0, 5000), // Store a sample for debugging
+        totalCost: enhancedRecords.reduce((sum, record) => sum + (record.totalCost || 0), 0),
+        rawSample: fileContentString.substring(0, 5000), // Store a sample for debugging
         isAdmin: isAdmin || false,
         aiModel: "Gemini 1.5 Pro"
       });
@@ -320,15 +336,105 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
  * Process the CSV content using Gemini AI
  * @param {string} csvContent - Raw CSV content
  * @param {string} fileName - Original file name
+ * @param {string} fileType - The MIME type of the file ('text/csv' or 'application/pdf')
  * @returns {Array} - Array of extracted record objects
  */
-async function processWithAI(csvContent, fileName) {
+async function processWithAI(fileData, fileName, fileType = 'text/csv') {
   try {
     // Initialize the model - use a more specific model name
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     
-    // Create a prompt with detailed instructions
-    const prompt = `
+    let prompt;
+    let contentParts;
+
+    if (fileType === 'application/pdf') {
+      // PDF-specific prompt
+      prompt = `
+You are an expert at extracting data from PDF invoices containing carrier shipment and charge information. Analyze the layout and content of this PDF invoice, paying close attention to structure across all pages.
+
+Your task is to:
+1. Analyze all pages, identifying key sections like 'Shipping Summary Table', 'Additional Charges Table', 'Detailed Shipment Listings', and 'Weight Audit Adjustments'.
+2. Identify and extract *every single line item* representing an individual shipment OR a specific charge listed within these detailed sections.
+3. Do not skip or omit any lines that appear to be distinct billable items, even if they lack a tracking number (e.g., address correction fees, administrative charges, extra care fees). Each row within detail tables should generally correspond to one record in the output JSON.
+4. Ignore summary totals (like those on the Cover Page/Invoice Summary) *unless* they represent a specific, distinct charge type not detailed elsewhere (e.g., an 'Invoice Fee'). Do not extract page headers, footers, remittance slips, or general explanatory text as records.
+5. Extract key information for each identified record.
+6. Return a structured JSON array with one object per record.
+
+IMPORTANT RULES:
+- Extract ALL distinct shipment and charge line items found in the PDF's detail sections across all relevant pages (likely pages 3-6 based on typical structures).
+- Include ALL records even if they have zero values or missing fields.
+- Pay attention to tables, line items, and summary sections that typically contain shipment details. Handle variations in invoice layouts.
+
+IMPORTANT DISTINCTION:
+- Some records represent actual shipments with tracking numbers, weights, dimensions, etc. Classify these as 'shipment'.
+- Other records represent charges, fees, adjustments, or administrative entries (like 'Extra Care', 'Address Correction', 'Weight Audit Adjustment'). Classify these as 'charge'.
+- Do NOT filter out any records - extract ALL relevant line items found in detail tables/listings.
+
+For each record, extract the following fields (when available):
+- recordType: Determine if this is a "shipment" or "charge" (non-shipment) record based on the context in the PDF (presence of tracking number, description, etc.).
+- accountNumber: The account number used for the shipment or charge.
+- invoiceNumber: The invoice number for the shipment or charge.
+- invoiceDate: The date of the invoice.
+- manifestNumber: The manifest number for the shipment.
+- manifestDate: The date of the manifest (IMPORTANT: this is often equivalent to the ship date).
+- pieces: The number of pieces or quantity of the shipment.
+- trackingNumber: The tracking number or barcode for the shipment.
+- carrier: The shipping carrier name (e.g., FedEx, UPS, USPS) - if identifiable from the invoice.
+- serviceType: The service level (e.g., Ground, Express, Priority).
+- shipDate: When the package was shipped (NOTE: If not explicitly available, check for manifestDate or invoice context).
+- deliveryDate: When the package was or will be delivered.
+- origin: Object containing origin address details (company, street, city, state, postalCode, country).
+- shipmentReference: Shipper/consignee reference numbers (look for PO number, customer reference, order number, etc.).
+- destination: Object containing destination address details.
+- reportedWeight: The initial weight submitted for the shipment.
+- actualWeight: The actual weight of the shipment after carrier measurement.
+- weightUnit: Unit of weight - interpret abbreviations logically (e.g., "L" means pounds/LBS, "K" means kilograms/KGS).
+- dimensions: Object with length, width, height if available.
+- packages: Array of package details if multiple packages exist.
+- description: Description of the charge or line item (especially important for 'charge' recordType, e.g., "Extra Care", "Weight Audit Adjustment").
+- postalCode: Postal/ZIP code related to the shipment or charge.
+- costs: Breakdown of shipping costs including:
+  - base, fuel, freight, miscellaneous, additionalFees, serviceCharges, signatureService, surcharges, taxes, gst, pst, hst, declaredValueCharge, extendedAreaCharge, extraCareCharge, codCharge, addressCorrectionCharge, discounts
+- totalCost: Total cost for this record.
+- chargeType: For non-shipment charges, the type of charge (e.g., "Administrative", "Fee", "Surcharge").
+
+GUIDELINES FOR EXTRACTION:
+1. If a field is missing, omit it from the JSON.
+2. Format monetary values as numbers without currency symbols.
+3. Convert weights to numeric values.
+4. Ensure dates are consistently formatted (YYYY-MM-DD or MM/DD/YYYY).
+5. Use numbers for numeric values, not strings.
+6. Combine address fields intelligently.
+7. Interpret weight units (L/LB=LBS, K/KG=KGS).
+8. Capture Canadian taxes (GST, PST, HST) accurately.
+9. Determine "recordType" (shipment or charge) based on PDF context.
+10. Use manifestDate as shipDate if shipDate is missing.
+11. Pay close attention to column headers in tables to correctly map data to the JSON fields.
+12. Look for details within sections titled like 'Detailed Shipment Listings' or 'Additional Charges'.
+
+COUNTRY RECOGNITION GUIDELINES:
+1. Identify US/Canada based on postal codes (A1A 1A1 vs 90210) and province codes (AB, BC, ON etc.).
+2. Set country field in origin/destination to "CA" or "US".
+3. Do not default to US.
+4. Presence of GST/PST/HST often indicates Canadian context.
+
+EXAMPLE OF EXPECTED OUTPUT FORMAT:
+[
+  { "recordType": "shipment", ... },
+  { "recordType": "charge", ... }
+]
+
+Analyze the provided PDF content (all pages) and return ONLY the JSON array with extracted records, no explanations or commentary.
+`;
+       contentParts = [
+         { text: prompt },
+         { inlineData: { data: Buffer.from(fileData).toString("base64"), mimeType: 'application/pdf' } }
+       ];
+       console.log(`Processing ${fileName} (PDF) with ${fileData.length} bytes of data`);
+
+    } else { // Assume CSV or other text
+      // For text-only, the prompt string itself is sufficient
+      prompt = ` 
 You are an expert at extracting data from complex CSV files containing carrier shipment and charge information. I need you to parse the following CSV content that contains both shipment records and various charge entries from a carrier system.
 
 Your task is to:
@@ -475,14 +581,15 @@ EXAMPLE OF EXPECTED OUTPUT FORMAT:
 
 Analyze the following CSV data and return ONLY the JSON array with extracted records, no explanations or commentary:
 
-${csvContent}
+${fileData}
 `;
+       // Wrap the text prompt in a text part for consistency
+       contentParts = [{ text: prompt }];
+       console.log(`Processing ${fileName} (CSV) with ${fileData.length} bytes of data`);
+    }
 
-    // Log the file size for debugging
-    console.log(`Processing ${fileName} with ${csvContent.length} bytes of data`);
-    
     // Call the AI model
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent({ contents: [{ role: "user", parts: contentParts }] });
     const response = await result.response;
     const textResponse = response.text();
     
@@ -583,7 +690,9 @@ ${csvContent}
         }
       }
       
-      throw new Error(`Failed to parse JSON from AI response: ${parseError.message}`);
+      const errorMessage = `Failed to parse JSON from AI response after multiple attempts. Initial Error: ${parseError.message}`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
     }
   } catch (error) {
     console.error('Error in AI processing:', error);
@@ -945,7 +1054,7 @@ exports.processEdiHttp = functions.https.onRequest({
       return;
     }
     
-    const records = await processWithAI(csvContent, fileName || 'test.csv');
+    const records = await processWithAI(csvContent, fileName || 'test.csv', 'text/csv');
     
     res.status(200).send({
       success: true,
@@ -993,7 +1102,8 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
       docId,
       storagePath: fileData.storagePath,
       fileName: fileData.fileName,
-      isAdmin: true
+      isAdmin: true,
+      fileType: fileData.fileType || (fileData.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv') // Pass fileType
     };
     
     // Directly call the processing logic instead of using Pub/Sub
@@ -1024,24 +1134,27 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
       return res.status(404).json({ error: 'File not found in storage' });
     }
     
-    // Download and parse the CSV file
-    const [fileContent] = await file.download();
-    const csvContent = fileContent.toString('utf-8');
-    
-    // Check if file is empty or invalid
-    if (!csvContent || csvContent.trim().length === 0) {
-      await uploadRef.update({
-        processingStatus: 'failed',
-        error: 'File is empty or invalid',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-      return res.status(400).json({ error: 'File is empty or invalid' });
+    let fileContentBuffer;
+    let fileContentString;
+    let records;
+
+    // Download file content based on type
+    [fileContentBuffer] = await file.download();
+    console.log(`Successfully downloaded file, size: ${fileContentBuffer.length} bytes`);
+
+    if (fileContentBuffer.length === 0) {
+      throw new Error('File is empty');
     }
-    
-    console.log(`Successfully downloaded file, size: ${fileContent.length} bytes`);
-    
-    // Process the file with Gemini AI
-    const records = await processWithAI(csvContent, fileData.fileName);
+
+    // Process the file with Gemini AI based on type
+    const fileType = messageData.fileType; // Get fileType from messageData
+    if (fileType === 'application/pdf') {
+      records = await processWithAI(fileContentBuffer, fileData.fileName, fileType);
+      fileContentString = `PDF content (${(fileContentBuffer.length / 1024).toFixed(2)} KB)`; // Placeholder
+    } else {
+      fileContentString = fileContentBuffer.toString('utf-8');
+      records = await processWithAI(fileContentString, fileData.fileName, 'text/csv');
+    }
     
     console.log(`Extracted ${records.length} records from the CSV`);
     
@@ -1053,8 +1166,8 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
       records,
       totalRecords: records.length,
-      totalCost: records.reduce((sum, record) => sum + (parseFloat(record.totalCost || record.cost) || 0), 0),
-      rawCsvSample: csvContent.substring(0, 5000), // Store a sample for debugging
+      totalCost: records.reduce((sum, record) => sum + (record.totalCost || 0), 0),
+      rawSample: fileContentString.substring(0, 5000), // Store a sample for debugging
       isAdmin: true,
       manualProcessing: true
     });
@@ -1404,12 +1517,11 @@ Please respond ONLY with a JSON object in this exact format:
 /**
  * Performs a second pass over the data to verify and enhance the extraction
  * @param {Array} records - The extracted records
- * @param {string} csvContent - Original CSV content
  * @returns {Array} - Enhanced records with improved confidence
  */
-async function enhanceAndVerifyRecords(records, csvContent) {
+async function enhanceAndVerifyRecords(records) {
   console.log('Starting multi-pass verification and enhancement');
-  console.log(`Initial record count: ${records.length}`);
+  console.log(`Initial record count for enhancement: ${records.length}`);
   
   // First pass: Run standard validation
   const validationResults = await validateExtractedData(records);
