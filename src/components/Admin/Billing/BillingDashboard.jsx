@@ -1147,7 +1147,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             </Paper>
 
                             <Paper elevation={0} sx={{ p: 3, border: '1px solid #eee' }}>
-                                <Typography variant="h6" sx={{ mb: 3 }}>EDI Processing History</Typography>
                                 <TableContainer>
                                     <Table>
                                         <TableHead>

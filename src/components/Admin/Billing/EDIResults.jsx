@@ -625,9 +625,9 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                 <TableRow>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Date</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Tracking/Reference</TableCell>
-                                                    <TableCell sx={{ verticalAlign: 'top' }}>Description</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Origin</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Destination</TableCell>
+                                                    <TableCell sx={{ verticalAlign: 'top' }}>Description</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }}>Carrier/Service</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }} align="right">Cost</TableCell>
                                                     <TableCell sx={{ verticalAlign: 'top' }} align="right">Actions</TableCell>
@@ -667,11 +667,6 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                             </Box>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            <Typography variant="body2">
-                                                                {charge.description || 'N/A'}
-                                                            </Typography>
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
                                                                 {charge.origin && (
                                                                     <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
@@ -688,6 +683,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                                     </Typography>
                                                                 ) : (charge.postalCode ? charge.postalCode : 'N/A')}
                                                             </Box>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Typography variant="body2">
+                                                                {charge.description || 'N/A'}
+                                                            </Typography>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>

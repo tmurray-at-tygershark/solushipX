@@ -42,8 +42,11 @@ const AdminHeader = () => {
         <nav className="navbar navbar-expand-lg">
             <div className="container">
                 <Link className="navbar-brand" to="/admin">
-                    <i className="fas fa-shipping-fast me-2" aria-hidden="true"></i>
-                    SolushipX Admin
+                    <img
+                        src="/images/solushipx_logo_white.png"
+                        alt="SolushipX Logo"
+                        style={{ height: '30px' }}
+                    />
                 </Link>
                 <button className="navbar-toggler" type="button" aria-label="Toggle navigation">
                     <span className="navbar-toggler-icon"></span>
