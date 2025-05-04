@@ -309,8 +309,13 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
 
     // Format monetary values
     const formatCurrency = (value) => {
-        if (value === undefined || value === null) return 'N/A';
-        return `$${parseFloat(value).toFixed(2)}`;
+        const number = parseFloat(value);
+        if (isNaN(number)) return 'N/A';
+        // Use Intl.NumberFormat for better currency formatting, including negatives
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD' // Assuming USD, adjust if currency varies
+        }).format(number);
     };
 
     // Add Print Handler
@@ -555,6 +560,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
+                                                                {shipment.origin?.company && (
+                                                                    <Typography variant="body2" fontWeight="medium">
+                                                                        {shipment.origin.company}
+                                                                    </Typography>
+                                                                )}
                                                                 {shipment.origin && (
                                                                     <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
                                                                         {formatAddress(shipment.origin)}
@@ -564,6 +574,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
+                                                                {shipment.destination?.company && (
+                                                                    <Typography variant="body2" fontWeight="medium">
+                                                                        {shipment.destination.company}
+                                                                    </Typography>
+                                                                )}
                                                                 {shipment.destination && (
                                                                     <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
                                                                         {formatAddress(shipment.destination, shipment.postalCode)}
@@ -678,6 +693,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
+                                                                {charge.origin?.company && (
+                                                                    <Typography variant="body2" fontWeight="medium">
+                                                                        {charge.origin.company}
+                                                                    </Typography>
+                                                                )}
                                                                 {charge.origin && (
                                                                     <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
                                                                         {formatAddress(charge.origin)}
@@ -687,6 +707,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
                                                             <Box>
+                                                                {charge.destination?.company && (
+                                                                    <Typography variant="body2" fontWeight="medium">
+                                                                        {charge.destination.company}
+                                                                    </Typography>
+                                                                )}
                                                                 {charge.destination ? (
                                                                     <Typography variant="caption" display="block" sx={{ whiteSpace: 'pre-line' }}>
                                                                         {formatAddress(charge.destination, charge.postalCode)}
