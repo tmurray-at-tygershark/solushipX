@@ -229,6 +229,13 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
         };
     }, [uploadId]);
 
+    // Log the prompt used when file details are loaded
+    useEffect(() => {
+        if (fileDetails?.promptUsed) {
+            console.log(`EDI Results: Using prompt -> ${fileDetails.promptUsed}`);
+        }
+    }, [fileDetails]);
+
     const handleViewDetails = (record) => {
         setSelectedRecord(record);
         setDetailsOpen(true);
@@ -307,14 +314,14 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
         return charges;
     };
 
-    // Format monetary values
-    const formatCurrency = (value) => {
+    // Format monetary values - Updated to accept currency code
+    const formatCurrency = (value, currencyCode = 'USD') => {
         const number = parseFloat(value);
         if (isNaN(number)) return 'N/A';
         // Use Intl.NumberFormat for better currency formatting, including negatives
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: 'USD' // Assuming USD, adjust if currency varies
+            currency: currencyCode // Use provided code or default to USD
         }).format(number);
     };
 
@@ -536,6 +543,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                                 <Typography variant="body2" fontWeight="medium">
                                                                     {shipment.trackingNumber || "No tracking #"}
                                                                 </Typography>
+                                                                {shipment.ediNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        EDI: {shipment.ediNumber}
+                                                                    </Typography>
+                                                                )}
                                                                 {shipment.invoiceNumber && (
                                                                     <Typography variant="caption" color="text.secondary" display="block">
                                                                         Inv: {shipment.invoiceNumber}
@@ -611,7 +623,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         <TableCell sx={{ verticalAlign: 'top' }} align="right">
                                                             <Box>
                                                                 <Typography variant="body2" fontWeight="medium">
-                                                                    {formatCurrency(shipment.totalCost || shipment.cost)}
+                                                                    {formatCurrency(shipment.totalCost || shipment.cost, shipment.currency)}
                                                                 </Typography>
                                                             </Box>
                                                         </TableCell>
@@ -669,6 +681,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                                 <Typography variant="body2" fontWeight="medium">
                                                                     {charge.trackingNumber || 'No Tracking #'}
                                                                 </Typography>
+                                                                {charge.ediNumber && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        EDI: {charge.ediNumber}
+                                                                    </Typography>
+                                                                )}
                                                                 {charge.invoiceNumber && (
                                                                     <Typography variant="caption" color="text.secondary" display="block">
                                                                         Inv: {charge.invoiceNumber}
@@ -738,7 +755,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }} align="right">
                                                             <Typography variant="body2" fontWeight="medium">
-                                                                {formatCurrency(charge.totalCost || charge.cost)}
+                                                                {formatCurrency(charge.totalCost || charge.cost, charge.currency)}
                                                             </Typography>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }} align="right">
@@ -1024,6 +1041,11 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                 'No Primary Identifier'}
                                         </Typography>
                                         <Stack spacing={0.5} mt={1}>
+                                            {selectedRecord.ediNumber && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    EDI: {selectedRecord.ediNumber}
+                                                </Typography>
+                                            )}
                                             {selectedRecord.shipmentReference && selectedRecord.shipmentReference !== selectedRecord.referenceNumber && (
                                                 <Typography variant="body2" color="text.secondary">
                                                     Reference: {selectedRecord.shipmentReference}
@@ -1204,31 +1226,62 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                             <Table size="small">
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }}>Item</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }} align="right">Amount</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }}>Item</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">Amount</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(selectedRecord.costs).map(([key, value]) => (
-                                                        <TableRow key={key}>
-                                                            <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }}>
-                                                                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                                                            </TableCell>
-                                                            <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', p: 0.5 }} align="right">
-                                                                {formatCurrency(value)}
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ))}
+                                                    {/* Sort and Filter Cost Entries */}
+                                                    {Object.entries(selectedRecord.costs)
+                                                        .filter(([key, value]) => value != 0)
+                                                        .sort(([keyA], [keyB]) => {
+                                                            const order = {
+                                                                'freight': 1,
+                                                                'fuel': 2,
+                                                                'specialServices': 3,
+                                                                'surcharges': 4,
+                                                                'taxes': 10, // Group general taxes later
+                                                                'gst': 11,
+                                                                'pst': 12,
+                                                                'hst': 13,
+                                                                // Default order for anything else
+                                                            };
+                                                            const orderA = order[keyA] || 5; // Place unknown charges after surcharges
+                                                            const orderB = order[keyB] || 5;
+                                                            if (orderA !== orderB) return orderA - orderB;
+                                                            return keyA.localeCompare(keyB); // Alphabetical within groups
+                                                        })
+                                                        .map(([key, value]) => (
+                                                            <TableRow key={key}>
+                                                                <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }}>
+                                                                    {/* Display 'Freight' and uppercase specific tax keys */}
+                                                                    {key === 'freight' ? 'Freight' :
+                                                                        key === 'gst' ? 'GST' :
+                                                                            key === 'pst' ? 'PST' :
+                                                                                key === 'hst' ? 'HST' :
+                                                                                    key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                                                                </TableCell>
+                                                                <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">
+                                                                    {/* Pass currency to formatCurrency */}
+                                                                    {formatCurrency(value, selectedRecord.currency)}
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
                                                 </TableBody>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', p: 0.5 }}>
+                                                        <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', py: 0.5, px: 0.5 }}>
                                                             <Typography variant="subtitle2">Total</Typography>
                                                         </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', p: 0.5 }} align="right">
+                                                        <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">
                                                             <Typography variant="subtitle2">
+                                                                {/* Pass currency to formatCurrency */}
                                                                 {formatCurrency(selectedRecord.totalCost ||
-                                                                    Object.values(selectedRecord.costs).reduce((sum, val) => sum + parseFloat(val || 0), 0))}
+                                                                    Object.values(selectedRecord.costs).reduce((sum, val) => sum + parseFloat(val || 0), 0),
+                                                                    selectedRecord.currency
+                                                                )}
+                                                                {/* Display currency code next to total */}
+                                                                {selectedRecord.currency && ` (${selectedRecord.currency})`}
                                                             </Typography>
                                                         </TableCell>
                                                     </TableRow>
@@ -1239,7 +1292,8 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                         <Box display="flex" justifyContent="space-between" alignItems="center">
                                             <Typography variant="body1">Total Cost</Typography>
                                             <Typography variant="body1" fontWeight="medium">
-                                                {formatCurrency(selectedRecord.totalCost || selectedRecord.cost || 0)}
+                                                {formatCurrency(selectedRecord.totalCost || selectedRecord.cost || 0, selectedRecord.currency)}
+                                                {selectedRecord.currency && ` (${selectedRecord.currency})`}
                                             </Typography>
                                         </Box>
                                     )}

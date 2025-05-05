@@ -32,5 +32,9 @@
     "eslint-config-google": "^0.14.0",
     "firebase-functions-test": "^3.1.0"
   },
-  "private": true
+  "private": true,
+  "files": [
+    "index.js",
+    "src/"
+  ]
 }

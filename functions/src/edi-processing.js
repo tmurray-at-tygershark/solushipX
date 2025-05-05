@@ -6,6 +6,8 @@ const { PubSub } = require('@google-cloud/pubsub');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 require('dotenv').config();
+// Import the new prompt loader
+const { getPromptForCarrier } = require('./edi-prompts'); 
 
 // Initialize the admin app if not already initialized
 if (!admin.apps.length) {
@@ -131,7 +133,10 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
 }, async (event) => {
   const startTime = Date.now();
   let uploadRef;
-  
+  let docId; // Define docId here to be accessible in catch block
+  let isAdmin = false; // Define isAdmin here
+  let promptIdentifierUsed; // Variable to store the identifier
+
   try {
     console.log('Received message from subscription:', SUBSCRIPTION_PATH);
     console.log('Using Gemini API Key:', GEMINI_API_KEY ? 'Key is set' : 'Key is NOT set');
@@ -142,35 +147,35 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     console.log('Raw message from Pub/Sub:', rawMessage);
     const messageData = JSON.parse(rawMessage);
     console.log('Parsed message data:', JSON.stringify(messageData));
-    const { docId, storagePath, fileName, isAdmin, fileType: messageFileType } = messageData;
+    const { docId: messageDocId, storagePath, fileName, isAdmin: messageIsAdmin, fileType: messageFileType } = messageData;
     
-    console.log(`Processing document ${docId}, file: ${fileName}, isAdmin: ${isAdmin}`);
+    console.log(`Processing document ${messageDocId}, file: ${fileName}, isAdmin: ${messageIsAdmin}`);
     
     // Get the appropriate database
-    const database = getDb(isAdmin);
+    const database = getDb(messageIsAdmin);
     console.log(`Database info: ${database._settings ? JSON.stringify(database._settings) : 'No settings'}`);
     
     // Get reference to the upload document in the appropriate collection
     const collectionPath = 'ediUploads';
-    console.log(`Using collection path: ${collectionPath} to find document ${docId}`);
+    console.log(`Using collection path: ${collectionPath} to find document ${messageDocId}`);
     
     // IMPORTANT: For admin database access, use direct initialization which ensures proper databaseId
     let uploadData;
     let directAdminDb;
     
-    if (isAdmin) {
+    if (messageIsAdmin) {
       // Create a direct reference to the admin database
       directAdminDb = admin.firestore(admin.app(), 'admin');
       console.log('Created direct admin database reference');
-      uploadRef = directAdminDb.collection(collectionPath).doc(docId);
+      uploadRef = directAdminDb.collection(collectionPath).doc(messageDocId);
     } else {
-      uploadRef = database.collection(collectionPath).doc(docId);
+      uploadRef = database.collection(collectionPath).doc(messageDocId);
     }
     
     // Check if document exists before updating
     const docSnapshot = await uploadRef.get();
     if (!docSnapshot.exists) {
-      throw new Error(`Document ${docId} not found in collection ${collectionPath}. Please check if the document exists.`);
+      throw new Error(`Document ${messageDocId} not found in collection ${collectionPath}. Please check if the document exists.`);
     }
     
     // Get the upload data, including the carrier and fileType if specified
@@ -208,19 +213,18 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
       throw new Error('File is empty');
     }
 
+    // Get prompt and process with AI
+    const { prompt, identifier } = getPromptForCarrier(carrier, fileType);
+    promptIdentifierUsed = identifier; // Store the identifier
+
     if (fileType === 'application/pdf') {
-      // For PDFs, pass the buffer directly to the AI
-      console.log('Processing PDF file with AI...');
-      records = await processWithAI(fileContentBuffer, fileName, fileType);
-      fileContentString = `PDF content (${(fileContentBuffer.length / 1024).toFixed(2)} KB)`; // Placeholder
+      console.log(`Processing PDF file with AI using prompt: ${promptIdentifierUsed}...`);
+      records = await processWithAI(fileContentBuffer, fileName, fileType, prompt); // Pass prompt string
+      fileContentString = `PDF content...`;
     } else {
-      // For CSV (and other text types), process as string
       fileContentString = fileContentBuffer.toString('utf-8');
-      if (!fileContentString || fileContentString.trim().length === 0) {
-        throw new Error('CSV file content is empty or invalid');
-      }
-      console.log('Processing CSV file with AI...');
-      records = await processWithAI(fileContentString, fileName, 'text/csv');
+      console.log(`Processing CSV file with AI using prompt: ${promptIdentifierUsed}...`);
+      records = await processWithAI(fileContentString, fileName, 'text/csv', prompt); // Pass prompt string
     }
     
     // Process the file with Gemini AI
@@ -248,10 +252,10 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     let resultRef;
     
     // Use direct admin database reference if needed
-    if (isAdmin) {
+    if (messageIsAdmin) {
       // Use the already created direct admin database reference
       resultRef = await directAdminDb.collection(resultsCollectionPath).add({
-        uploadId: docId,
+        uploadId: messageDocId,
         fileName,
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
         records: enhancedRecords,
@@ -264,13 +268,14 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         validationSummary,
         totalCost: enhancedRecords.reduce((sum, record) => sum + (record.totalCost || 0), 0),
         rawSample: fileContentString.substring(0, 5000), // Store a sample for debugging
-        isAdmin: isAdmin || false,
-        aiModel: "Gemini 1.5 Pro"
+        isAdmin: messageIsAdmin || false,
+        aiModel: "Gemini 1.5 Pro",
+        promptUsed: promptIdentifierUsed // Add the identifier here
       });
       
       // Update the original upload document using the direct admin reference
       const processingTimeMs = Date.now() - startTime;
-      await directAdminDb.collection('ediUploads').doc(docId).update({
+      const updateData = {
         processingStatus: 'completed',
         processingTimeMs,
         resultDocId: resultRef.id,
@@ -279,11 +284,13 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         confidence,
         confidenceScore,
         internalConfidenceScore,
-        aiModel: "Gemini 1.5 Pro"
-      });
+        aiModel: "Gemini 1.5 Pro",
+        promptUsed: promptIdentifierUsed // Add the identifier here too
+      };
+      await directAdminDb.collection('ediUploads').doc(messageDocId).update(updateData);
     } else {
       resultRef = await database.collection(resultsCollectionPath).add({
-        uploadId: docId,
+        uploadId: messageDocId,
         fileName,
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
         records: enhancedRecords,
@@ -296,13 +303,14 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         validationSummary,
         totalCost: enhancedRecords.reduce((sum, record) => sum + (record.totalCost || 0), 0),
         rawSample: fileContentString.substring(0, 5000), // Store a sample for debugging
-        isAdmin: isAdmin || false,
-        aiModel: "Gemini 1.5 Pro"
+        isAdmin: messageIsAdmin || false,
+        aiModel: "Gemini 1.5 Pro",
+        promptUsed: promptIdentifierUsed // Add the identifier here
       });
       
       // Update the original upload document
       const processingTimeMs = Date.now() - startTime;
-      await uploadRef.update({
+      const updateData = {
         processingStatus: 'completed',
         processingTimeMs,
         resultDocId: resultRef.id,
@@ -311,8 +319,10 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         confidence,
         confidenceScore,
         internalConfidenceScore,
-        aiModel: "Gemini 1.5 Pro"
-      });
+        aiModel: "Gemini 1.5 Pro",
+        promptUsed: promptIdentifierUsed // Add the identifier here too
+      };
+      await uploadRef.update(updateData);
     }
     
     return { success: true, recordCount: enhancedRecords.length, confidenceScore };
@@ -333,259 +343,32 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
 });
 
 /**
- * Process the CSV content using Gemini AI
- * @param {string} csvContent - Raw CSV content
+ * Process the content using Gemini AI (NOW ACCEPTS PROMPT STRING)
+ * @param {string|Buffer} fileData - Raw file content
  * @param {string} fileName - Original file name
- * @param {string} fileType - The MIME type of the file ('text/csv' or 'application/pdf')
+ * @param {string} fileType - The MIME type ('text/csv' or 'application/pdf')
+ * @param {string} prompt - The prompt string to use
  * @returns {Array} - Array of extracted record objects
  */
-async function processWithAI(fileData, fileName, fileType = 'text/csv') {
+async function processWithAI(fileData, fileName, fileType = 'text/csv', prompt) {
   try {
-    // Initialize the model - use a more specific model name
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     
-    let prompt;
+    // *** Prompt is now passed in ***
+    // const prompt = getPromptForCarrier(carrierName, fileType);
+    
     let contentParts;
 
     if (fileType === 'application/pdf') {
-      // PDF-specific prompt
-      prompt = `
-You are an expert at extracting data from PDF invoices containing carrier shipment and charge information. Analyze the layout and content of this PDF invoice, paying close attention to structure across all pages.
-
-Your task is to:
-1. Analyze all pages, identifying key sections like 'Shipping Summary Table', 'Additional Charges Table', 'Detailed Shipment Listings', and 'Weight Audit Adjustments'.
-2. Identify and extract *every single line item* representing an individual shipment OR a specific charge listed within these detailed sections.
-3. Do not skip or omit any lines that appear to be distinct billable items, even if they lack a tracking number (e.g., address correction fees, administrative charges, extra care fees). Each row within detail tables should generally correspond to one record in the output JSON.
-4. Ignore summary totals (like those on the Cover Page/Invoice Summary) *unless* they represent a specific, distinct charge type not detailed elsewhere (e.g., an 'Invoice Fee'). Do not extract page headers, footers, remittance slips, or general explanatory text as records.
-5. Extract key information for each identified record.
-6. Return a structured JSON array with one object per record.
-
-IMPORTANT RULES:
-- Extract ALL distinct shipment and charge line items found in the PDF's detail sections across all relevant pages (likely pages 3-6 based on typical structures).
-- Include ALL records even if they have zero values or missing fields.
-- Pay attention to tables, line items, and summary sections that typically contain shipment details. Handle variations in invoice layouts.
-
-IMPORTANT DISTINCTION:
-- Some records represent actual shipments with tracking numbers, weights, dimensions, etc. Classify these as 'shipment'.
-- Other records represent charges, fees, adjustments, or administrative entries (like 'Extra Care', 'Address Correction', 'Weight Audit Adjustment'). Classify these as 'charge'.
-- Do NOT filter out any records - extract ALL relevant line items found in detail tables/listings.
-
-For each record, extract the following fields (when available):
-- recordType: Determine if this is a "shipment" or "charge" (non-shipment) record based on the context in the PDF (presence of tracking number, description, etc.).
-- accountNumber: The account number used for the shipment or charge.
-- invoiceNumber: The invoice number for the shipment or charge.
-- invoiceDate: The date of the invoice.
-- manifestNumber: The manifest number for the shipment.
-- manifestDate: The date of the manifest (IMPORTANT: this is often equivalent to the ship date).
-- pieces: The number of pieces or quantity of the shipment.
-- trackingNumber: The tracking number or barcode for the shipment.
-- carrier: The shipping carrier name (e.g., FedEx, UPS, USPS) - if identifiable from the invoice.
-- serviceType: The service level (e.g., Ground, Express, Priority).
-- shipDate: When the package was shipped (NOTE: If not explicitly available, check for manifestDate or invoice context).
-- deliveryDate: When the package was or will be delivered.
-- origin: Object containing origin address details (company, street, city, state, postalCode, country).
-- shipmentReference: Shipper/consignee reference numbers (look for PO number, customer reference, order number, etc.).
-- destination: Object containing destination address details.
-- reportedWeight: The initial weight submitted for the shipment.
-- actualWeight: The actual weight of the shipment after carrier measurement.
-- weightUnit: Unit of weight - interpret abbreviations logically (e.g., "L" means pounds/LBS, "K" means kilograms/KGS).
-- dimensions: Object with length, width, height if available.
-- packages: Array of package details if multiple packages exist.
-- description: Description of the charge or line item (especially important for 'charge' recordType, e.g., "Extra Care", "Weight Audit Adjustment").
-- postalCode: Postal/ZIP code related to the shipment or charge.
-- costs: Breakdown of shipping costs including:
-  - base, fuel, freight, miscellaneous, additionalFees, serviceCharges, signatureService, surcharges, taxes, gst, pst, hst, declaredValueCharge, extendedAreaCharge, extraCareCharge, codCharge, addressCorrectionCharge, discounts
-- totalCost: Total cost for this record.
-- chargeType: For non-shipment charges, the type of charge (e.g., "Administrative", "Fee", "Surcharge").
-
-GUIDELINES FOR EXTRACTION:
-1. If a field is missing, omit it from the JSON.
-2. Format monetary values as numbers without currency symbols.
-3. Convert weights to numeric values.
-4. Ensure dates are consistently formatted (YYYY-MM-DD or MM/DD/YYYY).
-5. Use numbers for numeric values, not strings.
-6. Combine address fields intelligently.
-7. Interpret weight units (L/LB=LBS, K/KG=KGS).
-8. Capture Canadian taxes (GST, PST, HST) accurately.
-9. Determine "recordType" (shipment or charge) based on PDF context.
-10. Use manifestDate as shipDate if shipDate is missing.
-11. Pay close attention to column headers in tables to correctly map data to the JSON fields.
-12. Look for details within sections titled like 'Detailed Shipment Listings' or 'Additional Charges'.
-
-COUNTRY RECOGNITION GUIDELINES:
-1. Identify US/Canada based on postal codes (A1A 1A1 vs 90210) and province codes (AB, BC, ON etc.).
-2. Set country field in origin/destination to "CA" or "US".
-3. Do not default to US.
-4. Presence of GST/PST/HST often indicates Canadian context.
-
-EXAMPLE OF EXPECTED OUTPUT FORMAT:
-[
-  { "recordType": "shipment", ... },
-  { "recordType": "charge", ... }
-]
-
-Analyze the provided PDF content (all pages) and return ONLY the JSON array with extracted records, no explanations or commentary.
-`;
        contentParts = [
-         { text: prompt },
+         { text: prompt }, // Use passed prompt
          { inlineData: { data: Buffer.from(fileData).toString("base64"), mimeType: 'application/pdf' } }
        ];
-       console.log(`Processing ${fileName} (PDF) with ${fileData.length} bytes of data`);
-
-    } else { // Assume CSV or other text
-      // For text-only, the prompt string itself is sufficient
-      prompt = ` 
-You are an expert at extracting data from complex CSV files containing carrier shipment and charge information. I need you to parse the following CSV content that contains both shipment records and various charge entries from a carrier system.
-
-Your task is to:
-1. Identify all records in the data (both shipments and other charges)
-2. Extract key information for each record
-3. Return a structured JSON array with one object per record
-
-IMPORTANT RULES:
-- Extract ALL rows from the CSV, don't skip any records even if they seem invalid
-- Make sure to include both shipment and non-shipment charges
-- Include ALL records even if they have zero values, missing fields, or appear to be non-standard
-- Keep the total count of records the same as the number of meaningful rows in the CSV
-- NEVER filter out or exclude any records that appear in the data
-
-IMPORTANT DISTINCTION:
-- Some records represent actual shipments with tracking numbers, weights, dimensions, etc.
-- Other records represent charges, fees, or administrative entries that are NOT shipments
-- Do NOT filter out any records - extract ALL rows even if they have zero values or appear to be non-shipment charges
-
-For each record, extract the following fields (when available):
-- recordType: Determine if this is a "shipment" or "charge" (non-shipment) record
-- accountNumber: The account number used for the shipment or charge
-- invoiceNumber: The invoice number for the shipment or charge
-- invoiceDate: The date of the invoice
-- manifestNumber: The manifest number for the shipment
-- manifestDate: The date of the manifest (IMPORTANT: this is often equivalent to the ship date)
-- pieces: The number of pieces or quantity of the shipment (may be labeled as "Quantity")
-- trackingNumber: The tracking number or barcode for the shipment
-- carrier: The shipping carrier name (e.g., FedEx, UPS, USPS)
-- serviceType: The service level (e.g., Ground, Express, Priority)
-- shipDate: When the package was shipped (NOTE: If not explicitly available, check for manifestDate)
-- deliveryDate: When the package was or will be delivered
-- origin: Object containing origin address details (company, street, city, state, postalCode, country)
-- shipmentReference: Shipper/consignee reference numbers for the shipment (look for PO number, customer reference, order number, etc.)
-- destination: Object containing destination address details
-- reportedWeight: The initial weight submitted for the shipment
-- actualWeight: The actual weight of the shipment after carrier measurement
-- weightUnit: Unit of weight - interpret abbreviations logically (e.g., "L" means pounds/LBS, "K" means kilograms/KGS, etc.)
-- dimensions: Object with length, width, height if available
-- packages: Array of package details if multiple packages exist
-- description: Description of the charge or line item (especially important for non-shipment charges)
-- postalCode: Postal/ZIP code related to the shipment or charge
-- costs: Breakdown of shipping costs including:
-  - base: Base shipping cost
-  - fuel: Fuel surcharge
-  - freight: Freight charge
-  - miscellaneous: Miscellaneous charges
-  - additionalFees: Additional fees
-  - serviceCharges: Service charges
-  - signatureService: Signature service fees
-  - surcharges: Other surcharges
-  - taxes: General tax amount
-  - gst: Goods and Services Tax (GST)
-  - pst: Provincial Sales Tax (PST)
-  - hst: Harmonized Sales Tax (HST)
-  - declaredValueCharge: Extra charge for declared value
-  - extendedAreaCharge: Charge for delivery to extended areas
-  - extraCareCharge: Charge for extra care handling
-  - codCharge: Cash on Delivery charge
-  - addressCorrectionCharge: Address correction fee
-  - discounts: Any discounts applied
-- totalCost: Total cost for this record
-- chargeType: For non-shipment charges, the type of charge (e.g., "Administrative", "Fee", "Surcharge")
-
-GUIDELINES FOR EXTRACTION:
-1. If a field is missing entirely, omit it from the JSON rather than including null or empty values.
-2. Format all monetary values as numbers without currency symbols.
-3. Convert weights to numeric values.
-4. Ensure all dates are formatted consistently (YYYY-MM-DD or MM/DD/YYYY).
-5. Be smart about data types - use numbers for numeric values, not strings.
-6. For addresses, combine fields intelligently if split across columns.
-7. For weight units, interpret abbreviated units - e.g., "L" or "LB" as "LBS" (pounds), "K" or "KG" as "KGS" (kilograms), "OZ" as ounces.
-8. IMPORTANT: Pay special attention to tax fields like GST, PST, and HST - these are critical Canadian taxes that must be captured correctly.
-9. IMPORTANT: Include ALL records from the CSV, even those with zero values for pieces or weight.
-10. IMPORTANT: For each record, determine if it's a shipment (has tracking/pieces/weight) or a charge/fee and set the "recordType" field accordingly.
-11. IMPORTANT: If shipDate is not available, use manifestDate as the shipDate.
-
-COUNTRY RECOGNITION GUIDELINES:
-1. IMPORTANT: For address data, correctly identify whether an address is in the US or Canada based on:
-   - Canadian postal codes follow format: Letter-Number-Letter Number-Letter-Number (e.g., A1A 1A1)
-   - US ZIP codes are either 5 digits (e.g., 90210) or 9 digits with optional hyphen (e.g., 90210-1234)
-   - Canadian province codes include: AB, BC, MB, NB, NL, NS, NT, NU, ON, PE, QC, SK, YT
-   - If a province code is present, the country is Canada
-   - If a postal code starts with a letter, the country is Canada
-   - If a postal code is all numeric, the country is US
-2. Set the country field in origin and destination objects to "CA" for Canadian addresses and "US" for US addresses.
-3. Do not default all countries to "US" - make an intelligent determination based on postal codes and province information.
-4. If GST, PST, or HST tax fields are present, this often indicates a Canadian shipment or charge.
-
-EXAMPLE OF EXPECTED OUTPUT FORMAT:
-[
-  {
-    "recordType": "shipment",
-    "invoiceNumber": "INV12345",
-    "trackingNumber": "1Z999AA1234567890",
-    "shipmentReference": "PO-98765-REF",
-    "carrier": "UPS",
-    "serviceType": "Ground",
-    "manifestDate": "2023-05-01",
-    "shipDate": "2023-05-01",
-    "origin": {
-      "company": "ACME Corp",
-      "street": "123 Shipping Lane",
-      "city": "Atlanta",
-      "state": "GA",
-      "postalCode": "30328",
-      "country": "US"
-    },
-    "destination": {
-      "company": "Widget Inc",
-      "street": "456 Receiving Dr",
-      "city": "Dallas",
-      "state": "TX",
-      "postalCode": "75201",
-      "country": "US"
-    },
-    "actualWeight": 15.4,
-    "weightUnit": "LBS",
-    "pieces": 2,
-    "postalCode": "75201",
-    "costs": {
-      "base": 25.50,
-      "fuel": 5.25,
-      "surcharges": 3.00,
-      "taxes": 2.55,
-      "gst": 1.20,
-      "pst": 1.35
-    },
-    "totalCost": 36.30
-  },
-  {
-    "recordType": "charge",
-    "invoiceNumber": "INV12345",
-    "accountNumber": "42001076",
-    "description": "Address Correction",
-    "chargeType": "Fee",
-    "postalCode": "75201",
-    "costs": {
-      "addressCorrectionCharge": 12.00
-    },
-    "totalCost": 12.00
-  }
-]
-
-Analyze the following CSV data and return ONLY the JSON array with extracted records, no explanations or commentary:
-
-${fileData}
-`;
-       // Wrap the text prompt in a text part for consistency
-       contentParts = [{ text: prompt }];
-       console.log(`Processing ${fileName} (CSV) with ${fileData.length} bytes of data`);
+       console.log(`Processing ${fileName} (PDF) with ${fileData.length} bytes`);
+    } else { 
+       const fullPrompt = `${prompt}\n\n${fileData}`; // Use passed prompt
+       contentParts = [{ text: fullPrompt }];
+       console.log(`Processing ${fileName} (CSV) with ${fileData.length} bytes`);
     }
 
     // Call the AI model
@@ -593,110 +376,83 @@ ${fileData}
     const response = await result.response;
     const textResponse = response.text();
     
-    // Extract the JSON array from the response
-    let jsonStart = textResponse.indexOf('[');
-    let jsonEnd = textResponse.lastIndexOf(']') + 1;
-    
-    if (jsonStart === -1 || jsonEnd === 0) {
-      // Fallback to a more flexible approach if JSON array isn't found
-      // Look for object notation
-      jsonStart = textResponse.indexOf('{');
+    console.log("Raw AI Response Text:\n---\n", textResponse, "\n---");
+
+    // *** Enhanced JSON Extraction Logic v2 ***
+    let jsonString = textResponse.trim(); 
+    let potentialJson = null;
+
+    // 1. Check for markdown block
+    const markdownMatch = jsonString.match(/```json\n?([\s\S]*?)\n?```/);
+    if (markdownMatch && markdownMatch[1]) {
+      console.log("Found JSON within markdown block.");
+      potentialJson = markdownMatch[1].trim();
+    } else {
+      // 2. If no markdown, find first opening bracket/brace
+      const firstBracket = jsonString.indexOf('[');
+      const firstBrace = jsonString.indexOf('{');
+      
+      let jsonStart = -1;
+      if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+        jsonStart = firstBracket;
+        console.log("Found potential JSON array start [.");
+      } else if (firstBrace !== -1) {
+        jsonStart = firstBrace;
+        console.log("Found potential JSON object start {.");
+      } else {
+         console.error("Could not find JSON start marker [ or { in the AI response.");
+         // Leave potentialJson as null, parsing will likely fail below but we log the attempt
+      }
+
       if (jsonStart !== -1) {
-        // Find the matching closing brace
-        let braceCount = 1;
-        jsonEnd = jsonStart + 1;
-        while (braceCount > 0 && jsonEnd < textResponse.length) {
-          if (textResponse[jsonEnd] === '{') braceCount++;
-          if (textResponse[jsonEnd] === '}') braceCount--;
-          jsonEnd++;
-        }
-        
-        // If we found a complete object, wrap it in an array
-        if (braceCount === 0) {
-          const singleObject = textResponse.substring(jsonStart, jsonEnd);
-          return JSON.parse(`[${singleObject}]`);
+        // Find the corresponding last closing bracket/brace
+        const isArray = jsonString[jsonStart] === '[';
+        const closingChar = isArray ? ']' : '}';
+        const lastClosing = jsonString.lastIndexOf(closingChar);
+
+        if (lastClosing > jsonStart) {
+          potentialJson = jsonString.substring(jsonStart, lastClosing + 1);
+          console.log(`Extracted potential JSON between index ${jsonStart} and ${lastClosing}`);
+        } else {
+          console.error(`Could not find matching closing bracket/brace '${closingChar}' after start marker at ${jsonStart}.`);
+           // Leave potentialJson as null
         }
       }
-      
-      throw new Error('Could not extract valid JSON from AI response');
     }
+
+    // 3. If we extracted something, use it. Otherwise, use the original trimmed response.
+    jsonString = potentialJson !== null ? potentialJson : jsonString; 
+    console.log("String going into final cleaning & parsing:\n---\n" + jsonString + "\n---");
     
-    let jsonString = textResponse.substring(jsonStart, jsonEnd);
-    
-    // Pre-process the JSON to handle common issues before parsing
-    // Remove any JavaScript-style comments that might be in the response
-    jsonString = jsonString.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove /* ... */ comments
-    jsonString = jsonString.replace(/\/\/[^\n]*/g, ''); // Remove // comments
-    
-    // Ensure forward slashes are properly escaped
-    jsonString = jsonString.replace(/([^\\])\\([^\\/"bfnrt])/g, '$1\\\\$2');
-    
-    // Attempt to fix common JSON parsing issues
+    // 4. Pre-process the extracted/original string
+    jsonString = jsonString.replace(/\/\*[\s\S]*?\*\//g, ''); 
+    jsonString = jsonString.replace(/\/\/[^\n]*/g, ''); 
+    jsonString = jsonString.replace(/([^\\])\\([^\\/"bfnrt])/g, '$1\\\\$2'); // Fix escapes
+    jsonString = jsonString.replace(/\n/g, ''); // Remove newlines that might break parsing
+    jsonString = jsonString.replace(/\r/g, ''); // Remove carriage returns
+
     try {
-      // First try parsing the JSON as is
-      const parsedData = JSON.parse(jsonString);
-      console.log(`Successfully parsed ${parsedData.length} records from AI response`);
+      let parsedData = JSON.parse(jsonString);
       
-      // Validate the extracted data
+      // If it parsed but wasn't an array (e.g., single object), wrap it
       if (!Array.isArray(parsedData)) {
-        throw new Error('AI did not return an array of records');
+          console.log("Parsed data was not an array, wrapping...");
+          parsedData = [parsedData]; 
       }
-      
-      // Normalize the record data to ensure consistent field names
+
+      console.log(`Successfully parsed ${parsedData.length} records from AI response`);
       const normalizedRecords = parsedData.map(normalizeRecordData);
       console.log(`Normalized ${normalizedRecords.length} records`);
-      
       return normalizedRecords;
     } catch (parseError) {
-      console.error('Error parsing JSON from AI response:', parseError);
-      console.log('JSON string with error:', jsonString.substring(Math.max(0, parseError.pos - 50), parseError.pos + 50));
-      
-      // Try to fix common JSON syntax errors
-      try {
-        // Fix trailing commas in objects and arrays
-        let fixedJsonString = jsonString.replace(/,\s*}/g, '}');
-        fixedJsonString = fixedJsonString.replace(/,\s*]/g, ']');
-        
-        // Fix unquoted property names
-        fixedJsonString = fixedJsonString.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
-        
-        // Fix single quotes instead of double quotes
-        fixedJsonString = fixedJsonString.replace(/'/g, '"');
-        
-        // Remove potential escape characters before forward slashes
-        fixedJsonString = fixedJsonString.replace(/\\\//g, '/');
-        
-        // Last resort: strip any remaining problematic characters
-        fixedJsonString = fixedJsonString.replace(/[\u0000-\u001F]+/g, '');
-        
-        const parsedData = JSON.parse(fixedJsonString);
-        if (Array.isArray(parsedData)) {
-          console.log(`Successfully fixed JSON parsing issues, recovered ${parsedData.length} records`);
-          return parsedData.map(normalizeRecordData);
-        }
-      } catch (secondError) {
-        console.error('Failed to fix JSON parsing issues:', secondError);
-        
-        // Additional fallback: try to manually extract valid JSON objects
-        try {
-          console.log('Attempting manual JSON extraction as fallback...');
-          const manuallyParsedData = attemptManualJsonExtraction(jsonString);
-          if (manuallyParsedData.length > 0) {
-            console.log(`Successfully extracted ${manuallyParsedData.length} records manually`);
-            return manuallyParsedData.map(normalizeRecordData);
-          }
-        } catch (manualError) {
-          console.error('Manual extraction failed:', manualError);
-        }
-      }
-      
-      const errorMessage = `Failed to parse JSON from AI response after multiple attempts. Initial Error: ${parseError.message}`;
-      console.error(errorMessage);
-      throw new Error(errorMessage);
+      console.error('Error parsing extracted/cleaned JSON from AI response:', parseError);
+      console.error('String that failed parsing:\n---\n', jsonString, '\n---'); // Log the string that failed
+      // Optionally add back manual extraction/fixing attempts here if needed
+      throw new Error(`Failed to parse JSON from AI response after cleaning. Initial Error: ${parseError.message}`);
     }
+
   } catch (error) {
     console.error('Error in AI processing:', error);
-    // For production, you would want to implement fallback parsing logic here
     throw error;
   }
 }
@@ -781,6 +537,7 @@ function normalizeRecordData(record) {
     // Shipment identifiers
     trackingNumber: record.trackingNumber || record.tracking_number || record.barcode || 
                     record.tracking || record.referenceNumber || record.reference,
+    ediNumber: record.ediNumber || record.EDI || record.edi || record.masterEdi || record.master_edi,
     
     // Make sure to properly extract shipmentReference - add this field specifically
     shipmentReference: record.shipmentReference || record.shipment_reference || 
@@ -811,6 +568,9 @@ function normalizeRecordData(record) {
     reportedWeight: parseFloatSafe(record.reportedWeight || record.reported_weight || record.stated_weight),
     actualWeight: parseFloatSafe(record.actualWeight || record.actual_weight || record.weight || record.billedWeight || record.billed_weight),
     weightUnit: standardizeUOM(record.weightUnit || record.weight_unit || 'lbs'),
+    
+    // Currency
+    currency: record.currency || record.CUR || record.Currency || 'USD',
   };
   
   // Handle origin address
@@ -874,47 +634,49 @@ function normalizeRecordData(record) {
     }
   }
   
-  // Handle cost breakdown with expanded tax and charge fields
+  // Handle cost breakdown
   if (record.costs || record.charges) {
     const costs = record.costs || record.charges;
     normalized.costs = {
-      base: parseFloatSafe(costs.base || costs.baseCharge || 0),
+      // *** Map base/baseCharge to freight ***
+      freight: parseFloatSafe(costs.freight || costs.freightCharge || costs.base || costs.baseCharge || 0),
       fuel: parseFloatSafe(costs.fuel || costs.fuelSurcharge || costs.fuel_surcharge || 0),
-      freight: parseFloatSafe(costs.freight || costs.freightCharge || 0),
+      // *** Add potential specialServices and map relevant fields ***
+      specialServices: parseFloatSafe(costs.specialServices || costs.serviceCharges || costs.signatureService || costs.extraCareCharge || 0),
+      // *** Add potential surcharges and map relevant fields ***
+      surcharges: parseFloatSafe(costs.surcharges || costs.extendedAreaCharge || costs.declaredValueCharge || 0),
       miscellaneous: parseFloatSafe(costs.miscellaneous || costs.misc || 0),
       additionalFees: parseFloatSafe(costs.additionalFees || costs.additional || costs.additional_fees || 0),
-      serviceCharges: parseFloatSafe(costs.serviceCharges || costs.service || costs.service_charges || 0),
-      signatureService: parseFloatSafe(costs.signatureService || costs.signature || 0),
-      surcharges: parseFloatSafe(costs.surcharges || 0),
+      // Keep specific charges if needed, or rely on grouping above
+      // signatureService: parseFloatSafe(costs.signatureService || costs.signature || 0),
+      // extendedAreaCharge: parseFloatSafe(costs.extendedAreaCharge || costs.extendedArea || 0),
+      // extraCareCharge: parseFloatSafe(costs.extraCareCharge || costs.extraCare || 0),
+      codCharge: parseFloatSafe(costs.codCharge || costs.cod || 0),
+      addressCorrectionCharge: parseFloatSafe(costs.addressCorrectionCharge || costs.addressCorrection || 0),
+      // Canadian tax fields remain specific
       taxes: parseFloatSafe(costs.taxes || costs.tax || 0),
-      
-      // Canadian tax fields
       gst: parseFloatSafe(costs.gst || 0),
       pst: parseFloatSafe(costs.pst || 0),
-      hst: parseFloatSafe(costs.hst || 0),
-      
-      // Additional specific charges
-      addressCorrectionCharge: parseFloatSafe(costs.addressCorrectionCharge || costs.addressCorrection || 0),
-      codCharge: parseFloatSafe(costs.codCharge || costs.cod || 0),
-      declaredValueCharge: parseFloatSafe(costs.declaredValueCharge || costs.declaredValue || 0),
-      extendedAreaCharge: parseFloatSafe(costs.extendedAreaCharge || costs.extendedArea || 0),
-      extraCareCharge: parseFloatSafe(costs.extraCareCharge || costs.extraCare || 0),
-      discounts: parseFloatSafe(costs.discounts || costs.discount || 0),
+      hst: parseFloatSafe(costs.hst || 0)
     };
-    
-    // Only include non-zero values
+
+    // Filter out entries that are zero or failed to parse
     normalized.costs = Object.fromEntries(
-      Object.entries(normalized.costs).filter(([_, value]) => value > 0)
+      Object.entries(normalized.costs).filter(([_, value]) => value !== undefined && !isNaN(value) && value != 0)
     );
   }
   
-  // Handle total cost - calculate from costs if not provided
-  normalized.totalCost = parseFloatSafe(record.totalCost || record.total_cost || record.total || record.cost || 0);
-  
-  // If no total cost but we have costs breakdown, calculate total
-  if (normalized.totalCost === 0 && normalized.costs) {
-    normalized.totalCost = Object.values(normalized.costs).reduce((sum, val) => sum + val, 0);
+  // Handle total cost - calculate from costs if not provided OR if calculated sum differs significantly
+  const originalTotalCost = parseFloatSafe(record.totalCost || record.total_cost || record.total || record.cost);
+  let calculatedTotalCost = null;
+
+  if (normalized.costs && Object.keys(normalized.costs).length > 0) {
+    // Sum ALL values in the costs object (should only be positive/zero now)
+    calculatedTotalCost = Object.values(normalized.costs).reduce((sum, val) => sum + (parseFloatSafe(val) || 0), 0);
   }
+
+  // Prefer original total cost if available, otherwise use calculated. 
+  normalized.totalCost = originalTotalCost !== undefined ? originalTotalCost : (calculatedTotalCost !== null ? calculatedTotalCost : 0);
   
   // Handle dimensions
   if (record.dimensions) {
@@ -1047,14 +809,14 @@ exports.processEdiHttp = functions.https.onRequest({
       return;
     }
     
-    const { csvContent, fileName } = req.body;
+    const { csvContent, fileName, carrier } = req.body;
     
     if (!csvContent) {
       res.status(400).send({ error: 'CSV content is required' });
       return;
     }
     
-    const records = await processWithAI(csvContent, fileName || 'test.csv', 'text/csv');
+    const records = await processWithAI(csvContent, fileName || 'test.csv', 'text/csv', carrier || null);
     
     res.status(200).send({
       success: true,
@@ -1149,11 +911,11 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
     // Process the file with Gemini AI based on type
     const fileType = messageData.fileType; // Get fileType from messageData
     if (fileType === 'application/pdf') {
-      records = await processWithAI(fileContentBuffer, fileData.fileName, fileType);
+      records = await processWithAI(fileContentBuffer, fileData.fileName, fileType, fileData.carrier || null);
       fileContentString = `PDF content (${(fileContentBuffer.length / 1024).toFixed(2)} KB)`; // Placeholder
     } else {
       fileContentString = fileContentBuffer.toString('utf-8');
-      records = await processWithAI(fileContentString, fileData.fileName, 'text/csv');
+      records = await processWithAI(fileContentString, fileData.fileName, 'text/csv', fileData.carrier || null);
     }
     
     console.log(`Extracted ${records.length} records from the CSV`);
