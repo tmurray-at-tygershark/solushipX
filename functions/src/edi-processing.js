@@ -136,7 +136,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
   let docId; // Define docId here to be accessible in catch block
   let isAdmin = false; // Define isAdmin here
   let promptIdentifierUsed; // Variable to store the identifier
-
+  
   try {
     console.log('Received message from subscription:', SUBSCRIPTION_PATH);
     console.log('Using Gemini API Key:', GEMINI_API_KEY ? 'Key is set' : 'Key is NOT set');
@@ -439,7 +439,7 @@ async function processWithAI(fileData, fileName, fileType = 'text/csv', prompt) 
           console.log("Parsed data was not an array, wrapping...");
           parsedData = [parsedData]; 
       }
-
+      
       console.log(`Successfully parsed ${parsedData.length} records from AI response`);
       const normalizedRecords = parsedData.map(normalizeRecordData);
       console.log(`Normalized ${normalizedRecords.length} records`);

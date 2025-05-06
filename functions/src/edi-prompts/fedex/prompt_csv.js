@@ -35,7 +35,7 @@ Identification:
 - invoiceNumber: from Invoice Number
 - invoiceDate: from Invoice Date (YYYYMMDD → YYYY-MM-DD)
 - accountNumber: from Bill-To Account
-- trackingNumber: from Tracking Number or Grd Tracking Number
+- trackingNumber/barcode: from Tracking or barcode Number or Grd Tracking Number
 - shipDate: from Ship Date
 - carrier: always "FedEx"
 
@@ -58,7 +58,7 @@ Charges & Costs:
 
 Freight & Delivery:
 - freight: Freight Amt
-- fuel: Fuel Amt
+- fuel: Fuel Amt ('Fuel Surcharge', 'Fuel')
 - resi: Resi Amt
 - das: DAS Amt
 - saturday: Sat Amt

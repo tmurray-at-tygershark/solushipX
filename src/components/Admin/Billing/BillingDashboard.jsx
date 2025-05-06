@@ -678,10 +678,15 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         navigate(`/admin/billing/edi/${uploadId}`);
     };
 
-    const handleCloseEdiResults = () => {
+    const handleCloseEdiResults = (refreshNeeded) => {
         setShowEdiResults(false);
         setSelectedUploadId(null);
         navigate('/admin/billing/edi');
+
+        // Refresh the EDI history when returning from results
+        if (refreshNeeded) {
+            fetchEdiHistory();
+        }
     };
 
     const handleViewEdiResults = (uploadId) => {

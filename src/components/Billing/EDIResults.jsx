@@ -31,11 +31,13 @@ import {
     InfoOutlined as InfoIcon,
     CheckCircleOutline as CheckCircleIcon,
     ErrorOutline as ErrorIcon,
-    HourglassEmpty as PendingIcon
+    HourglassEmpty as PendingIcon,
+    ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { firestore } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
+import { CSVLink } from 'react-csv';
 
 const EDIResults = ({ uploadId, onClose }) => {
     const { currentUser } = useAuth();
@@ -47,6 +49,8 @@ const EDIResults = ({ uploadId, onClose }) => {
     const [selectedShipment, setSelectedShipment] = useState(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
+    const [csvData, setCsvData] = useState([]);
+    const [csvHeaders, setCsvHeaders] = useState([]);
 
     useEffect(() => {
         if (!uploadId) return;
@@ -98,7 +102,11 @@ const EDIResults = ({ uploadId, onClose }) => {
                 if (resultDoc.exists()) {
                     const resultData = resultDoc.data();
                     console.log('Extracted result data:', resultData);
-                    setExtractedData(resultData.records || resultData.shipments || []);
+                    const recordsData = resultData.records || resultData.shipments || [];
+                    setExtractedData(recordsData);
+
+                    // Generate CSV data
+                    prepareCSVData(recordsData);
 
                     // Always update fileDetails with data from ediResults
                     setFileDetails(prev => ({
@@ -125,6 +133,62 @@ const EDIResults = ({ uploadId, onClose }) => {
         };
     }, [uploadId]);
 
+    // Prepare CSV data for export
+    const prepareCSVData = (records) => {
+        if (!records || records.length === 0) {
+            setCsvData([]);
+            setCsvHeaders([]);
+            return;
+        }
+
+        // Get all unique keys from all records to build headers
+        const allKeys = new Set();
+        records.forEach(record => {
+            Object.keys(record).forEach(key => {
+                if (typeof record[key] !== 'object' || record[key] === null) {
+                    allKeys.add(key);
+                } else {
+                    // For nested objects like origin, destination, costs
+                    Object.keys(record[key]).forEach(nestedKey => {
+                        allKeys.add(`${key}.${nestedKey}`);
+                    });
+                }
+            });
+        });
+
+        // Create headers for CSV
+        const headers = Array.from(allKeys).map(key => ({
+            label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
+            key
+        }));
+
+        // Flatten the data for CSV
+        const flatData = records.map(record => {
+            const flatRecord = {};
+
+            // Process all simple fields
+            Object.keys(record).forEach(key => {
+                if (typeof record[key] !== 'object' || record[key] === null) {
+                    flatRecord[key] = record[key];
+                }
+            });
+
+            // Process nested objects
+            Object.keys(record).forEach(key => {
+                if (typeof record[key] === 'object' && record[key] !== null) {
+                    Object.keys(record[key]).forEach(nestedKey => {
+                        flatRecord[`${key}.${nestedKey}`] = record[key][nestedKey];
+                    });
+                }
+            });
+
+            return flatRecord;
+        });
+
+        setCsvHeaders(headers);
+        setCsvData(flatData);
+    };
+
     const handleViewDetails = (shipment) => {
         setSelectedShipment(shipment);
         setDetailsOpen(true);
@@ -132,6 +196,13 @@ const EDIResults = ({ uploadId, onClose }) => {
 
     const handleTabChange = (event, newValue) => {
         setActiveTab(newValue);
+    };
+
+    const handleGoBack = () => {
+        // Notify parent that we're closing and the list should be refreshed
+        if (onClose) {
+            onClose(true); // Pass true to indicate refresh needed
+        }
     };
 
     const getStatusChip = (status) => {
@@ -170,7 +241,18 @@ const EDIResults = ({ uploadId, onClose }) => {
     // Format monetary values
     const formatCurrency = (value) => {
         if (value === undefined || value === null) return 'N/A';
-        return `$${parseFloat(value).toFixed(2)}`;
+        // Ensure value is treated as a number before formatting
+        const numericValue = Number(value);
+        if (isNaN(numericValue)) return 'Invalid Value';
+        return `$${numericValue.toFixed(2)}`;
+    };
+
+    // Helper function to format charge keys into readable names
+    const formatChargeName = (key) => {
+        if (!key) return '';
+        // Add spaces before capital letters, then capitalize the first letter
+        const spaced = key.replace(/([A-Z])/g, ' $1');
+        return spaced.charAt(0).toUpperCase() + spaced.slice(1);
     };
 
     if (loading) {
@@ -195,7 +277,7 @@ const EDIResults = ({ uploadId, onClose }) => {
                 <Alert severity="error" sx={{ mb: 3 }}>
                     {error}
                 </Alert>
-                <Button variant="outlined" onClick={onClose}>
+                <Button variant="outlined" onClick={handleGoBack}>
                     Go Back
                 </Button>
             </Box>
@@ -205,20 +287,38 @@ const EDIResults = ({ uploadId, onClose }) => {
     return (
         <Box>
             <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">
-                    EDI Processing Results
-                    {fileDetails && ` - ${fileDetails.fileName}`}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <IconButton
+                        onClick={handleGoBack}
+                        edge="start"
+                        sx={{ mr: 1 }}
+                        aria-label="back"
+                    >
+                        <ArrowBackIcon />
+                    </IconButton>
+                    <Typography variant="h6">
+                        EDI Processing Results
+                        {fileDetails && ` - ${fileDetails.fileName}`}
+                    </Typography>
+                </Box>
                 <Box>
                     {getStatusChip(processingStatus)}
-                    <Button
-                        variant="outlined"
-                        startIcon={<DownloadIcon />}
-                        sx={{ ml: 2 }}
-                        disabled={extractedData.length === 0}
-                    >
-                        Export Data
-                    </Button>
+                    {extractedData.length > 0 && csvData.length > 0 && (
+                        <CSVLink
+                            data={csvData}
+                            headers={csvHeaders}
+                            filename={`edi-export-${fileDetails?.fileName || 'data'}.csv`}
+                            className="hidden-link"
+                        >
+                            <Button
+                                variant="outlined"
+                                startIcon={<DownloadIcon />}
+                                sx={{ ml: 2 }}
+                            >
+                                Export Data
+                            </Button>
+                        </CSVLink>
+                    )}
                 </Box>
             </Box>
 
@@ -248,8 +348,8 @@ const EDIResults = ({ uploadId, onClose }) => {
                                             <TableCell>From</TableCell>
                                             <TableCell>To</TableCell>
                                             <TableCell>Carrier/Service</TableCell>
-                                            <TableCell>Ship Date</TableCell>
-                                            <TableCell align="right">Weight</TableCell>
+                                            <TableCell sx={{ minWidth: '120px' }}>Ship Date</TableCell>
+                                            <TableCell align="right">Weight & Pieces</TableCell>
                                             <TableCell align="right">Cost</TableCell>
                                             <TableCell align="right">Actions</TableCell>
                                         </TableRow>
@@ -275,7 +375,8 @@ const EDIResults = ({ uploadId, onClose }) => {
                                                 </TableCell>
                                                 <TableCell>{shipment.shipDate || 'N/A'}</TableCell>
                                                 <TableCell align="right">
-                                                    {shipment.weight ? `${shipment.weight} ${shipment.weightUnit || 'lbs'}` : 'N/A'}
+                                                    {(shipment.weight ? `${shipment.weight} ${shipment.weightUnit || 'lbs'}` : 'N/A')}
+                                                    {shipment.pieces && ` / ${shipment.pieces} pcs`}
                                                 </TableCell>
                                                 <TableCell align="right">
                                                     {formatCurrency(shipment.totalCost || shipment.cost)}
@@ -319,7 +420,7 @@ const EDIResults = ({ uploadId, onClose }) => {
                                                     )}
                                                 </Typography>
                                                 <Typography variant="body2" color="text.secondary">
-                                                    Total Shipping Cost
+                                                    Total Charges/Fees
                                                 </Typography>
                                             </CardContent>
                                         </Card>
@@ -502,6 +603,14 @@ const EDIResults = ({ uploadId, onClose }) => {
                                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                         Shipment Details
                                     </Typography>
+                                    {(selectedShipment.miscellaneousType || selectedShipment.miscellaneousDescription) && (
+                                        <Box sx={{ backgroundColor: '#f9f9f9', p: 1, borderRadius: 1, mb: 2 }}>
+                                            <Typography variant="caption" color="text.secondary">Charge Description</Typography>
+                                            <Typography variant="body2">
+                                                {selectedShipment.miscellaneousType}{selectedShipment.miscellaneousType && selectedShipment.miscellaneousDescription ? ': ' : ''}{selectedShipment.miscellaneousDescription}
+                                            </Typography>
+                                        </Box>
+                                    )}
                                     <Grid container spacing={2}>
                                         <Grid item xs={6}>
                                             <Typography variant="body2" color="text.secondary">Carrier</Typography>
@@ -544,39 +653,26 @@ const EDIResults = ({ uploadId, onClose }) => {
                                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                         Cost Breakdown
                                     </Typography>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Base Cost</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.baseCost ||
-                                                    (selectedShipment.costs?.base || selectedShipment.charges?.freight))}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Fuel Surcharge</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.fuelSurcharge ||
-                                                    (selectedShipment.costs?.fuel || selectedShipment.charges?.fuel))}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Additional Fees</Typography>
-                                            <Typography variant="body1">
-                                                {formatCurrency(selectedShipment.additionalFees ||
-                                                    (selectedShipment.costs?.additional ||
-                                                        (selectedShipment.charges?.residentialDelivery || 0) +
-                                                        (selectedShipment.charges?.insurance || 0) +
-                                                        (selectedShipment.charges?.liftgate || 0)))}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography variant="body2" color="text.secondary">Total Cost</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                                                {formatCurrency(selectedShipment.totalCost || selectedShipment.cost ||
-                                                    (selectedShipment.costs?.total || selectedShipment.charges?.total))}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
+                                    <Box sx={{ maxHeight: 200, overflow: 'auto', mb: 2 }}>
+                                        {selectedShipment.costs && Object.keys(selectedShipment.costs).length > 0 ? (
+                                            Object.entries(selectedShipment.costs).map(([key, value]) => (
+                                                (value !== undefined && value !== null && value !== 0) && // Only show non-zero charges
+                                                <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                                    <Typography variant="body2">{formatChargeName(key)}</Typography>
+                                                    <Typography variant="body2">{formatCurrency(value)}</Typography>
+                                                </Box>
+                                            ))
+                                        ) : (
+                                            <Typography variant="body2" color="text.secondary">No cost breakdown available.</Typography>
+                                        )}
+                                    </Box>
+                                    <Divider sx={{ my: 1 }} />
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                                        <Typography variant="body2" color="text.secondary">Total Cost</Typography>
+                                        <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                                            {formatCurrency(selectedShipment.totalCost !== undefined ? selectedShipment.totalCost : selectedShipment.cost)}
+                                        </Typography>
+                                    </Box>
                                 </Paper>
                             </Grid>
 
@@ -614,14 +710,67 @@ const EDIResults = ({ uploadId, onClose }) => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setDetailsOpen(false)}>Close</Button>
-                    <Button
-                        variant="contained"
-                        startIcon={<DownloadIcon />}
-                    >
-                        Export Shipment
-                    </Button>
+                    {selectedShipment && (
+                        <Button
+                            variant="contained"
+                            startIcon={<DownloadIcon />}
+                            onClick={() => {
+                                // Create a CSV for just this shipment
+                                const singleShipmentData = [selectedShipment].map(record => {
+                                    const flatRecord = {};
+
+                                    // Process all simple fields
+                                    Object.keys(record).forEach(key => {
+                                        if (typeof record[key] !== 'object' || record[key] === null) {
+                                            flatRecord[key] = record[key];
+                                        }
+                                    });
+
+                                    // Process nested objects
+                                    Object.keys(record).forEach(key => {
+                                        if (typeof record[key] === 'object' && record[key] !== null) {
+                                            Object.keys(record[key]).forEach(nestedKey => {
+                                                flatRecord[`${key}.${nestedKey}`] = record[key][nestedKey];
+                                            });
+                                        }
+                                    });
+
+                                    return flatRecord;
+                                });
+
+                                // Generate file name
+                                const fileName = `shipment-${selectedShipment.trackingNumber || 'details'}.csv`;
+
+                                // Create a temporary CSV link and click it
+                                const csvContent = "data:text/csv;charset=utf-8," +
+                                    csvHeaders.map(h => `"${h.label}"`).join(",") + "\n" +
+                                    singleShipmentData.map(row =>
+                                        csvHeaders.map(h =>
+                                            `"${row[h.key] || ''}"`
+                                        ).join(",")
+                                    ).join("\n");
+
+                                const encodedUri = encodeURI(csvContent);
+                                const link = document.createElement("a");
+                                link.setAttribute("href", encodedUri);
+                                link.setAttribute("download", fileName);
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                            }}
+                        >
+                            Export Shipment
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
+
+            {/* Hidden styles for CSV link button */}
+            <style jsx="true">{`
+                .hidden-link {
+                    text-decoration: none;
+                }
+            `}</style>
         </Box>
     );
 };
