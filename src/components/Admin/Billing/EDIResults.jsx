@@ -437,12 +437,16 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}>
                 <CircularProgress size={60} thickness={4} />
                 <Typography variant="h6" sx={{ mt: 2 }}>
-                    {processingStatus === 'queued' ? 'Waiting in queue...' : 'Processing file...'}
+                    {processingStatus === 'queued'
+                        ? 'Waiting in queue...'
+                        : (fileDetails?.processingStatusMessage || 'Processing file...')}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     {processingStatus === 'queued'
                         ? 'Your file is in the processing queue. This may take a few moments.'
-                        : 'AI is analyzing your CSV file to extract shipment data.'}
+                        : (fileDetails?.fileType?.includes('pdf')
+                            ? 'AI is analyzing your PDF file to extract shipment data.'
+                            : 'AI is analyzing your CSV file to extract shipment data.')}
                 </Typography>
             </Box>
         );

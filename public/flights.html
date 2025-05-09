@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flight Booking</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .hero {
+            background-image: url('https://source.unsplash.com/random/1600x900/?mountain,sunset');
+            background-size: cover;
+            background-position: center;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 2em;
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+        }
+        .toggle {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .toggle button {
+            width: auto;
+            margin: 0 5px;
+        }
+        .active {
+            background-color: #007bff;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>Where can we take you?</h1>
+    </div>
+    <div class="container">
+        <h1>Flight Booking</h1>
+        <div class="toggle">
+            <button id="roundTrip" class="active">Round Trip</button>
+            <button id="oneWay">One Way</button>
+        </div>
+        <form id="flightForm">
+            <div class="form-group">
+                <label for="departureCountry">Departure Country</label>
+                <select id="departureCountry" required>
+                    <option value="">Select Country</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="departureCity">Departure City</label>
+                <select id="departureCity" required>
+                    <option value="">Select City</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="departureAirport">Departure Airport</label>
+                <select id="departureAirport" required>
+                    <option value="">Select Airport</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="arrivalCountry">Arrival Country</label>
+                <select id="arrivalCountry" required>
+                    <option value="">Select Country</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="arrivalCity">Arrival City</label>
+                <select id="arrivalCity" required>
+                    <option value="">Select City</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="arrivalAirport">Arrival Airport</label>
+                <select id="arrivalAirport" required>
+                    <option value="">Select Airport</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="departureDate">Departure Date</label>
+                <input type="date" id="departureDate" required>
+            </div>
+            <div class="form-group" id="returnDateGroup">
+                <label for="returnDate">Return Date</label>
+                <input type="date" id="returnDate" required>
+            </div>
+            <div class="form-group">
+                <label for="adults">Adults</label>
+                <select id="adults" required>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="children">Children</label>
+                <select id="children">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="infants">Infants</label>
+                <select id="infants">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="promoCode">Promo Code (Optional)</label>
+                <input type="text" id="promoCode">
+            </div>
+            <button type="submit" id="searchButton" disabled>Search Flights</button>
+        </form>
+    </div>
+    <script>
+        const airportData = {
+            "Canada": {
+                "Toronto": ["YYZ - Toronto Pearson", "YTZ - Billy Bishop"],
+                "Vancouver": ["YVR - Vancouver International"]
+            },
+            "USA": {
+                "New York": ["JFK - John F. Kennedy", "LGA - LaGuardia"],
+                "Los Angeles": ["LAX - Los Angeles International"]
+            },
+            "Mexico": {
+                "Mexico City": ["MEX - Benito Juárez"]
+            }
+        };
+
+        const departureCountry = document.getElementById('departureCountry');
+        const departureCity = document.getElementById('departureCity');
+        const departureAirport = document.getElementById('departureAirport');
+        const arrivalCountry = document.getElementById('arrivalCountry');
+        const arrivalCity = document.getElementById('arrivalCity');
+        const arrivalAirport = document.getElementById('arrivalAirport');
+        const departureDate = document.getElementById('departureDate');
+        const returnDate = document.getElementById('returnDate');
+        const returnDateGroup = document.getElementById('returnDateGroup');
+        const adults = document.getElementById('adults');
+        const children = document.getElementById('children');
+        const infants = document.getElementById('infants');
+        const promoCode = document.getElementById('promoCode');
+        const searchButton = document.getElementById('searchButton');
+        const roundTripButton = document.getElementById('roundTrip');
+        const oneWayButton = document.getElementById('oneWay');
+
+        // Populate country dropdowns
+        for (let country in airportData) {
+            departureCountry.add(new Option(country, country));
+            arrivalCountry.add(new Option(country, country));
+        }
+
+        // Populate city dropdowns based on country
+        departureCountry.addEventListener('change', function() {
+            departureCity.innerHTML = '<option value="">Select City</option>';
+            departureAirport.innerHTML = '<option value="">Select Airport</option>';
+            if (this.value) {
+                for (let city in airportData[this.value]) {
+                    departureCity.add(new Option(city, city));
+                }
+            }
+        });
+
+        arrivalCountry.addEventListener('change', function() {
+            arrivalCity.innerHTML = '<option value="">Select City</option>';
+            arrivalAirport.innerHTML = '<option value="">Select Airport</option>';
+            if (this.value) {
+                for (let city in airportData[this.value]) {
+                    arrivalCity.add(new Option(city, city));
+                }
+            }
+        });
+
+        // Populate airport dropdowns based on city
+        departureCity.addEventListener('change', function() {
+            departureAirport.innerHTML = '<option value="">Select Airport</option>';
+            if (this.value) {
+                airportData[departureCountry.value][this.value].forEach(airport => {
+                    departureAirport.add(new Option(airport, airport));
+                });
+            }
+        });
+
+        arrivalCity.addEventListener('change', function() {
+            arrivalAirport.innerHTML = '<option value="">Select Airport</option>';
+            if (this.value) {
+                airportData[arrivalCountry.value][this.value].forEach(airport => {
+                    arrivalAirport.add(new Option(airport, airport));
+                });
+            }
+        });
+
+        // Toggle between round trip and one way
+        roundTripButton.addEventListener('click', function() {
+            roundTripButton.classList.add('active');
+            oneWayButton.classList.remove('active');
+            returnDateGroup.style.display = 'block';
+            returnDate.required = true;
+        });
+
+        oneWayButton.addEventListener('click', function() {
+            oneWayButton.classList.add('active');
+            roundTripButton.classList.remove('active');
+            returnDateGroup.style.display = 'none';
+            returnDate.required = false;
+        });
+
+        // Validate form
+        function validateForm() {
+            if (departureCountry.value && departureCity.value && departureAirport.value &&
+                arrivalCountry.value && arrivalCity.value && arrivalAirport.value &&
+                departureDate.value && adults.value) {
+                if (roundTripButton.classList.contains('active') && returnDate.value) {
+                    if (new Date(returnDate.value) > new Date(departureDate.value)) {
+                        searchButton.disabled = false;
+                    } else {
+                        alert('Return date must be after departure date.');
+                        searchButton.disabled = true;
+                    }
+                } else if (oneWayButton.classList.contains('active')) {
+                    searchButton.disabled = false;
+                } else {
+                    searchButton.disabled = true;
+                }
+            } else {
+                searchButton.disabled = true;
+            }
+        }
+
+        // Add event listeners for form validation
+        departureCountry.addEventListener('change', validateForm);
+        departureCity.addEventListener('change', validateForm);
+        departureAirport.addEventListener('change', validateForm);
+        arrivalCountry.addEventListener('change', validateForm);
+        arrivalCity.addEventListener('change', validateForm);
+        arrivalAirport.addEventListener('change', validateForm);
+        departureDate.addEventListener('change', validateForm);
+        returnDate.addEventListener('change', validateForm);
+        adults.addEventListener('change', validateForm);
+        children.addEventListener('change', validateForm);
+        infants.addEventListener('change', validateForm);
+
+        // Prevent selecting past dates
+        const today = new Date().toISOString().split('T')[0];
+        departureDate.min = today;
+        returnDate.min = today;
+
+        // Form submission
+        document.getElementById('flightForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            alert('Flight search submitted!');
+        });
+    </script>
+</body>
+</html> 

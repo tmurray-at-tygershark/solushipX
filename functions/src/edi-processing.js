@@ -5,6 +5,8 @@ const admin = require('firebase-admin');
 const { PubSub } = require('@google-cloud/pubsub');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
+const fs = require('fs'); // For checking if post-processor file exists
+const path = require('path'); // For constructing path to post-processor
 require('dotenv').config();
 // Import the new prompt loader
 const { getPromptForCarrier } = require('./edi-prompts'); 
@@ -186,8 +188,12 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     console.log(`Determined file type: ${fileType}`);
     
     // Update status to processing
+    const statusMessage = fileType === 'application/pdf' 
+        ? 'Processing PDF file...' 
+        : 'Processing CSV file...';
     await uploadRef.update({
       processingStatus: 'processing',
+      processingStatusMessage: statusMessage,
       processingStartedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
@@ -219,12 +225,12 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
 
     if (fileType === 'application/pdf') {
       console.log(`Processing PDF file with AI using prompt: ${promptIdentifierUsed}...`);
-      records = await processWithAI(fileContentBuffer, fileName, fileType, prompt); // Pass prompt string
+      records = await processWithAI(fileContentBuffer, fileName, fileType, prompt, carrier); // Pass prompt string and carrier
       fileContentString = `PDF content...`;
     } else {
       fileContentString = fileContentBuffer.toString('utf-8');
       console.log(`Processing CSV file with AI using prompt: ${promptIdentifierUsed}...`);
-      records = await processWithAI(fileContentString, fileName, 'text/csv', prompt); // Pass prompt string
+      records = await processWithAI(fileContentString, fileName, 'text/csv', prompt, carrier); // Pass prompt string and carrier
     }
     
     // Process the file with Gemini AI
@@ -348,111 +354,115 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
  * @param {string} fileName - Original file name
  * @param {string} fileType - The MIME type ('text/csv' or 'application/pdf')
  * @param {string} prompt - The prompt string to use
+ * @param {string} carrierName - The carrier name for specific post-processing
  * @returns {Array} - Array of extracted record objects
  */
-async function processWithAI(fileData, fileName, fileType = 'text/csv', prompt) {
+async function processWithAI(fileData, fileName, fileType = 'text/csv', prompt, carrierName) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    
-    // *** Prompt is now passed in ***
-    // const prompt = getPromptForCarrier(carrierName, fileType);
     
     let contentParts;
 
     if (fileType === 'application/pdf') {
        contentParts = [
-         { text: prompt }, // Use passed prompt
+         { text: prompt },
          { inlineData: { data: Buffer.from(fileData).toString("base64"), mimeType: 'application/pdf' } }
        ];
        console.log(`Processing ${fileName} (PDF) with ${fileData.length} bytes`);
     } else { 
-       const fullPrompt = `${prompt}\n\n${fileData}`; // Use passed prompt
+       const fullPrompt = `${prompt}\n\n${fileData}`;
        contentParts = [{ text: fullPrompt }];
        console.log(`Processing ${fileName} (CSV) with ${fileData.length} bytes`);
     }
 
-    // Call the AI model
     const result = await model.generateContent({ contents: [{ role: "user", parts: contentParts }] });
     const response = await result.response;
     const textResponse = response.text();
     
     console.log("Raw AI Response Text:\n---\n", textResponse, "\n---");
 
-    // *** Enhanced JSON Extraction Logic v2 ***
     let jsonString = textResponse.trim(); 
     let potentialJson = null;
 
-    // 1. Check for markdown block
     const markdownMatch = jsonString.match(/```json\n?([\s\S]*?)\n?```/);
     if (markdownMatch && markdownMatch[1]) {
       console.log("Found JSON within markdown block.");
       potentialJson = markdownMatch[1].trim();
     } else {
-      // 2. If no markdown, find first opening bracket/brace
       const firstBracket = jsonString.indexOf('[');
       const firstBrace = jsonString.indexOf('{');
-      
       let jsonStart = -1;
       if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
         jsonStart = firstBracket;
-        console.log("Found potential JSON array start [.");
       } else if (firstBrace !== -1) {
         jsonStart = firstBrace;
-        console.log("Found potential JSON object start {.");
-      } else {
-         console.error("Could not find JSON start marker [ or { in the AI response.");
-         // Leave potentialJson as null, parsing will likely fail below but we log the attempt
       }
-
       if (jsonStart !== -1) {
-        // Find the corresponding last closing bracket/brace
         const isArray = jsonString[jsonStart] === '[';
         const closingChar = isArray ? ']' : '}';
         const lastClosing = jsonString.lastIndexOf(closingChar);
-
         if (lastClosing > jsonStart) {
           potentialJson = jsonString.substring(jsonStart, lastClosing + 1);
-          console.log(`Extracted potential JSON between index ${jsonStart} and ${lastClosing}`);
-        } else {
-          console.error(`Could not find matching closing bracket/brace '${closingChar}' after start marker at ${jsonStart}.`);
-           // Leave potentialJson as null
         }
       }
     }
+    jsonString = potentialJson !== null ? potentialJson : jsonString;
 
-    // 3. If we extracted something, use it. Otherwise, use the original trimmed response.
-    jsonString = potentialJson !== null ? potentialJson : jsonString; 
-    console.log("String going into final cleaning & parsing:\n---\n" + jsonString + "\n---");
-    
-    // 4. Pre-process the extracted/original string
     jsonString = jsonString.replace(/\/\*[\s\S]*?\*\//g, ''); 
     jsonString = jsonString.replace(/\/\/[^\n]*/g, ''); 
-    jsonString = jsonString.replace(/([^\\])\\([^\\/"bfnrt])/g, '$1\\\\$2'); // Fix escapes
-    jsonString = jsonString.replace(/\n/g, ''); // Remove newlines that might break parsing
-    jsonString = jsonString.replace(/\r/g, ''); // Remove carriage returns
+    jsonString = jsonString.replace(/([^\\])\\([^\\/"bfnrt])/g, '$1\\\\$2');
+    jsonString = jsonString.replace(/\n/g, ''); 
+    jsonString = jsonString.replace(/\r/g, '');
 
+    let parsedData;
     try {
-      let parsedData = JSON.parse(jsonString);
-      
-      // If it parsed but wasn't an array (e.g., single object), wrap it
+      parsedData = JSON.parse(jsonString);
       if (!Array.isArray(parsedData)) {
-          console.log("Parsed data was not an array, wrapping...");
           parsedData = [parsedData]; 
       }
-      
       console.log(`Successfully parsed ${parsedData.length} records from AI response`);
-      const normalizedRecords = parsedData.map(normalizeRecordData);
-      console.log(`Normalized ${normalizedRecords.length} records`);
-      return normalizedRecords;
     } catch (parseError) {
       console.error('Error parsing extracted/cleaned JSON from AI response:', parseError);
-      console.error('String that failed parsing:\n---\n', jsonString, '\n---'); // Log the string that failed
-      // Optionally add back manual extraction/fixing attempts here if needed
+      console.error('String that failed parsing:\n---\n', jsonString, '\n---');
       throw new Error(`Failed to parse JSON from AI response after cleaning. Initial Error: ${parseError.message}`);
     }
 
+    // **** START CARRIER-SPECIFIC POST-PROCESSING ABSTRACTION ****
+    let postProcessedData = parsedData;
+    if (carrierName && fileType === 'text/csv') { // Expand conditions if PDF post-processing is needed
+      const postProcessorFileName = `${carrierName.toLowerCase()}_postprocess.js`;
+      const postProcessorPath = path.join(__dirname, 'edi-postprocessing', postProcessorFileName);
+
+      try {
+        if (fs.existsSync(postProcessorPath)) {
+            const carrierPostProcessor = require(postProcessorPath);
+            const functionName = `postProcess${carrierName.charAt(0).toUpperCase() + carrierName.slice(1).toLowerCase()}Csv`;
+            
+            if (carrierPostProcessor[functionName] && typeof carrierPostProcessor[functionName] === 'function') {
+                 console.log(`Attempting to apply post-processing function ${functionName} for ${carrierName}`);
+                 // For CSV, fileData is the raw string. For PDF, it's a Buffer.
+                 const inputDataForPostProcessor = (fileType === 'text/csv') ? fileData : null;
+                 postProcessedData = await carrierPostProcessor[functionName](parsedData, inputDataForPostProcessor, fileName);
+            } else {
+                 console.log(`No specific post-processing function ${functionName} found for ${carrierName} ${fileType}.`);
+            }
+        } else {
+            console.log(`No post-processing module found for ${carrierName} ${fileType} at ${postProcessorPath}.`);
+        }
+      } catch (e) {
+        console.error(`Error during ${carrierName} ${fileType} post-processing:`, e);
+        // Continue with data from AI if post-processing fails, but log it.
+        postProcessedData = parsedData;
+      }
+    }
+    // **** END CARRIER-SPECIFIC POST-PROCESSING ABSTRACTION ****
+
+    const normalizedRecords = postProcessedData.map(normalizeRecordData);
+    console.log(`Normalized ${normalizedRecords.length} records`);
+    return normalizedRecords;
+
   } catch (error) {
-    console.error('Error in AI processing:', error);
+    console.error('Error in AI processing (processWithAI):', error);
     throw error;
   }
 }
@@ -636,47 +646,54 @@ function normalizeRecordData(record) {
   
   // Handle cost breakdown
   if (record.costs || record.charges) {
-    const costs = record.costs || record.charges;
-    normalized.costs = {
-      // *** Map base/baseCharge to freight ***
-      freight: parseFloatSafe(costs.freight || costs.freightCharge || costs.base || costs.baseCharge || 0),
-      fuel: parseFloatSafe(costs.fuel || costs.fuelSurcharge || costs.fuel_surcharge || 0),
-      // *** Add potential specialServices and map relevant fields ***
-      specialServices: parseFloatSafe(costs.specialServices || costs.serviceCharges || costs.signatureService || costs.extraCareCharge || 0),
-      // *** Add potential surcharges and map relevant fields ***
-      surcharges: parseFloatSafe(costs.surcharges || costs.extendedAreaCharge || costs.declaredValueCharge || 0),
-      miscellaneous: parseFloatSafe(costs.miscellaneous || costs.misc || 0),
-      additionalFees: parseFloatSafe(costs.additionalFees || costs.additional || costs.additional_fees || 0),
-      // Keep specific charges if needed, or rely on grouping above
-      // signatureService: parseFloatSafe(costs.signatureService || costs.signature || 0),
-      // extendedAreaCharge: parseFloatSafe(costs.extendedAreaCharge || costs.extendedArea || 0),
-      // extraCareCharge: parseFloatSafe(costs.extraCareCharge || costs.extraCare || 0),
-      codCharge: parseFloatSafe(costs.codCharge || costs.cod || 0),
-      addressCorrectionCharge: parseFloatSafe(costs.addressCorrectionCharge || costs.addressCorrection || 0),
-      // Canadian tax fields remain specific
-      taxes: parseFloatSafe(costs.taxes || costs.tax || 0),
-      gst: parseFloatSafe(costs.gst || 0),
-      pst: parseFloatSafe(costs.pst || 0),
-      hst: parseFloatSafe(costs.hst || 0)
-    };
+    const incomingCosts = record.costs || record.charges;
+    normalized.costs = {}; // Initialize an empty costs object
 
-    // Filter out entries that are zero or failed to parse
+    // Iterate through all keys provided by the AI in its costs object
+    for (const key in incomingCosts) {
+      if (Object.prototype.hasOwnProperty.call(incomingCosts, key)) {
+        const value = parseFloatSafe(incomingCosts[key]);
+        // Add the key directly if its value is a valid number and not zero (or if it's a discount)
+        if (value !== undefined && !isNaN(value) && (value !== 0 || key === 'discount')) {
+          normalized.costs[key] = value;
+        }
+      }
+    }
+    // No need to filter again if we are careful about adding non-zero values above,
+    // but keeping it doesn't hurt and ensures a clean object.
     normalized.costs = Object.fromEntries(
-      Object.entries(normalized.costs).filter(([_, value]) => value !== undefined && !isNaN(value) && value != 0)
+      Object.entries(normalized.costs).filter(([key, value]) => value !== 0 || key === 'discount')
     );
+  } else {
+    // If no costs or charges object from AI, ensure normalized.costs is at least an empty object
+    normalized.costs = {};
   }
   
-  // Handle total cost - calculate from costs if not provided OR if calculated sum differs significantly
+  // Handle total cost - ALWAYS calculate from the sum of the normalized.costs object
   const originalTotalCost = parseFloatSafe(record.totalCost || record.total_cost || record.total || record.cost);
-  let calculatedTotalCost = null;
+  let calculatedTotalCost = 0; // Default to 0
 
   if (normalized.costs && Object.keys(normalized.costs).length > 0) {
-    // Sum ALL values in the costs object (should only be positive/zero now)
-    calculatedTotalCost = Object.values(normalized.costs).reduce((sum, val) => sum + (parseFloatSafe(val) || 0), 0);
+    // Sum ALL values in the costs object (discounts are typically negative)
+    calculatedTotalCost = Object.values(normalized.costs).reduce((sum, val) => {
+        const numericVal = parseFloatSafe(val);
+        return sum + (isNaN(numericVal) ? 0 : numericVal);
+    }, 0);
+    calculatedTotalCost = parseFloat(calculatedTotalCost.toFixed(2)); // Round to 2 decimal places
   }
 
-  // Prefer original total cost if available, otherwise use calculated. 
-  normalized.totalCost = originalTotalCost !== undefined ? originalTotalCost : (calculatedTotalCost !== null ? calculatedTotalCost : 0);
+  if (calculatedTotalCost !== null && calculatedTotalCost !== 0) {
+    normalized.totalCost = calculatedTotalCost;
+    if (originalTotalCost !== undefined && Math.abs(originalTotalCost - calculatedTotalCost) > 0.02) { 
+      console.warn(`Recalculated totalCost (${calculatedTotalCost}) differs significantly from AI-provided totalCost/NetChrg (${originalTotalCost}) for record (Track#: ${normalized.trackingNumber || 'N/A'}). Using calculated sum.`);
+    }
+  } else if (originalTotalCost !== undefined) {
+    // Fallback to original total cost if costs object was empty or summed to zero
+    normalized.totalCost = originalTotalCost;
+    console.warn(`Costs object was empty or summed to zero for record (Track#: ${normalized.trackingNumber || 'N/A'}). Using original totalCost/NetChrg: ${originalTotalCost}`);
+  } else {
+    normalized.totalCost = 0;
+  }
   
   // Handle dimensions
   if (record.dimensions) {
@@ -875,8 +892,12 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
     const uploadRef = directAdminDb.collection('ediUploads').doc(docId);
     
     // Update status to processing
+    const statusMessage = fileData.fileType === 'application/pdf' 
+        ? 'Processing PDF file...' 
+        : 'Processing CSV file...';
     await uploadRef.update({
       processingStatus: 'processing',
+      processingStatusMessage: statusMessage,
       processingStartedAt: admin.firestore.FieldValue.serverTimestamp(),
       manualProcessing: true
     });

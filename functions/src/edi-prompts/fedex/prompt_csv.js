@@ -1,166 +1,301 @@
-// Gemini CSV Parsing Prompt - FedEx Specific - v6
+// Refined CFEDEX CSV Prompt - v5 (Improved Mapping)
 
 const prompt = `
-You are a specialized AI agent trained to extract structured shipment and charge data from FedEx EDI CSV files, based on the official "FedEx CSV-EDI Implementation Guide – October 2021".
+You are a highly specialized data extraction agent. Your **sole purpose** is to parse the provided FEDEX CSV file and return a valid JSON array of structured records based on the schema and logic below.
 
-Your task is to:
-- Parse each row of a FedEx EDI-formatted CSV file
-- Distinguish between shipment, charge, customs, and tax-related records
-- Map each row into a structured JSON object using the schema below
-- Normalize formats (dates, currency, weight, tax codes)
-- Handle variation in column names, positions, and presence of missing fields
-
-Do not skip any meaningful rows. Extract every record that includes invoice, tracking, cost, customs, or tax data.
+**OUTPUT REQUIREMENTS:**
+- Output **only** a valid JSON array.
+- The response MUST start directly with \`[\` and end directly with \`]\` — no explanations or text.
 
 ---
 
-OUTPUT REQUIREMENTS
-
-Return a valid JSON array. Each object in the array represents one FedEx EDI record (shipment, charge, or tax). Return only the JSON, with no comments or extra text.
+**TASK:** Extract all valid "shipment" or "charge" records. Each meaningful row (shipment or fee line) should be parsed into a structured JSON object.
 
 ---
 
-RECORD TYPE LOGIC
-
-- Use "recordType": "shipment" if the row contains tracking, origin/destination info, and freight/service charges.
-- Use "recordType": "charge" if it includes charges with no shipment details or describes customs, brokerage, or tax-only line items.
-- Default to "shipment" if both charge and tracking info are present.
+**IGNORE THE FOLLOWING ROWS:**
+- Rows with only subtotals or summary charges not tied to a shipment
 
 ---
 
-JSON FIELD SCHEMA
+**RECORD TYPE LOGIC:**
+
+If a record block contains tracking info, addresses, weight, and freight/fuel costs -> 'recordType': 'shipment'
+
+If a record block details a specific fee/surcharge (like Address Correction, Extra Care) and lacks full shipment details (especially origin/destination) -> 'recordType': 'charge'
+
+Default towards 'shipment' if ambiguous but contains significant shipping details.
+
+---
+
+**SCHEMA (per record):** Map from the exact FedEx header names provided.
 
 Identification:
-- recordType: "shipment" or "charge"
-- invoiceNumber: from Invoice Number
-- invoiceDate: from Invoice Date (YYYYMMDD → YYYY-MM-DD)
-- accountNumber: from Bill-To Account
-- trackingNumber/barcode: from Tracking or barcode Number or Grd Tracking Number
-- shipDate: from Ship Date
-- carrier: always "FedEx"
-
-Service Details:
-- serviceType: from Svc, Pkg, Grd Svc
-- reportedWeight: from Orig Wt
-- actualWeight: from Bill Wt
-- weightUnit: from Wt Unit — normalize to "LBS" or "KGS"
-- dimensions: from Length, Width, Height, Dim Unit if available
-
-Address Info:
-- origin: object with any available shipper fields: { company, street, city, state, postalCode, country }
-- destination: object with recipient fields: { company, street, city, state, postalCode, country }
+- recordType: "shipment" or "charge" (based on RECORD TYPE LOGIC)
+- accountNumber: from 'Bill-to Account'
+- invoiceNumber: from 'Invoice Number'
+- invoiceDate: from 'Invoice Date' (Format: YYYY-MM-DD)
+- trackingNumber/barcode: from 'Tracking Number'
+- ediNumber: from 'Master EDI No' // Often the primary EDI identifier
 
 References:
-- shipmentReference: combine values from Ref 1, Ref 2, Ref 3, PO No, Cust Inv No
+- shipmentReference: Combine 'Ref 1', 'Ref 2', 'Ref 3', 'Grd PO No', 'Cust Inv No', 'RMA No' into a single string or use primary if clear
+- Ignore Device column and data
+- shipmentReference1: from 'Ref 1'
+- shipmentReference2: from 'Ref 2'
+- shipmentReference3: from 'Ref 3'
+- description: Use charge description derived from Chrg X codes/Amts if recordType='charge', else leave blank.
 
-Charges & Costs:
-- costs: object containing only non-zero fields found in the row
+Shipping & Service Details:
+- carrier: "FedEx" (Hardcoded)
+- serviceType: Combine/use from 'Svc', 'Pkg', 'Grd Svc'
+- pieces: from 'Pcs' (Numeric)
+- shipDate: from 'Ship Date' (Format: YYYY-MM-DD)
 
-Freight & Delivery:
-- freight: Freight Amt
-- fuel: Fuel Amt ('Fuel Surcharge', 'Fuel')
-- resi: Resi Amt
-- das: DAS Amt
-- saturday: Sat Amt
-- signature: Sign Svc Amt
-- addressCorrectionCharge: Adr Corr Amt
-- declaredValueCharge: D.V. Amt
-- additionalHandling: Addn Hndlg Amt
-- miscellaneous: Misc 1 Amt, Misc 2 Amt, Misc 3 Amt
+Addresses:
+- origin: {
+    company: from 'Shipper Company' or 'Shipper Name',
+    street: combine 'Shipper Address 1' + 'Shipper Address 2',
+    city: from 'Shipper City',
+    state: from 'ST',
+    postalCode: from 'Postal',
+    country: from 'Cntry1' or detect from postal/state
+  }
+- destination: {
+    company: from 'Recipient Company' or 'Recipient Name',
+    street: combine 'Recipient Address 1' + 'Recipient Address 2',
+    city: from 'Recipient City',
+    state: from 'ST2',
+    postalCode: from 'Postal2',
+    country: from 'Cntry2' or detect from postal/state
+  }
 
-Customs Charges:
-- customsClearance: Clrnc Entry Fee, Clearance Entry Fee, Cust Clrnc Amt
-- brokerage: Brokerage Amt
-- bond: Bond Amt
-- entryPrep: Entry Prep Fee
-- advancementFee: Advancement Fee
-- otherCustomsFees: Imp Duty Adj, Misc Customs Fee, or any Chrg x code related to customs
 
-Tax Charges:
-- taxes: Sales Tax, Tax Amt (general US tax)
-- gst: GST Amt (Canada)
-- pst: PST Amt (Canada)
-- hst: HST Amt or Chrg x code = 088
-- vat: VAT Amt or applicable international charges
-- duty: Duty Amt
+Weights & Dimensions:
+- reportedWeight: from 'Orig Wt' (Numeric)
+- actualWeight: from 'Bill Wt' (Numeric)
+- weightUnit: from 'Wt Unit' (Standardize: LBS/KGS)
+- dimensions: { (Extract from following if present)
+    length: from 'Length',
+    width: from 'Width',
+    height: from 'Height',
+    unit: from 'Dim Unit' (Standardize: IN/CM)
+  }
 
-Other Fields:
-- currency: from Curr, fallback: "USD"
-- totalCost: sum of all costs fields
-- chargeType: classify if recordType = charge using description or Chrg x code
+Costs Object (Include ONLY non-zero charges as Floats from their specific columns):
+- costs: {
+    freight: from 'Freight Amt', // CRITICAL: This field MUST ONLY be populated from 'Freight Amt'. If 'Freight Amt' is empty or zero, 'costs.freight' should be 0 or omitted. Do NOT use 'Net Chrg' for this field.
+    volumeDiscount: from 'Vol Disc Amt', // CRITICAL: This field MUST ONLY be populated from the 'Vol Disc Amt' column.
+    earnedDiscount: from 'Earned Disc Amt', // CRITICAL: This field MUST ONLY be populated from the 'Earned Disc Amt' column.
+    automationDiscount: from 'Auto Disc Amt', // CRITICAL: This field MUST ONLY be populated from the 'Auto Disc Amt' column.
+    performancePricing: from 'Perf Price Amt', // CRITICAL: This field MUST ONLY be populated from the 'Perf Price Amt' column.
+    fuel: from 'Fuel Amt', // CRITICAL: This field MUST ONLY be populated from the 'Fuel Amt' column. Values from 'Misc 1 Amt', 'Misc 2 Amt', 'Misc 3 Amt', 'Adv Fee Amt', 'Orig VAT Amt' MUST NOT be placed in this field.
+    residentialDelivery: from 'Resi Amt', // CRITICAL: This field MUST ONLY be populated from the 'Resi Amt' column.
+    deliveryAreaSurcharge: from 'DAS Amt', // CRITICAL: This field MUST ONLY be populated from the 'DAS Amt' column.
+    onCallPickup: from 'On-Call Amt', // CRITICAL: This field MUST ONLY be populated from the 'On-Call Amt' column.
+    declaredValueCharge: from 'D.V. Amt', // CRITICAL: This field MUST ONLY be populated from the 'D.V. Amt' column.
+    signatureService: from 'Sign Svc Amt', // CRITICAL: This field MUST ONLY be populated from the 'Sign Svc Amt' column.
+    saturdayDelivery: from 'Sat Amt', // CRITICAL: This field MUST ONLY be populated from the 'Sat Amt' column.
+    additionalHandling: from 'Addn Hndlg Amt', // CRITICAL: This field MUST ONLY be populated from the 'Addn Hndlg Amt' column.
+    addressCorrectionCharge: from 'Adr Corr Amt', // CRITICAL: This field MUST ONLY be populated from the 'Adr Corr Amt' column.
+    gst: from 'GST Amt', // CRITICAL: This field MUST ONLY be populated from the 'GST Amt' column.
+    duty: from 'Duty Amt', // CRITICAL: This field MUST ONLY be populated from the 'Duty Amt' column.
+    advancementFee: from 'Adv Fee Amt', // CRITICAL: This field MUST ONLY be populated from the 'Adv Fee Amt' column. This is NOT a fuel charge.
+    vat: from 'Orig VAT Amt', // CRITICAL: This field MUST ONLY be populated from the 'Orig VAT Amt' column. This is NOT a fuel charge.
+    misc1: from 'Misc 1 Amt', // CRITICAL: This field MUST ONLY be populated from the 'Misc 1 Amt' column. This is NOT fuel. Values from 'Fuel Amt' MUST NOT be placed here.
+    misc2: from 'Misc 2 Amt', // CRITICAL: This field MUST ONLY be populated from the 'Misc 2 Amt' column. This is NOT fuel.
+    misc3: from 'Misc 3 Amt', // CRITICAL: This field MUST ONLY be populated from the 'Misc 3 Amt' column. This is NOT fuel.
+    // Map Grd Misc fields if they are known distinct charges, e.g.:
+    // grdMisc1: from 'Grd Misc 1', // CRITICAL: This field MUST ONLY be populated from the 'Grd Misc 1' column.
+    // grdMisc2: from 'Grd Misc 2', // CRITICAL: This field MUST ONLY be populated from the 'Grd Misc 2' column.
+    // grdMisc3: from 'Grd Misc 3', // CRITICAL: This field MUST ONLY be populated from the 'Grd Misc 3' column.
+  }
+
+Totals & Other:
+- totalCost: from 'Net Chrg' (Float) // CRITICAL: This field MUST ONLY be populated from 'Net Chrg'. It is the overall total and should NOT be used for 'costs.freight'.
+- currency: from 'Curr' (Standardize: USD/CAD)
+- chargeType: Only if recordType='charge'. Infer from charge description (e.g., 'Fee', 'Surcharge', 'Tax', 'Duty').
+- exchangeRate: from 'Exchg Rate'
+- fuelPercent: from 'Fuel Pct'
 
 ---
 
-FORMATTING RULES
+**PARSING RULES:**
+- Associate labels with their corresponding values based on proximity and layout (e.g., 'Tracking Number: D00...', 'Freight $ 10.50').
+- Omit keys from the JSON if the corresponding data/label is not found or the value is zero (except for 'costs.discount').
+- Convert monetary values to floats (strip $, commas).
+- Convert counts (pieces) and weights to numbers.
+- Format dates consistently (YYYY-MM-DD preferred).
+- Trim whitespace from extracted string values.
+- Default currency = CAD (unless explicitly found).
+- Combine address lines 1 & 2 for street fields.
+- Apply PST/HST logic: If 'PST/HST' column value < 5, map to 'costs.pst'; otherwise map to 'costs.hst'.
 
-- Dates: Convert YYYYMMDD to YYYY-MM-DD
-- Currency: Strip $, commas; convert to float
-- Weights/Dimensions: Convert to float; normalize units (LBS/IN by default)
-- Costs: Include only present fields in the costs object
-- References: Use all available reference fields
+**Crucially:** For BOTH 'shipment' and 'charge' record types, ALL non-zero cost values found in the source data that match headers listed in the 'Costs Object' schema MUST be placed inside the nested 'costs' object using their corresponding key. It is critical to distinguish that 'Fuel Amt' is exclusively for 'costs.fuel', and columns like 'Misc 1 Amt', 'Misc 2 Amt' , 'Misc 3 Amt' (Chrg 21), 'Adv Fee Amt', and 'Orig VAT Amt'  map to their own distinct keys in the 'costs' object and are NEVER to be confused with or placed into 'costs.fuel'. Specifically:
+    - Map 'Fuel Amt'  ONLY to 'costs.fuel'. No other column should provide this value.
+    - Map 'Misc 1 Amt'  ONLY to 'costs.misc1'.
+    - Map 'Misc 2 Amt'  ONLY to 'costs.misc2'.
+    - Map 'Misc 3 Amt'  ONLY to 'costs.misc3'.
+    - Map 'Adv Fee Amt'  ONLY to 'costs.advancementFee'. This is NOT fuel.
+    - Map 'Orig VAT Amt'  ONLY to 'costs.vat'. This is NOT fuel.
+    - The 'Fuel Amt'  column is the *exclusive* source for 'costs.fuel'. No other column, especially 'Adv Fee Amt' (Chrg 17) or any 'Misc X Amt' columns, should ever be mapped to 'costs.fuel'.
+    - Map all other specific 'Chrg X Amt' columns to their respective keys as defined in the 'Costs Object' schema.
+
+Combine reference fields (Ref 1, Ref 2, Ref 3, PO, Cust Inv, RMA) into 'shipmentReference'.
 
 ---
 
-COUNTRY DETECTION (optional):
-- Use postal code and province/state abbreviation
-- If GST, PST, HST present → assume country = "CA"
-
----
-
-SAMPLE OUTPUT
-
+**STRUCTURED OUTPUT EXAMPLE:**
 [
   {
     "recordType": "shipment",
-    "invoiceNumber": "123456789",
-    "invoiceDate": "2023-04-25",
-    "trackingNumber": "999999999999",
-    "carrier": "FedEx",
+    "accountNumber": "42001076",
+    "invoiceNumber": "INV12345",
+    "invoiceDate": "2023-05-12",
+    "manifestNumber": "MAN98765",
+    "manifestDate": "2023-05-01",
+    "trackingNumber": "1Z999AA1234567890",
+    "orderNumber": "ORD987654",
+    "shipmentReference": "General Reference",
+    "shipmentReference1": "PO-98765-REF",
+    "shipmentReference2": "CUST-1234",
+    "ediNumber": "EDI12345",
+    "pieces": 2,
+    "carrier": "FEDEX",
     "serviceType": "Ground",
-    "shipDate": "2023-04-22",
+    "shipDate": "2023-05-01",
+    "deliveryDate": "2023-05-03",
     "origin": {
-      "company": "ACME Inc",
-      "city": "New York",
-      "state": "NY",
-      "postalCode": "10001",
+      "company": "ACME Corp", 
+      "street": "123 Shipping Lane",
+      "street2": "Apt 123",
+      "city": "Atlanta", 
+      "state": "GA", 
+      "postalCode": "30328", 
       "country": "US"
     },
     "destination": {
-      "company": "Beta LLC",
-      "city": "Los Angeles",
-      "state": "CA",
-      "postalCode": "90001",
-      "country": "US"
+      "company": "Widget Inc", 
+      "street": "456 Receiving Blvd",
+      "street2": "Apt 456",
+      "city": "Barrie", 
+      "state": "ON", 
+      "postalCode": "L4M1A8", 
+      "country": "CA" 
     },
-    "actualWeight": 15.0,
+    "miscellaneousDescription": "Oversize Surcharge",
+    "description": "Oversize Surcharge",
+    "quotedWeight": 15.2,
+    "reportedWeight": 15.0,
+    "actualWeight": 15.4,
     "weightUnit": "LBS",
-    "costs": {
-      "freight": 45.00,
-      "fuel": 7.25,
-      "addressCorrectionCharge": 10.00
+    "dimensions": { 
+      "length": 12, 
+      "width": 8, 
+      "height": 6, 
+      "unit": "IN" 
     },
-    "totalCost": 62.25,
-    "currency": "USD"
+    "currency": "CAD",
+    "costs": {
+      "freight": 25.50,
+      "fuel": 5.25,
+      "residentialDelivery": 4.50,
+      "saturdayDelivery": 15.00,
+      "signature": 2.75,
+      "addressCorrection": 12.00,
+      "additionalHandling": 10.50,
+      "deliveryArea": 5.25,
+      "extraCareCharge": 3.50,
+      "codCharge": 8.75,
+      "declaredValueCharge": 7.50,
+      "extendedAreaCharge": 9.00,
+      "duty": 18.45,
+      "gst": 5.25,
+      "pst": 8.40,
+      "hst": 13.00,
+      "miscellaneous1": 2.10,
+      "miscellaneous2": 2.10,
+      "miscellaneous3": 2.10,
+      "oversizeCharge": 25.00
+    },
+    "totalCost": 181.45
   },
   {
     "recordType": "charge",
-    "invoiceNumber": "INV778899",
-    "invoiceDate": "2023-08-15",
-    "trackingNumber": "771234567890",
-    "description": "Customs Entry + Tax",
-    "chargeType": "Customs",
-    "currency": "USD",
-    "costs": {
-      "customsClearance": 45.00,
-      "brokerage": 10.00,
-      "duty": 18.00,
-      "gst": 3.25,
-      "hst": 4.50,
-      "pst": 2.00
+     "accountNumber": "42001076",
+    "invoiceNumber": "INV12345",
+    "invoiceDate": "2023-05-12",
+    "manifestNumber": "MAN98765",
+    "manifestDate": "2023-05-01",
+    "trackingNumber": "1Z999AA1234567890",
+    "orderNumber": "ORD987654",
+    "shipmentReference": "General Reference",
+    "shipmentReference1": "PO-98765-REF",
+    "shipmentReference2": "CUST-1234",
+    "ediNumber": "EDI12345",
+    "pieces": 2,
+    "carrier": "FEDEX",
+    "serviceType": "Ground",
+    "shipDate": "2023-05-01",
+    "deliveryDate": "2023-05-03",
+    "origin": {
+      "company": "ACME Corp", 
+      "street": "123 Shipping Lane",
+      "street2": "Apt 123",
+      "city": "Atlanta", 
+      "state": "GA", 
+      "postalCode": "30328", 
+      "country": "US"
     },
-    "totalCost": 82.75
+    "destination": {
+      "company": "Widget Inc", 
+      "street": "456 Receiving Blvd",
+      "street2": "Apt 456",
+      "city": "Barrie", 
+      "state": "ON", 
+      "postalCode": "L4M1A8", 
+      "country": "CA" 
+    },
+    "miscellaneousDescription": "Oversize Surcharge",
+    "description": "Oversize Surcharge",
+    "quotedWeight": 15.2,
+    "reportedWeight": 15.0,
+    "actualWeight": 15.4,
+    "weightUnit": "LBS",
+    "dimensions": { 
+      "length": 12, 
+      "width": 8, 
+      "height": 6, 
+      "unit": "IN" 
+    },
+    "currency": "CAD",
+    "costs": {
+      "freight": 25.50,
+      "fuel": 5.25,
+      "residentialDelivery": 4.50,
+      "saturdayDelivery": 15.00,
+      "signature": 2.75,
+      "addressCorrection": 12.00,
+      "additionalHandling": 10.50,
+      "deliveryArea": 5.25,
+      "extraCareCharge": 3.50,
+      "codCharge": 8.75,
+      "declaredValueCharge": 7.50,
+      "extendedAreaCharge": 9.00,
+      "duty": 18.45,
+      "gst": 5.25,
+      "pst": 8.40,
+      "hst": 13.00,
+      "miscellaneous1": 2.10,
+      "miscellaneous2": 2.10,
+      "miscellaneous3": 2.10,
+      "oversizeCharge": 25.00
+    },
+    "totalCost": 181.45
   }
 ]
+
+Now analyze the following CSV data and return ONLY the JSON array.
 `;
 
 module.exports = prompt; 
