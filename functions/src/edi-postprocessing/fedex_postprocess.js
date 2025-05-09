@@ -3,28 +3,29 @@ const csv = require('csv-parser');
 const { Readable } = require('stream');
 
 async function postProcessFedexCsv(aiRecords, originalCsvString, fileNameForLogging = 'unknown_file') {
-  console.log(`FedEx Post-Process: Starting for ${fileNameForLogging}`);
+  console.log(`FedEx Post-Process V3: Starting for ${fileNameForLogging}. AI Records: ${aiRecords.length}`);
   let originalCsvRows = [];
 
   if (!originalCsvString) {
-    console.warn('FedEx Post-Process: Original CSV string is empty. Skipping corrections.');
+    console.warn(`FedEx Post-Process: Original CSV string is empty for ${fileNameForLogging}. Skipping corrections.`);
     return aiRecords;
   }
 
   try {
     const stream = Readable.from(originalCsvString);
     await new Promise((resolve, reject) => {
-      stream.pipe(csv({strict: true})) // Added strict to potentially catch CSV format issues earlier
+      stream.pipe(csv({strict: true}))
         .on('data', (row) => originalCsvRows.push(row))
         .on('end', resolve)
         .on('error', (err) => {
             console.error(`FedEx Post-Process: Error parsing original CSV for ${fileNameForLogging}:`, err);
-            reject(err); // Reject promise on CSV parsing error
+            reject(err); 
         });
     });
+    console.log(`FedEx Post-Process: Successfully parsed ${originalCsvRows.length} original CSV rows for ${fileNameForLogging}.`);
   } catch (csvParseError) {
-    console.error(`FedEx Post-Process: CSV parsing failed catastrophically for ${fileNameForLogging}. Records will not be post-processed for cost correction. Error:`, csvParseError);
-    return aiRecords; // Return AI records as is if CSV parsing fails
+    console.error(`FedEx Post-Process: CSV parsing failed catastrophically for ${fileNameForLogging}. Records will not be post-processed. Error:`, csvParseError);
+    return aiRecords; 
   }
 
   if (aiRecords.length > 0 && originalCsvRows.length === aiRecords.length) {
@@ -37,78 +38,103 @@ async function postProcessFedexCsv(aiRecords, originalCsvString, fileNameForLogg
         return aiRecord;
       }
 
-      const trackingNumber = aiRecord.trackingNumber || originalCsvRow['Tracking Number'] || 'N/A';
+      const trackingNumber = aiRecord.trackingNumber || originalCsvRow['Tracking Number'] || `ROW_${index + 1}`;
+      console.log(`--- FedEx Post-Process START for Row ${index + 1} (Track: ${trackingNumber}) ---`);
+      // console.log(`Original CSV Data for Row ${index + 1}:`, JSON.stringify(originalCsvRow));
+      // console.log(`AI Record Before for Row ${index + 1}:`, JSON.stringify(aiRecord));
 
-      // Helper to get, parse, and set a charge, deleting if zero/undefined in CSV
-      const setOrDeleteCharge = (chargeKeyInAiCosts, csvColumnName, chargeDisplayName) => {
+      // --- Dimensions --- 
+      const csvLength = parseFloatSafe(originalCsvRow['Length']);
+      const csvWidth = parseFloatSafe(originalCsvRow['Width']);
+      const csvHeight = parseFloatSafe(originalCsvRow['Height']);
+      const csvDimUnit = originalCsvRow['Dim Unit'];
+
+      // console.log(`CSV Dimensions: L=${csvLength}, W=${csvWidth}, H=${csvHeight}, Unit=${csvDimUnit}`);
+
+      if ((csvLength > 0 || csvWidth > 0 || csvHeight > 0) && (!isNaN(csvLength) && !isNaN(csvWidth) && !isNaN(csvHeight))) {
+        aiRecord.dimensions = {
+          length: csvLength || 0,
+          width: csvWidth || 0,
+          height: csvHeight || 0,
+          unit: csvDimUnit || 'IN' // Default to IN if unit is missing
+        };
+        // console.log(`FedEx Post-Process: Set/Updated dimensions for ${trackingNumber}:`, aiRecord.dimensions);
+      } else {
+        // If all CSV dimensions are zero/invalid, ensure no dimensions object on AI record
+        if (aiRecord.dimensions) {
+            // console.log(`FedEx Post-Process: CSV dimensions were zero/invalid for ${trackingNumber}. Removing dimensions from AI record.`);
+            delete aiRecord.dimensions;
+        }
+      }
+      
+      // --- Actual Weight ---
+      const csvActualWeight = parseFloatSafe(originalCsvRow['Bill Wt']);
+      if (csvActualWeight !== undefined && !isNaN(csvActualWeight)) {
+          if (aiRecord.actualWeight !== csvActualWeight) {
+              // console.log(`FedEx Post-Process: Correcting actualWeight for ${trackingNumber}. AI: ${aiRecord.actualWeight}, CSV: ${csvActualWeight}`);
+              aiRecord.actualWeight = csvActualWeight;
+          }
+      } else {
+          if (aiRecord.actualWeight !== undefined) {
+              // console.log(`FedEx Post-Process: CSV actualWeight (Bill Wt) was empty/invalid for ${trackingNumber}. Removing from AI record.`);
+              delete aiRecord.actualWeight;
+          }
+      }
+
+      const processCharge = (chargeName, csvColumnName, aiCostsKey) => {
         const csvValue = parseFloatSafe(originalCsvRow[csvColumnName]);
+        // console.log(`FedEx Post-Process: ${trackingNumber} - ${chargeName} (${csvColumnName}): CSV raw '${originalCsvRow[csvColumnName]}', parsed: ${csvValue}`);
         if (csvValue !== undefined && !isNaN(csvValue) && csvValue !== 0) {
-          if (aiRecord.costs[chargeKeyInAiCosts] !== csvValue) {
-            console.warn(`FedEx Post-Process: Correcting ${chargeDisplayName} for ${trackingNumber}. AI: ${aiRecord.costs[chargeKeyInAiCosts]}, CSV: ${csvValue}`);
-            aiRecord.costs[chargeKeyInAiCosts] = csvValue;
+          if (aiRecord.costs[aiCostsKey] !== csvValue) {
+            // console.warn(`FedEx Post-Process: Correcting ${chargeName} for ${trackingNumber}. AI had: ${aiRecord.costs[aiCostsKey]}, CSV has: ${csvValue}`);
+            aiRecord.costs[aiCostsKey] = csvValue;
           }
         } else {
-          // If CSV value is zero/undefined/NaN, delete it from AI's costs if present
-          if (aiRecord.costs[chargeKeyInAiCosts] !== undefined) {
-            console.warn(`FedEx Post-Process: ${chargeDisplayName} from CSV was zero/undefined, but AI had ${aiRecord.costs[chargeKeyInAiCosts]} for ${trackingNumber}. Deleting from AI costs.`);
-            delete aiRecord.costs[chargeKeyInAiCosts];
+          if (aiRecord.costs[aiCostsKey] !== undefined) {
+            // console.warn(`FedEx Post-Process: ${chargeName} from CSV was zero/undefined for ${trackingNumber}, but AI had ${aiRecord.costs[aiCostsKey]}. Deleting from AI costs.`);
+            delete aiRecord.costs[aiCostsKey];
           }
         }
       };
+      
+      processCharge('Freight', 'Freight Amt', 'freight');
+      processCharge('Fuel', 'Fuel Amt', 'fuel');
+      processCharge('Misc 1', 'Misc 1 Amt', 'misc1');
+      processCharge('Misc 2', 'Misc 2 Amt', 'misc2');
+      processCharge('Misc 3', 'Misc 3 Amt', 'misc3');
+      processCharge('Advancement Fee', 'Adv Fee Amt', 'advancementFee');
+      processCharge('VAT', 'Orig VAT Amt', 'vat');
 
-      // Explicitly set/correct freight based on 'Freight Amt' or clear it
-      const freightAmtCsv = parseFloatSafe(originalCsvRow['Freight Amt']);
-      if (freightAmtCsv !== undefined && !isNaN(freightAmtCsv) && freightAmtCsv !== 0) {
-        if (aiRecord.costs.freight !== freightAmtCsv) {
-            console.warn(`FedEx Post-Process: Correcting FREIGHT for ${trackingNumber}. AI: ${aiRecord.costs.freight}, CSV: ${freightAmtCsv}`);
-            aiRecord.costs.freight = freightAmtCsv;
+      const fuelAmtInCsv = parseFloatSafe(originalCsvRow['Fuel Amt']);
+      if (fuelAmtInCsv === undefined || fuelAmtInCsv === 0 || isNaN(fuelAmtInCsv)) {
+        const misc1Csv = parseFloatSafe(originalCsvRow['Misc 1 Amt']);
+        const misc2Csv = parseFloatSafe(originalCsvRow['Misc 2 Amt']);
+        const misc3Csv = parseFloatSafe(originalCsvRow['Misc 3 Amt']);
+
+        if (aiRecord.costs.fuel === misc1Csv && misc1Csv !== 0 && misc1Csv !== undefined && !isNaN(misc1Csv)) { 
+            console.warn(`FedEx Post-Process: Final check - Fuel (${aiRecord.costs.fuel}) was Misc1 (${misc1Csv}) for ${trackingNumber}. Correcting.`); 
+            if(aiRecord.costs.misc1 === undefined && misc1Csv !==0) aiRecord.costs.misc1 = misc1Csv; 
+            delete aiRecord.costs.fuel; 
         }
-      } else {
-        // If Freight Amt is not in CSV or is zero, ensure AI's costs.freight is also removed/zeroed
-        // This also handles the case where AI might have put Misc 1 Amt into freight.
-        if (aiRecord.costs.freight !== undefined && aiRecord.costs.freight !== 0) {
-            console.warn(`FedEx Post-Process: CSV Freight Amt was zero/empty, but AI had ${aiRecord.costs.freight} for ${trackingNumber}. Clearing AI freight.`);
-            delete aiRecord.costs.freight;
+        if (aiRecord.costs.fuel === misc2Csv && misc2Csv !== 0 && misc2Csv !== undefined && !isNaN(misc2Csv)) { 
+            console.warn(`FedEx Post-Process: Final check - Fuel (${aiRecord.costs.fuel}) was Misc2 (${misc2Csv}) for ${trackingNumber}. Correcting.`); 
+            if(aiRecord.costs.misc2 === undefined && misc2Csv !==0) aiRecord.costs.misc2 = misc2Csv;
+            delete aiRecord.costs.fuel; 
+        }
+        if (aiRecord.costs.fuel === misc3Csv && misc3Csv !== 0 && misc3Csv !== undefined && !isNaN(misc3Csv)) { 
+            console.warn(`FedEx Post-Process: Final check - Fuel (${aiRecord.costs.fuel}) was Misc3 (${misc3Csv}) for ${trackingNumber}. Correcting.`); 
+            if(aiRecord.costs.misc3 === undefined && misc3Csv !==0) aiRecord.costs.misc3 = misc3Csv;
+            delete aiRecord.costs.fuel; 
         }
       }
-      
-      // Set/Correct other specific charges
-      setOrDeleteCharge('fuel', 'Fuel Amt', 'Fuel');
-      setOrDeleteCharge('misc1', 'Misc 1 Amt', 'Misc 1');
-      setOrDeleteCharge('misc2', 'Misc 2 Amt', 'Misc 2');
-      setOrDeleteCharge('misc3', 'Misc 3 Amt', 'Misc 3');
-      setOrDeleteCharge('advancementFee', 'Adv Fee Amt', 'Advancement Fee');
-      setOrDeleteCharge('vat', 'Orig VAT Amt', 'VAT');
-      
-      // Re-check fuel miscategorization *after* all specific charges are set
-      const currentFuelInAi = aiRecord.costs.fuel;
-      const csvFuel = parseFloatSafe(originalCsvRow['Fuel Amt']);
-      const csvMisc1 = parseFloatSafe(originalCsvRow['Misc 1 Amt']);
-      const csvMisc2 = parseFloatSafe(originalCsvRow['Misc 2 Amt']);
-      const csvMisc3 = parseFloatSafe(originalCsvRow['Misc 3 Amt']);
-
-      if ( (csvFuel === undefined || csvFuel === 0 || isNaN(csvFuel)) ) {
-          if (currentFuelInAi === csvMisc1 && csvMisc1 !== 0 && csvMisc1 !== undefined && !isNaN(csvMisc1) ) {
-              console.warn(`FedEx Post-Process: Final check - Fuel (${currentFuelInAi}) was Misc1 (${csvMisc1}) for ${trackingNumber}. Correcting.`);
-              if(aiRecord.costs.misc1 === undefined) aiRecord.costs.misc1 = csvMisc1; // Ensure misc1 has the value
-              delete aiRecord.costs.fuel;
-          } else if (currentFuelInAi === csvMisc2 && csvMisc2 !== 0 && csvMisc2 !== undefined && !isNaN(csvMisc2)) {
-              console.warn(`FedEx Post-Process: Final check - Fuel (${currentFuelInAi}) was Misc2 (${csvMisc2}) for ${trackingNumber}. Correcting.`);
-              if(aiRecord.costs.misc2 === undefined) aiRecord.costs.misc2 = csvMisc2;
-              delete aiRecord.costs.fuel;
-          } else if (currentFuelInAi === csvMisc3 && csvMisc3 !== 0 && csvMisc3 !== undefined && !isNaN(csvMisc3)) {
-              console.warn(`FedEx Post-Process: Final check - Fuel (${currentFuelInAi}) was Misc3 (${csvMisc3}) for ${trackingNumber}. Correcting.`);
-              if(aiRecord.costs.misc3 === undefined) aiRecord.costs.misc3 = csvMisc3;
-              delete aiRecord.costs.fuel;
-          }
-      }
-      
+      // console.log(`FedEx Post-Process: Row ${index}, AI Record After:`, JSON.stringify(aiRecord));
+      console.log(`--- FedEx Post-Process END for Row ${index + 1} (Track: ${trackingNumber}) ---`);
       return aiRecord;
     });
   } else if (originalCsvRows.length > 0 && originalCsvRows.length !== aiRecords.length) {
     console.warn(`FedEx Post-Process: AI record count (${aiRecords.length}) mismatch with CSV row count (${originalCsvRows.length}) for ${fileNameForLogging}. Skipping corrections.`);
   }
-  return aiRecords; // Return records, possibly modified
+  return aiRecords;
 }
 
 module.exports = { postProcessFedexCsv }; 

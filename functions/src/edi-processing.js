@@ -696,20 +696,22 @@ function normalizeRecordData(record) {
   }
   
   // Handle dimensions
-  if (record.dimensions) {
+  const l = parseFloatSafe(record.dimensions?.length || record.length || 0);
+  const w = parseFloatSafe(record.dimensions?.width || record.width || 0);
+  const h = parseFloatSafe(record.dimensions?.height || record.height || 0);
+  const unit = standardizeUOM(record.dimensions?.unit || record.dimUnit || record.dimensionUnit || 'in');
+
+  // Only include dimensions if at least one dimension is valid and non-zero
+  if ( (l > 0 || w > 0 || h > 0) && (!isNaN(l) && !isNaN(w) && !isNaN(h)) ) {
     normalized.dimensions = {
-      length: parseFloatSafe(record.dimensions.length || 0),
-      width: parseFloatSafe(record.dimensions.width || 0),
-      height: parseFloatSafe(record.dimensions.height || 0),
-      unit: standardizeUOM(record.dimensions.unit || 'in')
+      length: l,
+      width: w,
+      height: h,
+      unit: unit
     };
-    
-    // Only include dimensions if at least one dimension is provided
-    if (normalized.dimensions.length === 0 && 
-        normalized.dimensions.width === 0 && 
-        normalized.dimensions.height === 0) {
-      delete normalized.dimensions;
-    }
+  } else {
+    // If all dimensions are zero or invalid, do not include the dimensions object
+    delete normalized.dimensions; 
   }
   
   // Handle packages if they exist
