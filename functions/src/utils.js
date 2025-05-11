@@ -1,3 +1,5 @@
+const admin = require('firebase-admin');
+
 /**
  * Safely parse float values
  * @param {any} value - Value to parse
@@ -81,8 +83,32 @@ function standardizeUOM(unit) {
   return unit;
 }
 
+/**
+ * Sets a value in a nested object using a dot-notation path.
+ * Example: setByPath(obj, 'a.b.c', 10) will set obj.a.b.c = 10
+ * @param {object} obj - The object to modify.
+ * @param {string} path - The dot-notation path string.
+ * @param {any} value - The value to set.
+ */
+function setByPath(obj, path, value) {
+  const keys = path.split('.');
+  let current = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i];
+    if (!current[key] || typeof current[key] !== 'object') {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  current[keys[keys.length - 1]] = value;
+}
+
+const db = admin.firestore(admin.app(), 'admin');
+
 module.exports = {
     parseFloatSafe,
     parseIntSafe,
-    standardizeUOM // Ensure standardizeUOM is exported
+    standardizeUOM,
+    setByPath,
+    db
 }; 
