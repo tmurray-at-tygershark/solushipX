@@ -1,0 +1,419 @@
+{
+  "carrierName": "CANPAR",
+  "fileType": "text/csv",
+  "headerHash": "50cdd1ee97252be8de438eac5c3777da",
+  "parsingOptions": {
+    "csvDelimiter": ",",
+    "dateFormat": "YYYYMMDD"
+  },
+  "fieldMappings": [
+    {
+      "csvHeader": "Account Num",
+      "jsonKeyPath": "accountNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Manifest Num",
+      "jsonKeyPath": "manifestNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Manifest Date",
+      "jsonKeyPath": "manifestDate",
+      "dataType": "date"
+    },
+    {
+      "csvHeader": "Pieces",
+      "jsonKeyPath": "pieces",
+      "dataType": "integer"
+    },
+    {
+      "csvHeader": "Reported Weight",
+      "jsonKeyPath": "reportedWeight",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Billed Weight",
+      "jsonKeyPath": "actualWeight",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Postal Code",
+      "jsonKeyPath": "destination.postalCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Country",
+      "jsonKeyPath": "destination.country",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Service Code",
+      "jsonKeyPath": "serviceCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Service Description",
+      "jsonKeyPath": "serviceType",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Freight Charge",
+      "jsonKeyPath": "costs.freight",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Discount",
+      "jsonKeyPath": "costs.discount",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Address Correction Charge",
+      "jsonKeyPath": "costs.addressCorrectionCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "C.O.D. Charge",
+      "jsonKeyPath": "costs.codCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Declared Value Charge",
+      "jsonKeyPath": "costs.declaredValueCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Extended Area Charge",
+      "jsonKeyPath": "costs.extendedAreaCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Extra Care Charge",
+      "jsonKeyPath": "costs.extraCareCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Fuel Surcharge",
+      "jsonKeyPath": "costs.fuel",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "P.U.T. Charge",
+      "jsonKeyPath": "costs.putCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Residential Area Charge",
+      "jsonKeyPath": "costs.residentialDelivery",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Miscellaneous Charge",
+      "jsonKeyPath": "costs.miscellaneous",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Miscellaneous Type",
+      "jsonKeyPath": "miscellaneousType",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Miscellaneous Type Description",
+      "jsonKeyPath": "miscellaneousDescription",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Chain Of Signature",
+      "jsonKeyPath": "costs.chainOfSignatureCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Dangerous Goods",
+      "jsonKeyPath": "costs.dangerousGoodsCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Noon",
+      "jsonKeyPath": "costs.noonDeliveryCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Rural Address",
+      "jsonKeyPath": "costs.ruralAddressCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Saturday",
+      "jsonKeyPath": "costs.saturdayDelivery",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "10AM",
+      "jsonKeyPath": "costs.tenAmDeliveryCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Collect",
+      "jsonKeyPath": "costs.collectCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Tax Code",
+      "jsonKeyPath": "taxCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "GST",
+      "jsonKeyPath": "costs.gst",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "PST/HST",
+      "jsonKeyPath": "costs.hstPst",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Barcode",
+      "jsonKeyPath": "trackingNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Name",
+      "jsonKeyPath": "origin.company",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Address 1",
+      "jsonKeyPath": "origin.street",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Address 2",
+      "jsonKeyPath": "origin.street2",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper City",
+      "jsonKeyPath": "origin.city",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Province",
+      "jsonKeyPath": "origin.state",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Postal Code",
+      "jsonKeyPath": "origin.postalCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Account",
+      "jsonKeyPath": "destination.accountNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Name",
+      "jsonKeyPath": "destination.company",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Address 1",
+      "jsonKeyPath": "destination.street",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Address 2",
+      "jsonKeyPath": "destination.street2",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee City",
+      "jsonKeyPath": "destination.city",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Province",
+      "jsonKeyPath": "destination.state",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Postal Code",
+      "jsonKeyPath": "destination.postalCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Country",
+      "jsonKeyPath": "destination.country",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Reference",
+      "jsonKeyPath": "shipmentReference",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Cost Centre",
+      "jsonKeyPath": "destination.costCenter",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Consignee Order Num",
+      "jsonKeyPath": "orderNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Reference 1",
+      "jsonKeyPath": "shipmentReference1",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Reference 2",
+      "jsonKeyPath": "shipmentReference2",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Invoice Num",
+      "jsonKeyPath": "invoiceNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Invoice Date",
+      "jsonKeyPath": "invoiceDate",
+      "dataType": "date"
+    },
+    {
+      "csvHeader": "Previously Billed",
+      "jsonKeyPath": "previouslyBilled",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Zone",
+      "jsonKeyPath": "zone",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Over Max Weight",
+      "jsonKeyPath": "costs.overMaxWeightCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Over Max Size",
+      "jsonKeyPath": "costs.overMaxSizeCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Billed UOM",
+      "jsonKeyPath": "weightUnit",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Total Charge",
+      "jsonKeyPath": "totalCost",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Oversize",
+      "jsonKeyPath": "costs.oversizeCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Adult Signature",
+      "jsonKeyPath": "costs.adultSignatureCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Signature Required",
+      "jsonKeyPath": "costs.signatureRequiredCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Overweight",
+      "jsonKeyPath": "costs.overweightCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Overlength",
+      "jsonKeyPath": "costs.overlengthCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Carbon Surcharge",
+      "jsonKeyPath": "costs.carbonSurcharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Poor Label Quality",
+      "jsonKeyPath": "costs.poorLabelQualityCharge",
+      "dataType": "float"
+    }
+  ],
+  "ignoreRowRules": [
+    {
+      "ruleDescription": "Ignore rows where essential fields like Tracking Number (Barcode) AND Total Charge are both empty",
+      "conditions": [
+        {
+          "csvHeader": "Barcode",
+          "operator": "isEmpty"
+        },
+        {
+          "csvHeader": "Total Charge",
+          "operator": "isEmpty"
+        }
+      ]
+    },
+    {
+      "ruleDescription": "Ignore rows that might be headers repeated in the data (e.g., Barcode cell contains \"Barcode\")",
+      "conditions": [
+        {
+          "csvHeader": "Barcode",
+          "operator": "equals",
+          "value": "Barcode",
+          "dataType": "string"
+        },
+        {
+          "csvHeader": "Total Charge",
+          "operator": "equals",
+          "value": "Total Charge",
+          "dataType": "string"
+        }
+      ]
+    },
+    {
+      "ruleDescription": "Ignore summary lines that contain 'TOTAL' in 'Account Num' and Barcode is empty",
+      "conditions": [
+        {
+          "csvHeader": "Barcode",
+          "operator": "isEmpty"
+        },
+        {
+          "csvHeader": "Account Num",
+          "operator": "contains",
+          "value": "TOTAL",
+          "dataType": "string"
+        }
+      ]
+    },
+    {
+      "ruleDescription": "Ignore summary lines that contain \"Subtotal\" in 'Account Num' and Barcode is empty",
+      "conditions": [
+        {
+          "csvHeader": "Barcode",
+          "operator": "isEmpty"
+        },
+        {
+          "csvHeader": "Account Num",
+          "operator": "contains",
+          "value": "Subtotal",
+          "dataType": "string"
+        }
+      ]
+    }
+  ],
+  "defaultValues": {
+    "carrier": "CANPAR",
+    "recordType": "shipment",
+    "origin.country": "CA",
+    "destination.country": "CA"
+  }
+}

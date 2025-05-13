@@ -13,6 +13,9 @@ require('dotenv').config();
 const { getPromptForCarrier } = require('./edi-prompts'); 
 const { parseFloatSafe, parseIntSafe, setByPath, standardizeUOM } = require('./utils'); // Added setByPath and standardizeUOM
 
+// Add carrier-specific post-processing imports
+const { postProcessFedexCsv } = require('./edi-postprocessing/fedex_postprocess');
+
 // Initialize the admin app if not already initialized
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -61,6 +64,11 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // Storage bucket - updated to the correct bucket name
 const STORAGE_BUCKET = process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || 'solushipx.firebasestorage.app';
+
+// Add normalization helper
+function normalizeHeader(header) {
+  return header.trim().toLowerCase().replace(/[^a-z0-9]/gi, '');
+}
 
 /**
  * Triggered when a new file is uploaded to Firebase Storage
@@ -216,15 +224,21 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     if (fileType === 'text/csv') {
       const [fileContentBuffer] = await file.download();
       fileContentString = fileContentBuffer.toString('utf-8');
-      
+
       if (fileContentString.length === 0) throw new Error('File is empty');
       
       // Extract initial headers for mapping lookup (assuming comma delimiter for this initial scan)
       // This is a potential weak point if the actual delimiter is different for the header line itself.
       const firstLine = fileContentString.substring(0, fileContentString.indexOf('\n'));
-      const initialCsvHeaders = firstLine.split(',').map(h => h.trim().replace(/^\"|\"$/g, '')); // Also remove surrounding quotes
+      const initialCsvHeaders = firstLine.split(',').map(h => h.trim().replace(/^\"|\"$/g, ''));
       console.log("Initial CSV Headers for mapping lookup:", JSON.stringify(initialCsvHeaders));
       
+      // Build normalized header map
+      const normalizedHeaderMap = {};
+      initialCsvHeaders.forEach(h => {
+        normalizedHeaderMap[normalizeHeader(h)] = h;
+      });
+
       const mappingJson = await getEdiMapping(carrierName, fileType, initialCsvHeaders);
 
       if (mappingJson && mappingJson.fieldMappings) {
@@ -291,14 +305,13 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
           let record = {};
           let hasMappedFields = false;
           for (const mapping of mappingJson.fieldMappings) {
-            const csvHeaderFromMapping = mapping.csvHeader;
-            // Check if this header actually exists in the parsed row keys (derived from initialCsvHeaders or mapping itself)
-            if (!Object.prototype.hasOwnProperty.call(row, csvHeaderFromMapping)) {
-                // console.log(`Header '${csvHeaderFromMapping}' from mapping not found in parsed CSV row keys. Available keys: ${Object.keys(row).join(', ')}`);
-                continue; 
+            const normalizedMappingHeader = normalizeHeader(mapping.csvHeader);
+            const actualCsvHeader = normalizedHeaderMap[normalizedMappingHeader];
+            if (!actualCsvHeader || !Object.prototype.hasOwnProperty.call(row, actualCsvHeader)) {
+              console.warn(`[EDI Mapping] Mapping header '${mapping.csvHeader}' did not match any CSV header. Available: [${Object.values(normalizedHeaderMap).join(', ')}]`);
+              continue;
             }
-           
-            let value = row[csvHeaderFromMapping];
+            let value = row[actualCsvHeader];
 
             if (value !== undefined && value !== null && String(value).trim() !== '') {
               hasMappedFields = true;
@@ -313,7 +326,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
                   } else if (!isNaN(new Date(convertedValue).getTime())) {
                      convertedValue = new Date(convertedValue).toISOString().split('T')[0]; // Standard YYYY-MM-DD
                   } else {
-                     console.warn(`Could not parse date: ${convertedValue} for header ${csvHeaderFromMapping}`);
+                     console.warn(`Could not parse date: ${convertedValue} for header ${actualCsvHeader}`);
                      convertedValue = undefined; // Or keep original string / set to null
                   }
                   break;
@@ -322,7 +335,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
               if (convertedValue !== undefined && !(typeof convertedValue === 'number' && isNaN(convertedValue))){
                  setByPath(record, mapping.jsonKeyPath, convertedValue);
               }
-            } else if (!Object.prototype.hasOwnProperty.call(row, csvHeaderFromMapping)) {
+            } else if (!Object.prototype.hasOwnProperty.call(row, actualCsvHeader)) {
                 // This case is already handled by the check at the start of the loop
                 // console.log(`Header '${csvHeaderFromMapping}' from mapping not present in current CSV row, skipping.`);
             }
@@ -342,6 +355,13 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         }
         console.log(`Code-driven CSV parsing complete. Extracted ${records.length} records.`);
         if (records.length > 0) console.log('First extracted record (sample):', JSON.stringify(records[0]).substring(0, 500));
+
+        // After all records are mapped but before enhanceAndVerifyRecords
+        if (carrierName && carrierName.toLowerCase() === 'fedex') {
+            console.log('Applying FedEx-specific post-processing...');
+            records = await postProcessFedexCsv(records, fileContentString, fileName);
+        }
+        // Add other carrier-specific post-processing here as needed
 
       } else {
         // Fallback to old AI method if no mapping, or mapping generation failed.
@@ -1393,36 +1413,25 @@ function attemptManualJsonExtraction(jsonString) {
 }
 
 // Helper function to get the mapping (NEW) - MODIFIED TO ALWAYS USE ADMIN DB FOR MAPPINGS
-async function getEdiMapping(carrierName, fileType, csvHeadersArray /* adminDbRef no longer needed here, will use global adminDb or getDb(true) */) {
+async function getEdiMapping(carrierName, fileType, csvHeadersArray) {
   if (fileType !== 'text/csv') return null; // Only support CSV for now
 
-  const headerStringForHash = csvHeadersArray.join('|');
-  const headerHash = crypto.createHash('md5').update(headerStringForHash).digest('hex');
-  const mappingDocId = `${carrierName.toLowerCase()}_${fileType.replace('/', '_')}_${headerHash}`;
-  
+  const carrierId = carrierName.toLowerCase();
   const mappingsDb = getDb(true); // ALWAYS use admin database for fetching mappings
-  console.log(`Attempting to fetch mapping from ADMIN DB: ediMappings/${mappingDocId}`);
+  console.log(`Attempting to fetch mapping from ADMIN DB: ediMappings/${carrierId}/default/mapping`);
 
   try {
-    const mappingDoc = await mappingsDb.collection('ediMappings').doc(mappingDocId).get();
+    // Always fetch from ediMappings/{carrierId}/default/mapping
+    const mappingRef = mappingsDb.collection('ediMappings').doc(carrierId).collection('default').doc('mapping');
+    const mappingDoc = await mappingRef.get();
     if (mappingDoc.exists) {
-      console.log(`Found existing EDI mapping for ${carrierName} with hash ${headerHash} in ADMIN DB.`);
+      console.log(`Found EDI mapping for ${carrierName} in ediMappings/${carrierId}/default/mapping in ADMIN DB.`);
       return mappingDoc.data();
     }
-    console.log(`No existing EDI mapping found for ${carrierName} with hash ${headerHash} in ADMIN DB.`);
-    
-    // Fallback: Try to fetch the default mapping from ADMIN DB
-    const defaultMappingDocId = `${carrierName.toLowerCase()}_${fileType.replace('/', '_')}_default`;
-    console.log(`Attempting to fetch default mapping from ADMIN DB: ediMappings/${defaultMappingDocId}`);
-    const defaultMappingDoc = await mappingsDb.collection('ediMappings').doc(defaultMappingDocId).get();
-    if (defaultMappingDoc.exists) {
-      console.log(`Found default EDI mapping for ${carrierName} in ADMIN DB.`);
-      return defaultMappingDoc.data();
-    }
-    console.log(`No default EDI mapping found for ${carrierName} in ADMIN DB.`);
+    console.log(`No mapping found for ${carrierName} in ediMappings/${carrierId}/default/mapping in ADMIN DB.`);
     return null;
   } catch (e) {
-    console.error(`Error fetching EDI mapping for ${carrierName} (hash ${headerHash}) from ADMIN DB:`, e);
+    console.error(`Error fetching EDI mapping for ${carrierName} from ADMIN DB:`, e);
     return null;
   }
 }

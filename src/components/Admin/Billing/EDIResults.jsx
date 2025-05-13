@@ -1227,50 +1227,24 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                     </Typography>
                                     {selectedRecord.costs && Object.keys(selectedRecord.costs).length > 0 ? (
                                         <>
-                                            <Table size="small">
+                                            <Table size="small" sx={{ width: '100%', tableLayout: 'fixed' }}>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }}>Item</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">Amount</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5, width: '60%' }}>Item</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5, width: '40%' }} align="right">Amount</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {/* Sort and Filter Cost Entries */}
-                                                    {Object.entries(selectedRecord.costs)
-                                                        .filter(([key, value]) => value != 0)
-                                                        .sort(([keyA], [keyB]) => {
-                                                            const order = {
-                                                                'freight': 1,
-                                                                'fuel': 2,
-                                                                'specialServices': 3,
-                                                                'surcharges': 4,
-                                                                'taxes': 10, // Group general taxes later
-                                                                'gst': 11,
-                                                                'pst': 12,
-                                                                'hst': 13,
-                                                                // Default order for anything else
-                                                            };
-                                                            const orderA = order[keyA] || 5; // Place unknown charges after surcharges
-                                                            const orderB = order[keyB] || 5;
-                                                            if (orderA !== orderB) return orderA - orderB;
-                                                            return keyA.localeCompare(keyB); // Alphabetical within groups
-                                                        })
-                                                        .map(([key, value]) => (
-                                                            <TableRow key={key}>
-                                                                <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }}>
-                                                                    {/* Display 'Freight' and uppercase specific tax keys */}
-                                                                    {key === 'freight' ? 'Freight' :
-                                                                        key === 'gst' ? 'GST' :
-                                                                            key === 'pst' ? 'PST' :
-                                                                                key === 'hst' ? 'HST' :
-                                                                                    key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                                                                </TableCell>
-                                                                <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">
-                                                                    {/* Pass currency to formatCurrency */}
-                                                                    {formatCurrency(value, selectedRecord.currency)}
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))}
+                                                    {Object.entries(selectedRecord.costs).map(([key, value]) => (
+                                                        <TableRow key={key}>
+                                                            <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }}>
+                                                                {key.charAt(0).toUpperCase() + key.slice(1)}
+                                                            </TableCell>
+                                                            <TableCell sx={{ verticalAlign: 'top', borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">
+                                                                {formatCurrency(value, selectedRecord.currency)}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
                                                 </TableBody>
                                                 <TableHead>
                                                     <TableRow>
@@ -1279,12 +1253,10 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top', pt: 1, borderBottom: 'none', py: 0.5, px: 0.5 }} align="right">
                                                             <Typography variant="subtitle2">
-                                                                {/* Pass currency to formatCurrency */}
                                                                 {formatCurrency(selectedRecord.totalCost ||
                                                                     Object.values(selectedRecord.costs).reduce((sum, val) => sum + parseFloat(val || 0), 0),
                                                                     selectedRecord.currency
                                                                 )}
-                                                                {/* Display currency code next to total */}
                                                                 {selectedRecord.currency && ` (${selectedRecord.currency})`}
                                                             </Typography>
                                                         </TableCell>

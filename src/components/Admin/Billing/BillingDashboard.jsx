@@ -75,6 +75,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
+import EDIMapping from './EDIMapping';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useSnackbar } from 'notistack';
@@ -753,8 +754,10 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         }
                     }}
                 >
+                    <Tab label="Overview" value="overview" />
                     <Tab label="Invoices" value="invoices" />
                     <Tab label="EDI Processing" value="edi" />
+                    <Tab label="EDI Mapping" value="edi-mapping" />
                     <Tab label="Generate Invoices" value="generate" />
                     <Tab label="Generate Business Invoices" value="business" />
                     <Tab label="Not Invoiced" value="not-invoiced" />
@@ -762,6 +765,51 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     <Tab label="Received Payments" value="payments" />
                 </Tabs>
             </Box>
+
+            {activeTab === 'overview' && (
+                <Grid container spacing={3}>
+                    <Grid item xs={12} md={6} lg={3}>
+                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
+                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                                Total Revenue
+                            </Typography>
+                            <Typography component="p" variant="h4">
+                                ${metrics.totalRevenue.toLocaleString()}
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12} md={6} lg={3}>
+                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
+                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                                Outstanding Balance
+                            </Typography>
+                            <Typography component="p" variant="h4">
+                                ${metrics.outstandingBalance.toLocaleString()}
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12} md={6} lg={3}>
+                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
+                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                                Paid Invoices
+                            </Typography>
+                            <Typography component="p" variant="h4">
+                                {metrics.paidInvoices}
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12} md={6} lg={3}>
+                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
+                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                                Pending Invoices
+                            </Typography>
+                            <Typography component="p" variant="h4">
+                                {metrics.pendingInvoices}
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                </Grid>
+            )}
 
             {activeTab === 'invoices' && (
                 <>
@@ -1205,6 +1253,12 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         </>
                     )}
                 </>
+            )}
+
+            {activeTab === 'edi-mapping' && (
+                <Box sx={{ mb: 3 }}>
+                    <EDIMapping />
+                </Box>
             )}
 
             {/* EDI Upload Dialog */}

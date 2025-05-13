@@ -181,6 +181,74 @@
     width: 100%;
 }
 
+/* EDI Mapping Styles */
+.MuiPaper-root {
+    transition: all 0.3s ease;
+}
+
+.MuiPaper-root:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.MuiCard-root {
+    transition: all 0.2s ease;
+}
+
+.MuiCard-root:hover {
+    transform: translateY(-2px);
+}
+
+/* Drag and drop styles */
+.dragging {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Custom scrollbar for the import dialog */
+.MuiDialogContent-root {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.MuiDialogContent-root::-webkit-scrollbar {
+    width: 8px;
+}
+
+.MuiDialogContent-root::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.MuiDialogContent-root::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+/* Animation for success/error alerts */
+@keyframes slideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.MuiAlert-root {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Custom styles for the drag handle */
+.drag-handle {
+    cursor: grab;
+    color: rgba(0, 0, 0, 0.54);
+    transition: color 0.2s ease;
+}
+
+.drag-handle:hover {
+    color: rgba(0, 0, 0, 0.87);
+}
+
 /* Responsive adjustments */
 @media (max-width: 960px) {
     .admin-billing-dashboard {
@@ -210,5 +278,13 @@
 
     .edi-search-form {
         grid-template-columns: 1fr;
+    }
+
+    .MuiGrid-container {
+        flex-direction: column;
+    }
+    
+    .MuiGrid-item {
+        width: 100%;
     }
 } 

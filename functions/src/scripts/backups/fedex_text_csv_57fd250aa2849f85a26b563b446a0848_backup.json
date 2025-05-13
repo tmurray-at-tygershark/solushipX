@@ -1,0 +1,365 @@
+{
+  "carrierName": "FEDEX",
+  "fileType": "text/csv",
+  "headerHash": "57fd250aa2849f85a26b563b446a0848",
+  "parsingOptions": {
+    "csvDelimiter": ",",
+    "dateFormat": "YYYYMMDD"
+  },
+  "fieldMappings": [
+    {
+      "csvHeader": "Master EDI No",
+      "jsonKeyPath": "ediNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Invoice Number",
+      "jsonKeyPath": "invoiceNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Invoice Date",
+      "jsonKeyPath": "invoiceDate",
+      "dataType": "date"
+    },
+    {
+      "csvHeader": "Bill-to Account",
+      "jsonKeyPath": "accountNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Tracking Number",
+      "jsonKeyPath": "trackingNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Ship Date",
+      "jsonKeyPath": "shipDate",
+      "dataType": "date"
+    },
+    {
+      "csvHeader": "Svc",
+      "jsonKeyPath": "serviceCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Grd Svc",
+      "jsonKeyPath": "serviceType",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Ref 1",
+      "jsonKeyPath": "shipmentReference1",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Ref 2",
+      "jsonKeyPath": "shipmentReference2",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Ref 3",
+      "jsonKeyPath": "shipmentReference3",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Grd PO No",
+      "jsonKeyPath": "orderNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Cust Inv No",
+      "jsonKeyPath": "customerInvoiceNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "RMA No",
+      "jsonKeyPath": "rmaNumber",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Net Chrg",
+      "jsonKeyPath": "totalCost",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Curr",
+      "jsonKeyPath": "currency",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Freight Amt",
+      "jsonKeyPath": "costs.freight",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Vol Disc Amt",
+      "jsonKeyPath": "costs.volumeDiscount",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Earned Disc Amt",
+      "jsonKeyPath": "costs.earnedDiscount",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Auto Disc Amt",
+      "jsonKeyPath": "costs.automationDiscount",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Perf Price Amt",
+      "jsonKeyPath": "costs.performancePricing",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Fuel Amt",
+      "jsonKeyPath": "costs.fuel",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Resi Amt",
+      "jsonKeyPath": "costs.residentialDelivery",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "DAS Amt",
+      "jsonKeyPath": "costs.deliveryAreaSurcharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "On-Call Amt",
+      "jsonKeyPath": "costs.onCallPickup",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "D.V. Amt",
+      "jsonKeyPath": "costs.declaredValueCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Sign Svc Amt",
+      "jsonKeyPath": "costs.signatureService",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Sat Amt",
+      "jsonKeyPath": "costs.saturdayDelivery",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Addn Hndlg Amt",
+      "jsonKeyPath": "costs.additionalHandling",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Adr Corr Amt",
+      "jsonKeyPath": "costs.addressCorrectionCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "GST Amt",
+      "jsonKeyPath": "costs.gst",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Duty Amt",
+      "jsonKeyPath": "costs.duty",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Adv Fee Amt",
+      "jsonKeyPath": "costs.advancementFee",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Orig VAT Amt",
+      "jsonKeyPath": "costs.vat",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Misc 1 Amt",
+      "jsonKeyPath": "costs.misc1",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Misc 2 Amt",
+      "jsonKeyPath": "costs.misc2",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Misc 3 Amt",
+      "jsonKeyPath": "costs.misc3",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Fuel Pct",
+      "jsonKeyPath": "fuelPercent",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Pcs",
+      "jsonKeyPath": "pieces",
+      "dataType": "integer"
+    },
+    {
+      "csvHeader": "Bill Wt",
+      "jsonKeyPath": "actualWeight",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Orig Wt",
+      "jsonKeyPath": "reportedWeight",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Wt Unit",
+      "jsonKeyPath": "weightUnit",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Length",
+      "jsonKeyPath": "dimensions.length",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Width",
+      "jsonKeyPath": "dimensions.width",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Height",
+      "jsonKeyPath": "dimensions.height",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "Dim Unit",
+      "jsonKeyPath": "dimensions.unit",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Name",
+      "jsonKeyPath": "origin.name",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Company",
+      "jsonKeyPath": "origin.company",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Address 1",
+      "jsonKeyPath": "origin.street",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper Address 2",
+      "jsonKeyPath": "origin.street2",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Shipper City",
+      "jsonKeyPath": "origin.city",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "ST",
+      "jsonKeyPath": "origin.state",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Postal",
+      "jsonKeyPath": "origin.postalCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Cntry1",
+      "jsonKeyPath": "origin.country",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Recipient Name",
+      "jsonKeyPath": "destination.name",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Recipient Company",
+      "jsonKeyPath": "destination.company",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Recipient Address 1",
+      "jsonKeyPath": "destination.street",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Recipient Address 2",
+      "jsonKeyPath": "destination.street2",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Recipient City",
+      "jsonKeyPath": "destination.city",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "ST2",
+      "jsonKeyPath": "destination.state",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Postal2",
+      "jsonKeyPath": "destination.postalCode",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Cntry2",
+      "jsonKeyPath": "destination.country",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Dlvry Date",
+      "jsonKeyPath": "deliveryDate",
+      "dataType": "date"
+    },
+    {
+      "csvHeader": "Time",
+      "jsonKeyPath": "deliveryTime",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "Signature",
+      "jsonKeyPath": "signatureName",
+      "dataType": "string"
+    },
+    {
+      "csvHeader": "COD Amt",
+      "jsonKeyPath": "costs.codCharge",
+      "dataType": "float"
+    },
+    {
+      "csvHeader": "COD Trkg No",
+      "jsonKeyPath": "codTrackingNumber",
+      "dataType": "string"
+    }
+  ],
+  "ignoreRowRules": [
+    {
+      "ruleDescription": "Ignore rows where essential fields like Tracking Number AND Net Charge are both empty",
+      "conditions": [
+        {
+          "csvHeader": "Tracking Number",
+          "operator": "isEmpty"
+        },
+        {
+          "csvHeader": "Net Chrg",
+          "operator": "isEmpty"
+        }
+      ]
+    }
+  ],
+  "defaultValues": {
+    "carrier": "FEDEX",
+    "recordType": "shipment"
+  }
+}

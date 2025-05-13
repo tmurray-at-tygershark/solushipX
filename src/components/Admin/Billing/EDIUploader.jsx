@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -26,22 +26,11 @@ import {
     InfoOutlined as InfoIcon
 } from '@mui/icons-material';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../../contexts/AuthContext';
 import { db, adminDb } from '../../../firebase';
 import { getApp } from 'firebase/app';
 import { getStorage } from 'firebase/storage';
-
-// Predefined list of carriers
-const CARRIERS = [
-    "UPS CANADA",
-    "UPS USA",
-    "CANPAR",
-    "FEDEX",
-    "LOOMIS",
-    "DHL EXPRESS",
-    "PUROLATOR"
-];
 
 const EDIUploader = ({ onUploadComplete }) => {
     const { currentUser } = useAuth();
@@ -56,10 +45,29 @@ const EDIUploader = ({ onUploadComplete }) => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [selectedCarrier, setSelectedCarrier] = useState('');
     const [carrierError, setCarrierError] = useState(false);
+    const [carrierOptions, setCarrierOptions] = useState([]);
 
     // Use the admin database for uploads in the admin section
     const database = adminDb;
     const collectionName = 'ediUploads';
+
+    useEffect(() => {
+        // Fetch carriers from ediMappings
+        const fetchCarriers = async () => {
+            try {
+                const carriersRef = collection(adminDb, 'ediMappings');
+                const snapshot = await getDocs(carriersRef);
+                const options = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    name: doc.data().name || doc.id
+                }));
+                setCarrierOptions(options);
+            } catch (e) {
+                setCarrierOptions([]);
+            }
+        };
+        fetchCarriers();
+    }, []);
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -306,9 +314,9 @@ const EDIUploader = ({ onUploadComplete }) => {
                         <MenuItem value="" disabled>
                             <em>Select a carrier</em>
                         </MenuItem>
-                        {CARRIERS.map((carrier) => (
-                            <MenuItem key={carrier} value={carrier}>
-                                {carrier}
+                        {carrierOptions.map((carrier) => (
+                            <MenuItem key={carrier.id} value={carrier.id}>
+                                {carrier.name}
                             </MenuItem>
                         ))}
                     </Select>

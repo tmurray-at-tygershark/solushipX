@@ -43,3 +43,12 @@ exports.processEdiManual = ediProcessing.processEdiManual;
 // Export diagnostic functions
 const { checkEdiUploads } = require('./src/check-edi-uploads');
 exports.checkEdiUploads = checkEdiUploads;
+
+const { generateEdiMapping } = require('./src/mapping_functions');
+
+// If you have an Express app or other functions, import and export them as well:
+// const { api } = require('./src/index');
+// exports.api = api;
+
+exports.generateEdiMapping = generateEdiMapping;
+// Export other functions as needed

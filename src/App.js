@@ -41,6 +41,8 @@ const InvoiceForm = lazy(() => import('./components/Admin/Billing/InvoiceForm'))
 const RoleManagement = lazy(() => import('./components/Admin/Roles/RoleManagement'));
 const SystemSettings = lazy(() => import('./components/Admin/Settings/SystemSettings'));
 const CarrierKeys = lazy(() => import('./components/Admin/Carriers/CarrierKeys'));
+const EDIMapping = lazy(() => import('./components/Admin/Billing/EDIMapping'));
+const AddCarrierMapping = lazy(() => import('./components/Admin/Billing/AddCarrierMapping'));
 
 // Loading Component
 const LoadingFallback = () => (
@@ -159,6 +161,16 @@ function AppRoutes() {
                     <Route path="roles" element={<RoleManagement />} />
                     <Route path="settings" element={<SystemSettings />} />
                     <Route path="carrier-keys" element={<CarrierKeys />} />
+                    <Route path="edi-mapping" element={<EDIMapping />} />
+                    <Route path="billing/edi-mapping" element={<EDIMapping />} />
+                    <Route path="billing/edi-mapping/new" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/new/details" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/new/upload" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/new/headers" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/new/prompt" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/new/review" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/:carrierId/view" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/:carrierId/edit" element={<AddCarrierMapping />} />
                 </Route>
 
                 {/* Fallback Route */}
