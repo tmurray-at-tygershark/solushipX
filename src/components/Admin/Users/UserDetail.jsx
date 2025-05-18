@@ -281,10 +281,10 @@ const UserDetail = () => {
                     User Profile: {user ? `${user.firstName} ${user.lastName}` : 'Loading...'}
                 </Typography>
                 <Breadcrumbs aria-label="breadcrumb">
-                    <RouterLink component="button" onClick={() => navigate('/admin')} sx={{ textDecoration: 'none', color: 'inherit' }}>
+                    <RouterLink to="/admin" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
                         Admin
                     </RouterLink>
-                    <RouterLink component="button" onClick={() => navigate('/admin/users')} sx={{ textDecoration: 'none', color: 'inherit' }}>
+                    <RouterLink to="/admin/users" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
                         Users
                     </RouterLink>
                     <Typography color="text.primary">

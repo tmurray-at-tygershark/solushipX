@@ -50,6 +50,11 @@ const UserForm = lazy(() => import('./components/Admin/Users/UserForm'));
 const UserCompanies = lazy(() => import('./components/Admin/Users/UserCompanies'));
 const ResetPassword = lazy(() => import('./components/Admin/Users/ResetPassword'));
 
+// Organization Components (New)
+const OrganizationList = lazy(() => import('./components/Admin/Organizations/OrganizationList'));
+const OrganizationForm = lazy(() => import('./components/Admin/Organizations/OrganizationForm'));
+const OrganizationDetail = lazy(() => import('./components/Admin/Organizations/OrganizationDetail'));
+
 // Loading Component
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -155,6 +160,10 @@ function AppRoutes() {
                     <Route path="companies/new" element={<CompanyForm />} />
                     <Route path="companies/:id" element={<CompanyDetail />} />
                     <Route path="companies/:id/edit" element={<CompanyForm />} />
+                    <Route path="organizations" element={<OrganizationList />} />
+                    <Route path="organizations/new" element={<OrganizationForm />} />
+                    <Route path="organizations/:id" element={<OrganizationDetail />} />
+                    <Route path="organizations/:id/edit" element={<OrganizationForm />} />
                     <Route path="users" element={<UserList />} />
                     <Route path="users/new" element={<UserForm />} />
                     <Route path="users/:id" element={<UserDetail />} />

@@ -55,32 +55,37 @@ const AdminHeader = () => {
                     <ul className="navbar-nav me-auto"></ul>
                     <ul className="navbar-nav ms-auto">
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin' ? 'active' : ''}`} to="/admin">
+                            <Link className={`nav-link ${location.pathname === '/admin' || location.pathname === '/admin/' ? 'active' : ''}`} to="/admin">
                                 <span>Dashboard</span>
                             </Link>
                         </li>
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin/companies' ? 'active' : ''}`} to="/admin/companies">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/organizations') ? 'active' : ''}`} to="/admin/organizations">
+                                <span>Organizations</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/companies') ? 'active' : ''}`} to="/admin/companies">
                                 <span>Companies</span>
                             </Link>
                         </li>
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin/users' ? 'active' : ''}`} to="/admin/users">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/users') ? 'active' : ''}`} to="/admin/users">
                                 <span>Users</span>
                             </Link>
                         </li>
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin/shipments' ? 'active' : ''}`} to="/admin/shipments">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/shipments') ? 'active' : ''}`} to="/admin/shipments">
                                 <span>Shipments</span>
                             </Link>
                         </li>
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin/billing' ? 'active' : ''}`} to="/admin/billing">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/billing') ? 'active' : ''}`} to="/admin/billing">
                                 <span>Billing</span>
                             </Link>
                         </li>
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin/roles' ? 'active' : ''}`} to="/admin/roles">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/roles') ? 'active' : ''}`} to="/admin/roles">
                                 <span>Roles</span>
                             </Link>
                         </li>
