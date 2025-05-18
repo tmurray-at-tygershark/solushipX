@@ -1,7 +1,6 @@
 .admin-company-form {
     padding: 24px;
-    margin-left: 280px;
-    min-height: 100vh;
+    min-height: calc(100vh - 64px);
     background-color: #f8fafc;
 }
 
@@ -30,14 +29,14 @@
     margin-bottom: 16px;
 }
 
-.contacts-section {
+.origins-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
 }
 
-.add-contact-btn {
+.add-origin-btn {
     background-color: #0f172a;
     color: white;
     text-transform: none;
@@ -46,27 +45,35 @@
     font-weight: 500;
 }
 
-.add-contact-btn:hover {
+.add-origin-btn:hover {
     background-color: #1e293b;
 }
 
-.contact-card {
+.origin-card {
     background-color: #f8fafc;
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
 }
 
-.contact-header {
+.origin-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
 }
 
-.contact-header .MuiTypography-root {
+.origin-header .MuiTypography-root {
     color: #0f172a;
     font-weight: 500;
+}
+
+.remove-origin-btn {
+    color: #ef4444;
+}
+
+.remove-origin-btn:hover {
+    background-color: #fee2e2;
 }
 
 .submit-btn {
@@ -80,6 +87,10 @@
 
 .submit-btn:hover {
     background-color: #1e293b;
+}
+
+.submit-btn:disabled {
+    background-color: #94a3b8;
 }
 
 .cancel-btn {
@@ -121,7 +132,6 @@
 /* Responsive styles */
 @media (max-width: 960px) {
     .admin-company-form {
-        margin-left: 0;
         padding: 16px;
     }
 
@@ -137,17 +147,17 @@
         font-size: 1.5rem;
     }
 
-    .contacts-section {
+    .origins-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 16px;
     }
 
-    .contact-card {
+    .origin-card {
         padding: 12px;
     }
 
-    .contact-header {
+    .origin-header {
         margin-bottom: 12px;
     }
 } 

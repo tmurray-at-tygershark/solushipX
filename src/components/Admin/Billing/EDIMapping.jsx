@@ -26,7 +26,7 @@ import {
     Visibility as ViewIcon
 } from '@mui/icons-material';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { adminDb } from '../../../firebase';
+import { db } from '../../../firebase';
 import './Billing.css';
 import AddCarrierMapping from './AddCarrierMapping';
 import MappingTest from '../EDIMapping/MappingTest';
@@ -51,7 +51,7 @@ const EDIMapping = () => {
     const fetchCarriers = async () => {
         try {
             setLoading(true);
-            const carriersRef = collection(adminDb, 'ediMappings');
+            const carriersRef = collection(db, 'ediMappings');
             const snapshot = await getDocs(carriersRef);
             const allCarriers = snapshot.docs.map(doc => ({
                 id: doc.id,
@@ -62,7 +62,7 @@ const EDIMapping = () => {
             // Fetch metrics for each carrier
             const metrics = {};
             for (const carrier of allCarriers) {
-                const mappingDoc = await getDoc(doc(adminDb, 'ediMappings', carrier.id, 'default', 'mapping'));
+                const mappingDoc = await getDoc(doc(db, 'ediMappings', carrier.id, 'default', 'mapping'));
                 if (mappingDoc.exists()) {
                     const mappingData = mappingDoc.data();
                     metrics[carrier.id] = {

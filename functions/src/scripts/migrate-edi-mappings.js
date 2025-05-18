@@ -3,85 +3,120 @@ const { getFirestore } = require('firebase-admin/firestore');
 const fs = require('fs');
 const path = require('path');
 
-// Initialize Firebase Admin with service account
-const serviceAccount = require('../../service-account.json');
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+// Assuming admin SDK is initialized globally in functions/index.js
+// const serviceAccount = require("../../service-account.json"); // Path to your service account key
 
-// Connect to the 'admin' Firestore database
-const adminDb = getFirestore(admin.app(), 'admin');
+// if (admin.apps.length === 0) {
+//   admin.initializeApp({
+//     credential: admin.credential.cert(serviceAccount),
+//   });
+// }
 
-const migrateEDIMappings = async () => {
-    try {
-        console.log('Starting EDI mappings migration...');
-        console.log('Using admin database...');
+// Use the globally initialized admin.firestore() instance for the default database
+const db = admin.firestore();
+// REMOVE: const adminDb = getFirestore(admin.app(), 'admin');
 
-        // List all collections in the database
-        console.log('Listing all collections...');
-        const collections = await adminDb.listCollections();
-        console.log('Available collections:', collections.map(col => col.id));
+async function migrateMappings() {
+  console.log("Starting EDI mapping migration to default database...");
 
-        // Define the mappings to migrate
-        const mappingsToMigrate = [
-            { id: 'fedex_text_csv_57fd250aa2849f85a26b563b446a0848', carrierId: 'fedex' },
-            { id: 'canpar_text_csv_50cdd1ee97252be8de438eac5c3777da', carrierId: 'canpar' }
-        ];
+  try {
+    // Get all collections from the default database (for reference, not strictly needed for migration)
+    // const collections = await adminDb.listCollections();
+    const collections = await db.listCollections(); // USE DEFAULT DB
+    console.log("Collections found in the default database:");
+    collections.forEach(col => console.log(`- ${col.id}`));
 
-        for (const mapping of mappingsToMigrate) {
-            const specificDocRef = adminDb.collection('ediMappings').doc(mapping.id);
-            console.log(`Attempting to fetch document: ${mapping.id}`);
-            
-            const specificDoc = await specificDocRef.get();
-            if (specificDoc.exists) {
-                console.log(`--- Found Document: ${mapping.id} ---`);
-                const mappingData = specificDoc.data();
-                console.log('Document Data:', JSON.stringify(mappingData, null, 2));
-                console.log('--- End of Document ---');
+    // Source: Assume old mappings are in 'ediMappings' in default DB (if they were ever there)
+    // Or, if they were *only* in 'admin' DB, this script might need to read from a backup/export if adminDb is truly gone
+    // For now, let's assume we are restructuring ediMappings within the *default* database.
+    const oldEdiMappingsRef = db.collection('ediMappings'); // Read from default
+    const oldEdiMappingsSnapshot = await oldEdiMappingsRef.get();
 
-                // Backup the mapping data to a local JSON file
-                const backupDir = path.join(__dirname, 'backups');
-                if (!fs.existsSync(backupDir)) {
-                    fs.mkdirSync(backupDir, { recursive: true });
-                }
-                const backupPath = path.join(backupDir, `${mapping.id}_backup.json`);
-                fs.writeFileSync(backupPath, JSON.stringify(mappingData, null, 2));
-                console.log(`Backup saved to: ${backupPath}`);
-
-                // Migrate the mapping to the new structure under ediMappings/{carrierId}/default
-                const targetRef = adminDb.collection('ediMappings').doc(mapping.carrierId).collection('default').doc('mapping');
-                console.log(`Migrating mapping for ${mapping.carrierId} to ediMappings/${mapping.carrierId}/default/mapping`);
-                await targetRef.set(mappingData);
-                console.log(`Successfully migrated mapping for ${mapping.carrierId}`);
-
-                // Verify the new mapping was written correctly
-                const newMappingDoc = await targetRef.get();
-                if (newMappingDoc.exists) {
-                    console.log('New mapping verified successfully.');
-                    // Only delete the old mapping after confirming the new one is written
-                    await specificDocRef.delete();
-                    console.log(`Old mapping for ${mapping.carrierId} deleted.`);
-                } else {
-                    console.error('New mapping was not written correctly. Aborting deletion of old mapping.');
-                }
-            } else {
-                console.log(`Document not found: ${mapping.id}`);
-            }
-        }
-
-    } catch (error) {
-        console.error('Error during migration:', error);
-        console.error('Error details:', error.message);
-        if (error.code) {
-            console.error('Error code:', error.code);
-        }
-        if (error.stack) {
-            console.error('Stack trace:', error.stack);
-        }
-    } finally {
-        process.exit();
+    if (oldEdiMappingsSnapshot.empty) {
+      console.log("No documents found in 'ediMappings' in the default database to migrate.");
+      return;
     }
-};
 
-// Run the migration
-migrateEDIMappings(); 
+    console.log(`Found ${oldEdiMappingsSnapshot.size} documents in 'ediMappings' (default DB) to process for migration format.`);
+
+    const batch = db.batch(); // Batch for default DB
+
+    for (const doc of oldEdiMappingsSnapshot.docs) {
+      const mappingData = doc.data();
+      const oldDocId = doc.id;
+
+      // Check if this document already follows the new structure (has a carrierId field)
+      // Or if it has subcollections (which is the old structure we might be moving away from)
+      if (mappingData.carrierId && mappingData.fieldMappings) {
+        // This document might already be in the new top-level format
+        console.log(`Document ${oldDocId} seems to be in the new format already, ensuring structure.`);
+        
+        // Example: ensure it's directly under ediMappings/{carrierId}
+        // If oldDocId is NOT mappingData.carrierId, it implies a different structure.
+        // For this script, we'll assume we are creating the new structure.
+
+        const newCarrierId = mappingData.carrierId.toLowerCase().replace(/\s+/g, '_');
+        const targetDocRef = db.collection('ediMappings').doc(newCarrierId).collection('default').doc('mapping');
+        
+        console.log(`  Setting data for ${newCarrierId} at ${targetDocRef.path}`);
+        batch.set(targetDocRef, { 
+            ...mappingData,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        // If the old document ID is different from the newCarrierId, consider deleting the old one
+        if (oldDocId !== newCarrierId) {
+            // Optional: Delete the old top-level document if it was structured differently
+            // console.log(`  (Optional) Deleting old document at ediMappings/${oldDocId}`);
+            // batch.delete(db.collection('ediMappings').doc(oldDocId));
+        }
+
+      } else {
+        // This might be an old document that itself is a carrier (e.g., ediMappings/FEDEX)
+        // And its mapping data is in a subcollection doc (e.g., ediMappings/FEDEX/default/mapping)
+        console.log(`Document ${oldDocId} might be an old carrier document. Checking for subcollection data...`);
+        const oldDefaultMappingRef = db.collection('ediMappings').doc(oldDocId).collection('default').doc('mapping');
+        const oldDefaultMappingDoc = await oldDefaultMappingRef.get();
+
+        if (oldDefaultMappingDoc.exists) {
+          const subcollectionMappingData = oldDefaultMappingDoc.data();
+          const newCarrierId = oldDocId.toLowerCase().replace(/\s+/g, '_'); // Use oldDocId as carrierId
+
+          const targetDocRef = db.collection('ediMappings').doc(newCarrierId).collection('default').doc('mapping');
+          console.log(`  Migrating subcollection data for ${oldDocId} to ${targetDocRef.path}`);
+          batch.set(targetDocRef, { 
+            ...subcollectionMappingData,
+            carrierId: newCarrierId, // Add carrierId if it wasn't there
+            name: mappingData.name || newCarrierId, // Use name from parent or carrierId
+            description: mappingData.description || '',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+          
+          // We might also want to update/set the top-level carrier doc ediMappings/{newCarrierId}
+          const topLevelCarrierRef = db.collection('ediMappings').doc(newCarrierId);
+          batch.set(topLevelCarrierRef, {
+            name: mappingData.name || newCarrierId,
+            description: mappingData.description || '',
+            enabled: mappingData.enabled !== undefined ? mappingData.enabled : true, // Default to true
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+
+        } else {
+          console.log(`  No 'default/mapping' subcollection found for ${oldDocId}. Skipping.`);
+        }
+      }
+    }
+
+    await batch.commit();
+    console.log("Migration batch committed successfully to the default database.");
+
+  } catch (error) {
+    console.error("Error migrating mappings:", error);
+  }
+}
+
+migrateMappings().then(() => {
+  console.log("\nEDI mapping migration script finished.");
+}).catch(err => {
+    console.error("Script execution failed:", err)
+}); 

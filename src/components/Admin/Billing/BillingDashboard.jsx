@@ -68,7 +68,7 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 import { collection, query, where, getDocs, orderBy, limit, getDoc, doc } from 'firebase/firestore';
-import { db, adminDb } from '../../../firebase';
+import { db } from '../../../firebase';
 import './Billing.css';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -274,8 +274,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const fetchEdiHistory = async () => {
         try {
             setEdiLoading(true);
-            // Query for processed EDI files from the admin database
-            const ediRef = collection(adminDb, 'ediResults');
+            // Query for processed EDI files from the default database
+            const ediRef = collection(db, 'ediResults');
             const q = query(
                 ediRef,
                 orderBy('processedAt', 'desc'),
@@ -291,7 +291,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
 
                 // Also fetch the processing status from the ediUploads collection
                 try {
-                    const uploadRef = doc(adminDb, 'ediUploads', uploadId);
+                    const uploadRef = doc(db, 'ediUploads', uploadId);
                     const uploadDoc = await getDoc(uploadRef);
 
                     if (uploadDoc.exists()) {

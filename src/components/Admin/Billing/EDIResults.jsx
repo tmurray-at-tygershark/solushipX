@@ -40,7 +40,7 @@ import {
     Link as LinkIcon
 } from '@mui/icons-material';
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { db, adminDb } from '../../../firebase';
+import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import html2pdf from 'html2pdf.js/dist/html2pdf.min.js';
@@ -103,7 +103,7 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
             return;
         }
 
-        console.log(`Fetching EDI data for upload ID: ${uploadId}`);
+        console.log(`Fetching EDI data for upload ID: ${uploadId} from default database`);
 
         const fetchEdiData = async () => {
             let unsubscribe = null;
@@ -111,34 +111,20 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
             try {
                 setLoading(true);
 
-                // Get the file upload details - ENSURE we're using adminDb
-                console.log(`Accessing document: ${uploadsCollection}/${uploadId} in admin database`);
-                const uploadRef = doc(adminDb, uploadsCollection, uploadId);
+                // Get the file upload details - ENSURE we're using default database
+                console.log(`Accessing document: ${uploadsCollection}/${uploadId} in default database`);
+                const uploadRef = doc(db, uploadsCollection, uploadId);
                 const uploadDoc = await getDoc(uploadRef);
 
                 if (!uploadDoc.exists()) {
                     console.error(`Document ${uploadId} not found in ${uploadsCollection} collection`);
-                    // Try the regular database as fallback
-                    console.log(`Trying fallback to regular database...`);
-                    const regularUploadRef = doc(db, uploadsCollection, uploadId);
-                    const regularUploadDoc = await getDoc(regularUploadRef);
-
-                    if (!regularUploadDoc.exists()) {
-                        throw new Error(`Upload not found in any database. ID: ${uploadId}`);
-                    } else {
-                        console.log(`Found document in regular database instead of admin database`);
-                        const uploadData = regularUploadDoc.data();
-                        setFileDetails(uploadData);
-
-                        // Set up real-time listener on regular database
-                        unsubscribe = onSnapshot(regularUploadRef, handleDocumentSnapshot);
-                    }
+                    throw new Error(`Upload not found in default database. ID: ${uploadId}`);
                 } else {
-                    console.log(`Found document in admin database`);
+                    console.log(`Found document in default database`);
                     const uploadData = uploadDoc.data();
                     setFileDetails(uploadData);
 
-                    // Set up real-time listener on admin database
+                    // Set up real-time listener on default database
                     unsubscribe = onSnapshot(uploadRef, handleDocumentSnapshot);
                 }
             } catch (err) {
@@ -159,8 +145,8 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
 
                 // If processing is complete, fetch the extracted data
                 if (data.processingStatus === 'completed' && data.resultDocId) {
-                    console.log(`Processing complete. Fetching results document: ${data.resultDocId}`);
-                    fetchExtractedResults(data.resultDocId, data.isAdmin);
+                    console.log(`Processing complete. Fetching results document: ${data.resultDocId} from default database`);
+                    fetchExtractedResults(data.resultDocId);
                 } else if (data.processingStatus === 'failed') {
                     setError(data.error || 'Processing failed');
                     setLoading(false);
@@ -168,19 +154,16 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
             }
         };
 
-        const fetchExtractedResults = async (resultDocId, isAdmin = true) => {
+        const fetchExtractedResults = async (resultDocId) => {
             try {
-                // Use the appropriate database based on isAdmin flag
-                const database = isAdmin ? adminDb : db;
-                console.log(`Fetching results from ${isAdmin ? 'admin' : 'regular'} database: ${resultsCollection}/${resultDocId}`);
-
-                const resultRef = doc(database, resultsCollection, resultDocId);
+                // USE DEFAULT DB for results
+                console.log(`Fetching results from default database: ${resultsCollection}/${resultDocId}`);
+                const resultRef = doc(db, resultsCollection, resultDocId);
                 const resultDoc = await getDoc(resultRef);
 
                 if (resultDoc.exists()) {
                     const resultData = resultDoc.data();
                     console.log('Extracted result data:', resultData);
-                    // Handle both old format (shipments) and new format (records)
                     const extractedData = resultData.records || resultData.shipments || [];
                     console.log(`Found ${extractedData.length} records in extraction results`);
                     setExtractedData(extractedData);
@@ -196,23 +179,9 @@ const EDIResults = ({ uploadId: propUploadId, onClose }) => {
                         rawSample: resultData.rawSample || prevDetails?.rawSample
                     }));
                 } else {
-                    // Try the other database as fallback
-                    const fallbackDatabase = isAdmin ? db : adminDb;
-                    console.log(`Result not found. Trying fallback database...`);
-                    const fallbackResultRef = doc(fallbackDatabase, resultsCollection, resultDocId);
-                    const fallbackResultDoc = await getDoc(fallbackResultRef);
-
-                    if (fallbackResultDoc.exists()) {
-                        console.log(`Found results in fallback database`);
-                        const resultData = fallbackResultDoc.data();
-                        const extractedData = resultData.records || resultData.shipments || [];
-                        setExtractedData(extractedData);
-                    } else {
-                        console.error(`Results document not found in either database: ${resultDocId}`);
-                        setError(`Results document not found: ${resultDocId}`);
-                    }
+                    console.error(`Results document not found in default database: ${resultDocId}`);
+                    setError(`Results document not found: ${resultDocId}`);
                 }
-
                 setLoading(false);
             } catch (err) {
                 console.error('Error fetching extraction results:', err);

@@ -45,12 +45,11 @@ import {
     Edit as EditIcon
 } from '@mui/icons-material';
 import { collection, addDoc, setDoc, doc, getDocs, getDoc } from 'firebase/firestore';
-import { adminDb } from '../../../firebase';
+import { db } from '../../../firebase';
 import Papa from 'papaparse';
 import { useSnackbar } from 'notistack';
 import axios from 'axios';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { db } from '../../../firebase';
 
 const STEPS = [
     { label: 'Carrier Details', path: 'details' },
@@ -100,9 +99,13 @@ const AddCarrierMapping = () => {
         }
     }, [location.pathname, carrierId]);
 
+    useEffect(() => {
+        console.log('[AddCarrierMapping] isGeneratingMapping state changed:', isGeneratingMapping);
+    }, [isGeneratingMapping]);
+
     const fetchCarriers = async () => {
         try {
-            const carriersRef = collection(adminDb, 'ediMappings');
+            const carriersRef = collection(db, 'ediMappings');
             const snapshot = await getDocs(carriersRef);
             setCarriersList(snapshot.docs.map(doc => doc.data().name?.toLowerCase() || ''));
         } catch (e) {
@@ -113,7 +116,7 @@ const AddCarrierMapping = () => {
     const loadExistingMapping = async () => {
         try {
             setLoading(true);
-            const carrierRef = doc(adminDb, 'ediMappings', carrierId);
+            const carrierRef = doc(db, 'ediMappings', carrierId);
             const carrierDoc = await getDoc(carrierRef);
 
             if (!carrierDoc.exists()) {
@@ -275,7 +278,7 @@ const AddCarrierMapping = () => {
         setLoading(true);
         try {
             const carrierId = carrierName.toLowerCase().replace(/\s+/g, '_');
-            const carrierRef = doc(adminDb, 'ediMappings', carrierId);
+            const carrierRef = doc(db, 'ediMappings', carrierId);
 
             // Update carrier document
             await setDoc(carrierRef, {
@@ -400,13 +403,27 @@ const AddCarrierMapping = () => {
     };
 
     const handleTestPrompt = async () => {
+        console.log('handleTestPrompt called');
+        console.log('CSV Headers:', csvHeaders);
+        console.log('CSV Sample:', csvSample);
+        console.log('Current isGeneratingMapping state before test:', isGeneratingMapping);
+        // Temporarily disable the check for isGeneratingMapping for this test if button is clickable but no action
+        // if (isGeneratingMapping) {
+        //     console.log('Exiting handleTestPrompt because isGeneratingMapping is true');
+        //     return;
+        // }
+
         if (!csvHeaders.length || !csvSample.length) {
             setError('Please upload a CSV file first');
+            console.log('Exiting handleTestPrompt: No CSV headers or sample.');
             return;
         }
         setLoading(true);
+        setIsGeneratingMapping(true); // Set generating true for this specific action
+        console.log('Set loading to true, isGeneratingMapping to true');
         try {
             const apiBaseUrl = getApiBaseUrl();
+            console.log('API Base URL for Test Prompt:', apiBaseUrl);
             const response = await fetch(`${apiBaseUrl}/generateEdiMapping`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -417,19 +434,25 @@ const AddCarrierMapping = () => {
                     prompt: carrierPrompt
                 })
             });
+            console.log('Test prompt fetch response status:', response.status);
             if (!response.ok) {
                 const errorText = await response.text();
+                console.error('Test prompt API error text:', errorText);
                 throw new Error(errorText || 'Failed to test prompt');
             }
             const result = await response.json();
-            console.log('Test result:', result);
-            setTestResult(result);
-            setMappings(result.fieldMappings || []);
+            console.log('Test result from API (should be an array):', result);
+            setTestResult({ fieldMappings: Array.isArray(result) ? result : [] });
+            setMappings(Array.isArray(result) ? result : []);
+            enqueueSnackbar('Prompt test successful! Review results.', { variant: 'success' });
         } catch (err) {
-            console.error('Test prompt error:', err);
+            console.error('Test prompt error catch block:', err);
             setError('Failed to test prompt. ' + (err.message || 'Please check your prompt or try again.'));
+            enqueueSnackbar('Failed to test prompt: ' + err.message, { variant: 'error' });
         } finally {
             setLoading(false);
+            setIsGeneratingMapping(false); // Ensure this is set back to false
+            console.log('Test prompt finally block: Set loading to false, isGeneratingMapping to false');
         }
     };
 
@@ -450,69 +473,75 @@ const AddCarrierMapping = () => {
         setEditingMapping(null);
     };
 
-    const renderPromptPlayground = () => (
-        <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-                <Paper sx={{ p: 3, height: '100%' }}>
-                    <Typography variant="h6" gutterBottom>
-                        Prompt Editor
-                    </Typography>
-                    <TextField
-                        fullWidth
-                        multiline
-                        rows={12}
-                        value={carrierPrompt}
-                        onChange={(e) => setCarrierPrompt(e.target.value)}
-                        error={!!validationErrors.prompt}
-                        helperText={validationErrors.prompt}
-                        sx={{ mb: 2 }}
-                    />
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={handleTestPrompt}
-                        disabled={isGeneratingMapping}
-                        startIcon={isGeneratingMapping ? <CircularProgress size={20} color="inherit" /> : <PlayIcon />}
-                    >
-                        Test Prompt
-                    </Button>
-                </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
-                <Paper sx={{ p: 3, height: '100%' }}>
-                    <Typography variant="h6" gutterBottom>
-                        Test Results
-                    </Typography>
-                    {testResult?.fieldMappings?.length > 0 ? (
-                        <TableContainer>
-                            <Table>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>CSV Header</TableCell>
-                                        <TableCell>JSON Path</TableCell>
-                                        <TableCell>Data Type</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {testResult.fieldMappings.map((mapping, index) => (
-                                        <TableRow key={index}>
-                                            <TableCell>{mapping.csvHeader}</TableCell>
-                                            <TableCell>{mapping.jsonKeyPath}</TableCell>
-                                            <TableCell>{mapping.dataType}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    ) : (
-                        <Typography variant="body2" color="text.secondary">
-                            Test results will appear here after running the prompt
+    const renderPromptPlayground = () => {
+        console.log('[RenderPromptPlayground] Current testResult state:', testResult);
+        console.log('[RenderPromptPlayground] testResult.fieldMappings:', testResult?.fieldMappings);
+        console.log('[RenderPromptPlayground] testResult?.fieldMappings?.length > 0:', testResult?.fieldMappings?.length > 0);
+
+        return (
+            <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 3, height: '100%' }}>
+                        <Typography variant="h6" gutterBottom>
+                            Prompt Editor
                         </Typography>
-                    )}
-                </Paper>
+                        <TextField
+                            fullWidth
+                            multiline
+                            rows={12}
+                            value={carrierPrompt}
+                            onChange={(e) => setCarrierPrompt(e.target.value)}
+                            error={!!validationErrors.prompt}
+                            helperText={validationErrors.prompt}
+                            sx={{ mb: 2 }}
+                        />
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={handleTestPrompt}
+                            disabled={isGeneratingMapping || loading}
+                            startIcon={(isGeneratingMapping || loading) ? <CircularProgress size={20} color="inherit" /> : <PlayIcon />}
+                        >
+                            Test Prompt
+                        </Button>
+                    </Paper>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 3, height: '100%' }}>
+                        <Typography variant="h6" gutterBottom>
+                            Test Results
+                        </Typography>
+                        {testResult?.fieldMappings?.length > 0 ? (
+                            <TableContainer>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>CSV Header</TableCell>
+                                            <TableCell>JSON Path</TableCell>
+                                            <TableCell>Data Type</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {testResult.fieldMappings.map((mapping, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell>{mapping.csvHeader}</TableCell>
+                                                <TableCell>{mapping.jsonKeyPath}</TableCell>
+                                                <TableCell>{mapping.dataType}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary">
+                                Test results will appear here after running the prompt
+                            </Typography>
+                        )}
+                    </Paper>
+                </Grid>
             </Grid>
-        </Grid>
-    );
+        );
+    };
 
     const renderStepContent = (step) => {
         switch (step) {

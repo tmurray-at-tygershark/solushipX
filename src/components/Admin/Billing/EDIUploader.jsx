@@ -26,9 +26,9 @@ import {
     InfoOutlined as InfoIcon
 } from '@mui/icons-material';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, serverTimestamp, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../../contexts/AuthContext';
-import { db, adminDb } from '../../../firebase';
+import { db } from '../../../firebase';
 import { getApp } from 'firebase/app';
 import { getStorage } from 'firebase/storage';
 
@@ -47,15 +47,15 @@ const EDIUploader = ({ onUploadComplete }) => {
     const [carrierError, setCarrierError] = useState(false);
     const [carrierOptions, setCarrierOptions] = useState([]);
 
-    // Use the admin database for uploads in the admin section
-    const database = adminDb;
+    // Use the default database for all uploads
+    const databaseToUse = db;
     const collectionName = 'ediUploads';
 
     useEffect(() => {
-        // Fetch carriers from ediMappings
         const fetchCarriers = async () => {
             try {
-                const carriersRef = collection(adminDb, 'ediMappings');
+                // Fetch carriers from ediMappings in default DB
+                const carriersRef = collection(db, 'ediMappings');
                 const snapshot = await getDocs(carriersRef);
                 const options = snapshot.docs.map(doc => ({
                     id: doc.id,
@@ -63,11 +63,13 @@ const EDIUploader = ({ onUploadComplete }) => {
                 }));
                 setCarrierOptions(options);
             } catch (e) {
-                setCarrierOptions([]);
+                console.error("Error fetching carriers:", e);
+                setCarrierOptions([]); // Set to empty on error
+                setError("Could not load carrier options.");
             }
         };
         fetchCarriers();
-    }, []);
+    }, []); // Empty dependency array - fetch carriers once on mount
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -83,19 +85,15 @@ const EDIUploader = ({ onUploadComplete }) => {
         e.preventDefault();
         e.stopPropagation();
         setDragActive(false);
-
-        // Check carrier selection before processing dropped files
         if (!selectedCarrier) {
             setCarrierError(true);
             setError('You must select a carrier before uploading EDI files');
-            // Focus the carrier dropdown by scrolling to it
             const carrierSelect = document.getElementById('carrier-select');
             if (carrierSelect) {
                 carrierSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
             return;
         }
-
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             handleFiles(e.dataTransfer.files);
         }
@@ -103,20 +101,15 @@ const EDIUploader = ({ onUploadComplete }) => {
 
     const onButtonClick = (e) => {
         if (e) e.stopPropagation();
-
-        // Check carrier selection here instead of after file selection
         if (!selectedCarrier) {
             setCarrierError(true);
             setError('You must select a carrier before uploading EDI files');
-            // Focus the carrier dropdown by scrolling to it
             const carrierSelect = document.getElementById('carrier-select');
             if (carrierSelect) {
                 carrierSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
             return;
         }
-
-        // Only proceed with file selection if carrier is selected
         if (fileInputRef.current) {
             fileInputRef.current.click();
         }
@@ -129,29 +122,24 @@ const EDIUploader = ({ onUploadComplete }) => {
     };
 
     const handleFiles = (fileList) => {
-        // We now validate carrier selection before opening file dialog
-        // Validate CSV or PDF file type
         const allowedTypes = ['text/csv', 'application/pdf'];
         const allowedExtensions = ['.csv', '.pdf'];
-
         const newFiles = Array.from(fileList).filter(file => {
             const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
             return allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
         });
-
         if (newFiles.length !== fileList.length) {
-            // Check if *any* valid files were found
             if (newFiles.length === 0) {
                 setError('Only CSV or PDF files are supported.');
             } else {
-                // If some were valid, warn about the ones that weren't
                 setError('Some files were ignored. Only CSV or PDF files are supported.');
             }
-            return;
+            // Do not return here if some files are valid, allow them to be added
         }
-
-        setFiles(prev => [...prev, ...newFiles]);
-        setError(null);
+        if (newFiles.length > 0) {
+            setFiles(prev => [...prev, ...newFiles]);
+            setError(null); // Clear previous error if new valid files are added
+        }
     };
 
     const removeFile = (index) => {
@@ -170,36 +158,30 @@ const EDIUploader = ({ onUploadComplete }) => {
 
     const handleCarrierChange = (event) => {
         setSelectedCarrier(event.target.value);
-        setCarrierError(false);
+        setCarrierError(false); // Clear carrier error when a carrier is selected
+        if (error === 'You must select a carrier before uploading EDI files' || error === "Please select a carrier before uploading") setError(null); // Clear carrier specific error
     };
 
     const uploadFiles = async () => {
         if (files.length === 0) return;
-
-        // Validate carrier selection
         if (!selectedCarrier) {
             setCarrierError(true);
             setError("Please select a carrier before uploading");
             return;
         }
-
         setUploading(true);
         setError(null);
 
         for (let i = 0; i < files.length; i++) {
             if (uploadStatus[i] === 'success') continue;
-
             const file = files[i];
             const fileId = Date.now().toString() + '_' + file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-
-            // Create a custom storage reference that uses the correct bucket URL
             const firebaseApp = getApp();
             const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
             const storageRef = ref(customStorage, `edi-uploads/${currentUser.uid}/${fileId}`);
 
             try {
                 const uploadTask = uploadBytesResumable(storageRef, file);
-
                 uploadTask.on('state_changed',
                     (snapshot) => {
                         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
@@ -212,30 +194,25 @@ const EDIUploader = ({ onUploadComplete }) => {
                     },
                     async () => {
                         try {
-                            // Get download URL
                             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-
-                            // Create record in Firestore - use admin database
-                            const docRef = await addDoc(collection(database, collectionName), {
+                            // USE DEFAULT DB (databaseToUse)
+                            const docRef = await addDoc(collection(databaseToUse, collectionName), {
                                 fileName: file.name,
                                 fileSize: file.size,
                                 fileType: file.type || 'unknown',
                                 uploadedBy: currentUser.uid,
                                 uploadedAt: serverTimestamp(),
                                 downloadURL,
-                                status: 'pending',
-                                processingStatus: 'queued',
+                                status: 'pending', // initial status for client-side, backend will update
+                                processingStatus: 'queued', // For backend processing trigger
                                 storagePath: `edi-uploads/${currentUser.uid}/${fileId}`,
-                                isAdmin: true,
-                                carrier: selectedCarrier // Add the selected carrier to the upload document
+                                // isAdmin: false, // No longer needed to determine DB, set to false or remove
+                                carrier: selectedCarrier
                             });
-
-                            // Update local state
                             setUploadStatus(prev => ({ ...prev, [i]: 'success' }));
                             setFiles(prev => prev.map((f, idx) =>
                                 idx === i ? { ...f, docId: docRef.id } : f
                             ));
-
                             if (onUploadComplete) {
                                 onUploadComplete(docRef.id);
                             }
@@ -252,7 +229,6 @@ const EDIUploader = ({ onUploadComplete }) => {
                 setError(`Error preparing upload for ${file.name}: ${err.message}`);
             }
         }
-
         setUploading(false);
     };
 
@@ -279,7 +255,6 @@ const EDIUploader = ({ onUploadComplete }) => {
                 </Alert>
             )}
 
-            {/* Carrier Selection Dropdown */}
             <Paper
                 elevation={0}
                 sx={{

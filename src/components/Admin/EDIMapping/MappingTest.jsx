@@ -39,24 +39,30 @@ const MappingTest = ({ carrierId, onMappingValidated }) => {
     const fetchTemplates = async () => {
         try {
             const response = await axios.get('/api/edi-mapping/templates');
-            setTemplates(response.data);
-            if (response.data.length > 0) {
-                setSelectedTemplate(response.data[0].id);
+            const templatesData = response.data || [];
+            setTemplates(templatesData);
+            if (templatesData.length > 0) {
+                setSelectedTemplate(templatesData[0].id);
             }
         } catch (error) {
+            console.error('Error fetching templates:', error);
             enqueueSnackbar('Failed to fetch templates', { variant: 'error' });
+            setTemplates([]);
         }
     };
 
     const fetchVersions = async (carrier) => {
         try {
             const response = await axios.get(`/api/edi-mapping/versions/${carrier}`);
-            setVersions(response.data);
-            if (response.data.length > 0) {
-                setSelectedVersion(response.data[0].version);
+            const versionsData = response.data || [];
+            setVersions(versionsData);
+            if (versionsData.length > 0) {
+                setSelectedVersion(versionsData[0].version);
             }
         } catch (error) {
+            console.error('Error fetching versions:', error);
             enqueueSnackbar('Failed to fetch versions', { variant: 'error' });
+            setVersions([]);
         }
     };
 
@@ -74,17 +80,21 @@ const MappingTest = ({ carrierId, onMappingValidated }) => {
                 version: selectedVersion
             });
 
-            setTestResult(response.data);
-            if (response.data.success) {
+            const result = response.data || {};
+            setTestResult(result);
+
+            if (result.success) {
                 enqueueSnackbar('Mapping test successful', { variant: 'success' });
                 if (onMappingValidated) {
-                    onMappingValidated(response.data.result);
+                    onMappingValidated(result.result);
                 }
             } else {
-                enqueueSnackbar('Mapping test failed: ' + response.data.error, { variant: 'error' });
+                enqueueSnackbar('Mapping test failed: ' + (result.error || 'Unknown error'), { variant: 'error' });
             }
         } catch (error) {
-            enqueueSnackbar('Failed to test mapping: ' + error.message, { variant: 'error' });
+            console.error('Error testing mapping:', error);
+            enqueueSnackbar('Failed to test mapping: ' + (error.message || 'Unknown error'), { variant: 'error' });
+            setTestResult({ success: false, error: error.message || 'Unknown error' });
         } finally {
             setLoading(false);
         }
@@ -106,7 +116,7 @@ const MappingTest = ({ carrierId, onMappingValidated }) => {
                                 onChange={(e) => setSelectedTemplate(e.target.value)}
                                 label="Template"
                             >
-                                {templates.map((template) => (
+                                {Array.isArray(templates) && templates.map((template) => (
                                     <MenuItem key={template.id} value={template.id}>
                                         {template.name} (v{template.version})
                                     </MenuItem>
@@ -123,7 +133,7 @@ const MappingTest = ({ carrierId, onMappingValidated }) => {
                                 onChange={(e) => setSelectedVersion(e.target.value)}
                                 label="Version"
                             >
-                                {versions.map((version) => (
+                                {Array.isArray(versions) && versions.map((version) => (
                                     <MenuItem key={version.version} value={version.version}>
                                         v{version.version} ({new Date(version.timestamp).toLocaleDateString()})
                                     </MenuItem>
@@ -170,19 +180,19 @@ const MappingTest = ({ carrierId, onMappingValidated }) => {
                                         Mapping Test Successful
                                     </Typography>
                                     <Typography variant="body2" sx={{ mt: 1 }}>
-                                        Version: {testResult.metadata.version}
+                                        Version: {testResult.metadata?.version || 'N/A'}
                                     </Typography>
                                     <Typography variant="body2">
-                                        Timestamp: {new Date(testResult.metadata.timestamp).toLocaleString()}
+                                        Timestamp: {testResult.metadata?.timestamp ? new Date(testResult.metadata.timestamp).toLocaleString() : 'N/A'}
                                     </Typography>
                                 </Paper>
                             ) : (
                                 <Alert severity="error" sx={{ mt: 2 }}>
-                                    {testResult.error}
+                                    {testResult.error || 'Unknown error occurred'}
                                 </Alert>
                             )}
 
-                            {testResult.success && (
+                            {testResult.success && testResult.result && (
                                 <Box sx={{ mt: 2 }}>
                                     <Typography variant="subtitle2" gutterBottom>
                                         Validation Results:

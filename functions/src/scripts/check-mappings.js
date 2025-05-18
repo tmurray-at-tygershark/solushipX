@@ -1,87 +1,63 @@
 const admin = require('firebase-admin');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore } = require('firebase-admin/firestore'); // This import is for client SDK style, not needed if admin is initialized
 
-// Initialize Firebase Admin with service account
-const serviceAccount = require('../../service-account.json');
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+// Assuming admin SDK is initialized globally in functions/index.js
+// const serviceAccount = require("../../service-account.json"); // Path to your service account key
 
-// Connect to the 'admin' Firestore database
-const adminDb = getFirestore(admin.app(), 'admin');
+// if (admin.apps.length === 0) {
+//   admin.initializeApp({
+//     credential: admin.credential.cert(serviceAccount),
+//   });
+// }
 
-const checkMappings = async () => {
-    try {
-        console.log('Checking EDI mappings structure...');
-        console.log('Using admin database...');
+// Use the globally initialized admin.firestore() instance
+const db = admin.firestore();
+// REMOVE: const adminDb = getFirestore(admin.app(), 'admin');
 
-        // List all collections in the database
-        console.log('\nAvailable collections:');
-        const collections = await adminDb.listCollections();
-        console.log(collections.map(col => col.id));
+async function checkMappings() {
+  console.log("Starting EDI mapping check...");
 
-        // Check ediMappings collection
-        console.log('\nChecking ediMappings collection...');
-        const ediMappingsRef = adminDb.collection('ediMappings');
-        const ediMappingsSnapshot = await ediMappingsRef.get();
-        
-        if (ediMappingsSnapshot.empty) {
-            console.log('ediMappings collection is empty');
-        } else {
-            console.log('Documents in ediMappings:');
-            for (const doc of ediMappingsSnapshot.docs) {
-                console.log(`\nDocument ID: ${doc.id}`);
-                console.log('Data:', JSON.stringify(doc.data(), null, 2));
-                
-                // Check subcollections
-                const subcollections = await doc.ref.listCollections();
-                console.log('Subcollections:', subcollections.map(col => col.id));
-                
-                // Check default subcollection if it exists
-                const defaultRef = doc.ref.collection('default');
-                const defaultSnapshot = await defaultRef.get();
-                if (!defaultSnapshot.empty) {
-                    console.log('Documents in default subcollection:');
-                    for (const defaultDoc of defaultSnapshot.docs) {
-                        console.log(`\nDefault Document ID: ${defaultDoc.id}`);
-                        console.log('Data:', JSON.stringify(defaultDoc.data(), null, 2));
-                    }
-                }
-            }
-        }
+  try {
+    // Check collections in the default database
+    // const collections = await adminDb.listCollections();
+    const collections = await db.listCollections(); // USE DEFAULT DB
+    console.log("Collections found in the default database:");
+    collections.forEach(col => console.log(`- ${col.id}`));
 
-        // Check carriers collection
-        console.log('\nChecking carriers collection...');
-        const carriersRef = adminDb.collection('carriers');
-        const carriersSnapshot = await carriersRef.get();
-        
-        if (carriersSnapshot.empty) {
-            console.log('carriers collection is empty');
-        } else {
-            console.log('Documents in carriers:');
-            for (const doc of carriersSnapshot.docs) {
-                console.log(`\nDocument ID: ${doc.id}`);
-                console.log('Data:', JSON.stringify(doc.data(), null, 2));
-                
-                // Check subcollections
-                const subcollections = await doc.ref.listCollections();
-                console.log('Subcollections:', subcollections.map(col => col.id));
-            }
-        }
+    // Check specific ediMappings collection
+    // const ediMappingsRef = adminDb.collection('ediMappings');
+    const ediMappingsRef = db.collection('ediMappings'); // USE DEFAULT DB
+    const ediMappingsSnapshot = await ediMappingsRef.get();
 
-    } catch (error) {
-        console.error('Error checking mappings:', error);
-        console.error('Error details:', error.message);
-        if (error.code) {
-            console.error('Error code:', error.code);
-        }
-        if (error.stack) {
-            console.error('Stack trace:', error.stack);
-        }
-    } finally {
-        process.exit();
+    console.log(`\nFound ${ediMappingsSnapshot.size} documents in 'ediMappings' collection (default DB):`);
+    if (ediMappingsSnapshot.empty) {
+      console.log("No carrier mappings found in ediMappings.");
     }
-};
+    ediMappingsSnapshot.forEach(doc => {
+      console.log(`  ${doc.id} =>`, JSON.stringify(doc.data()).substring(0, 100) + '...');
+      // Further checks can be added here, e.g., subcollection 'default' and doc 'mapping'
+    });
 
-// Run the check
-checkMappings(); 
+    // Check 'carriers' collection (if it exists and is relevant)
+    // const carriersRef = adminDb.collection('carriers');
+    const carriersRef = db.collection('carriers'); // USE DEFAULT DB
+    const carriersSnapshot = await carriersRef.get();
+    if (!carriersSnapshot.empty) {
+        console.log(`\nFound ${carriersSnapshot.size} documents in 'carriers' collection (default DB):`);
+        carriersSnapshot.forEach(doc => {
+            console.log(`  ${doc.id} =>`, JSON.stringify(doc.data()).substring(0, 100) + '...');
+        });
+    } else {
+        console.log("\n'carriers' collection is empty or does not exist in default DB.");
+    }
+
+  } catch (error) {
+    console.error("Error checking mappings:", error);
+  }
+}
+
+checkMappings().then(() => {
+  console.log("\nMapping check script finished.");
+}).catch(err => {
+    console.error("Script execution failed:", err)
+}); 

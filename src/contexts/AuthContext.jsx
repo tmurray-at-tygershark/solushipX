@@ -7,7 +7,9 @@ import {
     createUserWithEmailAndPassword,
     sendPasswordResetEmail,
     GoogleAuthProvider,
-    signInWithPopup
+    signInWithPopup,
+    getAuth,
+    getIdTokenResult
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -29,56 +31,39 @@ export const AuthProvider = ({ children }) => {
     const [initialized, setInitialized] = useState(false);
 
     useEffect(() => {
+        const auth = getAuth();
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            console.log('=== Auth State Changed ===');
-            console.log('User:', user?.email);
-
             if (user) {
                 try {
-                    // Fetch user data from Firestore
-                    const userDoc = await getDoc(doc(db, 'users', user.uid));
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        console.log('User data from Firestore:', userData);
-                        console.log('Setting user role to:', userData.role);
+                    // Force refresh the token to get latest custom claims
+                    const idTokenResult = await user.getIdTokenResult(true);
 
-                        // Set user with additional data from Firestore
-                        setUser({
-                            ...user,
-                            companyId: userData.companyId,
-                            role: userData.role
-                        });
-                        setUserRole(userData.role);
+                    // Only log if claims or role changes
+                    if (idTokenResult.claims.admin === true) {
+                        setUserRole('admin');
+                    } else if (idTokenResult.claims.super_admin === true) {
+                        setUserRole('super_admin');
                     } else {
-                        console.log('No user document found, creating new one');
-                        // Set default role for new users
-                        await setDoc(doc(db, 'users', user.uid), {
-                            email: user.email,
-                            role: 'user',
-                            createdAt: new Date(),
-                            lastLogin: new Date(),
-                            updatedAt: new Date()
-                        });
-                        setUser(user);
-                        setUserRole('user');
+                        // Fallback to Firestore role if no admin/super_admin claim
+                        const userDocRef = doc(db, "users", user.uid);
+                        const docSnap = await getDoc(userDocRef);
+                        if (docSnap.exists()) {
+                            const userDataFromFirestore = docSnap.data();
+                            setUserRole(userDataFromFirestore.role || 'user');
+                        } else {
+                            setUserRole('user');
+                        }
                     }
-                } catch (error) {
-                    console.error('Error fetching user data:', error);
                     setUser(user);
+                } catch (error) {
+                    console.error('Error in auth state change:', error);
+                    setUser(null);
                     setUserRole(null);
                 }
             } else {
-                console.log('No user, clearing role');
                 setUser(null);
                 setUserRole(null);
             }
-            setLoading(false);
-            setInitialized(true);
-            setError(null);
-            console.log('=====================');
-        }, (error) => {
-            console.error('Auth state change error:', error);
-            setError(error.message);
             setLoading(false);
             setInitialized(true);
         });

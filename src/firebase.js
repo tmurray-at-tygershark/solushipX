@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 // Your web app's Firebase configuration
@@ -16,15 +16,14 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+console.log("Firebase Client Config In Use:", JSON.stringify(firebaseConfig, null, 2));
+console.log("FIREBASE ENV TEST: firebaseConfig:", firebaseConfig);
 
 // Initialize Auth
 const auth = getAuth(app);
 
 // Initialize Firestore - Default database
 const db = getFirestore(app);
-
-// Initialize Firestore - Admin database
-const adminDb = getFirestore(app, "admin");
 
 // Initialize Storage
 const storage = getStorage(app);
@@ -35,14 +34,6 @@ const functions = getFunctions(app);
 // Define callable functions
 const analyzeRatesWithAI = httpsCallable(functions, 'analyzeRatesWithAI');
 const getMapsApiKey = httpsCallable(functions, 'getMapsApiKey');
-
-// Connect to emulator in development
-if (process.env.NODE_ENV === 'development') {
-    connectFunctionsEmulator(functions, 'localhost', 5001);
-    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-    connectFirestoreEmulator(db, 'localhost', 8080);
-    connectFirestoreEmulator(adminDb, 'localhost', 8080);
-}
 
 // Helper function to wrap callable functions
 const wrapCallable = (func) => {
@@ -64,7 +55,6 @@ const wrappedGetMapsApiKey = wrapCallable(getMapsApiKey);
 export {
     auth,
     db,
-    adminDb, // Export the admin database
     storage,
     functions,
     wrappedAnalyzeRatesWithAI,

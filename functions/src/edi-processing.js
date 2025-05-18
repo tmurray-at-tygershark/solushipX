@@ -25,30 +25,6 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true });
 
-// Initialize admin database - use a different approach to access admin database
-const adminDb = admin.firestore();
-// Set the database ID to "admin"
-console.log('Setting up admin database with database ID: admin');
-try {
-  // Use proper admin database reference by setting a direct connection option
-  adminDb._settings = { 
-    ...adminDb._settings, 
-    databaseId: 'admin' 
-  };
-} catch (err) {
-  console.error('Error setting admin database ID:', err);
-}
-
-// Helper function to get the appropriate database
-function getDb(isAdmin = true) {
-  if (isAdmin) {
-    console.log('Using admin database for operation');
-    return adminDb;
-  }
-  console.log('Using regular database for operation');
-  return db;
-}
-
 // Initialize Google Cloud Storage
 const storage = new Storage();
 
@@ -77,8 +53,7 @@ function normalizeHeader(header) {
 exports.onFileUploaded = functions.firestore
   .onDocumentCreated({
     document: 'ediUploads/{docId}',
-    region: 'us-central1',
-    database: 'admin' // Specify the admin database explicitly
+    region: 'us-central1'
   }, async (event) => {
     const snapshot = event.data;
     if (!snapshot) {
@@ -88,16 +63,13 @@ exports.onFileUploaded = functions.firestore
     
     const fileData = snapshot.data();
     const docId = event.params.docId;
-    const isAdmin = fileData.isAdmin || false;
     
     try {
-      // Publish a message to the EDI processing topic
       const messageData = {
         docId,
         storagePath: fileData.storagePath,
         fileName: fileData.fileName,
-        isAdmin,
-        fileType: fileData.fileType || (fileData.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv') // Pass fileType
+        fileType: fileData.fileType || (fileData.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv')
       };
       
       const dataBuffer = Buffer.from(JSON.stringify(messageData));
@@ -105,12 +77,7 @@ exports.onFileUploaded = functions.firestore
       
       console.log(`Message published to ${TOPIC_NAME} for document ${docId}`);
       
-      // Get the appropriate database
-      const database = getDb(isAdmin);
-      
-      // Update the document status in the appropriate collection
-      const collectionPath = 'ediUploads';
-      await database.collection(collectionPath).doc(docId).update({
+      await db.collection('ediUploads').doc(docId).update({
         processingStatus: 'queued',
         queuedAt: admin.firestore.FieldValue.serverTimestamp()
       });
@@ -119,10 +86,7 @@ exports.onFileUploaded = functions.firestore
     } catch (error) {
       console.error('Error queuing file for processing:', error);
       
-      // Update the document with error info in the appropriate collection
-      const database = getDb(isAdmin);
-      const collectionPath = 'ediUploads';
-      await database.collection(collectionPath).doc(docId).update({
+      await db.collection('ediUploads').doc(docId).update({
         processingStatus: 'failed',
         error: error.message,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -165,35 +129,14 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
     
     console.log(`Processing document ${messageDocId}, file: ${fileName}, isAdmin: ${messageIsAdmin}`);
     
-    // Get the appropriate database
-    const database = getDb(messageIsAdmin);
-    console.log(`Database info: ${database._settings ? JSON.stringify(database._settings) : 'No settings'}`);
+    uploadRef = db.collection('ediUploads').doc(messageDocId);
     
-    // Get reference to the upload document in the appropriate collection
-    const collectionPath = 'ediUploads';
-    console.log(`Using collection path: ${collectionPath} to find document ${messageDocId}`);
-    
-    // IMPORTANT: For admin database access, use direct initialization which ensures proper databaseId
-    let uploadData;
-    let directAdminDb;
-    
-    if (messageIsAdmin) {
-      // Create a direct reference to the admin database
-      directAdminDb = admin.firestore(admin.app(), 'admin');
-      console.log('Created direct admin database reference');
-      uploadRef = directAdminDb.collection(collectionPath).doc(messageDocId);
-    } else {
-      uploadRef = database.collection(collectionPath).doc(messageDocId);
-    }
-    
-    // Check if document exists before updating
     const docSnapshot = await uploadRef.get();
     if (!docSnapshot.exists) {
-      throw new Error(`Document ${messageDocId} not found in collection ${collectionPath}. Please check if the document exists.`);
+      throw new Error(`Document ${messageDocId} not found in collection ediUploads. Please check if the document exists.`);
     }
     
-    // Get the upload data, including the carrier and fileType if specified
-    uploadData = docSnapshot.data();
+    const uploadData = docSnapshot.data();
     const carrierName = uploadData.carrier || null;
     const fileType = messageFileType || uploadData.fileType || (fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv'); // Determine file type
     console.log(`Using carrier from upload: ${carrierName || 'Not specified'}`);
@@ -380,6 +323,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
       const { prompt, identifier } = getPromptForCarrier(carrierName, fileType);
       promptIdentifierUsed = identifier;
       console.log(`Processing PDF file with AI using prompt: ${promptIdentifierUsed}...`);
+      const [fileContentBuffer] = await file.download();
       records = await processWithAI(fileContentBuffer, fileName, fileType, prompt, carrierName); 
       fileContentString = 'PDF content (not stored in rawSample for brevity for this path)';
     } else {
@@ -404,17 +348,12 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         validationSummary,
         totalCost: enhancedRecords.reduce((sum, record) => sum + (record.totalCost || 0), 0),
         rawSample: fileType === 'text/csv' ? fileContentString.substring(0, 5000) : 'PDF content not sampled here', 
-        isAdmin: messageIsAdmin || false,
         aiModel: "Gemini 1.5 Pro", // Or set based on which path was taken
         promptUsed: promptIdentifierUsed 
       };
 
     let resultRef;
-    if (messageIsAdmin) {
-      resultRef = await directAdminDb.collection(resultsCollectionPath).add(resultDataToSave);
-    } else {
-      resultRef = await database.collection(resultsCollectionPath).add(resultDataToSave);
-    }
+    resultRef = await db.collection(resultsCollectionPath).add(resultDataToSave);
 
       const updateData = {
         processingStatus: 'completed',
@@ -429,11 +368,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         promptUsed: promptIdentifierUsed
       };
 
-    if (messageIsAdmin && directAdminDb) { // Ensure directAdminDb is used if it was initialized
-        await directAdminDb.collection('ediUploads').doc(messageDocId).update(updateData);
-    } else {
-      await uploadRef.update(updateData);
-    }
+    await uploadRef.update(updateData);
     
     return { success: true, recordCount: enhancedRecords.length, confidenceScore };
 
@@ -818,53 +753,42 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
     
     console.log(`Manual processing initiated for document ${docId}`);
     
-    // Get document directly from the admin database
-    const directAdminDb = admin.firestore(admin.app(), 'admin');
-    const docRef = directAdminDb.collection('ediUploads').doc(docId);
+    const docRef = db.collection('ediUploads').doc(docId);
     const docSnapshot = await docRef.get();
     
     if (!docSnapshot.exists) {
       return res.status(404).json({ 
-        error: `Document ${docId} not found in admin database` 
+        error: `Document ${docId} not found in default database` 
       });
     }
     
     const fileData = docSnapshot.data();
     
-    // Create the message data
     const messageData = {
       docId,
       storagePath: fileData.storagePath,
       fileName: fileData.fileName,
-      isAdmin: true,
-      fileType: fileData.fileType || (fileData.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv') // Pass fileType
+      fileType: fileData.fileType || (fileData.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/csv')
     };
     
-    // Directly call the processing logic instead of using Pub/Sub
     const startTime = Date.now();
     
-    // Create a direct reference to the admin database
-    const uploadRef = directAdminDb.collection('ediUploads').doc(docId);
-    
-    // Update status to processing
-    const statusMessage = fileData.fileType === 'application/pdf' 
+    const statusMessage = messageData.fileType === 'application/pdf' 
         ? 'Processing PDF file...' 
         : 'Processing CSV file...';
-    await uploadRef.update({
+    await docRef.update({
       processingStatus: 'processing',
       processingStatusMessage: statusMessage,
       processingStartedAt: admin.firestore.FieldValue.serverTimestamp(),
       manualProcessing: true
     });
     
-    // Get the file from Cloud Storage
     const bucket = storage.bucket(STORAGE_BUCKET);
     const file = bucket.file(fileData.storagePath);
     
-    // Check if file exists
     const [exists] = await file.exists();
     if (!exists) {
-      await uploadRef.update({
+      await docRef.update({
         processingStatus: 'failed',
         error: 'File not found in storage',
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -873,10 +797,9 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
     }
     
     let fileContentBuffer;
-    let fileContentString;
+    let fileContentStringForSample;
     let records;
 
-    // Download file content based on type
     [fileContentBuffer] = await file.download();
     console.log(`Successfully downloaded file, size: ${fileContentBuffer.length} bytes`);
 
@@ -884,46 +807,152 @@ exports.processEdiManual = functions.https.onRequest(async (req, res) => {
       throw new Error('File is empty');
     }
 
-    // Process the file with Gemini AI based on type
-    const fileType = messageData.fileType; // Get fileType from messageData
-    if (fileType === 'application/pdf') {
-      records = await processWithAI(fileContentBuffer, fileData.fileName, fileType, fileData.carrier || null);
-      fileContentString = `PDF content (${(fileContentBuffer.length / 1024).toFixed(2)} KB)`; // Placeholder
+    const fileTypeToProcess = messageData.fileType;
+    const { prompt } = getPromptForCarrier(fileData.carrier, fileTypeToProcess);
+
+    if (fileTypeToProcess === 'application/pdf') {
+      records = await processWithAI(fileContentBuffer, fileData.fileName, fileTypeToProcess, prompt, fileData.carrier);
+      fileContentStringForSample = `PDF content (${(fileContentBuffer.length / 1024).toFixed(2)} KB)`;
     } else {
-      fileContentString = fileContentBuffer.toString('utf-8');
-      records = await processWithAI(fileContentString, fileData.fileName, 'text/csv', fileData.carrier || null);
+      fileContentStringForSample = fileContentBuffer.toString('utf-8');
+      const initialCsvHeaders = fileContentStringForSample.substring(0, fileContentStringForSample.indexOf('\n')).split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const mappingJson = await getEdiMapping(fileData.carrier, 'text/csv', initialCsvHeaders);
+      if (mappingJson && mappingJson.fieldMappings) {
+         console.log(`Manual Processing: Using stored EDI mapping for ${fileData.carrier} CSV.`);
+        const normalizedHeaderMapManual = {};
+        initialCsvHeaders.forEach(h => { normalizedHeaderMapManual[normalizeHeader(h)] = h; });
+        const parsedCsvRowsManual = [];
+        const streamManual = Readable.from(fileContentStringForSample);
+        await new Promise((resolve, reject) => {
+            streamManual.pipe(csv({ headers: mappingJson.parsingOptions?.useFirstRowAsHeaders === false ? mappingJson.fieldMappings.map(m => m.csvHeader) : initialCsvHeaders, skipLines: mappingJson.parsingOptions?.skipLines === undefined ? 1 : mappingJson.parsingOptions.skipLines, delimiter: mappingJson.parsingOptions?.csvDelimiter || ',', mapValues: ({ header, index, value }) => value.trim().replace(/^"|"$/g, '') })).on('data', (row) => parsedCsvRowsManual.push(row)).on('end', resolve).on('error', reject);
+        });
+        for (const row of parsedCsvRowsManual) {
+          let skipRow = false;
+          if (mappingJson.ignoreRowRules) {
+            for (const rule of mappingJson.ignoreRowRules) {
+              let ruleMet = true;
+              for (const cond of rule.conditions) {
+                let cellValue = row[cond.csvHeader];
+                let comparisonValue = cond.value;
+                let currentConditionMet = false;
+
+                if (cond.dataType) {
+                    cellValue = convertRuleValue(cellValue, cond.dataType);
+                    comparisonValue = convertRuleValue(comparisonValue, cond.dataType);
+                }
+
+                switch (cond.operator) {
+                  case 'equals': currentConditionMet = cellValue === comparisonValue; break;
+                  case 'notEquals': currentConditionMet = cellValue !== comparisonValue; break;
+                  case 'isEmpty': currentConditionMet = cellValue === null || cellValue === undefined || String(cellValue).trim() === ''; break;
+                  case 'isNotEmpty': currentConditionMet = cellValue !== null && cellValue !== undefined && String(cellValue).trim() !== ''; break;
+                  case 'lessThan': currentConditionMet = typeof cellValue === typeof comparisonValue && cellValue < comparisonValue; break;
+                  case 'greaterThan': currentConditionMet = typeof cellValue === typeof comparisonValue && cellValue > comparisonValue; break;
+                  case 'contains': 
+                    currentConditionMet = String(cellValue).toUpperCase().includes(String(comparisonValue).toUpperCase());
+                    break;
+                  case 'notContains': 
+                    currentConditionMet = !String(cellValue).toUpperCase().includes(String(comparisonValue).toUpperCase());
+                    break;
+                  default: console.warn(`Unknown operator in ignore rule: ${cond.operator}`);
+                }
+                if (!currentConditionMet) { ruleMet = false; break; }
+              }
+              if (ruleMet) { skipRow = true; console.log(`Skipping row due to rule: ${rule.ruleDescription}`, JSON.stringify(row).substring(0,300)); break; }
+            }
+          }
+          if (skipRow) continue;
+
+          let record = {};
+          let hasMappedFields = false;
+          for (const mapping of mappingJson.fieldMappings) {
+            const normalizedMappingHeader = normalizeHeader(mapping.csvHeader);
+            const actualCsvHeader = normalizedHeaderMapManual[normalizedMappingHeader];
+            if (!actualCsvHeader || !Object.prototype.hasOwnProperty.call(row, actualCsvHeader)) {
+              console.warn(`[EDI Mapping] Mapping header '${mapping.csvHeader}' did not match any CSV header. Available: [${Object.values(normalizedHeaderMapManual).join(', ')}]`);
+              continue;
+            }
+            let value = row[actualCsvHeader];
+
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+              hasMappedFields = true;
+              let convertedValue = String(value).trim();
+              switch (mapping.dataType) {
+                case 'float': convertedValue = parseFloatSafe(convertedValue); break;
+                case 'integer': convertedValue = parseIntSafe(convertedValue); break;
+                case 'date': 
+                  if (String(convertedValue).length === 8 && /^[0-9]+$/.test(convertedValue)) {
+                     convertedValue = `${convertedValue.substring(0,4)}-${convertedValue.substring(4,6)}-${convertedValue.substring(6,8)}`;
+                  } else if (!isNaN(new Date(convertedValue).getTime())) {
+                     convertedValue = new Date(convertedValue).toISOString().split('T')[0];
+                  } else {
+                     console.warn(`Could not parse date: ${convertedValue} for header ${actualCsvHeader}`);
+                     convertedValue = undefined;
+                  }
+                  break;
+                case 'boolean': convertedValue = String(convertedValue).toLowerCase() === 'true' || convertedValue === '1' || String(convertedValue).toLowerCase() === 'yes'; break;
+              }
+              if (convertedValue !== undefined && !(typeof convertedValue === 'number' && isNaN(convertedValue))){
+                 setByPath(record, mapping.jsonKeyPath, convertedValue);
+              }
+            }
+          }
+          if (hasMappedFields && Object.keys(record).length > 0) {
+             record.carrier = fileData.carrier;
+             record.recordType = record.recordType || mappingJson.defaultValues?.recordType || 'shipment'; 
+             if(mappingJson.defaultValues) {
+                for(const key in mappingJson.defaultValues) {
+                    if (!record[key]) record[key] = mappingJson.defaultValues[key];
+                }
+             }
+             records.push(record);
+          }
+        }
+        console.log(`Manually extracted ${records.length} records`);
+        records = await processWithAI(fileContentStringForSample, fileData.fileName, 'text/csv', prompt, fileData.carrier);
+      } else {
+        records = await processWithAI(fileContentStringForSample, fileData.fileName, 'text/csv', prompt, fileData.carrier);
+      }
     }
     
-    console.log(`Extracted ${records.length} records from the CSV`);
+    console.log(`Manually extracted ${records.length} records`);
     
-    // Save the results to Firestore in the appropriate collection
-    const resultRef = await directAdminDb.collection(resultsCollectionPath).add({
+    const { records: finalRecords, confidenceScore: finalConfidence, internalConfidenceScore: finalInternalConfidence } = await enhanceAndVerifyRecords(records, fileTypeToProcess);
+    
+    const resultRef = await db.collection(resultsCollectionPath).add({
       uploadId: docId,
       fileName: fileData.fileName,
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
-      records,
-      totalRecords: records.length,
-      totalCost: records.reduce((sum, record) => sum + (record.totalCost || 0), 0),
-      rawSample: fileContentString.substring(0, 5000), // Store a sample for debugging
-      isAdmin: true,
-      manualProcessing: true
+      records: finalRecords,
+      totalRecords: finalRecords.length,
+      carrier: fileData.carrier,
+      confidence: finalConfidence / 100,
+      confidenceScore: finalConfidence,
+      internalConfidenceScore: finalInternalConfidence,
+      totalCost: finalRecords.reduce((sum, record) => sum + (record.totalCost || 0), 0),
+      rawSample: fileContentStringForSample.substring(0, 5000),
+      manualProcessing: true,
+      aiModel: "Gemini 1.5 Pro",
+      promptUsed: prompt
     });
     
-    // Update the original upload document
     const processingTimeMs = Date.now() - startTime;
-    await uploadRef.update({
+    await docRef.update({
       processingStatus: 'completed',
       processingTimeMs,
       resultDocId: resultRef.id,
-      recordCount: records.length,
+      recordCount: finalRecords.length,
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
-      confidenceScore: 99.5, // Set high confidence score for manual processing
+      confidenceScore: finalConfidence,
+      internalConfidenceScore: finalInternalConfidence,
+      aiModel: "Gemini 1.5 Pro",
+      promptUsed: prompt
     });
     
     return res.status(200).json({
       success: true,
-      message: `Document ${docId} processed successfully`,
-      recordCount: records.length,
+      message: `Document ${docId} processed successfully via manual trigger`,
+      recordCount: finalRecords.length,
       processingTimeMs
     });
     
@@ -1414,24 +1443,22 @@ function attemptManualJsonExtraction(jsonString) {
 
 // Helper function to get the mapping (NEW) - MODIFIED TO ALWAYS USE ADMIN DB FOR MAPPINGS
 async function getEdiMapping(carrierName, fileType, csvHeadersArray) {
-  if (fileType !== 'text/csv') return null; // Only support CSV for now
+  if (fileType !== 'text/csv') return null;
 
   const carrierId = carrierName.toLowerCase();
-  const mappingsDb = getDb(true); // ALWAYS use admin database for fetching mappings
-  console.log(`Attempting to fetch mapping from ADMIN DB: ediMappings/${carrierId}/default/mapping`);
+  console.log(`Attempting to fetch mapping from DEFAULT DB: ediMappings/${carrierId}/default/mapping`);
 
   try {
-    // Always fetch from ediMappings/{carrierId}/default/mapping
-    const mappingRef = mappingsDb.collection('ediMappings').doc(carrierId).collection('default').doc('mapping');
+    const mappingRef = db.collection('ediMappings').doc(carrierId).collection('default').doc('mapping');
     const mappingDoc = await mappingRef.get();
     if (mappingDoc.exists) {
-      console.log(`Found EDI mapping for ${carrierName} in ediMappings/${carrierId}/default/mapping in ADMIN DB.`);
+      console.log(`Found EDI mapping for ${carrierName} in ediMappings/${carrierId}/default/mapping in DEFAULT DB.`);
       return mappingDoc.data();
     }
-    console.log(`No mapping found for ${carrierName} in ediMappings/${carrierId}/default/mapping in ADMIN DB.`);
+    console.log(`No mapping found for ${carrierName} in ediMappings/${carrierId}/default/mapping in DEFAULT DB.`);
     return null;
   } catch (e) {
-    console.error(`Error fetching EDI mapping for ${carrierName} from ADMIN DB:`, e);
+    console.error(`Error fetching EDI mapping for ${carrierName} from DEFAULT DB:`, e);
     return null;
   }
 }

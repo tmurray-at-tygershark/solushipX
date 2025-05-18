@@ -12,6 +12,7 @@ import NotificationBar from './components/NotificationBar/NotificationBar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
+import UserDetail from './components/Admin/Users/UserDetail.jsx';
 
 // Lazy-loaded Pages
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
@@ -43,6 +44,11 @@ const SystemSettings = lazy(() => import('./components/Admin/Settings/SystemSett
 const CarrierKeys = lazy(() => import('./components/Admin/Carriers/CarrierKeys'));
 const EDIMapping = lazy(() => import('./components/Admin/Billing/EDIMapping'));
 const AddCarrierMapping = lazy(() => import('./components/Admin/Billing/AddCarrierMapping'));
+const CompanyForm = lazy(() => import('./components/Admin/Companies/CompanyForm'));
+const CompanyDetail = lazy(() => import('./components/Admin/Companies/CompanyDetail'));
+const UserForm = lazy(() => import('./components/Admin/Users/UserForm'));
+const UserCompanies = lazy(() => import('./components/Admin/Users/UserCompanies'));
+const ResetPassword = lazy(() => import('./components/Admin/Users/ResetPassword'));
 
 // Loading Component
 const LoadingFallback = () => (
@@ -146,7 +152,15 @@ function AppRoutes() {
                 }>
                     <Route index element={<AdminDashboard />} />
                     <Route path="companies" element={<CompanyList />} />
+                    <Route path="companies/new" element={<CompanyForm />} />
+                    <Route path="companies/:id" element={<CompanyDetail />} />
+                    <Route path="companies/:id/edit" element={<CompanyForm />} />
                     <Route path="users" element={<UserList />} />
+                    <Route path="users/new" element={<UserForm />} />
+                    <Route path="users/:id" element={<UserDetail />} />
+                    <Route path="users/:id/edit" element={<UserForm />} />
+                    <Route path="users/:id/companies" element={<UserCompanies />} />
+                    <Route path="users/:id/reset-password" element={<ResetPassword />} />
                     <Route path="shipments" element={<GlobalShipmentList />} />
                     <Route path="billing" element={<BillingDashboard />} />
                     <Route path="billing/invoice/new" element={<InvoiceForm />} />
