@@ -87,7 +87,7 @@ const OrganizationForm = () => {
         const { name, value } = e.target;
         let newOrgID = formData.orgID;
         if (name === 'name' && !isEditMode) {
-            newOrgID = value.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+            newOrgID = value.toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '');
             setFormData(prev => ({ ...prev, [name]: value, orgID: newOrgID }));
         } else {
             setFormData(prev => ({ ...prev, [name]: value }));
@@ -319,7 +319,7 @@ const OrganizationForm = () => {
                         Cancel
                     </Button>
                     <Button type="submit" variant="contained" color="primary" startIcon={<SaveIcon />} disabled={loading || pageLoading}>
-                        {loading || pageLoading ? <CircularProgress size={20} color="inherit" /> : (isEditMode ? 'Save Changes' : 'Add Organization')}
+                        {loading || pageLoading ? <CircularProgress size={20} color="inherit" /> : (isEditMode ? 'Save Changes' : 'Add Org')}
                     </Button>
                 </Box>
             </Paper>

@@ -267,9 +267,18 @@ const OrganizationList = () => {
                                 paginatedOrganizations.map((org) => (
                                     <TableRow key={org.id} hover>
                                         <TableCell>
-                                            <Typography variant="subtitle2" component="div" noWrap>
+                                            <RouterLink
+                                                to={`/admin/organizations/${org.id}`}
+                                                component={MuiLink}
+                                                sx={{
+                                                    textDecoration: 'none',
+                                                    color: 'inherit',
+                                                    fontWeight: 500,
+                                                    '&:hover': { textDecoration: 'underline' }
+                                                }}
+                                            >
                                                 {org.name}
-                                            </Typography>
+                                            </RouterLink>
                                         </TableCell>
                                         <TableCell>
                                             <Chip label={org.orgID || 'N/A'} size="small" variant="outlined" />
