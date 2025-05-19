@@ -75,6 +75,8 @@ const CompanyForm = () => {
         originAddresses: [],
     });
     const [originalAdminUserIds, setOriginalAdminUserIds] = useState([]);
+    const [companyIdError, setCompanyIdError] = useState('');
+    const [isCheckingCompanyId, setIsCheckingCompanyId] = useState(false);
 
     const [allUsers, setAllUsers] = useState([]);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
@@ -317,6 +319,17 @@ const CompanyForm = () => {
         const humanReadableCompanyID = formData.companyID.trim();
 
         try {
+            // Check for duplicate companyID on create
+            if (!isEditMode) {
+                const q = query(collection(db, 'companies'), where('companyID', '==', humanReadableCompanyID));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    enqueueSnackbar('A company with this Company ID already exists. Please choose a unique Company ID.', { variant: 'error' });
+                    setSaveLoading(false);
+                    return;
+                }
+            }
+
             const now = serverTimestamp();
             const companyDocRef = isEditMode && companyFirestoreId ? doc(db, 'companies', companyFirestoreId) : doc(collection(db, 'companies'));
 
@@ -555,6 +568,31 @@ const CompanyForm = () => {
         // eslint-disable-next-line
     }, [isEditMode, initialLoadComplete]);
 
+    // Add debounced company ID check
+    useEffect(() => {
+        const checkCompanyId = async () => {
+            if (!formData.companyID.trim() || isEditMode) return;
+
+            setIsCheckingCompanyId(true);
+            try {
+                const q = query(collection(db, 'companies'), where('companyID', '==', formData.companyID.trim()));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    setCompanyIdError('This Company ID is already taken');
+                } else {
+                    setCompanyIdError('');
+                }
+            } catch (err) {
+                console.error('Error checking company ID:', err);
+            } finally {
+                setIsCheckingCompanyId(false);
+            }
+        };
+
+        const timeoutId = setTimeout(checkCompanyId, 2000);
+        return () => clearTimeout(timeoutId);
+    }, [formData.companyID, isEditMode]);
+
     if (pageLoading && !initialLoadComplete && isEditMode) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
     }
@@ -621,7 +659,17 @@ const CompanyForm = () => {
                         <TextField fullWidth label="Company Name" name="name" value={formData.name} onChange={handleCompanyDataChange} required />
                     </Grid>
                     <Grid item xs={12} md={6}>
-                        <TextField fullWidth label="Company ID (Human-readable, e.g., COMPANY-NAME)" name="companyID" value={formData.companyID} onChange={handleCompanyDataChange} required disabled={isEditMode && formData.companyID !== ''} />
+                        <TextField
+                            fullWidth
+                            label="Company ID (Human-readable, e.g., COMPANY-NAME)"
+                            name="companyID"
+                            value={formData.companyID}
+                            onChange={handleCompanyDataChange}
+                            required
+                            disabled={isEditMode && formData.companyID !== ''}
+                            error={Boolean(companyIdError)}
+                            helperText={companyIdError || (isCheckingCompanyId ? 'Checking availability...' : '')}
+                        />
                     </Grid>
                     <Grid item xs={12} md={6}>
                         <FormControl fullWidth required>
