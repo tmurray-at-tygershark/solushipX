@@ -30,6 +30,8 @@ const OrganizationForm = () => {
     const [loading, setLoading] = useState(false);
     const [pageLoading, setPageLoading] = useState(isEditMode);
     const [formErrors, setFormErrors] = useState({});
+    const [orgIdError, setOrgIdError] = useState('');
+    const [isCheckingOrgId, setIsCheckingOrgId] = useState(false);
 
     const fetchInitialData = useCallback(async () => {
         setPageLoading(true);
@@ -83,6 +85,28 @@ const OrganizationForm = () => {
         fetchInitialData();
     }, [fetchInitialData]);
 
+    useEffect(() => {
+        const checkOrgId = async () => {
+            if (!formData.orgID.trim() || isEditMode) return;
+            setIsCheckingOrgId(true);
+            try {
+                const q = query(collection(db, 'organizations'), where('orgID', '==', formData.orgID.trim()));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    setOrgIdError('This Organization ID is already taken');
+                } else {
+                    setOrgIdError('');
+                }
+            } catch (err) {
+                console.error('Error checking org ID:', err);
+            } finally {
+                setIsCheckingOrgId(false);
+            }
+        };
+        const timeoutId = setTimeout(checkOrgId, 2000);
+        return () => clearTimeout(timeoutId);
+    }, [formData.orgID, isEditMode]);
+
     const handleInputChange = (e) => {
         const { name, value } = e.target;
         let newOrgID = formData.orgID;
@@ -109,6 +133,7 @@ const OrganizationForm = () => {
         if (!formData.name.trim()) errors.name = 'Organization name is required.';
         if (!formData.orgID.trim()) errors.orgID = 'Organization ID (human-readable) is required.';
         if (!formData.ownerID) errors.ownerID = 'Owner is required.';
+        if (orgIdError) errors.orgID = orgIdError;
         setFormErrors(errors);
         return Object.keys(errors).length === 0;
     };
@@ -132,6 +157,17 @@ const OrganizationForm = () => {
         console.log("handleSubmit: New Admin Selections from form (target state):", newAdminSelections);
 
         try {
+            // BACKEND: Double-check for duplicate orgID right before writing (race condition safe)
+            if (!isEditMode) {
+                const q2 = query(collection(db, 'organizations'), where('orgID', '==', humanReadableOrgID));
+                const snap2 = await getDocs(q2);
+                if (!snap2.empty) {
+                    enqueueSnackbar('An organization with this Organization ID was just created. Please choose a unique Organization ID.', { variant: 'error' });
+                    setLoading(false);
+                    return;
+                }
+            }
+
             const orgDataToSave = {
                 name: formData.name.trim(),
                 orgID: humanReadableOrgID,
@@ -239,8 +275,8 @@ const OrganizationForm = () => {
                             name="orgID"
                             value={formData.orgID}
                             onChange={handleInputChange}
-                            error={!!formErrors.orgID}
-                            helperText={formErrors.orgID}
+                            error={!!formErrors.orgID || !!orgIdError}
+                            helperText={formErrors.orgID || orgIdError || (isCheckingOrgId ? 'Checking availability...' : '')}
                             required
                             disabled={isEditMode}
                         />

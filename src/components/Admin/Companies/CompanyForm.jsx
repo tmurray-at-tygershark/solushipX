@@ -319,12 +319,23 @@ const CompanyForm = () => {
         const humanReadableCompanyID = formData.companyID.trim();
 
         try {
-            // Check for duplicate companyID on create
+            // Check for duplicate companyID on create (frontend)
             if (!isEditMode) {
                 const q = query(collection(db, 'companies'), where('companyID', '==', humanReadableCompanyID));
                 const snap = await getDocs(q);
                 if (!snap.empty) {
                     enqueueSnackbar('A company with this Company ID already exists. Please choose a unique Company ID.', { variant: 'error' });
+                    setSaveLoading(false);
+                    return;
+                }
+            }
+
+            // BACKEND: Double-check for duplicate companyID right before writing (race condition safe)
+            if (!isEditMode) {
+                const q2 = query(collection(db, 'companies'), where('companyID', '==', humanReadableCompanyID));
+                const snap2 = await getDocs(q2);
+                if (!snap2.empty) {
+                    enqueueSnackbar('A company with this Company ID was just created. Please choose a unique Company ID.', { variant: 'error' });
                     setSaveLoading(false);
                     return;
                 }
