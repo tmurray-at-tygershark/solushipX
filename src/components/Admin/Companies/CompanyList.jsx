@@ -31,8 +31,9 @@ import {
 import './CompanyList.css';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
+import { Link as MuiLink } from '@mui/material';
 
 const CompanyList = () => {
     const [companies, setCompanies] = useState([]);
@@ -159,7 +160,7 @@ const CompanyList = () => {
                 <Table>
                     <TableHead>
                         <TableRow>
-                            <TableCell>Company Name</TableCell>
+                            <TableCell>Name</TableCell>
                             <TableCell>Company ID</TableCell>
                             <TableCell>Status</TableCell>
                             <TableCell>Created At</TableCell>
@@ -168,8 +169,21 @@ const CompanyList = () => {
                     </TableHead>
                     <TableBody>
                         {filteredCompanies.map((company) => (
-                            <TableRow key={company.id}>
-                                <TableCell>{company.name}</TableCell>
+                            <TableRow key={company.id} hover>
+                                <TableCell>
+                                    <RouterLink
+                                        to={`/admin/companies/${company.id}`}
+                                        component={MuiLink}
+                                        sx={{
+                                            textDecoration: 'none',
+                                            color: 'inherit',
+                                            fontWeight: 'medium',
+                                            '&:hover': { textDecoration: 'underline' }
+                                        }}
+                                    >
+                                        {company.name}
+                                    </RouterLink>
+                                </TableCell>
                                 <TableCell>{company.companyID}</TableCell>
                                 <TableCell>
                                     <Chip

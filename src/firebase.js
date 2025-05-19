@@ -16,8 +16,8 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-console.log("Firebase Client Config In Use:", JSON.stringify(firebaseConfig, null, 2));
-console.log("FIREBASE ENV TEST: firebaseConfig:", firebaseConfig);
+//console.log("Firebase Client Config In Use:", JSON.stringify(firebaseConfig, null, 2));
+//console.log("FIREBASE ENV TEST: firebaseConfig:", firebaseConfig);
 
 // Initialize Auth
 const auth = getAuth(app);

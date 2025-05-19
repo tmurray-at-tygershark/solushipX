@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Box,
     Typography,
@@ -9,7 +9,6 @@ import {
     Button,
     TextField,
     FormControl,
-    InputLabel,
     Select,
     MenuItem,
     Alert,
@@ -25,31 +24,31 @@ import {
     TableHead,
     TableRow,
     IconButton,
-    Tooltip,
     Grid,
     Chip,
     Breadcrumbs,
     Link,
     Stack,
-    Divider
+    Divider,
+    List,
+    ListItem,
+    ListItemText,
+    Checkbox,
+    FormControlLabel
 } from '@mui/material';
 import {
-    Add as AddIcon,
-    Delete as DeleteIcon,
-    Save as SaveIcon,
-    Upload as UploadIcon,
-    Help as HelpIcon,
-    ArrowBack as ArrowBackIcon,
-    ArrowForward as ArrowForwardIcon,
-    PlayArrow as PlayIcon,
-    Edit as EditIcon
+    CloudUpload as CloudUploadIcon,
+    CheckCircleOutline as CheckCircleIcon,
+    ErrorOutline as ErrorOutlineIcon,
+    NavigateNext as NavigateNextIcon,
+    NavigateBefore as NavigateBeforeIcon
 } from '@mui/icons-material';
-import { collection, addDoc, setDoc, doc, getDocs, getDoc } from 'firebase/firestore';
-import { db } from '../../../firebase';
+import { collection, doc, getDoc, setDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { db, functions } from '../../../firebase';
 import Papa from 'papaparse';
 import { useSnackbar } from 'notistack';
-import axios from 'axios';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
 
 const STEPS = [
     { label: 'Carrier Details', path: 'details' },
@@ -113,7 +112,7 @@ const AddCarrierMapping = () => {
         }
     };
 
-    const loadExistingMapping = async () => {
+    const loadExistingMapping = useCallback(async () => {
         try {
             setLoading(true);
             const carrierRef = doc(db, 'ediMappings', carrierId);
@@ -162,37 +161,19 @@ const AddCarrierMapping = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [carrierId, enqueueSnackbar]);
+
+    useEffect(() => {
+        if (carrierId) {
+            loadExistingMapping();
+        }
+    }, [carrierId, loadExistingMapping]);
 
     const navigateToStep = (stepIndex) => {
         if (validateStep(activeStep)) {
             setActiveStep(stepIndex);
             navigate(`/admin/billing/edi-mapping/new/${STEPS[stepIndex].path}`);
         }
-    };
-
-    const handleNext = () => {
-        const valid = validateStep(activeStep);
-        if (valid) {
-            setActiveStep((prevStep) => prevStep + 1);
-        }
-    };
-
-    const handleBack = () => {
-        setActiveStep((prevStep) => prevStep - 1);
-    };
-
-    const handleAcceptHeaders = () => {
-        setHeadersAccepted(true);
-        setActiveStep((prevStep) => prevStep + 1);
-    };
-
-    const handleRejectHeaders = () => {
-        setCsvFile(null);
-        setCsvHeaders([]);
-        setCsvSample([]);
-        setHeadersAccepted(false);
-        setActiveStep(1);
     };
 
     const handleFileUpload = async (event) => {
@@ -232,40 +213,6 @@ const AddCarrierMapping = () => {
                     }
                 }
             });
-        }
-    };
-
-    const handleGenerateMapping = async () => {
-        if (!csvHeaders.length || !csvSample.length) {
-            setError('Please upload a CSV file first');
-            return;
-        }
-        setLoading(true);
-        setIsGeneratingMapping(true);
-        try {
-            const apiBaseUrl = getApiBaseUrl();
-            const response = await fetch(`${apiBaseUrl}/generateEdiMapping`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    carrierName,
-                    csvHeadersString: csvHeaders.join(','),
-                    sampleDataRows: csvSample.slice(0, 5),
-                    prompt: carrierPrompt
-                })
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || 'Failed to get AI mapping suggestion');
-            }
-            const aiMapping = await response.json();
-            setMappings(aiMapping.fieldMappings || []);
-            setPromptUsedForGeneration(aiMapping.prompt || carrierPrompt);
-        } catch (err) {
-            setError('Failed to get AI mapping suggestion. ' + (err.message || 'Please check your prompt or try again.'));
-        } finally {
-            setLoading(false);
-            setIsGeneratingMapping(false);
         }
     };
 
@@ -500,7 +447,7 @@ const AddCarrierMapping = () => {
                             color="primary"
                             onClick={handleTestPrompt}
                             disabled={isGeneratingMapping || loading}
-                            startIcon={(isGeneratingMapping || loading) ? <CircularProgress size={20} color="inherit" /> : <PlayIcon />}
+                            startIcon={(isGeneratingMapping || loading) ? <CircularProgress size={20} color="inherit" /> : <NavigateNextIcon />}
                         >
                             Test Prompt
                         </Button>
@@ -610,7 +557,7 @@ const AddCarrierMapping = () => {
                                 onChange={handleFileUpload}
                                 style={{ display: 'none' }}
                             />
-                            <UploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                            <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
                             <Typography variant="h6" gutterBottom>
                                 {csvFile ? csvFile.name : dragActive ? 'Drop your CSV file here' : 'Click or drag CSV file to upload'}
                             </Typography>
@@ -654,7 +601,13 @@ const AddCarrierMapping = () => {
                             <Button
                                 variant="outlined"
                                 color="error"
-                                onClick={handleRejectHeaders}
+                                onClick={() => {
+                                    setCsvFile(null);
+                                    setCsvHeaders([]);
+                                    setCsvSample([]);
+                                    setHeadersAccepted(false);
+                                    navigateToStep(1);
+                                }}
                             >
                                 Reject & Upload Different File
                             </Button>
@@ -726,14 +679,14 @@ const AddCarrierMapping = () => {
                                                             onClick={() => handleSaveMapping(index)}
                                                             color="primary"
                                                         >
-                                                            <SaveIcon />
+                                                            <CheckCircleIcon />
                                                         </IconButton>
                                                     ) : (
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => handleEditMapping(index)}
                                                         >
-                                                            <EditIcon />
+                                                            <NavigateNextIcon />
                                                         </IconButton>
                                                     )}
                                                 </TableCell>
@@ -803,7 +756,7 @@ const AddCarrierMapping = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
                 <Button
                     onClick={() => navigate('/admin/billing/edi-mapping')}
-                    startIcon={<ArrowBackIcon />}
+                    startIcon={<NavigateBeforeIcon />}
                     disabled={loading}
                 >
                     Cancel
@@ -812,7 +765,7 @@ const AddCarrierMapping = () => {
                     {activeStep > 0 && (
                         <Button
                             onClick={() => navigateToStep(activeStep - 1)}
-                            startIcon={<ArrowBackIcon />}
+                            startIcon={<NavigateBeforeIcon />}
                             disabled={loading}
                             sx={{ mr: 1 }}
                         >
@@ -823,7 +776,7 @@ const AddCarrierMapping = () => {
                         <Button
                             onClick={() => navigateToStep(activeStep + 1)}
                             variant="contained"
-                            endIcon={<ArrowForwardIcon />}
+                            endIcon={<NavigateNextIcon />}
                             disabled={loading || (activeStep === 0 && !carrierName) || (activeStep === 1 && !csvFile)}
                         >
                             Next
@@ -832,7 +785,7 @@ const AddCarrierMapping = () => {
                         <Button
                             onClick={handleSave}
                             variant="contained"
-                            startIcon={<SaveIcon />}
+                            startIcon={<CheckCircleIcon />}
                             disabled={loading || !mappings.length}
                         >
                             {loading ? <CircularProgress size={24} /> : 'Save'}

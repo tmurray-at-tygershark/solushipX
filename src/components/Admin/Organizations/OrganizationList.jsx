@@ -233,7 +233,7 @@ const OrganizationList = () => {
                     onClick={() => navigate('/admin/organizations/new')}
                     sx={{ whiteSpace: 'nowrap' }}
                 >
-                    Add Organization
+                    Add Org
                 </Button>
             </Box>
 
