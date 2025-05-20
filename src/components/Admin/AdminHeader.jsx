@@ -55,8 +55,8 @@ const AdminHeader = () => {
                     <ul className="navbar-nav me-auto"></ul>
                     <ul className="navbar-nav ms-auto">
                         <li className="nav-item">
-                            <Link className={`nav-link ${location.pathname === '/admin' || location.pathname === '/admin/' ? 'active' : ''}`} to="/admin">
-                                <span>Dashboard</span>
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/carriers') ? 'active' : ''}`} to="/admin/carriers">
+                                <span>Carriers</span>
                             </Link>
                         </li>
                         <li className="nav-item">
@@ -134,4 +134,4 @@ const AdminHeader = () => {
     );
 };
 
-export default AdminHeader; 
+export default AdminHeader;

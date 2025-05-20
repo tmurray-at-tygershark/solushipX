@@ -33,7 +33,7 @@ import {
     Save as SaveIcon,
     Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import './Roles.css';
 
@@ -149,11 +149,25 @@ const RoleManagement = () => {
         setError(null);
 
         try {
+            // Check for duplicate role name (case-insensitive, excluding self on edit)
+            const rolesRef = collection(db, 'roles');
+            const querySnapshot = await getDocs(rolesRef);
+            const nameLower = formData.name.trim().toLowerCase();
+            const duplicate = querySnapshot.docs.find(docSnap => {
+                const data = docSnap.data();
+                return data.name && data.name.trim().toLowerCase() === nameLower && (!selectedRole || docSnap.id !== selectedRole.id);
+            });
+            if (duplicate) {
+                setError('A role with this name already exists. Please choose a unique name.');
+                setLoading(false);
+                return;
+            }
+
             const roleData = {
                 name: formData.name,
                 description: formData.description,
                 permissions: formData.permissions,
-                updatedAt: new Date(),
+                updatedAt: serverTimestamp(),
             };
 
             if (selectedRole) {
@@ -161,7 +175,7 @@ const RoleManagement = () => {
                 await updateDoc(doc(db, 'roles', selectedRole.id), roleData);
             } else {
                 // Create new role
-                roleData.createdAt = new Date();
+                roleData.createdAt = serverTimestamp();
                 await addDoc(collection(db, 'roles'), roleData);
             }
 

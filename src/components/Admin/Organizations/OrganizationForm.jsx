@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
     Box, Typography, Paper, Grid, TextField, Button, CircularProgress, FormControl,
-    InputLabel, Select, MenuItem, Autocomplete, Stack, Breadcrumbs, Link as MuiLink, Alert, FormHelperText
+    InputLabel, Select, MenuItem, Autocomplete, Stack, Breadcrumbs, Link as MuiLink, Alert, FormHelperText, Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import { Save as SaveIcon, Cancel as CancelIcon } from '@mui/icons-material';
 import { doc, getDoc, setDoc, collection, getDocs, serverTimestamp, writeBatch, addDoc, updateDoc, arrayUnion, arrayRemove, FieldValue, query, where } from 'firebase/firestore';
@@ -32,6 +32,7 @@ const OrganizationForm = () => {
     const [formErrors, setFormErrors] = useState({});
     const [orgIdError, setOrgIdError] = useState('');
     const [isCheckingOrgId, setIsCheckingOrgId] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
     const fetchInitialData = useCallback(async () => {
         setPageLoading(true);
@@ -357,8 +358,52 @@ const OrganizationForm = () => {
                     <Button type="submit" variant="contained" color="primary" startIcon={<SaveIcon />} disabled={loading || pageLoading}>
                         {loading || pageLoading ? <CircularProgress size={20} color="inherit" /> : (isEditMode ? 'Save Changes' : 'Add Org')}
                     </Button>
+                    {isEditMode && (
+                        <Button
+                            variant="contained"
+                            color="error"
+                            sx={{ ml: 2 }}
+                            onClick={() => setShowDeleteDialog(true)}
+                        >
+                            Delete Organization
+                        </Button>
+                    )}
                 </Box>
             </Paper>
+
+            {/* Delete Confirmation Dialog */}
+            {isEditMode && (
+                <Dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)}>
+                    <DialogTitle>Confirm Delete</DialogTitle>
+                    <DialogContent>
+                        Are you sure you want to delete this organization? This action cannot be undone.
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setShowDeleteDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={async () => {
+                                setShowDeleteDialog(false);
+                                setLoading(true);
+                                try {
+                                    await setDoc(doc(db, 'organizations', routeOrgFirestoreId), { status: 'deleted', updatedAt: serverTimestamp() }, { merge: true });
+                                    enqueueSnackbar('Organization deleted (status set to deleted).', { variant: 'success' });
+                                    navigate('/admin/organizations');
+                                } catch (err) {
+                                    enqueueSnackbar('Error deleting organization: ' + err.message, { variant: 'error' });
+                                } finally {
+                                    setLoading(false);
+                                }
+                            }}
+                            color="error"
+                            variant="contained"
+                        >
+                            Delete
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            )}
         </Box>
     );
 };

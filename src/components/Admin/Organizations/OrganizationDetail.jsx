@@ -122,10 +122,22 @@ const OrganizationDetail = () => {
     return (
         <Box sx={{ p: { xs: 2, sm: 3 } }}>
             <Box sx={{ mb: 3 }}>
-                <Typography variant="h4" component="h1" sx={{ display: 'flex', alignItems: 'center' }}>
-                    {organization.name}
-                    {getStatusChip(organization.status)}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Typography variant="h4" component="h1">
+                            {organization.name}
+                        </Typography>
+                        {getStatusChip(organization.status)}
+                    </Box>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<EditIcon />}
+                        onClick={() => navigate(`/admin/organizations/${orgId}/edit`)}
+                    >
+                        Edit Organization
+                    </Button>
+                </Box>
                 <Breadcrumbs aria-label="breadcrumb" sx={{ mt: 1 }}>
                     <RouterLink component={MuiLink} to="/admin" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
                         Admin
@@ -142,14 +154,6 @@ const OrganizationDetail = () => {
                     <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
                             <Typography variant="h6">Organization Details</Typography>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={<EditIcon />}
-                                onClick={() => navigate(`/admin/organizations/${orgId}/edit`)}
-                            >
-                                Edit Organization
-                            </Button>
                         </Stack>
                         <Grid container spacing={2}>
                             <Grid item xs={12} sm={6}>

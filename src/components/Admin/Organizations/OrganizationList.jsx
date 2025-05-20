@@ -39,7 +39,7 @@ import {
     DeleteForever as DeleteForeverIcon,
     Apartment as ApartmentIcon // Icon for Organizations
 } from '@mui/icons-material';
-import { collection, getDocs, query, orderBy, doc, deleteDoc, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, setDoc, serverTimestamp, where } from 'firebase/firestore';
 import { db, functions } from '../../../firebase';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -81,8 +81,9 @@ const OrganizationList = () => {
 
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedOrg, setSelectedOrg] = useState(null);
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [orgToDelete, setOrgToDelete] = useState(null);
 
     // Fetch all companies once to map IDs to names for display
     const fetchAllCompanies = useCallback(async () => {
@@ -147,22 +148,20 @@ const OrganizationList = () => {
     };
 
     const openDeleteDialog = (org) => {
-        setSelectedOrg(org); // Set the org to be potentially deleted
-        setDeleteDialogOpen(true);
+        setOrgToDelete(org);
+        setShowDeleteDialog(true);
         handleActionsClose();
     };
 
     const handleConfirmDelete = async () => {
-        if (!selectedOrg) return;
+        if (!orgToDelete) return;
         setIsDeleting(true);
         try {
-            // TODO: Implement pre-delete checks (e.g., if org owns active companies or has users)
-            // For now, direct delete:
-            await deleteDoc(doc(db, 'organizations', selectedOrg.id));
-            enqueueSnackbar(`Organization '${selectedOrg.name}' deleted successfully.`, { variant: 'success' });
-            setDeleteDialogOpen(false);
-            setSelectedOrg(null);
-            fetchOrganizations(); // Refresh the list
+            await setDoc(doc(db, 'organizations', orgToDelete.id), { status: 'deleted', updatedAt: serverTimestamp() }, { merge: true });
+            enqueueSnackbar(`Organization '${orgToDelete.name}' deleted (status set to deleted).`, { variant: 'success' });
+            setShowDeleteDialog(false);
+            setOrgToDelete(null);
+            fetchOrganizations();
         } catch (err) {
             console.error('Error deleting organization:', err);
             enqueueSnackbar(`Failed to delete organization: ${err.message}`, { variant: 'error' });
@@ -171,10 +170,12 @@ const OrganizationList = () => {
         }
     };
 
-    const filteredOrganizations = organizations.filter(org =>
-        (org.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (org.orgID?.toLowerCase() || '').includes(searchTerm.toLowerCase())
-    );
+    const filteredOrganizations = organizations
+        .filter(org => org.status !== 'deleted')
+        .filter(org =>
+            (org.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+            (org.orgID?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+        );
 
     const paginatedOrganizations = filteredOrganizations.slice(
         (page - 1) * ITEMS_PER_PAGE,
@@ -242,12 +243,12 @@ const OrganizationList = () => {
                     <Table stickyHeader>
                         <TableHead>
                             <TableRow>
-                                <TableCell>Org Name</TableCell>
-                                <TableCell>Org ID</TableCell>
-                                <TableCell>Connected Companies</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Last Updated</TableCell>
-                                <TableCell align="right">Actions</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Org Name</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Org ID</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Connected Companies</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Last Updated</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -333,19 +334,18 @@ const OrganizationList = () => {
             </Menu>
 
             <Dialog
-                open={deleteDialogOpen}
-                onClose={() => { setDeleteDialogOpen(false); setSelectedOrg(null); }}
+                open={showDeleteDialog}
+                onClose={() => { setShowDeleteDialog(false); setOrgToDelete(null); }}
             >
                 <DialogTitle>Confirm Deletion</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        Are you sure you want to delete the organization "<strong>{selectedOrg?.name}</strong>"?
+                        Are you sure you want to delete the organization "<strong>{orgToDelete?.name}</strong>"?
                         This action cannot be undone.
-                        {/* TODO: Add warning about owned companies if applicable after check */}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => { setDeleteDialogOpen(false); setSelectedOrg(null); }} disabled={isDeleting}>Cancel</Button>
+                    <Button onClick={() => { setShowDeleteDialog(false); setOrgToDelete(null); }} disabled={isDeleting}>Cancel</Button>
                     <Button onClick={handleConfirmDelete} color="error" variant="contained" disabled={isDeleting}>
                         {isDeleting ? <CircularProgress size={20} color="inherit" /> : 'Confirm Delete'}
                     </Button>

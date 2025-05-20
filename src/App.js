@@ -55,6 +55,9 @@ const OrganizationList = lazy(() => import('./components/Admin/Organizations/Org
 const OrganizationForm = lazy(() => import('./components/Admin/Organizations/OrganizationForm'));
 const OrganizationDetail = lazy(() => import('./components/Admin/Organizations/OrganizationDetail'));
 
+// New Admin Carriers component
+const AdminCarriers = lazy(() => import('./components/Admin/Carriers/AdminCarriers'));
+
 // Loading Component
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -194,6 +197,7 @@ function AppRoutes() {
                     <Route path="billing/edi-mapping/new/review" element={<AddCarrierMapping />} />
                     <Route path="billing/edi-mapping/:carrierId/view" element={<AddCarrierMapping />} />
                     <Route path="billing/edi-mapping/:carrierId/edit" element={<AddCarrierMapping />} />
+                    <Route path="carriers" element={<AdminCarriers />} />
                 </Route>
 
                 {/* Fallback Route */}
