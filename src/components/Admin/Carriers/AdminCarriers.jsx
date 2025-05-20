@@ -31,6 +31,7 @@ const AdminCarriers = () => {
     const [formData, setFormData] = useState({
         name: '',
         carrierID: '',
+        accountNumber: '',
         type: 'courier',
         enabled: true,
         hostURL: '',
@@ -82,6 +83,7 @@ const AdminCarriers = () => {
             setFormData({
                 name: carrier.name || '',
                 carrierID: carrier.carrierID || '',
+                accountNumber: carrier.accountNumber || '',
                 type: carrier.type || 'courier',
                 enabled: carrier.enabled ?? true,
                 status: carrier.status || 'enabled',
@@ -98,6 +100,7 @@ const AdminCarriers = () => {
             setFormData({
                 name: '',
                 carrierID: '',
+                accountNumber: '',
                 type: 'courier',
                 enabled: true,
                 hostURL: '',
@@ -122,6 +125,7 @@ const AdminCarriers = () => {
         setFormData({
             name: '',
             carrierID: '',
+            accountNumber: '',
             type: 'courier',
             enabled: true,
             hostURL: '',
@@ -208,15 +212,16 @@ const AdminCarriers = () => {
         if (carrierIdError) {
             return;
         }
-
+        if (!formData.accountNumber || formData.accountNumber.trim() === '') {
+            setError('Account Number is required.');
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
             let logoFileName = formData.logoFileName;
             if (logoFile) {
-                // Simulate upload and use file name
                 logoFileName = logoFile.name;
-                // In production, upload to Firebase Storage and get the URL or file name
             }
             const carrierData = {
                 ...formData,
@@ -388,6 +393,9 @@ const AdminCarriers = () => {
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                     Carrier ID: {carrier.carrierID || 'N/A'}
                                 </Typography>
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                    Account #: {carrier.accountNumber || 'N/A'}
+                                </Typography>
                             </CardContent>
                         </Card>
                     </Grid>
@@ -419,6 +427,16 @@ const AdminCarriers = () => {
                                     required
                                     error={!!carrierIdError}
                                     helperText={carrierIdError}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Account Number"
+                                    name="accountNumber"
+                                    value={formData.accountNumber}
+                                    onChange={handleFormChange}
+                                    required
                                 />
                             </Grid>
                             <Grid item xs={12} sm={6}>
