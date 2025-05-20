@@ -174,6 +174,7 @@ function AppRoutes() {
                     <Route path="users/:id/companies" element={<UserCompanies />} />
                     <Route path="users/:id/reset-password" element={<ResetPassword />} />
                     <Route path="shipments" element={<GlobalShipmentList />} />
+                    <Route path="shipment/:id" element={<ShipmentDetail />} />
                     <Route path="billing" element={<BillingDashboard />} />
                     <Route path="billing/invoice/new" element={<InvoiceForm />} />
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />

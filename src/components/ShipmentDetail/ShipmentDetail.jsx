@@ -518,6 +518,7 @@ const ShipmentDetail = () => {
     const [error, setError] = useState(null);
     const [trackingRecords, setTrackingRecords] = useState([]);
     const [isMapReady, setIsMapReady] = useState(false);
+    const [customers, setCustomers] = useState({});
 
     const mapStyles = [
         {
@@ -633,18 +634,16 @@ const ShipmentDetail = () => {
         const fetchShipment = async () => {
             try {
                 setLoading(true);
-                // Query by shipmentId
-                const shipmentsRef = collection(db, 'shipments');
-                const q = query(shipmentsRef, where('shipmentId', '==', id));
-                const querySnapshot = await getDocs(q);
+                // Fetch by document ID
+                const docRef = doc(db, 'shipments', id);
+                const docSnap = await getDoc(docRef);
 
-                if (!querySnapshot.empty) {
-                    const shipmentDoc = querySnapshot.docs[0];
-                    const shipmentData = { id: shipmentDoc.id, ...shipmentDoc.data() };
+                if (docSnap.exists()) {
+                    const shipmentData = { id: docSnap.id, ...docSnap.data() };
 
                     // Fetch tracking data
                     const trackingRef = collection(db, 'tracking');
-                    const trackingQuery = query(trackingRef, where('shipmentId', '==', id));
+                    const trackingQuery = query(trackingRef, where('shipmentId', '==', shipmentData.shipmentId));
                     const trackingSnapshot = await getDocs(trackingQuery);
 
                     if (!trackingSnapshot.empty) {
@@ -677,7 +676,7 @@ const ShipmentDetail = () => {
                     }
 
                     // Fetch rates from the subcollection
-                    const ratesRef = collection(db, 'shipments', shipmentDoc.id, 'rates');
+                    const ratesRef = collection(db, 'shipments', docSnap.id, 'rates');
                     const ratesSnapshot = await getDocs(ratesRef);
 
                     if (!ratesSnapshot.empty) {
@@ -690,7 +689,7 @@ const ShipmentDetail = () => {
                     }
 
                     // Fetch packages from the subcollection
-                    const packagesRef = collection(db, 'shipments', shipmentDoc.id, 'packages');
+                    const packagesRef = collection(db, 'shipments', docSnap.id, 'packages');
                     const packagesSnapshot = await getDocs(packagesRef);
 
                     if (!packagesSnapshot.empty) {
@@ -1055,10 +1054,14 @@ const ShipmentDetail = () => {
         return phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
     };
 
-    // Update the displayedPackages variable to handle potential null values
-    const displayedPackages = shipment?.packages ?
-        (showAllPackages ? shipment.packages : shipment.packages.slice(0, 3)) :
-        [];
+    // Combine packages from main record and subcollection (if both exist)
+    const allPackages = useMemo(() => {
+        let pkgs = [];
+        if (Array.isArray(shipment?.packages)) pkgs = pkgs.concat(shipment.packages);
+        // If subcollection packages are stored elsewhere, merge here as needed
+        // (Assume shipment.packages already includes both if loaded)
+        return pkgs;
+    }, [shipment]);
 
     // Add conversion function for distance
     const convertDistance = (distanceInMeters) => {
@@ -1114,6 +1117,30 @@ const ShipmentDetail = () => {
         return shipment.history || [];
     };
 
+    useEffect(() => {
+        // Fetch customers for name lookup
+        const fetchCustomers = async () => {
+            try {
+                const customersRef = collection(db, 'customers');
+                const querySnapshot = await getDocs(customersRef);
+                const customersMap = {};
+                querySnapshot.forEach(doc => {
+                    const customer = doc.data();
+                    customersMap[customer.customerID] = customer.name;
+                });
+                setCustomers(customersMap);
+            } catch (error) {
+                console.error('Error fetching customers:', error);
+            }
+        };
+        fetchCustomers();
+    }, []);
+
+    // Robust address getter
+    const getAddress = (shipment, type) => {
+        return shipment?.[type] || shipment?.[type.toLowerCase()] || null;
+    };
+
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -1148,74 +1175,41 @@ const ShipmentDetail = () => {
                 <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
                     <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
                         {/* Breadcrumb Navigation and Action Buttons */}
-                        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            {/* Breadcrumb */}
-                            <Box sx={{
-                                width: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 1
-                            }}>
-                                <IconButton
-                                    onClick={() => navigate('/dashboard')}
-                                    sx={{ p: 0.5 }}
-                                >
-                                    <HomeIcon />
-                                </IconButton>
-                                <NavigateNextIcon />
-                                <Typography
-                                    variant="body2"
-                                    onClick={() => navigate('/shipments')}
-                                    sx={{
-                                        cursor: 'pointer',
-                                        color: '#2196f3',
-                                        textDecoration: 'underline',
-                                        '&:hover': {
-                                            color: '#1976d2'
-                                        }
-                                    }}
-                                >
-                                    Shipments
-                                </Typography>
-                                <NavigateNextIcon />
-                                <Typography variant="body2">
-                                    Shipment #{shipment?.id || 'Loading...'}
-                                </Typography>
-                            </Box>
-                            {/* Action Buttons */}
-                            <Box sx={{ display: 'flex', gap: 2 }}>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<DownloadIcon />}
-                                    onClick={handleDownload}
-                                    sx={{
-                                        color: '#000',
-                                        borderColor: '#000',
-                                        '&:hover': {
-                                            borderColor: '#000',
-                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                        }
-                                    }}
-                                >
-                                    Export
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<PrintIcon />}
-                                    onClick={handlePrint}
-                                    sx={{
-                                        color: '#000',
-                                        borderColor: '#000',
-                                        '&:hover': {
-                                            borderColor: '#000',
-                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                        }
-                                    }}
-                                >
-                                    Print
-                                </Button>
-                            </Box>
+                        <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                                Shipment Detail
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Firestore ID: {shipment?.id || 'N/A'} | Business Shipment ID: {shipment?.shipmentId || 'N/A'}
+                            </Typography>
                         </Box>
+                        {/* Add a summary grid for top-level fields */}
+                        <Grid container spacing={2} sx={{ mb: 2 }}>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="caption" color="text.secondary">Customer</Typography>
+                                <Typography variant="body2">{customers[shipment?.customerId] || shipment?.companyName || shipment?.customerId || 'N/A'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="caption" color="text.secondary">Company ID</Typography>
+                                <Typography variant="body2">{shipment?.companyId || 'N/A'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="caption" color="text.secondary">Carrier</Typography>
+                                <Typography variant="body2">{shipment?.carrier || 'N/A'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="caption" color="text.secondary">Status</Typography>
+                                <Typography variant="body2">{shipment?.status || 'N/A'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="caption" color="text.secondary">Created At</Typography>
+                                <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="caption" color="text.secondary">Notes</Typography>
+                                <Typography variant="body2">{shipment?.notes || 'N/A'}</Typography>
+                            </Grid>
+                        </Grid>
 
                         {/* Add id to the main content container */}
                         <Box id="shipment-detail-content">
@@ -1505,14 +1499,14 @@ const ShipmentDetail = () => {
                                                 </Box>
                                                 <Box sx={{ p: 2 }}>
                                                     <Typography variant="body1" sx={{ mb: 1 }}>
-                                                        {shipment?.shipFrom?.company || 'N/A'}
+                                                        {getAddress(shipment, 'shipFrom')?.company || 'N/A'}
                                                     </Typography>
                                                     <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
-                                                        {formatAddress(shipment?.shipFrom)}
+                                                        {formatAddress(getAddress(shipment, 'shipFrom'))}
                                                     </Typography>
-                                                    {isGoogleMapsLoaded && shipment?.shipFrom && (
+                                                    {isGoogleMapsLoaded && getAddress(shipment, 'shipFrom') && (
                                                         <SimpleMap
-                                                            address={shipment.shipFrom}
+                                                            address={getAddress(shipment, 'shipFrom')}
                                                             title="Ship From Location"
                                                         />
                                                     )}
@@ -1541,14 +1535,14 @@ const ShipmentDetail = () => {
                                                 </Box>
                                                 <Box sx={{ p: 2 }}>
                                                     <Typography variant="body1" sx={{ mb: 1 }}>
-                                                        {shipment?.shipTo?.company || 'N/A'}
+                                                        {getAddress(shipment, 'shipTo')?.company || 'N/A'}
                                                     </Typography>
                                                     <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
-                                                        {formatAddress(shipment?.shipTo)}
+                                                        {formatAddress(getAddress(shipment, 'shipTo'))}
                                                     </Typography>
-                                                    {isGoogleMapsLoaded && shipment?.shipTo && (
+                                                    {isGoogleMapsLoaded && getAddress(shipment, 'shipTo') && (
                                                         <SimpleMap
-                                                            address={shipment.shipTo}
+                                                            address={getAddress(shipment, 'shipTo')}
                                                             title="Ship To Location"
                                                         />
                                                     )}
@@ -1723,17 +1717,12 @@ const ShipmentDetail = () => {
                                     <Collapse in={expandedSections.packages}>
                                         <Box sx={{ p: 3 }}>
                                             <Grid container spacing={2}>
-                                                {displayedPackages.map((pkg, index) => (
+                                                {allPackages.length === 0 && (
+                                                    <Grid item xs={12}><Typography>No packages found</Typography></Grid>
+                                                )}
+                                                {allPackages.map((pkg, index) => (
                                                     <Grid item xs={12} sm={6} md={4} key={index}>
-                                                        <Paper
-                                                            elevation={0}
-                                                            sx={{
-                                                                p: 2,
-                                                                borderRadius: 2,
-                                                                border: '1px solid #e0e0e0',
-                                                                bgcolor: 'background.default'
-                                                            }}
-                                                        >
+                                                        <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid #e0e0e0', bgcolor: 'background.default' }}>
                                                             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                                                                 Package {index + 1}
                                                             </Typography>
@@ -1742,21 +1731,19 @@ const ShipmentDetail = () => {
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                         Description
                                                                     </Typography>
-                                                                    <Typography variant="body1">{pkg.description}</Typography>
+                                                                    <Typography variant="body1">{pkg.description || pkg.itemDescription || 'N/A'}</Typography>
                                                                 </Box>
                                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                         Quantity
                                                                     </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {pkg.quantity} {parseInt(pkg.quantity) > 1 ? 'pieces' : 'piece'}
-                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.quantity || pkg.packagingQuantity || 1} {parseInt(pkg.quantity || pkg.packagingQuantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
                                                                 </Box>
                                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                         Weight
                                                                     </Typography>
-                                                                    <Typography variant="body1">{pkg.weight} lbs</Typography>
+                                                                    <Typography variant="body1">{pkg.weight || 'N/A'} lbs</Typography>
                                                                 </Box>
                                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
@@ -1765,7 +1752,7 @@ const ShipmentDetail = () => {
                                                                     <Typography variant="body1">
                                                                         {pkg.dimensions ?
                                                                             `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
-                                                                            'N/A'
+                                                                            (pkg.length && pkg.width && pkg.height ? `${pkg.length}" × ${pkg.width}" × ${pkg.height}"` : 'N/A')
                                                                         }
                                                                     </Typography>
                                                                 </Box>
@@ -1773,33 +1760,26 @@ const ShipmentDetail = () => {
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                         Freight Class
                                                                     </Typography>
-                                                                    <Typography variant="body1">{pkg.freightClass}</Typography>
+                                                                    <Typography variant="body1">{pkg.freightClass || 'N/A'}</Typography>
                                                                 </Box>
                                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                         Declared Value
                                                                     </Typography>
-                                                                    <Typography variant="body1">
-                                                                        ${(pkg.value || 0).toFixed(2)}
-                                                                    </Typography>
+                                                                    <Typography variant="body1">${(pkg.value || pkg.declaredValue || 0).toFixed(2)}</Typography>
                                                                 </Box>
                                                             </Box>
                                                         </Paper>
                                                     </Grid>
                                                 ))}
                                             </Grid>
-                                            {shipment && shipment.packages && shipment.packages.length > 3 && (
+                                            {allPackages.length > 3 && (
                                                 <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
                                                     <Button
                                                         onClick={() => setShowAllPackages(!showAllPackages)}
-                                                        sx={{
-                                                            color: '#000',
-                                                            '&:hover': {
-                                                                bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                                            }
-                                                        }}
+                                                        sx={{ color: '#000', '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}
                                                     >
-                                                        {showAllPackages ? 'Show Less' : `Show ${shipment.packages.length - 3} More Packages`}
+                                                        {showAllPackages ? 'Show Less' : `Show ${allPackages.length - 3} More Packages`}
                                                     </Button>
                                                 </Box>
                                             )}

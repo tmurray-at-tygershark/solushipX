@@ -57,9 +57,31 @@ import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import './Shipments.css';
 
+const formatAddress = (address, label = '') => {
+    if (!address || typeof address !== 'object') {
+        if (label) {
+            console.warn(`No valid address object for ${label}:`, address);
+        }
+        return <div>N/A</div>;
+    }
+    return (
+        <>
+            {address.company && <div>{address.company}</div>}
+            {address.attentionName && <div>{address.attentionName}</div>}
+            {address.street && <div>{address.street}</div>}
+            {address.street2 && address.street2 !== '' && <div>{address.street2}</div>}
+            <div>
+                {[address.city, address.state, address.postalCode].filter(Boolean).join(', ')}
+            </div>
+            {address.country && <div>{address.country}</div>}
+        </>
+    );
+};
+
 const GlobalShipmentList = () => {
     const { user, loading: authLoading } = useAuth();
     const [shipments, setShipments] = useState([]);
+    const [customers, setCustomers] = useState({});
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
     const [totalCount, setTotalCount] = useState(0);
@@ -95,9 +117,26 @@ const GlobalShipmentList = () => {
         awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length
     };
 
-    // Initial load effect
+    // Add function to fetch customers
+    const fetchCustomers = async () => {
+        try {
+            const customersRef = collection(db, 'customers');
+            const querySnapshot = await getDocs(customersRef);
+            const customersMap = {};
+            querySnapshot.forEach(doc => {
+                const customer = doc.data();
+                customersMap[customer.customerID] = customer.name;
+            });
+            setCustomers(customersMap);
+        } catch (error) {
+            console.error('Error fetching customers:', error);
+        }
+    };
+
+    // Update useEffect to fetch customers
     useEffect(() => {
         if (!authLoading) {
+            fetchCustomers();
             loadShipments();
         }
     }, [user, authLoading]);
@@ -143,10 +182,20 @@ const GlobalShipmentList = () => {
 
             // Apply search filter
             if (searchTerm) {
+                const searchableFields = ['shipmentId', 'id', 'companyName', 'shippingAddress', 'deliveryAddress', 'carrier', 'shipmentType', 'status'];
                 shipmentsData = shipmentsData.filter(shipment =>
-                    Object.values(shipment).some(value =>
-                        String(value).toLowerCase().includes(searchTerm.toLowerCase())
-                    )
+                    searchableFields.some(field => {
+                        const value = shipment[field];
+                        if (!value) return false;
+                        if (typeof value === 'string' || typeof value === 'number') {
+                            return String(value).toLowerCase().includes(searchTerm.toLowerCase());
+                        }
+                        // For address objects
+                        if ((field === 'shippingAddress' || field === 'deliveryAddress') && typeof value === 'object') {
+                            return formatAddress(value).toLowerCase().includes(searchTerm.toLowerCase());
+                        }
+                        return false;
+                    })
                 );
             }
 
@@ -243,14 +292,17 @@ const GlobalShipmentList = () => {
 
     const handleExport = () => {
         const data = shipments.map(shipment => ({
-            'Shipment ID': shipment.id,
-            'Date': new Date(shipment.createdAt.toDate()).toLocaleDateString(),
+            'Shipment ID': shipment.shipmentId || shipment.id,
+            'Date': shipment.createdAt && shipment.createdAt.toDate ?
+                new Date(shipment.createdAt.toDate()).toLocaleDateString() : 'N/A',
             'Customer': shipment.companyName,
-            'Origin': shipment.shippingAddress,
-            'Destination': shipment.deliveryAddress,
+            'Origin': formatAddress(shipment.shipFrom || shipment.shipfrom, 'Origin'),
+            'Destination': formatAddress(shipment.shipTo || shipment.shipto, 'Destination'),
             'Status': shipment.status,
             'Carrier': shipment.carrier,
-            'Items': shipment.items,
+            'Items': Array.isArray(shipment.items)
+                ? shipment.items.map(item => item.name || '').join('; ')
+                : (shipment.items || ''),
             'Cost': `$${shipment.cost?.toFixed(2) || '0.00'}`
         }));
 
@@ -458,61 +510,61 @@ const GlobalShipmentList = () => {
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            shipments.map((shipment) => (
-                                                <TableRow
-                                                    hover
-                                                    key={shipment.id}
-                                                    onClick={() => handleShipmentClick(shipment)}
-                                                    selected={selected.indexOf(shipment.id) !== -1}
-                                                    sx={{ cursor: 'pointer' }}
-                                                >
-                                                    <TableCell padding="checkbox">
-                                                        <Checkbox
-                                                            checked={selected.indexOf(shipment.id) !== -1}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            onChange={(e) => handleSelectClick(e, shipment.id)}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Typography
-                                                            sx={{
-                                                                color: '#3b82f6',
-                                                                textDecoration: 'none',
-                                                                fontWeight: 500
-                                                            }}
-                                                        >
-                                                            {shipment.id}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell>{shipment.companyName}</TableCell>
-                                                    <TableCell>{shipment.shippingAddress}</TableCell>
-                                                    <TableCell>{shipment.deliveryAddress}</TableCell>
-                                                    <TableCell>{shipment.carrier}</TableCell>
-                                                    <TableCell>{shipment.shipmentType}</TableCell>
-                                                    <TableCell>
-                                                        <Chip
-                                                            label={shipment.status}
-                                                            color={
-                                                                shipment.status === 'Delivered' ? 'success' :
-                                                                    shipment.status === 'In Transit' ? 'primary' :
-                                                                        'default'
-                                                            }
-                                                            size="small"
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell align="right">
-                                                        <IconButton
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleActionMenuOpen(e, shipment);
-                                                            }}
-                                                            size="small"
-                                                        >
-                                                            <MoreVertIcon />
-                                                        </IconButton>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
+                                            shipments.map((shipment) => {
+                                                // Debug log for each shipment row
+                                                console.log('Rendering shipment row:', shipment);
+                                                return (
+                                                    <TableRow
+                                                        hover
+                                                        key={shipment.id}
+                                                        onClick={() => handleShipmentClick(shipment)}
+                                                        selected={selected.indexOf(shipment.id) !== -1}
+                                                        sx={{ cursor: 'pointer' }}
+                                                    >
+                                                        <TableCell padding="checkbox" sx={{ verticalAlign: 'top' }}>
+                                                            <Checkbox
+                                                                checked={selected.indexOf(shipment.id) !== -1}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onChange={(e) => handleSelectClick(e, shipment.id)}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Link to={`/admin/shipment/${shipment.id}`} className="shipment-link">
+                                                                {shipment.shipmentId || shipment.id}
+                                                            </Link>
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            {customers[shipment.customerId] || shipment.companyName || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>{formatAddress(shipment.shipFrom || shipment.shipfrom, 'Origin')}</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>{formatAddress(shipment.shipTo || shipment.shipto, 'Destination')}</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>{shipment.carrier}</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>{shipment.shipmentType}</TableCell>
+                                                        <TableCell sx={{ verticalAlign: 'top' }}>
+                                                            <Chip
+                                                                label={shipment.status}
+                                                                color={
+                                                                    shipment.status === 'Delivered' ? 'success' :
+                                                                        shipment.status === 'In Transit' ? 'primary' :
+                                                                            'default'
+                                                                }
+                                                                size="small"
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell align="right" sx={{ verticalAlign: 'top' }}>
+                                                            <IconButton
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleActionMenuOpen(e, shipment);
+                                                                }}
+                                                                size="small"
+                                                            >
+                                                                <MoreVertIcon />
+                                                            </IconButton>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })
                                         )}
                                     </TableBody>
                                 </Table>
@@ -589,6 +641,7 @@ const GlobalShipmentList = () => {
                     </Box>
                 </Box>
             </Paper>
+            <style>{`.MuiTableCell-root { vertical-align: top !important; }`}</style>
         </div>
     );
 };

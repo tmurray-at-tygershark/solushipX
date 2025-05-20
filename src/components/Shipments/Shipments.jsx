@@ -55,10 +55,35 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import './Shipments.css';
 import { useAuth } from '../../contexts/AuthContext';
+import { collection, getDocs, query, where, orderBy, limit, startAfter } from 'firebase/firestore';
+import { db } from '../../firebase';
+
+// Add formatAddress function (copied from admin view)
+const formatAddress = (address, label = '') => {
+    if (!address || typeof address !== 'object') {
+        if (label) {
+            console.warn(`No valid address object for ${label}:`, address);
+        }
+        return <div>N/A</div>;
+    }
+    return (
+        <>
+            {address.company && <div>{address.company}</div>}
+            {address.attentionName && <div>{address.attentionName}</div>}
+            {address.street && <div>{address.street}</div>}
+            {address.street2 && address.street2 !== '' && <div>{address.street2}</div>}
+            <div>
+                {[address.city, address.state, address.postalCode].filter(Boolean).join(', ')}
+            </div>
+            {address.country && <div>{address.country}</div>}
+        </>
+    );
+};
 
 const Shipments = () => {
     const { user, loading: authLoading } = useAuth();
     const [shipments, setShipments] = useState([]);
+    const [customers, setCustomers] = useState({});
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
     const [totalCount, setTotalCount] = useState(0);
@@ -96,194 +121,120 @@ const Shipments = () => {
         awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length
     };
 
-    // Get unique customers from shipments
-    const customers = [...new Set(shipments.map(shipment => shipment.customer))];
-
-    // Mock data generation
-    const generateMockShipments = (count) => {
-        const carriers = ['FedEx', 'UPS', 'DHL', 'USPS', 'Canada Post', 'Purolator'];
-        const statuses = ['In Transit', 'Delivered', 'Pending', 'Awaiting Shipment'];
-        const shipmentTypes = ['Courier', 'Freight'];
-        const companies = [
-            'Acme Corporation',
-            'TechCorp Solutions',
-            'Global Logistics Inc',
-            'Innovative Systems Ltd',
-            'Pacific Trading Co',
-            'Atlas Manufacturing',
-            'Summit Industries',
-            'Quantum Enterprises',
-            'Stellar Shipping LLC',
-            'Pioneer Distributors'
-        ];
-        const addresses = [
-            { street: '123 Main Street', city: 'New York', state: 'NY', zip: '10001', country: 'USA' },
-            { street: '456 Market Ave', city: 'Los Angeles', state: 'CA', zip: '90012', country: 'USA' },
-            { street: '789 Bay Street', city: 'Toronto', state: 'ON', zip: 'M5H 2N2', country: 'Canada' },
-            { street: '321 Queen Street', city: 'Vancouver', state: 'BC', zip: 'V6B 1B5', country: 'Canada' },
-            { street: '555 Fifth Avenue', city: 'Chicago', state: 'IL', zip: '60601', country: 'USA' },
-            { street: '999 Peel Street', city: 'Montreal', state: 'QC', zip: 'H3A 1M5', country: 'Canada' },
-            { street: '777 Biscayne Blvd', city: 'Miami', state: 'FL', zip: '33131', country: 'USA' },
-            { street: '888 Robson Street', city: 'Calgary', state: 'AB', zip: 'T2P 1B8', country: 'Canada' }
-        ];
-
-        const formatAddress = (addr) => {
-            return `${addr.street}, ${addr.city}, ${addr.state} ${addr.zip}, ${addr.country}`;
-        };
-
-        const getRandomDate = () => {
-            const start = new Date(2024, 0, 1);
-            const end = new Date();
-            return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
-        };
-
-        const mockShipments = [];
-        for (let i = 0; i < count; i++) {
-            const origin = addresses[Math.floor(Math.random() * addresses.length)];
-            let destination;
-            do {
-                destination = addresses[Math.floor(Math.random() * addresses.length)];
-            } while (destination === origin);
-
-            const status = statuses[Math.floor(Math.random() * statuses.length)];
-            const carrier = carriers[Math.floor(Math.random() * carriers.length)];
-            const date = getRandomDate();
-            const shipmentType = shipmentTypes[Math.floor(Math.random() * shipmentTypes.length)];
-
-            mockShipments.push({
-                id: `SHP${String(287683 - i).padStart(6, '0')}`,
-                date: date,
-                customer: companies[Math.floor(Math.random() * companies.length)],
-                origin: formatAddress(origin),
-                destination: formatAddress(destination),
-                status: status,
-                carrier: carrier,
-                shipmentType: shipmentType,
-                trackingNumber: Math.random().toString(36).substring(2, 12).toUpperCase()
+    // Fetch customers for name lookup (copied from admin view)
+    const fetchCustomers = async () => {
+        try {
+            const customersRef = collection(db, 'customers');
+            const querySnapshot = await getDocs(customersRef);
+            const customersMap = {};
+            querySnapshot.forEach(doc => {
+                const customer = doc.data();
+                customersMap[customer.customerID] = customer.name;
             });
+            setCustomers(customersMap);
+        } catch (error) {
+            console.error('Error fetching customers:', error);
         }
-
-        return mockShipments;
     };
 
-    // Initial load effect
-    useEffect(() => {
-        console.log('Initial load effect - Auth state:', { user, authLoading });
-        if (!authLoading) {
-            loadShipments();
-        }
-    }, [user, authLoading]);
-
-    // Update when filters change
-    useEffect(() => {
-        console.log('Filter change effect running');
-        if (!authLoading) {
-            loadShipments();
-        }
-    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
-
-    // Load shipments with filters and pagination
+    // Remove generateMockShipments and replace loadShipments with Firestore logic
     const loadShipments = async () => {
-        console.log('Loading shipments...');
         setLoading(true);
         try {
-            // Generate mock data
-            const mockData = generateMockShipments(100);
-            console.log('Generated mock data:', mockData.length, 'shipments');
-            console.log('Sample shipment:', mockData[0]);
-            let filteredData = [...mockData];
+            let shipmentsRef = collection(db, 'shipments');
+            let q = query(shipmentsRef, orderBy('createdAt', 'desc'));
+
+            // Optionally filter by user or company if needed
+            if (user && user.uid) {
+                // Uncomment and adjust the following line if you want to filter by userId or companyId
+                // q = query(q, where('userId', '==', user.uid));
+            }
+
+            // Apply status filter
+            if (filters.status !== 'all') {
+                q = query(q, where('status', '==', filters.status));
+            }
+            // Apply carrier filter
+            if (filters.carrier !== 'all') {
+                q = query(q, where('carrier', '==', filters.carrier));
+            }
+            // Apply shipment type filter
+            if (filters.shipmentType !== 'all') {
+                q = query(q, where('shipmentType', '==', filters.shipmentType));
+            }
+
+            // Fetch all shipments (for now, pagination can be improved with startAfter/limit)
+            const querySnapshot = await getDocs(q);
+            let shipmentsData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Apply date range filter
+            if (dateRange[0] && dateRange[1]) {
+                shipmentsData = shipmentsData.filter(shipment => {
+                    const shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
+                    return shipmentDate >= dateRange[0].toDate() && shipmentDate <= dateRange[1].toDate();
+                });
+            }
 
             // Apply shipment number filter
             if (shipmentNumber) {
-                filteredData = filteredData.filter(shipment =>
-                    shipment.id.toLowerCase().includes(shipmentNumber.toLowerCase())
+                shipmentsData = shipmentsData.filter(shipment =>
+                    (shipment.shipmentId || shipment.id || '').toLowerCase().includes(shipmentNumber.toLowerCase())
                 );
             }
 
             // Apply customer filter
             if (selectedCustomer) {
-                filteredData = filteredData.filter(shipment =>
-                    shipment.customer === selectedCustomer
+                shipmentsData = shipmentsData.filter(shipment =>
+                    shipment.companyName === selectedCustomer || shipment.customerId === selectedCustomer
                 );
             }
 
             // Apply general search filter
             if (searchTerm) {
-                console.log('Applying search filter:', searchTerm);
-                filteredData = filteredData.filter(shipment =>
-                    Object.values(shipment).some(value =>
-                        String(value).toLowerCase().includes(searchTerm.toLowerCase())
-                    )
+                const searchableFields = ['shipmentId', 'id', 'companyName', 'shippingAddress', 'deliveryAddress', 'carrier', 'shipmentType', 'status'];
+                shipmentsData = shipmentsData.filter(shipment =>
+                    searchableFields.some(field => {
+                        const value = shipment[field];
+                        if (!value) return false;
+                        if (typeof value === 'string' || typeof value === 'number') {
+                            return String(value).toLowerCase().includes(searchTerm.toLowerCase());
+                        }
+                        // For address objects
+                        if ((field === 'shippingAddress' || field === 'deliveryAddress') && typeof value === 'object') {
+                            return Object.values(value).join(' ').toLowerCase().includes(searchTerm.toLowerCase());
+                        }
+                        return false;
+                    })
                 );
-                console.log('After search filter:', filteredData.length);
-            }
-
-            if (filters.status !== 'all') {
-                console.log('Applying status filter:', filters.status);
-                filteredData = filteredData.filter(shipment =>
-                    shipment.status === filters.status
-                );
-                console.log('After status filter:', filteredData.length);
-            }
-
-            if (filters.carrier !== 'all') {
-                console.log('Applying carrier filter:', filters.carrier);
-                filteredData = filteredData.filter(shipment =>
-                    shipment.carrier === filters.carrier
-                );
-                console.log('After carrier filter:', filteredData.length);
-            }
-
-            if (dateRange[0] && dateRange[1]) {
-                console.log('Applying date range filter:', dateRange[0].format('YYYY-MM-DD'), 'to', dateRange[1].format('YYYY-MM-DD'));
-                filteredData = filteredData.filter(shipment => {
-                    const shipmentDate = new Date(shipment.date);
-                    const result = shipmentDate >= dateRange[0].toDate() && shipmentDate <= dateRange[1].toDate();
-                    return result;
-                });
-                console.log('After date filter:', filteredData.length);
             }
 
             // Filter by tab
             if (selectedTab !== 'all') {
-                console.log('Applying tab filter:', selectedTab);
-                filteredData = filteredData.filter(s => s.status === selectedTab);
-                console.log('After tab filter:', filteredData.length);
+                shipmentsData = shipmentsData.filter(s => s.status === selectedTab);
             }
 
             // Apply sorting
-            console.log('Applying sorting:', sortBy);
-            filteredData.sort((a, b) => {
+            shipmentsData.sort((a, b) => {
                 const aValue = a[sortBy.field];
                 const bValue = b[sortBy.field];
                 const direction = sortBy.direction === 'asc' ? 1 : -1;
-
-                if (sortBy.field === 'date') {
-                    return direction * (new Date(aValue) - new Date(bValue));
+                if (sortBy.field === 'createdAt' || sortBy.field === 'date') {
+                    return direction * ((aValue?.toDate ? aValue.toDate() : new Date(aValue)) - (bValue?.toDate ? bValue.toDate() : new Date(bValue)));
                 }
-
-                if (sortBy.field === 'cost') {
-                    return direction * (aValue - bValue);
-                }
-
                 if (typeof aValue === 'string') {
                     return direction * aValue.localeCompare(bValue);
                 }
-
                 return direction * (aValue - bValue);
             });
 
-            // Update state with filtered data
-            console.log('Setting filtered data:', filteredData.length, 'shipments');
-            setTotalCount(filteredData.length);
-
-            // Calculate pagination
+            setTotalCount(shipmentsData.length);
+            // Pagination
             const startIndex = page * rowsPerPage;
             const endIndex = startIndex + rowsPerPage;
-            const paginatedData = filteredData.slice(startIndex, endIndex);
-
-            console.log('Setting paginated data:', paginatedData.length, 'shipments');
-            console.log('Sample paginated shipment:', paginatedData[0]);
+            const paginatedData = shipmentsData.slice(startIndex, endIndex);
             setShipments(paginatedData);
         } catch (error) {
             console.error('Error loading shipments:', error);
@@ -293,6 +244,19 @@ const Shipments = () => {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!authLoading) {
+            fetchCustomers();
+            loadShipments();
+        }
+    }, [user, authLoading]);
+
+    useEffect(() => {
+        if (!authLoading) {
+            loadShipments();
+        }
+    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
 
     // Handle status chip display
     const getStatusChip = (status) => {
@@ -391,7 +355,7 @@ const Shipments = () => {
     };
 
     const handleShipmentClick = (shipment) => {
-        navigate(`/shipment/${shipment.shipmentID}`, { state: { from: '/shipments' } });
+        navigate(`/shipment/${shipment.id}`, { state: { from: '/shipments' } });
     };
 
     const getStatusColor = (status) => {
@@ -563,9 +527,9 @@ const Shipments = () => {
                                                 )}
                                             >
                                                 <MenuItem value="">All Customers</MenuItem>
-                                                {customers.map((customer) => (
-                                                    <MenuItem key={customer} value={customer}>
-                                                        {customer}
+                                                {Object.entries(customers).map(([customerId, customerName]) => (
+                                                    <MenuItem key={customerId} value={customerName}>
+                                                        {customerName}
                                                     </MenuItem>
                                                 ))}
                                             </Select>
@@ -689,30 +653,51 @@ const Shipments = () => {
                                                     selected={selected.indexOf(shipment.id) !== -1}
                                                     sx={{ cursor: 'pointer' }}
                                                 >
-                                                    <TableCell padding="checkbox">
+                                                    <TableCell
+                                                        padding="checkbox"
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
                                                         <Checkbox
                                                             checked={selected.indexOf(shipment.id) !== -1}
                                                             onClick={(e) => e.stopPropagation()}
                                                             onChange={(e) => handleSelectClick(e, shipment.id)}
                                                         />
                                                     </TableCell>
-                                                    <TableCell>
-                                                        <Typography
-                                                            sx={{
-                                                                color: '#3b82f6',
-                                                                textDecoration: 'none',
-                                                                fontWeight: 500
-                                                            }}
-                                                        >
-                                                            {shipment.id}
-                                                        </Typography>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
+                                                        <Link to={`/shipment/${shipment.id}`} className="shipment-link">
+                                                            {shipment.shipmentId || shipment.id}
+                                                        </Link>
                                                     </TableCell>
-                                                    <TableCell>{shipment.customer}</TableCell>
-                                                    <TableCell>{shipment.origin}</TableCell>
-                                                    <TableCell>{shipment.destination}</TableCell>
-                                                    <TableCell>{shipment.carrier}</TableCell>
-                                                    <TableCell>{shipment.shipmentType}</TableCell>
-                                                    <TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
+                                                        {customers[shipment.customerId] || shipment.companyName || 'N/A'}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
+                                                        {formatAddress(shipment.shipFrom || shipment.shipfrom, 'Origin')}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
+                                                        {formatAddress(shipment.shipTo || shipment.shipto, 'Destination')}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
+                                                        {shipment.carrier}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
+                                                        {shipment.shipmentType}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
                                                         <Chip
                                                             label={shipment.status}
                                                             color={
@@ -723,7 +708,10 @@ const Shipments = () => {
                                                             size="small"
                                                         />
                                                     </TableCell>
-                                                    <TableCell align="right">
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                        align="right"
+                                                    >
                                                         <IconButton
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
