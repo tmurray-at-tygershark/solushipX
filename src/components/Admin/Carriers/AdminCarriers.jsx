@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Box, Paper, Typography, Grid, Card, CardContent, CardMedia, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Switch, IconButton, Tooltip, Chip, CircularProgress, InputLabel, MenuItem, Select, FormControl, Breadcrumbs, Link
+    Box, Paper, Typography, Grid, Card, CardContent, CardMedia, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Switch, IconButton, Tooltip, Chip, CircularProgress, InputLabel, MenuItem, Select, FormControl, Breadcrumbs, Link, InputAdornment
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, CloudUpload as CloudUploadIcon, NavigateNext as NavigateNextIcon } from '@mui/icons-material';
+import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, CloudUpload as CloudUploadIcon, NavigateNext as NavigateNextIcon, Search as SearchIcon } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -26,12 +26,13 @@ const AdminCarriers = () => {
     const [selectedCarrier, setSelectedCarrier] = useState(null);
     const [logoFile, setLogoFile] = useState(null);
     const [logoPreview, setLogoPreview] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [enabledFilter, setEnabledFilter] = useState('all');
     const [formData, setFormData] = useState({
         name: '',
         carrierID: '',
         type: 'courier',
         enabled: true,
-        status: 'enabled',
         hostURL: '',
         apiCredentials: {},
         username: '',
@@ -99,7 +100,6 @@ const AdminCarriers = () => {
                 carrierID: '',
                 type: 'courier',
                 enabled: true,
-                status: 'enabled',
                 hostURL: '',
                 apiCredentials: {},
                 username: '',
@@ -124,7 +124,6 @@ const AdminCarriers = () => {
             carrierID: '',
             type: 'courier',
             enabled: true,
-            status: 'enabled',
             hostURL: '',
             apiCredentials: {},
             username: '',
@@ -226,6 +225,7 @@ const AdminCarriers = () => {
             };
             if (!selectedCarrier) {
                 carrierData.createdAt = serverTimestamp();
+                carrierData.status = 'active';
             }
             if (selectedCarrier) {
                 await updateDoc(doc(db, 'carriers', selectedCarrier.id), carrierData);
@@ -260,6 +260,18 @@ const AdminCarriers = () => {
         }
     };
 
+    const filteredCarriers = carriers
+        .filter(carrier => carrier.status !== 'deleted')
+        .filter(carrier => {
+            const matchesSearch = searchQuery === '' ||
+                carrier.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                carrier.carrierID.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesEnabled = enabledFilter === 'all' ||
+                (enabledFilter === 'enabled' && carrier.enabled) ||
+                (enabledFilter === 'disabled' && !carrier.enabled);
+            return matchesSearch && matchesEnabled;
+        });
+
     if (loading) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}><CircularProgress /></Box>;
     }
@@ -288,8 +300,41 @@ const AdminCarriers = () => {
                 </Breadcrumbs>
             </Box>
             {error && <Box sx={{ mb: 2 }}><Typography color="error">{error}</Typography></Box>}
+            <Paper sx={{ p: 2, mb: 3 }}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} md={6}>
+                        <TextField
+                            fullWidth
+                            label="Search by Name or ID"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                        <FormControl fullWidth>
+                            <InputLabel>Status Filter</InputLabel>
+                            <Select
+                                value={enabledFilter}
+                                label="Status Filter"
+                                onChange={(e) => setEnabledFilter(e.target.value)}
+                            >
+                                <MenuItem value="all">All Statuses</MenuItem>
+                                <MenuItem value="enabled">Enabled</MenuItem>
+                                <MenuItem value="disabled">Disabled</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </Grid>
+                </Grid>
+            </Paper>
             <Grid container spacing={3}>
-                {carriers.filter(carrier => carrier.status !== 'deleted').map((carrier) => (
+                {filteredCarriers.map((carrier) => (
                     <Grid item xs={12} sm={6} md={4} key={carrier.id}>
                         <Card className="carrier-card">
                             <Box sx={{ position: 'relative', width: '100%', mb: 2 }}>
@@ -343,10 +388,6 @@ const AdminCarriers = () => {
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                     Carrier ID: {carrier.carrierID || 'N/A'}
                                 </Typography>
-                                <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                    {getStatusChip(carrier.status)}
-                                    {carrier.type === 'api' && getStatusChip(carrier.apiStatus)}
-                                </Box>
                             </CardContent>
                         </Card>
                     </Grid>
