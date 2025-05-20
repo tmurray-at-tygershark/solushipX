@@ -55,52 +55,35 @@ const ShipTo = ({ onNext, onPrevious }) => {
         try {
             setError(null);
             console.log("Fetching customers for company ID:", id);
-            console.log("Company ID type:", typeof id);
-            console.log("Company ID length:", id.length);
-            console.log("Company ID hex:", [...id].map(c => c.charCodeAt(0).toString(16)).join(' '));
 
-            // Direct Firestore query using both field name variations
-            console.log(`Querying customers collection where companyID == "${id}"`);
-
-            // First try with uppercase field name
-            let customersSnapshot = await getDocs(
-                query(collection(db, 'customers'), where('companyID', '==', id))
+            // Query customers collection with both uppercase and lowercase companyID fields for backward compatibility
+            const customersSnapshot = await getDocs(
+                query(
+                    collection(db, 'customers'),
+                    where('companyID', '==', id)
+                )
             );
 
-            // If no results, try with lowercase field name
-            if (customersSnapshot.empty) {
-                console.log(`No results with uppercase companyID, trying lowercase companyId field...`);
-                customersSnapshot = await getDocs(
-                    query(collection(db, 'customers'), where('companyId', '==', id))
-                );
-            }
-
-            // Process the results
             let customersData = [];
 
             if (!customersSnapshot.empty) {
                 console.log(`Found ${customersSnapshot.size} customers for company ID: ${id}`);
-
                 customersData = customersSnapshot.docs.map(doc => {
                     const data = doc.data();
-
                     // Handle timestamp conversion
                     let createdAt = null;
                     let updatedAt = null;
-
                     if (data.createdAt && typeof data.createdAt.toDate === 'function') {
                         createdAt = data.createdAt.toDate().toISOString();
                     }
-
                     if (data.updatedAt && typeof data.updatedAt.toDate === 'function') {
                         updatedAt = data.updatedAt.toDate().toISOString();
                     }
-
                     // Create customer object
                     return {
                         id: doc.id,
-                        customerID: data.customerID || doc.id, // Prefer field from doc, fall back to doc ID
-                        customerId: data.customerID || doc.id, // For backward compatibility
+                        customerID: data.customerID || doc.id,
+                        customerId: data.customerID || doc.id,
                         ...data,
                         createdAt,
                         updatedAt
@@ -110,18 +93,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 console.log(`No customers found for company ID: ${id}`);
             }
 
-            console.log('Raw customersData received:', customersData);
-
-            if (Array.isArray(customersData) && customersData.length === 0) {
-                console.log('No customers found for this company ID. You may need to add customers first.');
-            }
-
-            const sortedCustomers = [...customersData].sort((a, b) =>
-                (a.name || '').localeCompare(b.name || '')
-            );
-            console.log('Sorted customers before setting state:', sortedCustomers);
-
-            setCustomers(sortedCustomers);
+            setCustomers(customersData);
             setCurrentPage(1);
         } catch (err) {
             console.error('Error fetching customers - Exception details:', {
@@ -132,7 +104,6 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 fullError: err
             });
             setError('Failed to load customers. Please try again.');
-            // Set empty customers array rather than leaving in loading state
             setCustomers([]);
         }
     }, []);

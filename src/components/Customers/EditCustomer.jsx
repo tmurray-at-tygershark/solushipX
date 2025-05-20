@@ -1,365 +1,371 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
     Box,
     Paper,
     Typography,
+    Grid,
     TextField,
     Button,
-    Grid,
+    CircularProgress,
+    Breadcrumbs,
     FormControl,
     InputLabel,
     Select,
     MenuItem,
-    Alert,
-    Snackbar,
+    FormHelperText,
+    Stack,
+    IconButton,
+    TableContainer,
+    Table,
+    TableHead,
+    TableBody,
+    TableRow,
+    TableCell,
+    Chip,
     Dialog,
     DialogTitle,
     DialogContent,
-    DialogActions,
-    CircularProgress,
-    Divider
+    DialogActions
 } from '@mui/material';
 import {
     Home as HomeIcon,
     NavigateNext as NavigateNextIcon,
     Save as SaveIcon,
-    Cancel as CancelIcon,
-    Key as KeyIcon
+    ArrowBack as ArrowBackIcon,
+    Add as AddIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon
 } from '@mui/icons-material';
+import { doc, getDoc, updateDoc, setDoc, collection, query, where, getDocs, serverTimestamp, limit, writeBatch, deleteDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { useSnackbar } from 'notistack';
 import './EditCustomer.css';
+import DestinationAddressDialog from './DestinationAddressDialog';
 
 const EditCustomer = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(true);
-    const [customer, setCustomer] = useState(null);
+    const { enqueueSnackbar } = useSnackbar();
+
     const [formData, setFormData] = useState({
-        companyName: '',
-        accountNumber: '',
-        contactName: '',
-        email: '',
-        phone: '',
-        address: '',
-        city: '',
-        state: '',
-        postalCode: '',
-        country: '',
+        customerID: '',
+        name: '',
         status: 'active',
-        notes: ''
+        type: 'business',
+        contact_firstName: '',
+        contact_lastName: '',
+        contact_email: '',
+        contact_phone: '',
+        contact_address1: '',
+        contact_address2: '',
+        contact_city: '',
+        contact_stateProv: '',
+        contact_zipPostal: '',
+        contact_country: 'US',
+        contact_companyName: '',
+        contact_nickname: 'Main Contact',
     });
-    const [openResetDialog, setOpenResetDialog] = useState(false);
-    const [newPassword, setNewPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+    const [mainContactDocId, setMainContactDocId] = useState(null);
+    const [destinationAddresses, setDestinationAddresses] = useState([]);
+    const [isDestinationDialogOpen, setIsDestinationDialogOpen] = useState(false);
+    const [editingDestination, setEditingDestination] = useState(null);
+    const [destinationToDelete, setDestinationToDelete] = useState(null);
 
-    useEffect(() => {
-        // Simulate API call to fetch customer data
-        const fetchCustomerData = async () => {
-            try {
-                // Mock data - replace with actual API call
-                const mockCustomer = {
-                    id: id,
-                    companyName: 'Acme Corporation',
-                    accountNumber: 'ACC-123456',
-                    contactName: 'John Doe',
-                    email: 'john.doe@acme.com',
-                    phone: '+1 (555) 123-4567',
-                    address: '123 Business Ave, Suite 100',
-                    city: 'New York',
-                    state: 'NY',
-                    zipCode: '10001',
-                    country: 'USA',
-                    status: 'active',
-                    createdAt: '2024-01-15',
-                    alternativePhone: '+1 (555) 987-6543',
-                    website: 'www.acmecorp.com',
-                    taxId: 'TAX-987654321',
-                    notes: 'Premium customer since 2020'
-                };
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
 
-                setCustomer(mockCustomer);
-                setFormData(mockCustomer);
-            } catch (error) {
-                console.error('Error fetching customer data:', error);
-                setSnackbar({
-                    open: true,
-                    message: 'Error loading customer data',
-                    severity: 'error'
-                });
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchCustomerData();
-    }, [id]);
-
-    const handleInputChange = (event) => {
-        const { name, value } = event.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const handleSubmit = async (event) => {
-        event.preventDefault();
+    const fetchCustomerAndContactData = useCallback(async () => {
         setLoading(true);
-
+        setError(null);
         try {
-            // Simulate API call to update customer
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            const customerDocRef = doc(db, 'customers', id);
+            const customerDocSnap = await getDoc(customerDocRef);
 
-            setSnackbar({
-                open: true,
-                message: 'Customer updated successfully',
-                severity: 'success'
+            if (!customerDocSnap.exists()) {
+                enqueueSnackbar('Customer not found', { variant: 'error' });
+                navigate('/customers');
+                return;
+            }
+            const customerData = customerDocSnap.data();
+
+            let fetchedMainContactData = {};
+            let fetchedMainContactDocId = null;
+            let fetchedDestinations = [];
+
+            if (customerData.customerID) {
+                const addressBookQuery = query(
+                    collection(db, 'addressBook'),
+                    where('addressClass', '==', 'customer'),
+                    where('addressClassID', '==', customerData.customerID)
+                );
+                const addressBookSnapshot = await getDocs(addressBookQuery);
+                const addresses = addressBookSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                const mainContact = addresses.find(addr => addr.addressType === 'contact');
+                fetchedDestinations = addresses.filter(addr => addr.addressType === 'destination');
+
+                if (mainContact) {
+                    fetchedMainContactData = mainContact;
+                    fetchedMainContactDocId = mainContact.id;
+                    setMainContactDocId(fetchedMainContactDocId);
+                    console.log('Fetched main contact:', fetchedMainContactData);
+                } else {
+                    console.log('No main contact found for customerID:', customerData.customerID);
+                }
+                setDestinationAddresses(fetchedDestinations);
+                console.log('Fetched destination addresses:', fetchedDestinations);
+            }
+
+            setFormData({
+                customerID: customerData.customerID || '',
+                name: customerData.name || '',
+                status: customerData.status || 'active',
+                type: customerData.type || 'business',
+                contact_firstName: fetchedMainContactData.firstName || '',
+                contact_lastName: fetchedMainContactData.lastName || '',
+                contact_email: fetchedMainContactData.email || '',
+                contact_phone: fetchedMainContactData.phone || '',
+                contact_address1: fetchedMainContactData.address1 || '',
+                contact_address2: fetchedMainContactData.address2 || '',
+                contact_city: fetchedMainContactData.city || '',
+                contact_stateProv: fetchedMainContactData.stateProv || '',
+                contact_zipPostal: fetchedMainContactData.zipPostal || '',
+                contact_country: fetchedMainContactData.country || 'US',
+                contact_companyName: fetchedMainContactData.companyName || customerData.name || '',
+                contact_nickname: fetchedMainContactData.nickname || 'Main Contact',
             });
 
-            // Navigate back to customer detail page after successful update
-            setTimeout(() => {
-                navigate(`/customers/${id}`);
-            }, 1500);
-        } catch (error) {
-            console.error('Error updating customer:', error);
-            setSnackbar({
-                open: true,
-                message: 'Error updating customer',
-                severity: 'error'
-            });
+        } catch (err) {
+            console.error("Error fetching data for edit:", err);
+            setError('Failed to load customer data. ' + err.message);
+            enqueueSnackbar('Error loading data: ' + err.message, { variant: 'error' });
         } finally {
             setLoading(false);
         }
+    }, [id, navigate, enqueueSnackbar]);
+
+    useEffect(() => {
+        fetchCustomerAndContactData();
+    }, [fetchCustomerAndContactData]);
+
+    const handleInputChange = (event) => {
+        const { name, value, type, checked } = event.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
     };
 
-    const handleResetPassword = async () => {
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        setError(null);
         try {
-            // Simulate API call to reset password
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            const customerUpdateData = {
+                customerID: formData.customerID,
+                name: formData.name,
+                status: formData.status,
+                type: formData.type,
+                updatedAt: serverTimestamp(),
+            };
+            const mainContactSaveData = {
+                addressClass: 'customer',
+                addressClassID: formData.customerID,
+                addressType: 'contact',
+                firstName: formData.contact_firstName,
+                lastName: formData.contact_lastName,
+                email: formData.contact_email,
+                phone: formData.contact_phone,
+                address1: formData.contact_address1,
+                address2: formData.contact_address2,
+                city: formData.contact_city,
+                stateProv: formData.contact_stateProv,
+                zipPostal: formData.contact_zipPostal,
+                country: formData.contact_country,
+                companyName: formData.contact_companyName || formData.name,
+                nickname: formData.contact_nickname || 'Main Contact',
+                updatedAt: serverTimestamp(),
+            };
+            const customerDocRef = doc(db, 'customers', id);
+            await updateDoc(customerDocRef, customerUpdateData);
+            console.log('Customer document updated');
 
-            setSnackbar({
-                open: true,
-                message: 'Password reset link sent successfully',
-                severity: 'success'
-            });
-            setOpenResetDialog(false);
-        } catch (error) {
-            setSnackbar({
-                open: true,
-                message: 'Error sending password reset link',
-                severity: 'error'
-            });
+            let contactDocRef;
+            if (mainContactDocId) {
+                contactDocRef = doc(db, 'addressBook', mainContactDocId);
+                await updateDoc(contactDocRef, mainContactSaveData);
+                console.log('Main contact document updated');
+            } else if (formData.customerID && (formData.contact_email || formData.contact_phone || formData.contact_address1)) {
+                mainContactSaveData.createdAt = serverTimestamp();
+                contactDocRef = doc(collection(db, 'addressBook'));
+                await setDoc(contactDocRef, mainContactSaveData);
+                setMainContactDocId(contactDocRef.id);
+                console.log('Main contact document created');
+            }
+            enqueueSnackbar('Customer updated successfully!', { variant: 'success' });
+            navigate(`/customers/${id}`);
+        } catch (err) {
+            console.error("Error saving customer:", err);
+            setError('Failed to save customer data. ' + err.message);
+            enqueueSnackbar('Error saving data: ' + err.message, { variant: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleAddDestinationOpen = () => {
+        setEditingDestination(null);
+        setIsDestinationDialogOpen(true);
+    };
+
+    const handleEditDestinationOpen = (address) => {
+        setEditingDestination(address);
+        setIsDestinationDialogOpen(true);
+    };
+
+    const handleDestinationDialogClose = () => {
+        setIsDestinationDialogOpen(false);
+        setEditingDestination(null);
+    };
+
+    const handleSaveDestination = async (destinationDataToSave) => {
+        if (!formData.customerID) {
+            enqueueSnackbar('Customer ID is missing. Cannot save address.', { variant: 'error' });
+            return;
+        }
+
+        setSaving(true);
+        try {
+            let docRef;
+            const dataToSave = { ...destinationDataToSave };
+            delete dataToSave.id;
+
+            if (dataToSave.isDefault) {
+                const batch = writeBatch(db);
+                const otherDestinationsQuery = query(
+                    collection(db, 'addressBook'),
+                    where('addressClass', '==', 'customer'),
+                    where('addressClassID', '==', formData.customerID),
+                    where('addressType', '==', 'destination')
+                );
+                const otherDestinationsSnap = await getDocs(otherDestinationsQuery);
+                otherDestinationsSnap.forEach(docSnap => {
+                    if (destinationDataToSave.id !== docSnap.id) {
+                        batch.update(doc(db, 'addressBook', docSnap.id), { isDefault: false });
+                    }
+                });
+                await batch.commit();
+                console.log('Cleared other default destination addresses.');
+            }
+
+            if (destinationDataToSave.id) {
+                docRef = doc(db, 'addressBook', destinationDataToSave.id);
+                dataToSave.updatedAt = serverTimestamp();
+                await updateDoc(docRef, dataToSave);
+                enqueueSnackbar('Destination address updated successfully!', { variant: 'success' });
+            } else {
+                docRef = doc(collection(db, 'addressBook'));
+                dataToSave.createdAt = serverTimestamp();
+                dataToSave.updatedAt = serverTimestamp();
+                await setDoc(docRef, dataToSave);
+                enqueueSnackbar('Destination address added successfully!', { variant: 'success' });
+            }
+            handleDestinationDialogClose();
+            fetchCustomerAndContactData();
+        } catch (err) {
+            console.error("Error saving destination address:", err);
+            enqueueSnackbar('Error saving destination: ' + err.message, { variant: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteDestinationConfirm = (address) => {
+        setDestinationToDelete(address);
+    };
+
+    const executeDeleteDestination = async () => {
+        if (!destinationToDelete || !destinationToDelete.id) return;
+        setSaving(true);
+        try {
+            await deleteDoc(doc(db, 'addressBook', destinationToDelete.id));
+            enqueueSnackbar('Destination address deleted successfully', { variant: 'success' });
+            setDestinationToDelete(null);
+            fetchCustomerAndContactData();
+        } catch (err) {
+            console.error("Error deleting destination address:", err);
+            enqueueSnackbar('Error deleting destination: ' + err.message, { variant: 'error' });
+        } finally {
+            setSaving(false);
         }
     };
 
     if (loading) {
-        return (
-            <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-                <CircularProgress />
-            </Box>
-        );
+        return <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh"><CircularProgress /></Box>;
     }
 
     return (
-        <div className="edit-customer-container">
+        <Box className="edit-customer-container" sx={{ p: 3 }}>
             <div className="breadcrumb-container">
-                <Link to="/" className="breadcrumb-link">
-                    <HomeIcon />
-                    <Typography variant="body2">Home</Typography>
-                </Link>
-                <div className="breadcrumb-separator">
-                    <NavigateNextIcon />
-                </div>
-                <Link to="/customers" className="breadcrumb-link">
-                    <Typography variant="body2">Customers</Typography>
-                </Link>
-                <div className="breadcrumb-separator">
-                    <NavigateNextIcon />
-                </div>
-                <Link to={`/customers/${id}`} className="breadcrumb-link">
-                    <Typography variant="body2">{loading ? 'Loading...' : (customer?.companyName || 'Customer Details')}</Typography>
-                </Link>
-                <div className="breadcrumb-separator">
-                    <NavigateNextIcon />
-                </div>
-                <Typography variant="body2" className="breadcrumb-current">
-                    Edit Customer
-                </Typography>
+                <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb">
+                    <Link component="button" onClick={() => navigate('/')} sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit' }}>
+                        <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+                        Home
+                    </Link>
+                    <Link component="button" onClick={() => navigate('/customers')} sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit' }}>
+                        Customers
+                    </Link>
+                    <Link component="button" onClick={() => navigate(`/customers/${id}`)} sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit' }}>
+                        {formData.name || 'Customer Detail'}
+                    </Link>
+                    <Typography color="text.primary">Edit</Typography>
+                </Breadcrumbs>
             </div>
 
-            <Paper className="edit-customer-paper">
-                <Typography variant="h5" gutterBottom>
-                    Edit Customer
+            <Paper elevation={3} sx={{ p: 3, mt: 2 }}>
+                <Typography variant="h5" component="h1" gutterBottom>
+                    Edit Customer: {formData.name}
                 </Typography>
-                <Divider sx={{ mb: 3 }} />
-
+                {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
                 <form onSubmit={handleSubmit}>
                     <Grid container spacing={3}>
-                        {/* Company Information */}
+                        {/* Customer Details Section */}
                         <Grid item xs={12}>
-                            <Typography variant="h6" gutterBottom>
-                                Company Information
-                            </Typography>
+                            <Typography variant="h6" gutterBottom>Customer Information</Typography>
                         </Grid>
                         <Grid item xs={12} md={6}>
                             <TextField
-                                fullWidth
-                                label="Company Name"
-                                name="companyName"
-                                value={formData.companyName}
+                                label="Customer ID (Immutable)"
+                                name="customerID"
+                                value={formData.customerID}
                                 onChange={handleInputChange}
+                                fullWidth
+                                required
+                                InputProps={{ readOnly: true }}
+                                helperText="This ID cannot be changed."
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Customer/Company Name"
+                                name="name"
+                                value={formData.name}
+                                onChange={handleInputChange}
+                                fullWidth
                                 required
                             />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Account Number"
-                                name="accountNumber"
-                                value={formData.accountNumber}
-                                onChange={handleInputChange}
-                                disabled
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Tax ID"
-                                name="taxId"
-                                value={formData.taxId}
-                                onChange={handleInputChange}
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Website"
-                                name="website"
-                                value={formData.website}
-                                onChange={handleInputChange}
-                            />
-                        </Grid>
-
-                        {/* Contact Information */}
-                        <Grid item xs={12}>
-                            <Typography variant="h6" gutterBottom>
-                                Contact Information
-                            </Typography>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Contact Name"
-                                name="contactName"
-                                value={formData.contactName}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Email"
-                                name="email"
-                                type="email"
-                                value={formData.email}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Phone"
-                                name="phone"
-                                value={formData.phone}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Alternative Phone"
-                                name="alternativePhone"
-                                value={formData.alternativePhone}
-                                onChange={handleInputChange}
-                            />
-                        </Grid>
-
-                        {/* Address Information */}
-                        <Grid item xs={12}>
-                            <Typography variant="h6" gutterBottom>
-                                Address Information
-                            </Typography>
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Street Address"
-                                name="address"
-                                value={formData.address}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="City"
-                                name="city"
-                                value={formData.city}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="State/Province"
-                                name="state"
-                                value={formData.state}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="ZIP/Postal Code"
-                                name="zipCode"
-                                value={formData.zipCode}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Country"
-                                name="country"
-                                value={formData.country}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </Grid>
-
-                        {/* Additional Information */}
-                        <Grid item xs={12}>
-                            <Typography variant="h6" gutterBottom>
-                                Additional Information
-                            </Typography>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <FormControl fullWidth>
-                                <InputLabel>Status</InputLabel>
+                            <FormControl fullWidth required>
+                                <InputLabel id="status-label">Status</InputLabel>
                                 <Select
+                                    labelId="status-label"
                                     name="status"
                                     value={formData.status}
-                                    onChange={handleInputChange}
                                     label="Status"
-                                    required
+                                    onChange={handleInputChange}
                                 >
                                     <MenuItem value="active">Active</MenuItem>
                                     <MenuItem value="inactive">Inactive</MenuItem>
@@ -369,36 +375,155 @@ const EditCustomer = () => {
                             </FormControl>
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <Button
+                            <FormControl fullWidth>
+                                <InputLabel id="type-label">Type</InputLabel>
+                                <Select
+                                    labelId="type-label"
+                                    name="type"
+                                    value={formData.type}
+                                    label="Type"
+                                    onChange={handleInputChange}
+                                >
+                                    <MenuItem value="business">Business</MenuItem>
+                                    <MenuItem value="individual">Individual</MenuItem>
+                                    <MenuItem value="reseller">Reseller</MenuItem>
+                                    <MenuItem value="other">Other</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        {/* Main Contact Details Section */}
+                        <Grid item xs={12} sx={{ mt: 2 }}>
+                            <Typography variant="h6" gutterBottom>Main Contact Information</Typography>
+                            <FormHelperText sx={{ mb: 1 }}>This information is stored in the Address Book linked to the Customer ID.</FormHelperText>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact First Name"
+                                name="contact_firstName"
+                                value={formData.contact_firstName}
+                                onChange={handleInputChange}
                                 fullWidth
-                                variant="outlined"
-                                color="primary"
-                                startIcon={<KeyIcon />}
-                                onClick={() => setOpenResetDialog(true)}
-                            >
-                                Reset Password
-                            </Button>
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Last Name"
+                                name="contact_lastName"
+                                value={formData.contact_lastName}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Email"
+                                name="contact_email"
+                                type="email"
+                                value={formData.contact_email}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Phone"
+                                name="contact_phone"
+                                value={formData.contact_phone}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Company Name (for Address)"
+                                name="contact_companyName"
+                                value={formData.contact_companyName}
+                                onChange={handleInputChange}
+                                helperText="Defaults to customer name if blank."
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Address Nickname"
+                                name="contact_nickname"
+                                value={formData.contact_nickname}
+                                onChange={handleInputChange}
+                                helperText="e.g., Main Office, Head Quarters"
+                                fullWidth
+                            />
                         </Grid>
                         <Grid item xs={12}>
                             <TextField
-                                fullWidth
-                                label="Notes"
-                                name="notes"
-                                value={formData.notes}
+                                label="Contact Address Line 1"
+                                name="contact_address1"
+                                value={formData.contact_address1}
                                 onChange={handleInputChange}
-                                multiline
-                                rows={4}
+                                fullWidth
                             />
                         </Grid>
-
-                        {/* Form Actions */}
                         <Grid item xs={12}>
-                            <Box display="flex" justifyContent="flex-end" gap={2}>
+                            <TextField
+                                label="Contact Address Line 2"
+                                name="contact_address2"
+                                value={formData.contact_address2}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={4}>
+                            <TextField
+                                label="Contact City"
+                                name="contact_city"
+                                value={formData.contact_city}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={4}>
+                            <TextField
+                                label="Contact State/Province"
+                                name="contact_stateProv"
+                                value={formData.contact_stateProv}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={2}>
+                            <TextField
+                                label="Contact Zip/Postal Code"
+                                name="contact_zipPostal"
+                                value={formData.contact_zipPostal}
+                                onChange={handleInputChange}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={2}>
+                            <FormControl fullWidth>
+                                <InputLabel id="country-label">Country</InputLabel>
+                                <Select
+                                    labelId="country-label"
+                                    name="contact_country"
+                                    value={formData.contact_country}
+                                    label="Country"
+                                    onChange={handleInputChange}
+                                >
+                                    <MenuItem value="US">United States</MenuItem>
+                                    <MenuItem value="CA">Canada</MenuItem>
+                                    {/* Add more countries as needed */}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        {/* Submit Buttons for Main Form */}
+                        <Grid item xs={12} sx={{ mt: 2 }}>
+                            <Stack direction="row" spacing={2} justifyContent="flex-end">
                                 <Button
                                     variant="outlined"
-                                    color="secondary"
-                                    startIcon={<CancelIcon />}
                                     onClick={() => navigate(`/customers/${id}`)}
+                                    startIcon={<ArrowBackIcon />}
+                                    disabled={saving}
                                 >
                                     Cancel
                                 </Button>
@@ -406,48 +531,112 @@ const EditCustomer = () => {
                                     type="submit"
                                     variant="contained"
                                     color="primary"
-                                    startIcon={<SaveIcon />}
-                                    disabled={loading}
+                                    disabled={saving || loading}
+                                    startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
                                 >
-                                    Save Changes
+                                    {saving ? 'Saving...' : 'Save Changes'}
                                 </Button>
-                            </Box>
+                            </Stack>
                         </Grid>
                     </Grid>
                 </form>
+
+                {/* Divider */}
+                <Box sx={{ my: 4 }}><hr /></Box>
+
+                {/* Shipment Destinations Section */}
+                <Grid container spacing={3} sx={{ mt: 0 }}>
+                    <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>Shipment Destinations</Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddDestinationOpen}
+                            size="small"
+                        >
+                            Add Destination
+                        </Button>
+                    </Grid>
+                    <Grid item xs={12}>
+                        {destinationAddresses.length > 0 ? (
+                            <TableContainer component={Paper} elevation={1} variant="outlined">
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Nickname</TableCell>
+                                            <TableCell>Company</TableCell>
+                                            <TableCell>Contact</TableCell>
+                                            <TableCell>Address</TableCell>
+                                            <TableCell>Default</TableCell>
+                                            <TableCell align="right">Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {destinationAddresses.map((addr) => (
+                                            <TableRow key={addr.id} hover>
+                                                <TableCell>{addr.nickname || 'N/A'}</TableCell>
+                                                <TableCell>{addr.companyName || 'N/A'}</TableCell>
+                                                <TableCell>{`${addr.firstName || ''} ${addr.lastName || ''}`.trim() || 'N/A'}</TableCell>
+                                                <TableCell>
+                                                    {addr.address1}
+                                                    {addr.address2 && <br />}{addr.address2}
+                                                    <br />
+                                                    {`${addr.city}, ${addr.stateProv} ${addr.zipPostal}`}
+                                                    <br />
+                                                    {addr.country}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {addr.isDefault ? <Chip label="Yes" color="primary" size="small" /> : <Chip label="No" size="small" />}
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    <IconButton size="small" onClick={() => handleEditDestinationOpen(addr)} color="primary">
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                    <IconButton size="small" onClick={() => handleDeleteDestinationConfirm(addr)} color="error">
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary">No shipment destinations found for this customer. Click "Add Destination" to create one.</Typography>
+                        )}
+                    </Grid>
+                </Grid>
+
+                {/* Destination Address Dialog */}
+                <DestinationAddressDialog
+                    open={isDestinationDialogOpen}
+                    onClose={handleDestinationDialogClose}
+                    addressData={editingDestination}
+                    onSave={handleSaveDestination}
+                    customerID={formData.customerID}
+                />
+
+                {/* Delete Confirmation Dialog (Simple Example - consider a more robust MUI Dialog) */}
+                {destinationToDelete && (
+                    <Dialog open={!!destinationToDelete} onClose={() => setDestinationToDelete(null)}>
+                        <DialogTitle>Confirm Delete</DialogTitle>
+                        <DialogContent>
+                            <Typography>
+                                Are you sure you want to delete the destination "{destinationToDelete.nickname || destinationToDelete.address1}"?
+                            </Typography>
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={() => setDestinationToDelete(null)} color="primary">
+                                Cancel
+                            </Button>
+                            <Button onClick={executeDeleteDestination} color="error" variant="contained" disabled={saving}>
+                                {saving ? <CircularProgress size={20} /> : 'Delete'}
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
+                )}
             </Paper>
-
-            {/* Reset Password Dialog */}
-            <Dialog open={openResetDialog} onClose={() => setOpenResetDialog(false)}>
-                <DialogTitle>Reset Password</DialogTitle>
-                <DialogContent>
-                    <Typography>
-                        Are you sure you want to send a password reset link to {formData.email}?
-                    </Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenResetDialog(false)}>Cancel</Button>
-                    <Button onClick={handleResetPassword} color="primary" variant="contained">
-                        Send Reset Link
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Snackbar for notifications */}
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={6000}
-                onClose={() => setSnackbar({ ...snackbar, open: false })}
-            >
-                <Alert
-                    onClose={() => setSnackbar({ ...snackbar, open: false })}
-                    severity={snackbar.severity}
-                    sx={{ width: '100%' }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
-        </div>
+        </Box>
     );
 };
 

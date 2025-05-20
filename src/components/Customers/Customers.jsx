@@ -28,7 +28,8 @@ import {
     Tabs,
     Tab,
     Stack,
-    CircularProgress
+    CircularProgress,
+    InputAdornment
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -42,19 +43,24 @@ import {
     Delete as DeleteIcon,
     SearchOff as SearchOffIcon,
     Home as HomeIcon,
-    NavigateNext as NavigateNextIcon
+    NavigateNext as NavigateNextIcon,
+    Add as AddIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
+import { db } from '../../firebase';
 import './Customers.css';
+import { useCompany } from '../../contexts/CompanyContext';
 
 const Customers = () => {
     const navigate = useNavigate();
+    const { companyIdForAddress } = useCompany();
     const [customers, setCustomers] = useState([]);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
     const [totalCount, setTotalCount] = useState(0);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterAnchorEl, setFilterAnchorEl] = useState(null);
     const [sortAnchorEl, setSortAnchorEl] = useState(null);
@@ -64,129 +70,100 @@ const Customers = () => {
         type: 'all'
     });
     const [sortBy, setSortBy] = useState({
-        field: 'company',
+        field: 'companyName',
         direction: 'asc'
     });
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
 
-    // Calculate stats from filtered data
-    const stats = {
-        total: totalCount,
-        active: customers.filter(c => c.status === 'Active').length,
-        inactive: customers.filter(c => c.status === 'Inactive').length,
-        suspended: customers.filter(c => c.status === 'Suspended').length,
-        pending: customers.filter(c => c.status === 'Pending').length
-    };
+    useEffect(() => {
+        fetchCustomers();
+    }, [page, rowsPerPage, filters, sortBy, selectedTab]);
 
-    // Mock data generation
-    const generateMockCustomers = (count) => {
-        const companyTypes = ['Retail', 'Manufacturing', 'Technology', 'Healthcare', 'Finance', 'Education', 'Other'];
-        const statuses = ['Active', 'Inactive', 'Suspended', 'Pending'];
-        const locations = [
-            { city: 'New York', state: 'NY' },
-            { city: 'Los Angeles', state: 'CA' },
-            { city: 'Chicago', state: 'IL' },
-            { city: 'Houston', state: 'TX' },
-            { city: 'Miami', state: 'FL' },
-            { city: 'Seattle', state: 'WA' },
-            { city: 'Boston', state: 'MA' },
-            { city: 'Denver', state: 'CO' }
-        ];
+    useEffect(() => {
+        if (companyIdForAddress) {
+            console.log('Selected companyId for logged-in customer:', companyIdForAddress);
+        }
+    }, [companyIdForAddress]);
 
-        const companyNames = [
-            'Acme Corporation', 'Tech Solutions Inc', 'Global Industries', 'Innovation Labs',
-            'Future Systems', 'Digital Dynamics', 'Smart Solutions', 'NextGen Technologies',
-            'Elite Enterprises', 'Prime Industries', 'Advanced Systems', 'Core Technologies',
-            'Peak Performance', 'Summit Solutions', 'Vertex Ventures', 'Apex Industries'
-        ];
-
-        const getRandomLocation = () => locations[Math.floor(Math.random() * locations.length)];
-        const getRandomDate = () => {
-            const start = new Date(2020, 0, 1);
-            const end = new Date();
-            return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
-        };
-
-        return Array.from({ length: count }, (_, i) => {
-            const location = getRandomLocation();
-            const companyName = companyNames[Math.floor(Math.random() * companyNames.length)];
-            const type = companyTypes[Math.floor(Math.random() * companyTypes.length)];
-            const status = statuses[Math.floor(Math.random() * statuses.length)];
-            const date = getRandomDate();
-            const accountNumber = `ACC${String(1000 + i).padStart(6, '0')}`;
-
-            return {
-                accountNumber,
-                company: companyName,
-                type,
-                status,
-                location: `${location.city}, ${location.state}`,
-                dateAdded: date.toISOString(),
-                totalShipments: Math.floor(Math.random() * 1000),
-                lastShipment: new Date(date.getTime() + Math.random() * (new Date().getTime() - date.getTime())).toISOString()
-            };
-        });
-    };
-
-    // Load customers with filters and pagination
-    const loadCustomers = async () => {
-        setLoading(true);
+    const fetchCustomers = async () => {
         try {
-            // Simulate API call
-            const mockData = generateMockCustomers(100);
-            let filteredData = mockData;
+            setLoading(true);
+            console.log('Fetching customers with companyIdForAddress:', companyIdForAddress);
 
-            // Apply filters
-            if (searchQuery) {
-                filteredData = filteredData.filter(customer =>
-                    Object.values(customer).some(value =>
-                        String(value).toLowerCase().includes(searchQuery.toLowerCase())
-                    )
-                );
+            const customersRef = collection(db, 'customers');
+            let clauses = [];
+
+            if (companyIdForAddress) {
+                console.log('Adding companyID filter:', companyIdForAddress);
+                clauses.push(where('companyID', '==', companyIdForAddress));
+            } else {
+                console.log('No companyIdForAddress available, fetching all customers');
             }
 
-            if (filters.status !== 'all') {
-                filteredData = filteredData.filter(customer =>
-                    customer.status === filters.status
-                );
-            }
-
-            if (filters.type !== 'all') {
-                filteredData = filteredData.filter(customer =>
-                    customer.type === filters.type
-                );
-            }
-
-            // Filter by tab
             if (selectedTab !== 'all') {
-                filteredData = filteredData.filter(c => c.status === selectedTab);
+                console.log('Adding status filter:', selectedTab);
+                clauses.push(where('status', '==', selectedTab));
             }
 
-            // Apply sorting
-            filteredData.sort((a, b) => {
-                const aValue = a[sortBy.field];
-                const bValue = b[sortBy.field];
-                const direction = sortBy.direction === 'asc' ? 1 : -1;
+            console.log('Adding sort clause: name, asc');
+            clauses.push(orderBy('name', 'asc'));
+            clauses.push(limit(rowsPerPage));
 
-                if (typeof aValue === 'string') {
-                    return direction * aValue.localeCompare(bValue);
+            const q = clauses.length > 0 ? query(customersRef, ...clauses) : customersRef;
+            console.log('Executing query with clauses:', clauses);
+
+            const querySnapshot = await getDocs(q);
+            console.log(`Found ${querySnapshot.size} customers`);
+
+            const customersDataPromises = querySnapshot.docs.map(async (doc) => {
+                const data = doc.data();
+                let contactData = null;
+
+                // Fetch main contact from addressBook
+                if (data.customerID) {
+                    const contactQuery = query(
+                        collection(db, 'addressBook'),
+                        where('addressClass', '==', 'customer'),
+                        where('addressClassID', '==', data.customerID),
+                        where('addressType', '==', 'contact'),
+                        limit(1)
+                    );
+                    const contactSnapshot = await getDocs(contactQuery);
+                    if (!contactSnapshot.empty) {
+                        contactData = contactSnapshot.docs[0].data();
+                        console.log('Found contact for customer', data.customerID, contactData);
+                    } else {
+                        console.log('No contact found for customer', data.customerID);
+                    }
                 }
-                return direction * (aValue - bValue);
+
+                const customerObj = {
+                    id: doc.id,
+                    ...data,
+                    contact: contactData // Add contact data to customer object
+                };
+                console.log('Customer data with contact:', customerObj);
+                return customerObj;
             });
 
-            setTotalCount(filteredData.length);
-            setCustomers(filteredData.slice(page * rowsPerPage, (page + 1) * rowsPerPage));
+            const customersData = await Promise.all(customersDataPromises);
+
+            console.log('All customers fetched from Firestore with contacts:', customersData);
+
+            setCustomers(customersData);
+            setTotalCount(customersData.length);
         } catch (error) {
-            console.error('Error loading customers:', error);
+            console.error('Error fetching customers:', error);
+            console.error('Error details:', {
+                message: error.message,
+                code: error.code,
+                stack: error.stack
+            });
         } finally {
             setLoading(false);
         }
     };
-
-    useEffect(() => {
-        loadCustomers();
-    }, [page, rowsPerPage, searchQuery, filters, sortBy, selectedTab]);
 
     const handleChangePage = (event, newPage) => {
         setPage(newPage);
@@ -236,7 +213,7 @@ const Customers = () => {
     };
 
     const getStatusColor = (status) => {
-        switch (status.toLowerCase()) {
+        switch (status?.toLowerCase()) {
             case 'active':
                 return 'success';
             case 'inactive':
@@ -254,8 +231,19 @@ const Customers = () => {
         navigate(`/customers/${customerId}`);
     };
 
+    const filteredCustomers = customers.filter(customer => {
+        const searchLower = searchQuery.toLowerCase();
+        return (
+            customer.name?.toLowerCase().includes(searchLower) ||
+            customer.companyName?.toLowerCase().includes(searchLower) ||
+            customer.accountNumber?.toLowerCase().includes(searchLower) ||
+            customer.contactName?.toLowerCase().includes(searchLower) ||
+            customer.email?.toLowerCase().includes(searchLower)
+        );
+    });
+
     return (
-        <div className="customers-container">
+        <Box className="customers-container">
             <div className="breadcrumb-container">
                 <Link to="/" className="breadcrumb-link">
                     <HomeIcon />
@@ -270,224 +258,230 @@ const Customers = () => {
             </div>
 
             <Paper className="customers-paper">
-                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                        {/* Header Section */}
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                            <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                Customers
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 2 }}>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<ExportIcon />}
-                                    onClick={handleExport}
-                                    sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
-                                >
-                                    Export
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<i className="fas fa-plus"></i>}
-                                    sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
-                                >
-                                    Create Customer
-                                </Button>
-                            </Box>
-                        </Box>
+                <Box className="customers-header">
+                    <Typography variant="h4" component="h1" gutterBottom>
+                        Customers
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<AddIcon />}
+                        onClick={() => navigate('/customers/new')}
+                    >
+                        Add Customer
+                    </Button>
+                </Box>
 
-                        {/* Main Content */}
-                        <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                            <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
-                                <Tabs value={selectedTab} onChange={handleTabChange}>
-                                    <Tab label={`All (${stats.total})`} value="all" />
-                                    <Tab label={`Active (${stats.active})`} value="Active" />
-                                    <Tab label={`Inactive (${stats.inactive})`} value="Inactive" />
-                                    <Tab label={`Suspended (${stats.suspended})`} value="Suspended" />
-                                    <Tab label={`Pending (${stats.pending})`} value="Pending" />
-                                </Tabs>
-                                <Box sx={{ flexGrow: 1 }} />
-                                {/* Search Section */}
-                                <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
-                                    <Paper
-                                        component="div"
-                                        sx={{
-                                            p: '2px 4px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            width: '300px',
-                                            boxShadow: 'none',
-                                            border: '1px solid #e2e8f0',
-                                            bgcolor: '#f8fafc'
-                                        }}
-                                    >
-                                        <SearchIcon sx={{ p: 1, color: '#64748b' }} />
-                                        <InputBase
-                                            sx={{ ml: 1, flex: 1 }}
-                                            placeholder="Search customers..."
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                        />
-                                    </Paper>
-                                </Box>
-                            </Toolbar>
+                <Box className="customers-toolbar">
+                    <Tabs
+                        value={selectedTab}
+                        onChange={handleTabChange}
+                        sx={{ borderBottom: 1, borderColor: 'divider' }}
+                    >
+                        <Tab label="All" value="all" />
+                        <Tab label="Active" value="active" />
+                        <Tab label="Inactive" value="inactive" />
+                        <Tab label="Pending" value="pending" />
+                    </Tabs>
 
-                            {/* Smart Filters */}
-                            {/* Removed empty Box container */}
+                    <Box className="customers-actions">
+                        <TextField
+                            placeholder="Search customers..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: searchQuery && (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => setSearchQuery('')}
+                                        >
+                                            <ClearIcon />
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                            size="small"
+                            sx={{ width: 300 }}
+                        />
 
-                            {/* Active Filters */}
-                            {(filters.type !== 'all' || filters.status !== 'all') && (
-                                <Box sx={{ px: 2, pb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                    {filters.type !== 'all' && (
-                                        <Chip
-                                            label={`Type: ${filters.type}`}
-                                            onDelete={() => handleFilterChange('type', 'all')}
-                                            color="primary"
-                                            variant="outlined"
-                                        />
-                                    )}
-                                    {filters.status !== 'all' && (
-                                        <Chip
-                                            label={`Status: ${filters.status}`}
-                                            onDelete={() => handleFilterChange('status', 'all')}
-                                            color="primary"
-                                            variant="outlined"
-                                        />
-                                    )}
-                                </Box>
-                            )}
+                        <IconButton onClick={handleFilterClick}>
+                            <FilterIcon />
+                        </IconButton>
 
-                            {/* Customers Table */}
-                            <TableContainer component={Paper} className="customers-table">
-                                <Table>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Account Number</TableCell>
-                                            <TableCell>Company</TableCell>
-                                            <TableCell>Type</TableCell>
-                                            <TableCell>Status</TableCell>
-                                            <TableCell>Location</TableCell>
-                                            <TableCell>Date Added</TableCell>
-                                            <TableCell align="right">Actions</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {loading ? (
-                                            <TableRow>
-                                                <TableCell colSpan={8} align="center">
-                                                    <CircularProgress />
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : customers.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={7} align="center">
-                                                    <Box sx={{ py: 3 }}>
-                                                        <SearchOffIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                                                        <Typography variant="h6" color="text.secondary">
-                                                            No customers found
-                                                        </Typography>
-                                                    </Box>
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : (
-                                            customers.map((customer) => (
-                                                <TableRow
-                                                    key={customer.accountNumber}
-                                                    hover
-                                                    onClick={() => handleRowClick(customer.accountNumber)}
-                                                    sx={{
-                                                        cursor: 'pointer',
-                                                        '&:hover': {
-                                                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                                        },
-                                                    }}
-                                                >
-                                                    <TableCell>{customer.accountNumber}</TableCell>
-                                                    <TableCell>{customer.company}</TableCell>
-                                                    <TableCell>{customer.type}</TableCell>
-                                                    <TableCell>
-                                                        <Chip
-                                                            label={customer.status}
-                                                            color={getStatusColor(customer.status)}
-                                                            size="small"
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell>{customer.location}</TableCell>
-                                                    <TableCell>{new Date(customer.dateAdded).toLocaleDateString()}</TableCell>
-                                                    <TableCell align="right">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleRowClick(customer.accountNumber);
-                                                            }}
-                                                        >
-                                                            <VisibilityIcon />
-                                                        </IconButton>
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                // handleEditCustomer(customer.id);
-                                                            }}
-                                                        >
-                                                            <EditIcon />
-                                                        </IconButton>
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                // handleDeleteCustomer(customer.id);
-                                                            }}
-                                                        >
-                                                            <DeleteIcon />
-                                                        </IconButton>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                            <TablePagination
-                                component="div"
-                                count={totalCount}
-                                page={page}
-                                onPageChange={handleChangePage}
-                                rowsPerPage={rowsPerPage}
-                                onRowsPerPageChange={handleChangeRowsPerPage}
-                                rowsPerPageOptions={[10, 25, 50, 100]}
-                            />
-                        </Paper>
+                        <IconButton onClick={handleSortClick}>
+                            <SortIcon />
+                        </IconButton>
                     </Box>
                 </Box>
 
-                {/* Export Dialog */}
-                <Dialog open={isExportDialogOpen} onClose={handleExportClose}>
-                    <DialogTitle>Export Customers</DialogTitle>
-                    <DialogContent>
-                        <FormControl fullWidth sx={{ mt: 2 }}>
-                            <InputLabel>Format</InputLabel>
-                            <Select
-                                value={selectedExportFormat}
-                                onChange={(e) => setSelectedExportFormat(e.target.value)}
-                                label="Format"
-                            >
-                                <MenuItem value="csv">CSV</MenuItem>
-                                <MenuItem value="excel">Excel</MenuItem>
-                                <MenuItem value="pdf">PDF</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={handleExportClose}>Cancel</Button>
-                        <Button onClick={handleExportClose} variant="contained">
-                            Export
-                        </Button>
-                    </DialogActions>
-                </Dialog>
+                {loading ? (
+                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                        <CircularProgress />
+                    </Box>
+                ) : filteredCustomers.length === 0 ? (
+                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                        <Stack spacing={2} alignItems="center">
+                            <SearchOffIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+                            <Typography variant="h6" color="text.secondary">
+                                No customers found
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Try adjusting your search or filters
+                            </Typography>
+                        </Stack>
+                    </Box>
+                ) : (
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Customer ID</TableCell>
+                                    <TableCell>Company Name</TableCell>
+                                    <TableCell>Contact Name</TableCell>
+                                    <TableCell>Email</TableCell>
+                                    <TableCell>Status</TableCell>
+                                    <TableCell>Created At</TableCell>
+                                    <TableCell align="right">Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredCustomers.map((customer) => (
+                                    <TableRow
+                                        key={customer.id}
+                                        hover
+                                        onClick={() => handleRowClick(customer.id)}
+                                        sx={{
+                                            cursor: 'pointer',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                            },
+                                        }}
+                                    >
+                                        <TableCell>{customer.customerID}</TableCell>
+                                        <TableCell>{customer.companyName || customer.name}</TableCell>
+                                        <TableCell>{customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A'}</TableCell>
+                                        <TableCell>{customer.contact ? customer.contact.email : 'N/A'}</TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={customer.status || 'Unknown'}
+                                                color={getStatusColor(customer.status)}
+                                                size="small"
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            {customer.createdAt?.toDate ?
+                                                customer.createdAt.toDate().toLocaleDateString() :
+                                                new Date(customer.createdAt).toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <IconButton
+                                                size="small"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRowClick(customer.id);
+                                                }}
+                                            >
+                                                <VisibilityIcon />
+                                            </IconButton>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigate(`/customers/${customer.id}/edit`);
+                                                }}
+                                            >
+                                                <EditIcon />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                )}
+
+                <TablePagination
+                    component="div"
+                    count={filteredCustomers.length}
+                    page={page}
+                    onPageChange={handleChangePage}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={handleChangeRowsPerPage}
+                    rowsPerPageOptions={[10, 25, 50]}
+                />
             </Paper>
-        </div>
+
+            {/* Filter Menu */}
+            <Menu
+                anchorEl={filterAnchorEl}
+                open={Boolean(filterAnchorEl)}
+                onClose={handleFilterClose}
+            >
+                <MenuItem onClick={() => handleFilterChange('status', 'all')}>
+                    All Statuses
+                </MenuItem>
+                <MenuItem onClick={() => handleFilterChange('status', 'active')}>
+                    Active
+                </MenuItem>
+                <MenuItem onClick={() => handleFilterChange('status', 'inactive')}>
+                    Inactive
+                </MenuItem>
+                <MenuItem onClick={() => handleFilterChange('status', 'pending')}>
+                    Pending
+                </MenuItem>
+            </Menu>
+
+            {/* Sort Menu */}
+            <Menu
+                anchorEl={sortAnchorEl}
+                open={Boolean(sortAnchorEl)}
+                onClose={handleSortClose}
+            >
+                <MenuItem onClick={() => handleSortChange('companyName', 'asc')}>
+                    Company Name (A-Z)
+                </MenuItem>
+                <MenuItem onClick={() => handleSortChange('companyName', 'desc')}>
+                    Company Name (Z-A)
+                </MenuItem>
+                <MenuItem onClick={() => handleSortChange('createdAt', 'desc')}>
+                    Newest First
+                </MenuItem>
+                <MenuItem onClick={() => handleSortChange('createdAt', 'asc')}>
+                    Oldest First
+                </MenuItem>
+            </Menu>
+
+            {/* Export Dialog */}
+            <Dialog open={isExportDialogOpen} onClose={handleExportClose}>
+                <DialogTitle>Export Customers</DialogTitle>
+                <DialogContent>
+                    <FormControl fullWidth sx={{ mt: 2 }}>
+                        <InputLabel>Format</InputLabel>
+                        <Select
+                            value={selectedExportFormat}
+                            onChange={(e) => setSelectedExportFormat(e.target.value)}
+                            label="Format"
+                        >
+                            <MenuItem value="csv">CSV</MenuItem>
+                            <MenuItem value="excel">Excel</MenuItem>
+                            <MenuItem value="pdf">PDF</MenuItem>
+                        </Select>
+                    </FormControl>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleExportClose}>Cancel</Button>
+                    <Button onClick={handleExportClose} variant="contained">
+                        Export
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
     );
 };
 

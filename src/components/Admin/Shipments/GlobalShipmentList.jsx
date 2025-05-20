@@ -326,28 +326,27 @@ const GlobalShipmentList = () => {
 
     return (
         <div className="shipments-container">
-            <div className="breadcrumb-container">
-                <Link to="/admin" className="breadcrumb-link">
-                    <HomeIcon />
-                    <Typography variant="body2">Admin</Typography>
-                </Link>
-                <div className="breadcrumb-separator">
-                    <NavigateNextIcon />
-                </div>
-                <Typography variant="body2" className="breadcrumb-current">
-                    Shipments
-                </Typography>
-            </div>
-
             <Paper className="shipments-paper">
                 <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
                     <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
                         {/* Header Section */}
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                            <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', mb: 3 }}>
+                            <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b', mb: 1 }}>
                                 Global Shipments
                             </Typography>
-                            <Box sx={{ display: 'flex', gap: 2 }}>
+                            <div className="breadcrumb-container" style={{ marginBottom: 8 }}>
+                                <Link to="/admin" className="breadcrumb-link">
+                                    <HomeIcon />
+                                    <Typography variant="body2">Admin</Typography>
+                                </Link>
+                                <div className="breadcrumb-separator">
+                                    <NavigateNextIcon />
+                                </div>
+                                <Typography variant="body2" className="breadcrumb-current">
+                                    Shipments
+                                </Typography>
+                            </div>
+                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 1 }}>
                                 <Button
                                     variant="outlined"
                                     startIcon={<ExportIcon />}

@@ -190,7 +190,7 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
     return (
         <TableRow
             hover
-            onClick={() => navigate(`/shipment/${shipment.shipmentId}`)}
+            onClick={() => navigate(`/shipment/${shipment.id}`)}
             sx={{
                 cursor: 'pointer',
                 '&:hover': {
@@ -204,10 +204,10 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                 sx={{ verticalAlign: 'top', paddingTop: '16px' }}
             >
                 <Link
-                    to={`/shipment/${shipment.shipmentId}`}
+                    to={`/shipment/${shipment.id}`}
                     style={{ textDecoration: 'none', color: '#3b82f6' }}
                 >
-                    {shipment.shipmentId}
+                    {shipment.shipmentId || shipment.id}
                 </Link>
             </TableCell>
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.customer}</TableCell>

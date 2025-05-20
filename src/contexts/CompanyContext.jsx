@@ -19,6 +19,12 @@ export const CompanyProvider = ({ children }) => {
         const cachedCompanyData = localStorage.getItem('solushipx_company_data');
         const cachedCompanyIdForAddress = localStorage.getItem('solushipx_company_id_for_address');
 
+        console.log('CompanyContext: Checking cached data:', {
+            hasCachedCompanyData: !!cachedCompanyData,
+            hasCachedCompanyIdForAddress: !!cachedCompanyIdForAddress,
+            cachedCompanyIdForAddress
+        });
+
         if (cachedCompanyData && cachedCompanyIdForAddress) {
             console.log('CompanyContext: Using cached company data');
             setCompanyData(JSON.parse(cachedCompanyData));
@@ -29,6 +35,7 @@ export const CompanyProvider = ({ children }) => {
 
         const fetchCompanyData = async () => {
             if (!currentUser) {
+                console.log('CompanyContext: No current user, skipping fetch');
                 setLoading(false);
                 return;
             }
@@ -45,6 +52,12 @@ export const CompanyProvider = ({ children }) => {
                 }
 
                 const userData = userDoc.data();
+                console.log('CompanyContext: User data:', {
+                    uid: currentUser.uid,
+                    connectedCompanies: userData.connectedCompanies,
+                    companies: userData.companies
+                });
+
                 const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
 
                 if (!companyIdValue) {
@@ -71,7 +84,11 @@ export const CompanyProvider = ({ children }) => {
                 const companyDocData = companyDoc.data();
                 const companyDocId = companyDoc.id;
 
-                console.log('CompanyContext: Found company document:', { id: companyDocId, ...companyDocData });
+                console.log('CompanyContext: Found company document:', {
+                    id: companyDocId,
+                    companyID: companyDocData.companyID,
+                    name: companyDocData.name
+                });
 
                 // Save the Firebase document ID and the value for addressBook
                 const companyWithId = {
@@ -89,6 +106,11 @@ export const CompanyProvider = ({ children }) => {
 
             } catch (err) {
                 console.error('Error fetching company data:', err);
+                console.error('Error details:', {
+                    message: err.message,
+                    code: err.code,
+                    stack: err.stack
+                });
                 setError(err.message || 'Failed to fetch company data.');
                 setLoading(false);
             }

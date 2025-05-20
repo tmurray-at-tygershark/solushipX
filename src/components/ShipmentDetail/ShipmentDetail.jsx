@@ -1174,387 +1174,540 @@ const ShipmentDetail = () => {
             <ErrorBoundary>
                 <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
                     <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                        {/* Breadcrumb Navigation and Action Buttons */}
-                        <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                                Shipment Detail
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Firestore ID: {shipment?.id || 'N/A'} | Business Shipment ID: {shipment?.shipmentId || 'N/A'}
-                            </Typography>
-                        </Box>
-                        {/* Add a summary grid for top-level fields */}
-                        <Grid container spacing={2} sx={{ mb: 2 }}>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="caption" color="text.secondary">Customer</Typography>
-                                <Typography variant="body2">{customers[shipment?.customerId] || shipment?.companyName || shipment?.customerId || 'N/A'}</Typography>
+                        <Paper sx={{ p: 3, borderRadius: 2, boxShadow: 1, mb: 3 }}>
+                            {/* Breadcrumb Navigation and Action Buttons */}
+                            <Box sx={{ mb: 3 }}>
+                                <Typography variant="h5" sx={{ fontWeight: 700, mb: 2 }}>
+                                    Shipment Detail
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <HomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
+                                    <Typography
+                                        component={Link}
+                                        to="/"
+                                        sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
+                                    >
+                                        Home
+                                    </Typography>
+                                    <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                                    <Typography
+                                        component={Link}
+                                        to="/admin/shipments"
+                                        sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
+                                    >
+                                        Shipments
+                                    </Typography>
+                                    <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                                    <Typography color="text.primary" sx={{ fontWeight: 600 }}>
+                                        {shipment?.shipmentId || 'Shipment'}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                            {/* Add a summary grid for top-level fields */}
+                            <Grid container spacing={2} sx={{ mb: 2 }}>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Customer</Typography>
+                                    <Typography variant="body2">{customers[shipment?.customerId] || shipment?.companyName || shipment?.customerId || 'N/A'}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Company ID</Typography>
+                                    <Typography variant="body2">{shipment?.companyId || 'N/A'}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Carrier</Typography>
+                                    <Typography variant="body2">{shipment?.carrier || 'N/A'}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Status</Typography>
+                                    <Typography variant="body2">{shipment?.status || 'N/A'}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Created At</Typography>
+                                    <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Notes</Typography>
+                                    <Typography variant="body2">{shipment?.notes || 'N/A'}</Typography>
+                                </Grid>
                             </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="caption" color="text.secondary">Company ID</Typography>
-                                <Typography variant="body2">{shipment?.companyId || 'N/A'}</Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="caption" color="text.secondary">Carrier</Typography>
-                                <Typography variant="body2">{shipment?.carrier || 'N/A'}</Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="caption" color="text.secondary">Status</Typography>
-                                <Typography variant="body2">{shipment?.status || 'N/A'}</Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="caption" color="text.secondary">Created At</Typography>
-                                <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="caption" color="text.secondary">Notes</Typography>
-                                <Typography variant="body2">{shipment?.notes || 'N/A'}</Typography>
-                            </Grid>
-                        </Grid>
+                            {/* Add id to the main content container */}
+                            <Box id="shipment-detail-content">
+                                {/* Shipment Information Section */}
+                                <Grid item xs={12}>
+                                    <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                                            <ShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="h6">Shipment Information</Typography>
+                                        </Box>
 
-                        {/* Add id to the main content container */}
-                        <Box id="shipment-detail-content">
-                            {/* Shipment Information Section */}
-                            <Grid item xs={12}>
-                                <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                        <ShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                        <Typography variant="h6">Shipment Information</Typography>
-                                    </Box>
-
-                                    <Grid container spacing={3}>
-                                        {/* Basic Information */}
-                                        <Grid item xs={12} md={4}>
-                                            <Box sx={{
-                                                p: 2,
-                                                bgcolor: 'background.default',
-                                                borderRadius: 1,
-                                                border: '1px solid',
-                                                borderColor: 'divider'
-                                            }}>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                    Basic Information
-                                                </Typography>
-                                                <Stack spacing={2}>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
-                                                        <Typography variant="body2">{shipment?.shipmentInfo?.shipmentType || 'N/A'}</Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary">Reference Number</Typography>
-                                                        <Typography variant="body2">{shipment?.shipmentInfo?.shipperReferenceNumber || 'N/A'}</Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary">Bill Type</Typography>
-                                                        <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
-                                                            {shipment?.shipmentInfo?.shipmentBillType?.toLowerCase() || 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                </Stack>
-                                            </Box>
-                                        </Grid>
-
-                                        {/* Timing Information */}
-                                        <Grid item xs={12} md={4}>
-                                            <Box sx={{
-                                                p: 2,
-                                                bgcolor: 'background.default',
-                                                borderRadius: 1,
-                                                border: '1px solid',
-                                                borderColor: 'divider'
-                                            }}>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                    Timing Information
-                                                </Typography>
-                                                <Stack spacing={2}>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
-                                                        <Typography variant="body2">
-                                                            {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
-                                                        <Typography variant="body2">
-                                                            {shipment?.shipmentInfo?.earliestPickupTime && shipment?.shipmentInfo?.latestPickupTime
-                                                                ? `${shipment.shipmentInfo.earliestPickupTime} - ${shipment.shipmentInfo.latestPickupTime}`
-                                                                : '09:00 - 17:00'}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary">Delivery Window</Typography>
-                                                        <Typography variant="body2">
-                                                            {shipment?.shipmentInfo?.earliestDeliveryTime && shipment?.shipmentInfo?.latestDeliveryTime
-                                                                ? `${shipment.shipmentInfo.earliestDeliveryTime} - ${shipment.shipmentInfo.latestDeliveryTime}`
-                                                                : '09:00 - 17:00'}
-                                                        </Typography>
-                                                    </Box>
-                                                </Stack>
-                                            </Box>
-                                        </Grid>
-
-                                        {/* Service Options */}
-                                        <Grid item xs={12} md={4}>
-                                            <Box sx={{
-                                                p: 2,
-                                                bgcolor: 'background.default',
-                                                borderRadius: 1,
-                                                border: '1px solid',
-                                                borderColor: 'divider'
-                                            }}>
-                                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                    Service Options
-                                                </Typography>
-                                                <Stack spacing={2}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <Typography variant="caption" color="text.secondary">Hold for Pickup</Typography>
-                                                        <Chip
-                                                            size="small"
-                                                            label={shipment?.shipmentInfo?.holdForPickup ? "Yes" : "No"}
-                                                            color={shipment?.shipmentInfo?.holdForPickup ? "primary" : "default"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Box>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <Typography variant="caption" color="text.secondary">International</Typography>
-                                                        <Chip
-                                                            size="small"
-                                                            label={shipment?.shipmentInfo?.internationalShipment ? "Yes" : "No"}
-                                                            color={shipment?.shipmentInfo?.internationalShipment ? "primary" : "default"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Box>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <Typography variant="caption" color="text.secondary">Saturday Delivery</Typography>
-                                                        <Chip
-                                                            size="small"
-                                                            label={shipment?.shipmentInfo?.saturdayDelivery ? "Yes" : "No"}
-                                                            color={shipment?.shipmentInfo?.saturdayDelivery ? "primary" : "default"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Box>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <Typography variant="caption" color="text.secondary">Signature Required</Typography>
-                                                        <Chip
-                                                            size="small"
-                                                            label={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "Yes" : "No"}
-                                                            color={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "primary" : "default"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Box>
-                                                </Stack>
-                                            </Box>
-                                        </Grid>
-
-                                        {/* Status & Tracking */}
-                                        <Grid item xs={12}>
-                                            <Box sx={{
-                                                p: 3,
-                                                bgcolor: 'background.default',
-                                                borderRadius: 2,
-                                                border: '1px solid',
-                                                borderColor: 'divider',
-                                                mt: 2
-                                            }}>
-                                                <Grid container spacing={3}>
-                                                    {/* Left Column - Status and Carrier */}
-                                                    <Grid item xs={12} md={4}>
-                                                        <Box sx={{
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: 2,
-                                                            height: '100%',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <Box>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                                                                    Current Status
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <StatusChip status={shipment?.status} />
-                                                                </Box>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                                                                    Carrier
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <LocalShipping sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
-                                                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                        {shipment?.selectedRate?.carrier || 'N/A'}
-                                                                    </Typography>
-                                                                </Box>
-                                                            </Box>
+                                        <Grid container spacing={3}>
+                                            {/* Basic Information */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{
+                                                    p: 2,
+                                                    bgcolor: 'background.default',
+                                                    borderRadius: 1,
+                                                    border: '1px solid',
+                                                    borderColor: 'divider'
+                                                }}>
+                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                        Basic Information
+                                                    </Typography>
+                                                    <Stack spacing={2}>
+                                                        <Box>
+                                                            <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
+                                                            <Typography variant="body2">{shipment?.shipmentInfo?.shipmentType || 'N/A'}</Typography>
                                                         </Box>
-                                                    </Grid>
-
-                                                    {/* Middle Column - Tracking and Dates */}
-                                                    <Grid item xs={12} md={4}>
-                                                        <Box sx={{
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: 2,
-                                                            height: '100%',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <Box>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                                                                    Tracking Number
-                                                                </Typography>
-                                                                <Link
-                                                                    to={`/tracking/${shipment?.trackingNumber || shipment?.id}`}
-                                                                    style={{ textDecoration: 'none' }}
-                                                                >
-                                                                    <Box sx={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 1,
-                                                                        '&:hover': { color: 'primary.dark' }
-                                                                    }}>
-                                                                        <AssignmentIcon sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
-                                                                        <Typography
-                                                                            variant="body1"
-                                                                            sx={{
-                                                                                fontWeight: 500,
-                                                                                color: 'primary.main',
-                                                                                '&:hover': { textDecoration: 'underline' }
-                                                                            }}
-                                                                        >
-                                                                            {shipment?.trackingNumber || shipment?.id || 'N/A'}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                </Link>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                                                                    Last Updated
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '1.2rem' }} />
-                                                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                        {shipment?.tracking?.lastUpdated ?
-                                                                            formatTimestamp(shipment.tracking.lastUpdated) : 'N/A'}
-                                                                    </Typography>
-                                                                </Box>
-                                                            </Box>
+                                                        <Box>
+                                                            <Typography variant="caption" color="text.secondary">Reference Number</Typography>
+                                                            <Typography variant="body2">{shipment?.shipmentInfo?.shipperReferenceNumber || 'N/A'}</Typography>
                                                         </Box>
-                                                    </Grid>
+                                                        <Box>
+                                                            <Typography variant="caption" color="text.secondary">Bill Type</Typography>
+                                                            <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                                                                {shipment?.shipmentInfo?.shipmentBillType?.toLowerCase() || 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Stack>
+                                                </Box>
+                                            </Grid>
 
-                                                    {/* Right Column - Estimated Delivery */}
-                                                    <Grid item xs={12} md={4}>
-                                                        <Paper
-                                                            elevation={0}
-                                                            sx={{
-                                                                p: 2,
-                                                                height: '100%',
-                                                                bgcolor: 'primary.main',
-                                                                color: 'primary.contrastText',
-                                                                borderRadius: 2,
+                                            {/* Timing Information */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{
+                                                    p: 2,
+                                                    bgcolor: 'background.default',
+                                                    borderRadius: 1,
+                                                    border: '1px solid',
+                                                    borderColor: 'divider'
+                                                }}>
+                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                        Timing Information
+                                                    </Typography>
+                                                    <Stack spacing={2}>
+                                                        <Box>
+                                                            <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
+                                                            <Typography variant="body2">
+                                                                {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Box>
+                                                            <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
+                                                            <Typography variant="body2">
+                                                                {shipment?.shipmentInfo?.earliestPickupTime && shipment?.shipmentInfo?.latestPickupTime
+                                                                    ? `${shipment.shipmentInfo.earliestPickupTime} - ${shipment.shipmentInfo.latestPickupTime}`
+                                                                    : '09:00 - 17:00'}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Box>
+                                                            <Typography variant="caption" color="text.secondary">Delivery Window</Typography>
+                                                            <Typography variant="body2">
+                                                                {shipment?.shipmentInfo?.earliestDeliveryTime && shipment?.shipmentInfo?.latestDeliveryTime
+                                                                    ? `${shipment.shipmentInfo.earliestDeliveryTime} - ${shipment.shipmentInfo.latestDeliveryTime}`
+                                                                    : '09:00 - 17:00'}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Stack>
+                                                </Box>
+                                            </Grid>
+
+                                            {/* Service Options */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{
+                                                    p: 2,
+                                                    bgcolor: 'background.default',
+                                                    borderRadius: 1,
+                                                    border: '1px solid',
+                                                    borderColor: 'divider'
+                                                }}>
+                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                        Service Options
+                                                    </Typography>
+                                                    <Stack spacing={2}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <Typography variant="caption" color="text.secondary">Hold for Pickup</Typography>
+                                                            <Chip
+                                                                size="small"
+                                                                label={shipment?.shipmentInfo?.holdForPickup ? "Yes" : "No"}
+                                                                color={shipment?.shipmentInfo?.holdForPickup ? "primary" : "default"}
+                                                                variant="outlined"
+                                                            />
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <Typography variant="caption" color="text.secondary">International</Typography>
+                                                            <Chip
+                                                                size="small"
+                                                                label={shipment?.shipmentInfo?.internationalShipment ? "Yes" : "No"}
+                                                                color={shipment?.shipmentInfo?.internationalShipment ? "primary" : "default"}
+                                                                variant="outlined"
+                                                            />
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <Typography variant="caption" color="text.secondary">Saturday Delivery</Typography>
+                                                            <Chip
+                                                                size="small"
+                                                                label={shipment?.shipmentInfo?.saturdayDelivery ? "Yes" : "No"}
+                                                                color={shipment?.shipmentInfo?.saturdayDelivery ? "primary" : "default"}
+                                                                variant="outlined"
+                                                            />
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <Typography variant="caption" color="text.secondary">Signature Required</Typography>
+                                                            <Chip
+                                                                size="small"
+                                                                label={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "Yes" : "No"}
+                                                                color={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "primary" : "default"}
+                                                                variant="outlined"
+                                                            />
+                                                        </Box>
+                                                    </Stack>
+                                                </Box>
+                                            </Grid>
+
+                                            {/* Status & Tracking */}
+                                            <Grid item xs={12}>
+                                                <Box sx={{
+                                                    p: 3,
+                                                    bgcolor: 'background.default',
+                                                    borderRadius: 2,
+                                                    border: '1px solid',
+                                                    borderColor: 'divider',
+                                                    mt: 2
+                                                }}>
+                                                    <Grid container spacing={3}>
+                                                        {/* Left Column - Status and Carrier */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Box sx={{
                                                                 display: 'flex',
                                                                 flexDirection: 'column',
+                                                                gap: 2,
+                                                                height: '100%',
                                                                 justifyContent: 'center'
-                                                            }}
-                                                        >
-                                                            <Typography variant="caption" sx={{ mb: 1, opacity: 0.9 }}>
-                                                                Estimated Delivery
-                                                            </Typography>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                <LocalShipping sx={{ fontSize: '1.5rem' }} />
-                                                                <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                                    {shipment?.tracking?.estimatedDeliveryDate ?
-                                                                        formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available'}
-                                                                </Typography>
+                                                            }}>
+                                                                <Box>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                        Current Status
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <StatusChip status={shipment?.status} />
+                                                                    </Box>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                        Carrier
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <LocalShipping sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
+                                                                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                            {shipment?.selectedRate?.carrier || 'N/A'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Box>
                                                             </Box>
-                                                        </Paper>
+                                                        </Grid>
+
+                                                        {/* Middle Column - Tracking and Dates */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Box sx={{
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: 2,
+                                                                height: '100%',
+                                                                justifyContent: 'center'
+                                                            }}>
+                                                                <Box>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                        Tracking Number
+                                                                    </Typography>
+                                                                    <Link
+                                                                        to={`/tracking/${shipment?.trackingNumber || shipment?.id}`}
+                                                                        style={{ textDecoration: 'none' }}
+                                                                    >
+                                                                        <Box sx={{
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: 1,
+                                                                            '&:hover': { color: 'primary.dark' }
+                                                                        }}>
+                                                                            <AssignmentIcon sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
+                                                                            <Typography
+                                                                                variant="body1"
+                                                                                sx={{
+                                                                                    fontWeight: 500,
+                                                                                    color: 'primary.main',
+                                                                                    '&:hover': { textDecoration: 'underline' }
+                                                                                }}
+                                                                            >
+                                                                                {shipment?.trackingNumber || shipment?.id || 'N/A'}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    </Link>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                        Last Updated
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '1.2rem' }} />
+                                                                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                            {shipment?.tracking?.lastUpdated ?
+                                                                                formatTimestamp(shipment.tracking.lastUpdated) : 'N/A'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Box>
+                                                            </Box>
+                                                        </Grid>
+
+                                                        {/* Right Column - Estimated Delivery */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Paper
+                                                                elevation={0}
+                                                                sx={{
+                                                                    p: 2,
+                                                                    height: '100%',
+                                                                    bgcolor: 'primary.main',
+                                                                    color: 'primary.contrastText',
+                                                                    borderRadius: 2,
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    justifyContent: 'center'
+                                                                }}
+                                                            >
+                                                                <Typography variant="caption" sx={{ mb: 1, opacity: 0.9 }}>
+                                                                    Estimated Delivery
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <LocalShipping sx={{ fontSize: '1.5rem' }} />
+                                                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                                                        {shipment?.tracking?.estimatedDeliveryDate ?
+                                                                            formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Paper>
+                                                        </Grid>
                                                     </Grid>
-                                                </Grid>
-                                            </Box>
+                                                </Box>
+                                            </Grid>
+                                        </Grid>
+                                    </Paper>
+                                </Grid>
+
+                                {/* Main Content Grid - Two Columns */}
+                                <Grid container spacing={3} sx={{ mt: 2 }}>
+                                    {/* Maps Row */}
+                                    <Grid item xs={12} sx={{ mb: 3 }}>
+                                        <Grid container spacing={3}>
+                                            {/* Ship From Map */}
+                                            <Grid item xs={12} md={6}>
+                                                <Paper>
+                                                    <Box
+                                                        sx={{
+                                                            p: 2,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            borderBottom: '1px solid #e0e0e0'
+                                                        }}
+                                                    >
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <LocationOnIcon sx={{ color: '#000' }} />
+                                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                                Ship From Location
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                    <Box sx={{ p: 2 }}>
+                                                        <Typography variant="body1" sx={{ mb: 1 }}>
+                                                            {getAddress(shipment, 'shipFrom')?.company || 'N/A'}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
+                                                            {formatAddress(getAddress(shipment, 'shipFrom'))}
+                                                        </Typography>
+                                                        {isGoogleMapsLoaded && getAddress(shipment, 'shipFrom') && (
+                                                            <SimpleMap
+                                                                address={getAddress(shipment, 'shipFrom')}
+                                                                title="Ship From Location"
+                                                            />
+                                                        )}
+                                                    </Box>
+                                                </Paper>
+                                            </Grid>
+
+                                            {/* Ship To Map */}
+                                            <Grid item xs={12} md={6}>
+                                                <Paper>
+                                                    <Box
+                                                        sx={{
+                                                            p: 2,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            borderBottom: '1px solid #e0e0e0'
+                                                        }}
+                                                    >
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <LocationOnIcon sx={{ color: '#000' }} />
+                                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                                Ship To Location
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                    <Box sx={{ p: 2 }}>
+                                                        <Typography variant="body1" sx={{ mb: 1 }}>
+                                                            {getAddress(shipment, 'shipTo')?.company || 'N/A'}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
+                                                            {formatAddress(getAddress(shipment, 'shipTo'))}
+                                                        </Typography>
+                                                        {isGoogleMapsLoaded && getAddress(shipment, 'shipTo') && (
+                                                            <SimpleMap
+                                                                address={getAddress(shipment, 'shipTo')}
+                                                                title="Ship To Location"
+                                                            />
+                                                        )}
+                                                    </Box>
+                                                </Paper>
+                                            </Grid>
                                         </Grid>
                                     </Grid>
-                                </Paper>
-                            </Grid>
 
-                            {/* Main Content Grid - Two Columns */}
-                            <Grid container spacing={3} sx={{ mt: 2 }}>
-                                {/* Maps Row */}
-                                <Grid item xs={12} sx={{ mb: 3 }}>
-                                    <Grid container spacing={3}>
-                                        {/* Ship From Map */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper>
-                                                <Box
-                                                    sx={{
-                                                        p: 2,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        borderBottom: '1px solid #e0e0e0'
-                                                    }}
-                                                >
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <LocationOnIcon sx={{ color: '#000' }} />
-                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                            Ship From Location
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                                <Box sx={{ p: 2 }}>
-                                                    <Typography variant="body1" sx={{ mb: 1 }}>
-                                                        {getAddress(shipment, 'shipFrom')?.company || 'N/A'}
+                                    {/* Rates Row */}
+                                    <Grid item xs={12} sx={{ mb: 3 }}>
+                                        <Paper>
+                                            <Box
+                                                sx={{
+                                                    p: 2,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    borderBottom: '1px solid #e0e0e0'
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <MoneyIcon sx={{ color: '#000' }} />
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                        Rate Details
                                                     </Typography>
-                                                    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
-                                                        {formatAddress(getAddress(shipment, 'shipFrom'))}
-                                                    </Typography>
-                                                    {isGoogleMapsLoaded && getAddress(shipment, 'shipFrom') && (
-                                                        <SimpleMap
-                                                            address={getAddress(shipment, 'shipFrom')}
-                                                            title="Ship From Location"
-                                                        />
-                                                    )}
                                                 </Box>
-                                            </Paper>
-                                        </Grid>
+                                                <IconButton onClick={() => toggleSection('rate')}>
+                                                    <ExpandMoreIcon
+                                                        sx={{
+                                                            transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
+                                                            transition: 'transform 0.3s',
+                                                            color: '#666'
+                                                        }}
+                                                    />
+                                                </IconButton>
+                                            </Box>
+                                            <Collapse in={expandedSections.rate}>
+                                                <Box sx={{ p: 3 }}>
+                                                    <Grid container spacing={3}>
+                                                        {/* Left Column - Service Details */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Carrier & Service
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        {shipment?.selectedRate?.carrier || 'N/A'} - {shipment?.selectedRate?.service || 'N/A'}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Transit Time
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        {shipment?.selectedRate?.transitDays || 0} {shipment?.selectedRate?.transitDays === 1 ? 'day' : 'days'}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Delivery Date
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        {shipment?.selectedRate?.deliveryDate || 'N/A'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        </Grid>
 
-                                        {/* Ship To Map */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper>
-                                                <Box
-                                                    sx={{
-                                                        p: 2,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        borderBottom: '1px solid #e0e0e0'
-                                                    }}
-                                                >
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <LocationOnIcon sx={{ color: '#000' }} />
-                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                            Ship To Location
-                                                        </Typography>
-                                                    </Box>
+                                                        {/* Middle Column - Charges */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Freight Charges
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(shipment?.selectedRate?.freightCharges || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Fuel Charges
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(shipment?.selectedRate?.fuelCharges || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Service Charges
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(shipment?.selectedRate?.serviceCharges || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                                {shipment?.selectedRate?.guaranteed && (
+                                                                    <Box>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Guarantee Charge
+                                                                        </Typography>
+                                                                        <Typography variant="body1">
+                                                                            ${(shipment?.selectedRate?.guaranteeCharge || 0).toFixed(2)}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                )}
+                                                            </Box>
+                                                        </Grid>
+
+                                                        {/* Right Column - Total */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Paper
+                                                                elevation={0}
+                                                                sx={{
+                                                                    p: 2,
+                                                                    borderRadius: 2,
+                                                                    border: '1px solid #e0e0e0',
+                                                                    bgcolor: 'background.default',
+                                                                    height: '100%',
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    justifyContent: 'center'
+                                                                }}
+                                                            >
+                                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
+                                                                    Total Charges
+                                                                </Typography>
+                                                                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
+                                                                    ${(shipment?.selectedRate?.totalCharges || 0).toFixed(2)}
+                                                                </Typography>
+                                                                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                                                                    {shipment?.selectedRate?.currency || 'USD'}
+                                                                </Typography>
+                                                            </Paper>
+                                                        </Grid>
+                                                    </Grid>
                                                 </Box>
-                                                <Box sx={{ p: 2 }}>
-                                                    <Typography variant="body1" sx={{ mb: 1 }}>
-                                                        {getAddress(shipment, 'shipTo')?.company || 'N/A'}
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
-                                                        {formatAddress(getAddress(shipment, 'shipTo'))}
-                                                    </Typography>
-                                                    {isGoogleMapsLoaded && getAddress(shipment, 'shipTo') && (
-                                                        <SimpleMap
-                                                            address={getAddress(shipment, 'shipTo')}
-                                                            title="Ship To Location"
-                                                        />
-                                                    )}
-                                                </Box>
-                                            </Paper>
-                                        </Grid>
+                                            </Collapse>
+                                        </Paper>
                                     </Grid>
                                 </Grid>
 
-                                {/* Rates Row */}
-                                <Grid item xs={12} sx={{ mb: 3 }}>
-                                    <Paper>
+                                {/* Packages Section */}
+                                <Grid item xs={12}>
+                                    <Paper sx={{ mb: 3 }}>
                                         <Box
                                             sx={{
                                                 p: 2,
@@ -1565,448 +1718,315 @@ const ShipmentDetail = () => {
                                             }}
                                         >
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <MoneyIcon sx={{ color: '#000' }} />
+                                                <BoxIcon sx={{ color: '#000' }} />
                                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                    Rate Details
+                                                    Packages
                                                 </Typography>
                                             </Box>
-                                            <IconButton onClick={() => toggleSection('rate')}>
+                                            <IconButton onClick={() => toggleSection('packages')}>
                                                 <ExpandMoreIcon
                                                     sx={{
-                                                        transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
+                                                        transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
                                                         transition: 'transform 0.3s',
                                                         color: '#666'
                                                     }}
                                                 />
                                             </IconButton>
                                         </Box>
-                                        <Collapse in={expandedSections.rate}>
+                                        <Collapse in={expandedSections.packages}>
                                             <Box sx={{ p: 3 }}>
-                                                <Grid container spacing={3}>
-                                                    {/* Left Column - Service Details */}
-                                                    <Grid item xs={12} md={4}>
-                                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                    Carrier & Service
+                                                <Grid container spacing={2}>
+                                                    {allPackages.length === 0 && (
+                                                        <Grid item xs={12}><Typography>No packages found</Typography></Grid>
+                                                    )}
+                                                    {allPackages.map((pkg, index) => (
+                                                        <Grid item xs={12} sm={6} md={4} key={index}>
+                                                            <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid #e0e0e0', bgcolor: 'background.default' }}>
+                                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                                                                    Package {index + 1}
                                                                 </Typography>
-                                                                <Typography variant="body1">
-                                                                    {shipment?.selectedRate?.carrier || 'N/A'} - {shipment?.selectedRate?.service || 'N/A'}
-                                                                </Typography>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                    Transit Time
-                                                                </Typography>
-                                                                <Typography variant="body1">
-                                                                    {shipment?.selectedRate?.transitDays || 0} {shipment?.selectedRate?.transitDays === 1 ? 'day' : 'days'}
-                                                                </Typography>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                    Delivery Date
-                                                                </Typography>
-                                                                <Typography variant="body1">
-                                                                    {shipment?.selectedRate?.deliveryDate || 'N/A'}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </Grid>
-
-                                                    {/* Middle Column - Charges */}
-                                                    <Grid item xs={12} md={4}>
-                                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                    Freight Charges
-                                                                </Typography>
-                                                                <Typography variant="body1">
-                                                                    ${(shipment?.selectedRate?.freightCharges || 0).toFixed(2)}
-                                                                </Typography>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                    Fuel Charges
-                                                                </Typography>
-                                                                <Typography variant="body1">
-                                                                    ${(shipment?.selectedRate?.fuelCharges || 0).toFixed(2)}
-                                                                </Typography>
-                                                            </Box>
-                                                            <Box>
-                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                    Service Charges
-                                                                </Typography>
-                                                                <Typography variant="body1">
-                                                                    ${(shipment?.selectedRate?.serviceCharges || 0).toFixed(2)}
-                                                                </Typography>
-                                                            </Box>
-                                                            {shipment?.selectedRate?.guaranteed && (
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Guarantee Charge
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        ${(shipment?.selectedRate?.guaranteeCharge || 0).toFixed(2)}
-                                                                    </Typography>
+                                                                <Box sx={{ display: 'grid', gap: 1 }}>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Description
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.description || pkg.itemDescription || 'N/A'}</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Quantity
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.quantity || pkg.packagingQuantity || 1} {parseInt(pkg.quantity || pkg.packagingQuantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Weight
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.weight || 'N/A'} lbs</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Dimensions
+                                                                        </Typography>
+                                                                        <Typography variant="body1">
+                                                                            {pkg.dimensions ?
+                                                                                `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
+                                                                                (pkg.length && pkg.width && pkg.height ? `${pkg.length}" × ${pkg.width}" × ${pkg.height}"` : 'N/A')
+                                                                            }
+                                                                        </Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Freight Class
+                                                                        </Typography>
+                                                                        <Typography variant="body1">{pkg.freightClass || 'N/A'}</Typography>
+                                                                    </Box>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Declared Value
+                                                                        </Typography>
+                                                                        <Typography variant="body1">${(pkg.value || pkg.declaredValue || 0).toFixed(2)}</Typography>
+                                                                    </Box>
                                                                 </Box>
-                                                            )}
-                                                        </Box>
-                                                    </Grid>
-
-                                                    {/* Right Column - Total */}
-                                                    <Grid item xs={12} md={4}>
-                                                        <Paper
-                                                            elevation={0}
-                                                            sx={{
-                                                                p: 2,
-                                                                borderRadius: 2,
-                                                                border: '1px solid #e0e0e0',
-                                                                bgcolor: 'background.default',
-                                                                height: '100%',
-                                                                display: 'flex',
-                                                                flexDirection: 'column',
-                                                                justifyContent: 'center'
-                                                            }}
-                                                        >
-                                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
-                                                                Total Charges
-                                                            </Typography>
-                                                            <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
-                                                                ${(shipment?.selectedRate?.totalCharges || 0).toFixed(2)}
-                                                            </Typography>
-                                                            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                                                                {shipment?.selectedRate?.currency || 'USD'}
-                                                            </Typography>
-                                                        </Paper>
-                                                    </Grid>
+                                                            </Paper>
+                                                        </Grid>
+                                                    ))}
                                                 </Grid>
+                                                {allPackages.length > 3 && (
+                                                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                                                        <Button
+                                                            onClick={() => setShowAllPackages(!showAllPackages)}
+                                                            sx={{ color: '#000', '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}
+                                                        >
+                                                            {showAllPackages ? 'Show Less' : `Show ${allPackages.length - 3} More Packages`}
+                                                        </Button>
+                                                    </Box>
+                                                )}
                                             </Box>
                                         </Collapse>
                                     </Paper>
                                 </Grid>
-                            </Grid>
 
-                            {/* Packages Section */}
-                            <Grid item xs={12}>
-                                <Paper sx={{ mb: 3 }}>
-                                    <Box
-                                        sx={{
-                                            p: 2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            borderBottom: '1px solid #e0e0e0'
-                                        }}
-                                    >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <BoxIcon sx={{ color: '#000' }} />
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                Packages
-                                            </Typography>
-                                        </Box>
-                                        <IconButton onClick={() => toggleSection('packages')}>
-                                            <ExpandMoreIcon
+                                {/* Route Map and Shipment History in one row */}
+                                <Grid container spacing={3}>
+                                    {/* Route Map Section - Left Column */}
+                                    <Grid item xs={12} md={6}>
+                                        <Paper>
+                                            <Box
                                                 sx={{
-                                                    transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
-                                                    transition: 'transform 0.3s',
-                                                    color: '#666'
+                                                    p: 2,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    borderBottom: '1px solid #e0e0e0'
                                                 }}
-                                            />
-                                        </IconButton>
-                                    </Box>
-                                    <Collapse in={expandedSections.packages}>
-                                        <Box sx={{ p: 3 }}>
-                                            <Grid container spacing={2}>
-                                                {allPackages.length === 0 && (
-                                                    <Grid item xs={12}><Typography>No packages found</Typography></Grid>
-                                                )}
-                                                {allPackages.map((pkg, index) => (
-                                                    <Grid item xs={12} sm={6} md={4} key={index}>
-                                                        <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid #e0e0e0', bgcolor: 'background.default' }}>
-                                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                                                Package {index + 1}
-                                                            </Typography>
-                                                            <Box sx={{ display: 'grid', gap: 1 }}>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Description
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.description || pkg.itemDescription || 'N/A'}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Quantity
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.quantity || pkg.packagingQuantity || 1} {parseInt(pkg.quantity || pkg.packagingQuantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Weight
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.weight || 'N/A'} lbs</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Dimensions
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {pkg.dimensions ?
-                                                                            `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
-                                                                            (pkg.length && pkg.width && pkg.height ? `${pkg.length}" × ${pkg.width}" × ${pkg.height}"` : 'N/A')
-                                                                        }
-                                                                    </Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Freight Class
-                                                                    </Typography>
-                                                                    <Typography variant="body1">{pkg.freightClass || 'N/A'}</Typography>
-                                                                </Box>
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Declared Value
-                                                                    </Typography>
-                                                                    <Typography variant="body1">${(pkg.value || pkg.declaredValue || 0).toFixed(2)}</Typography>
-                                                                </Box>
-                                                            </Box>
-                                                        </Paper>
-                                                    </Grid>
-                                                ))}
-                                            </Grid>
-                                            {allPackages.length > 3 && (
-                                                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                                                    <Button
-                                                        onClick={() => setShowAllPackages(!showAllPackages)}
-                                                        sx={{ color: '#000', '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}
-                                                    >
-                                                        {showAllPackages ? 'Show Less' : `Show ${allPackages.length - 3} More Packages`}
-                                                    </Button>
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <MapIcon sx={{ color: '#000' }} />
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                        Route Map
+                                                    </Typography>
                                                 </Box>
-                                            )}
-                                        </Box>
-                                    </Collapse>
-                                </Paper>
-                            </Grid>
-
-                            {/* Route Map and Shipment History in one row */}
-                            <Grid container spacing={3}>
-                                {/* Route Map Section - Left Column */}
-                                <Grid item xs={12} md={6}>
-                                    <Paper>
-                                        <Box
-                                            sx={{
-                                                p: 2,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                borderBottom: '1px solid #e0e0e0'
-                                            }}
-                                        >
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <MapIcon sx={{ color: '#000' }} />
-                                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                    Route Map
-                                                </Typography>
                                             </Box>
-                                        </Box>
-                                        <Box sx={{ p: 3 }}>
-                                            {isGoogleMapsLoaded ? (
-                                                <Box>
-                                                    <Box sx={{
-                                                        height: '600px',
-                                                        borderRadius: '12px',
-                                                        overflow: 'hidden',
-                                                        position: 'relative'
-                                                    }}>
-                                                        <GoogleMap
-                                                            mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                            center={directions?.request?.origin || mapCenter}
-                                                            zoom={8}
-                                                            onLoad={handleMapLoad}
-                                                            options={mapOptions}
-                                                        >
-                                                            {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
-                                                                <DirectionsRenderer
-                                                                    directions={directions}
-                                                                    options={{
-                                                                        suppressMarkers: true,
-                                                                        preserveViewport: true,
-                                                                        polylineOptions: {
-                                                                            strokeWeight: 10,
-                                                                            strokeOpacity: 1.0,
-                                                                            geodesic: true,
-                                                                            clickable: false
-                                                                        },
-                                                                        routeIndex: 0,
-                                                                        draggable: false
-                                                                    }}
-                                                                />
-                                                            )}
-                                                            {directions?.request?.origin && (
-                                                                <Marker
-                                                                    position={directions.request.origin}
-                                                                    icon={{
-                                                                        path: window.google.maps.SymbolPath.CIRCLE,
-                                                                        scale: 12,
-                                                                        fillColor: '#2196f3',
-                                                                        fillOpacity: 1,
-                                                                        strokeColor: '#ffffff',
-                                                                        strokeWeight: 2
-                                                                    }}
-                                                                    label={{
-                                                                        text: 'A',
-                                                                        color: '#ffffff',
-                                                                        fontSize: '14px',
-                                                                        fontWeight: 'bold'
-                                                                    }}
-                                                                />
-                                                            )}
-                                                            {directions?.request?.destination && (
-                                                                <Marker
-                                                                    position={directions.request.destination}
-                                                                    icon={{
-                                                                        path: window.google.maps.SymbolPath.CIRCLE,
-                                                                        scale: 12,
-                                                                        fillColor: '#f44336',
-                                                                        fillOpacity: 1,
-                                                                        strokeColor: '#ffffff',
-                                                                        strokeWeight: 2
-                                                                    }}
-                                                                    label={{
-                                                                        text: 'B',
-                                                                        color: '#ffffff',
-                                                                        fontSize: '14px',
-                                                                        fontWeight: 'bold'
-                                                                    }}
-                                                                />
-                                                            )}
-                                                        </GoogleMap>
-                                                        {/* Route Summary Overlay */}
+                                            <Box sx={{ p: 3 }}>
+                                                {isGoogleMapsLoaded ? (
+                                                    <Box>
                                                         <Box sx={{
-                                                            position: 'absolute',
-                                                            top: 16,
-                                                            left: 16,
-                                                            background: 'rgba(255, 255, 255, 0.95)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            borderRadius: '16px',
-                                                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-                                                            p: 2,
-                                                            zIndex: 1,
-                                                            minWidth: '200px'
+                                                            height: '600px',
+                                                            borderRadius: '12px',
+                                                            overflow: 'hidden',
+                                                            position: 'relative'
                                                         }}>
+                                                            <GoogleMap
+                                                                mapContainerStyle={{ width: '100%', height: '100%' }}
+                                                                center={directions?.request?.origin || mapCenter}
+                                                                zoom={8}
+                                                                onLoad={handleMapLoad}
+                                                                options={mapOptions}
+                                                            >
+                                                                {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
+                                                                    <DirectionsRenderer
+                                                                        directions={directions}
+                                                                        options={{
+                                                                            suppressMarkers: true,
+                                                                            preserveViewport: true,
+                                                                            polylineOptions: {
+                                                                                strokeWeight: 10,
+                                                                                strokeOpacity: 1.0,
+                                                                                geodesic: true,
+                                                                                clickable: false
+                                                                            },
+                                                                            routeIndex: 0,
+                                                                            draggable: false
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                {directions?.request?.origin && (
+                                                                    <Marker
+                                                                        position={directions.request.origin}
+                                                                        icon={{
+                                                                            path: window.google.maps.SymbolPath.CIRCLE,
+                                                                            scale: 12,
+                                                                            fillColor: '#2196f3',
+                                                                            fillOpacity: 1,
+                                                                            strokeColor: '#ffffff',
+                                                                            strokeWeight: 2
+                                                                        }}
+                                                                        label={{
+                                                                            text: 'A',
+                                                                            color: '#ffffff',
+                                                                            fontSize: '14px',
+                                                                            fontWeight: 'bold'
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                {directions?.request?.destination && (
+                                                                    <Marker
+                                                                        position={directions.request.destination}
+                                                                        icon={{
+                                                                            path: window.google.maps.SymbolPath.CIRCLE,
+                                                                            scale: 12,
+                                                                            fillColor: '#f44336',
+                                                                            fillOpacity: 1,
+                                                                            strokeColor: '#ffffff',
+                                                                            strokeWeight: 2
+                                                                        }}
+                                                                        label={{
+                                                                            text: 'B',
+                                                                            color: '#ffffff',
+                                                                            fontSize: '14px',
+                                                                            fontWeight: 'bold'
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            </GoogleMap>
+                                                            {/* Route Summary Overlay */}
                                                             <Box sx={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: 2,
-                                                                p: 1.5,
-                                                                borderRadius: '12px',
-                                                                background: 'rgba(25, 118, 210, 0.04)'
+                                                                position: 'absolute',
+                                                                top: 16,
+                                                                left: 16,
+                                                                background: 'rgba(255, 255, 255, 0.95)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                borderRadius: '16px',
+                                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                                                                p: 2,
+                                                                zIndex: 1,
+                                                                minWidth: '200px'
                                                             }}>
-                                                                <LocationIcon sx={{
-                                                                    color: 'primary.main',
-                                                                    fontSize: 28,
-                                                                    opacity: 0.9
-                                                                }} />
-                                                                <Box sx={{ flex: 1 }}>
-                                                                    <Typography variant="subtitle2" sx={{
-                                                                        color: 'text.secondary',
-                                                                        fontSize: '0.75rem',
-                                                                        fontWeight: 500,
-                                                                        textTransform: 'uppercase',
-                                                                        letterSpacing: '0.5px'
-                                                                    }}>
-                                                                        Total Distance
-                                                                    </Typography>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                        <Typography variant="h6" sx={{
-                                                                            color: 'primary.main',
-                                                                            fontWeight: 700,
-                                                                            fontSize: '1.25rem',
-                                                                            lineHeight: 1.2
+                                                                <Box sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 2,
+                                                                    p: 1.5,
+                                                                    borderRadius: '12px',
+                                                                    background: 'rgba(25, 118, 210, 0.04)'
+                                                                }}>
+                                                                    <LocationIcon sx={{
+                                                                        color: 'primary.main',
+                                                                        fontSize: 28,
+                                                                        opacity: 0.9
+                                                                    }} />
+                                                                    <Box sx={{ flex: 1 }}>
+                                                                        <Typography variant="subtitle2" sx={{
+                                                                            color: 'text.secondary',
+                                                                            fontSize: '0.75rem',
+                                                                            fontWeight: 500,
+                                                                            textTransform: 'uppercase',
+                                                                            letterSpacing: '0.5px'
                                                                         }}>
-                                                                            {directions?.routes[0]?.legs[0]?.distance?.value &&
-                                                                                convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                                            Total Distance
                                                                         </Typography>
                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                            <Typography component="span" sx={{
-                                                                                fontSize: '0.875rem',
-                                                                                fontWeight: 500,
-                                                                                color: 'text.secondary'
+                                                                            <Typography variant="h6" sx={{
+                                                                                color: 'primary.main',
+                                                                                fontWeight: 700,
+                                                                                fontSize: '1.25rem',
+                                                                                lineHeight: 1.2
                                                                             }}>
-                                                                                {useMetric ? 'km' : 'mi'}
+                                                                                {directions?.routes[0]?.legs[0]?.distance?.value &&
+                                                                                    convertDistance(directions.routes[0].legs[0].distance.value)}
                                                                             </Typography>
-                                                                            <Button
-                                                                                onClick={() => setUseMetric(!useMetric)}
-                                                                                sx={{
-                                                                                    minWidth: 'auto',
-                                                                                    p: 1,
-                                                                                    borderRadius: '8px',
-                                                                                    background: 'rgba(25, 118, 210, 0.08)',
-                                                                                    color: 'primary.main',
-                                                                                    '&:hover': {
-                                                                                        background: 'rgba(25, 118, 210, 0.12)'
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                <SwapHorizIcon sx={{ fontSize: 20 }} />
-                                                                            </Button>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                <Typography component="span" sx={{
+                                                                                    fontSize: '0.875rem',
+                                                                                    fontWeight: 500,
+                                                                                    color: 'text.secondary'
+                                                                                }}>
+                                                                                    {useMetric ? 'km' : 'mi'}
+                                                                                </Typography>
+                                                                                <Button
+                                                                                    onClick={() => setUseMetric(!useMetric)}
+                                                                                    sx={{
+                                                                                        minWidth: 'auto',
+                                                                                        p: 1,
+                                                                                        borderRadius: '8px',
+                                                                                        background: 'rgba(25, 118, 210, 0.08)',
+                                                                                        color: 'primary.main',
+                                                                                        '&:hover': {
+                                                                                            background: 'rgba(25, 118, 210, 0.12)'
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    <SwapHorizIcon sx={{ fontSize: 20 }} />
+                                                                                </Button>
+                                                                            </Box>
                                                                         </Box>
                                                                     </Box>
                                                                 </Box>
                                                             </Box>
                                                         </Box>
                                                     </Box>
-                                                </Box>
-                                            ) : (
-                                                <Box sx={{
-                                                    height: '600px',
-                                                    borderRadius: '12px',
-                                                    bgcolor: '#f5f5f5',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center'
-                                                }}>
-                                                    <Typography color="text.secondary">Loading map...</Typography>
-                                                </Box>
-                                            )}
-                                        </Box>
-                                    </Paper>
-                                </Grid>
+                                                ) : (
+                                                    <Box sx={{
+                                                        height: '600px',
+                                                        borderRadius: '12px',
+                                                        bgcolor: '#f5f5f5',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}>
+                                                        <Typography color="text.secondary">Loading map...</Typography>
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        </Paper>
+                                    </Grid>
 
-                                {/* Shipment History Section - Right Column */}
-                                <Grid item xs={12} md={6}>
-                                    <Paper sx={{ height: '100%' }} elevation={1}>
-                                        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                                            <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <AccessTimeIcon />
-                                                Shipment History
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{
-                                            p: 2,
-                                            height: '600px',
-                                            overflowY: 'auto',
-                                            '&::-webkit-scrollbar': {
-                                                width: '8px',
-                                            },
-                                            '&::-webkit-scrollbar-track': {
-                                                background: '#f1f1f1',
-                                                borderRadius: '4px',
-                                            },
-                                            '&::-webkit-scrollbar-thumb': {
-                                                background: '#888',
-                                                borderRadius: '4px',
-                                                '&:hover': {
-                                                    background: '#555',
+                                    {/* Shipment History Section - Right Column */}
+                                    <Grid item xs={12} md={6}>
+                                        <Paper sx={{ height: '100%' }} elevation={1}>
+                                            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                                                <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <AccessTimeIcon />
+                                                    Shipment History
+                                                </Typography>
+                                            </Box>
+                                            <Box sx={{
+                                                p: 2,
+                                                height: '600px',
+                                                overflowY: 'auto',
+                                                '&::-webkit-scrollbar': {
+                                                    width: '8px',
                                                 },
-                                            },
-                                        }}>
-                                            <ShipmentTimeline events={trackingRecords} />
-                                        </Box>
-                                    </Paper>
+                                                '&::-webkit-scrollbar-track': {
+                                                    background: '#f1f1f1',
+                                                    borderRadius: '4px',
+                                                },
+                                                '&::-webkit-scrollbar-thumb': {
+                                                    background: '#888',
+                                                    borderRadius: '4px',
+                                                    '&:hover': {
+                                                        background: '#555',
+                                                    },
+                                                },
+                                            }}>
+                                                <ShipmentTimeline events={trackingRecords} />
+                                            </Box>
+                                        </Paper>
+                                    </Grid>
                                 </Grid>
-                            </Grid>
-                        </Box>
+                            </Box>
+                        </Paper>
                     </Box>
                 </Box>
             </ErrorBoundary>
