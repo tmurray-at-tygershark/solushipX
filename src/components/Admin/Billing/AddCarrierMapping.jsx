@@ -233,11 +233,13 @@ const AddCarrierMapping = () => {
             const finalCarrierDocId = carrierId || carrierName.toLowerCase().replace(/\s+/g, '_');
             const isNewMappingFlow = !carrierId;
             const carrierRef = doc(db, 'ediMappings', finalCarrierDocId);
+
             const carrierDocPayload = {
                 name: carrierName,
                 description: carrierDescription,
                 prompt: carrierPrompt,
                 updatedAt: serverTimestamp(),
+                enabled: true, // Default to enabled when creating/saving
             };
             if (isNewMappingFlow) {
                 carrierDocPayload.createdAt = serverTimestamp();
@@ -249,6 +251,8 @@ const AddCarrierMapping = () => {
                 carrierName: carrierName.toUpperCase(),
                 fileType: 'text/csv',
                 headerHash: csvHeaders.length > 0 ? generateHeaderHash(csvHeaders) : null,
+                csvHeaders: csvHeaders,
+                csvSample: csvSample,
                 parsingOptions: {
                     csvDelimiter: ',',
                     dateFormat: 'YYYYMMDD',
@@ -262,6 +266,7 @@ const AddCarrierMapping = () => {
                 },
                 updatedAt: serverTimestamp(),
             };
+
             const mappingDocSnap = await getDoc(mappingRef);
             if (!mappingDocSnap.exists() || isNewMappingFlow) {
                 mappingDocPayload.createdAt = serverTimestamp();
@@ -272,8 +277,8 @@ const AddCarrierMapping = () => {
             enqueueSnackbar('Carrier mapping saved successfully!', { variant: 'success' });
 
             setTimeout(() => {
-                navigate('/admin/billing/edi-mapping'); // Always navigate to the EDI mapping list screen
-            }, 1500); // Keep a short delay for the user to see the success message
+                navigate('/admin/billing/edi-mapping');
+            }, 1500);
 
         } catch (error) {
             console.error('Error saving carrier mapping:', error);

@@ -19,14 +19,24 @@ import {
     Container,
     Tabs,
     Tab,
-    Switch
+    Switch,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle
 } from '@mui/material';
 import {
     Add as AddIcon,
     Edit as EditIcon,
-    Visibility as ViewIcon
+    Visibility as ViewIcon,
+    DeleteForever as DeleteIcon,
+    MoreVert as MoreVertIcon
 } from '@mui/icons-material';
-import { collection, getDocs, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, serverTimestamp, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import './Billing.css';
 import AddCarrierMapping from './AddCarrierMapping';
@@ -38,10 +48,18 @@ import { useSnackbar } from 'notistack';
 const EDIMapping = () => {
     const navigate = useNavigate();
     const [carriers, setCarriers] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [selectedTab, setSelectedTab] = useState(0);
     const { enqueueSnackbar } = useSnackbar();
 
+    const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+    const [selectedCarrierForMenu, setSelectedCarrierForMenu] = useState(null);
+
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [carrierToDelete, setCarrierToDelete] = useState(null);
+
     const fetchCarriers = useCallback(async () => {
+        setLoading(true);
         try {
             const carriersRef = collection(db, 'ediMappings');
             const snapshot = await getDocs(carriersRef);
@@ -71,6 +89,8 @@ const EDIMapping = () => {
         } catch (error) {
             console.error('Error fetching carriers:', error);
             enqueueSnackbar('Failed to load carriers: ' + error.message, { variant: 'error' });
+        } finally {
+            setLoading(false);
         }
     }, [enqueueSnackbar]);
 
@@ -98,6 +118,66 @@ const EDIMapping = () => {
         }
     };
 
+    const handleMenuOpen = (event, carrier) => {
+        setMenuAnchorEl(event.currentTarget);
+        setSelectedCarrierForMenu(carrier);
+    };
+
+    const handleMenuClose = () => {
+        setMenuAnchorEl(null);
+        setSelectedCarrierForMenu(null);
+    };
+
+    const handleViewCurrentCarrier = () => {
+        if (selectedCarrierForMenu) {
+            navigate(`/admin/billing/edi-mapping/edit/${selectedCarrierForMenu.id}/review`);
+        }
+        handleMenuClose();
+    };
+
+    const handleEditCurrentCarrier = () => {
+        if (selectedCarrierForMenu) {
+            navigate(`/admin/billing/edi-mapping/edit/${selectedCarrierForMenu.id}/details`);
+        }
+        handleMenuClose();
+    };
+
+    const handleDeleteClick = () => {
+        if (selectedCarrierForMenu) {
+            setCarrierToDelete(selectedCarrierForMenu);
+            setDeleteConfirmOpen(true);
+        }
+        handleMenuClose();
+    };
+
+    const handleDeleteConfirmDialogClose = () => {
+        setDeleteConfirmOpen(false);
+        setCarrierToDelete(null);
+    };
+
+    const handleDeleteExecute = async () => {
+        if (!carrierToDelete || !carrierToDelete.id) return;
+        setLoading(true);
+        try {
+            const batch = writeBatch(db);
+            const carrierDocRef = doc(db, 'ediMappings', carrierToDelete.id);
+            const mappingSubDocRef = doc(db, 'ediMappings', carrierToDelete.id, 'default', 'mapping');
+
+            batch.delete(mappingSubDocRef);
+            batch.delete(carrierDocRef);
+
+            await batch.commit();
+            enqueueSnackbar('Carrier mapping deleted successfully!', { variant: 'success' });
+            fetchCarriers();
+        } catch (error) {
+            console.error('Error deleting carrier mapping:', error);
+            enqueueSnackbar('Error deleting mapping: ' + error.message, { variant: 'error' });
+        } finally {
+            setLoading(false);
+            handleDeleteConfirmDialogClose();
+        }
+    };
+
     const handleTabChange = (event, newValue) => {
         setSelectedTab(newValue);
     };
@@ -106,17 +186,9 @@ const EDIMapping = () => {
         navigate('/admin/billing/edi-mapping/new/details');
     };
 
-    const handleViewCarrier = (carrierId) => {
-        navigate(`/admin/billing/edi-mapping/${carrierId}/view/review`);
-    };
-
-    const handleEditCarrier = (carrierId) => {
-        navigate(`/admin/billing/edi-mapping/${carrierId}/edit/details`);
-    };
-
-    if (carriers.length === 0 && !fetchCarriers) {
+    if (loading && carriers.length === 0) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 200px)' }}>
                 <CircularProgress />
             </Box>
         );
@@ -137,7 +209,7 @@ const EDIMapping = () => {
                         textColor="primary"
                         variant="fullWidth"
                     >
-                        <Tab label="Add New Mapping" />
+                        <Tab label="Carrier Mappings List" />
                         <Tab label="Test Mapping" />
                         <Tab label="Manage Prompts" />
                     </Tabs>
@@ -166,7 +238,7 @@ const EDIMapping = () => {
                                                 <TableCell>Mappings</TableCell>
                                                 <TableCell>Last Updated</TableCell>
                                                 <TableCell>Status (Enabled)</TableCell>
-                                                <TableCell>Actions</TableCell>
+                                                <TableCell align="right">Actions</TableCell>
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
@@ -186,30 +258,22 @@ const EDIMapping = () => {
                                                             size="small"
                                                         />
                                                     </TableCell>
-                                                    <TableCell>
-                                                        <Tooltip title="View/Test">
+                                                    <TableCell align="right">
+                                                        <Tooltip title="Actions">
                                                             <IconButton
                                                                 size="small"
-                                                                onClick={() => handleViewCarrier(carrier.id)}
+                                                                onClick={(e) => handleMenuOpen(e, carrier)}
                                                             >
-                                                                <ViewIcon fontSize="inherit" />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        <Tooltip title="Edit Mapping">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => handleEditCarrier(carrier.id)}
-                                                            >
-                                                                <EditIcon fontSize="inherit" />
+                                                                <MoreVertIcon fontSize="inherit" />
                                                             </IconButton>
                                                         </Tooltip>
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
-                                            {carriers.length === 0 && !fetchCarriers && (
+                                            {carriers.length === 0 && !loading && (
                                                 <TableRow>
                                                     <TableCell colSpan={6} align="center">
-                                                        <Typography sx={{ p: 2 }} color="text.secondary">No carrier mappings found.</Typography>
+                                                        <Typography sx={{ p: 2 }} color="text.secondary">No carrier mappings found. Click "Add New" to create one.</Typography>
                                                     </TableCell>
                                                 </TableRow>
                                             )}
@@ -222,19 +286,56 @@ const EDIMapping = () => {
 
                     {selectedTab === 1 && (
                         <Grid item xs={12}>
-                            <MappingTest
-                                carrierId={carriers[0]?.id}
-                            />
+                            <Typography variant="h6">Test Mapping Area</Typography>
+                            <Alert severity="info">Test Mapping Component will be rendered here.</Alert>
                         </Grid>
                     )}
 
                     {selectedTab === 2 && (
                         <Grid item xs={12}>
-                            <PromptVersionManager carrierId={carriers[0]?.id} />
+                            <Typography variant="h6">Manage Prompts Area</Typography>
+                            <Alert severity="info">Prompt Version Manager Component will be rendered here.</Alert>
                         </Grid>
                     )}
                 </Grid>
             </Box>
+
+            <Menu
+                anchorEl={menuAnchorEl}
+                open={Boolean(menuAnchorEl)}
+                onClose={handleMenuClose}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+                <MenuItem onClick={handleViewCurrentCarrier}>
+                    <ListItemIcon><ViewIcon fontSize="small" /></ListItemIcon>
+                    View/Test
+                </MenuItem>
+                <MenuItem onClick={handleEditCurrentCarrier}>
+                    <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+                    Edit
+                </MenuItem>
+                <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
+                    <ListItemIcon><DeleteIcon fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
+                    Delete
+                </MenuItem>
+            </Menu>
+
+            <Dialog open={deleteConfirmOpen} onClose={handleDeleteConfirmDialogClose}>
+                <DialogTitle>Confirm Delete</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        Are you sure you want to delete the EDI mapping for "{carrierToDelete?.name || 'this carrier'}"?
+                        This action will also remove its associated mapping details and cannot be undone.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleDeleteConfirmDialogClose}>Cancel</Button>
+                    <Button onClick={handleDeleteExecute} color="error" variant="contained" disabled={loading}>
+                        {loading ? <CircularProgress size={20} /> : 'Delete'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Container>
     );
 };

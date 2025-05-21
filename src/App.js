@@ -64,6 +64,9 @@ const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'))
 // New Generate Invoices Page
 const GenerateInvoicesPage = lazy(() => import('./components/Admin/Billing/GenerateInvoicesPage'));
 
+// New Edit Carrier Mapping component
+const EditCarrierMapping = lazy(() => import('./components/Admin/Billing/EditCarrierMapping'));
+
 // Loading Component
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -197,14 +200,10 @@ function AppRoutes() {
                     <Route path="carrier-keys" element={<CarrierKeys />} />
                     <Route path="edi-mapping" element={<EDIMapping />} />
                     <Route path="billing/edi-mapping" element={<EDIMapping />} />
-                    <Route path="billing/edi-mapping/new" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/new/details" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/new/upload" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/new/headers" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/new/prompt" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/new/review" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/:carrierId/view" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/:carrierId/edit" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/new/*" element={<AddCarrierMapping />} />
+                    <Route path="billing/edi-mapping/edit/:carrierId/:stepName" element={<EditCarrierMapping />} />
+                    <Route path="billing/edi-mapping/edit/:carrierId" element={<Navigate to="details" replace />} />
+                    <Route path="billing/edi-mapping/new" element={<Navigate to="details" replace />} />
                     <Route path="carriers" element={<AdminCarriers />} />
                     <Route path="markups" element={<MarkupsPage />} />
                 </Route>
