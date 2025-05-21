@@ -181,19 +181,17 @@ function AppRoutes() {
                     <Route path="users/:id/reset-password" element={<ResetPassword />} />
                     <Route path="shipments" element={<GlobalShipmentList />} />
                     <Route path="shipment/:id" element={<ShipmentDetail />} />
-                    <Route path="billing" element={<BillingDashboard />} />
+                    <Route path="billing" element={<BillingDashboard initialTab="invoices" />} />
+                    <Route path="billing/overview" element={<BillingDashboard initialTab="overview" />} />
                     <Route path="billing/invoice/new" element={<InvoiceForm />} />
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />
                     <Route path="billing/edi" element={<BillingDashboard initialTab="edi" />} />
                     <Route path="billing/edi/:uploadId" element={<BillingDashboard initialTab="edi" />} />
-                    
-                    {/* Route for the old generate tab content (if kept) */}
-                    <Route path="billing/generate-old" element={<BillingDashboard initialTab="generate" />} /> 
-                    {/* New dedicated page for invoice generation simulation */}
+                    <Route path="billing/generate-old" element={<BillingDashboard initialTab="generate" />} />
                     <Route path="billing/generate" element={<GenerateInvoicesPage />} />
-
                     <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
                     <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
+                    <Route path="billing/payment-terms" element={<BillingDashboard initialTab="payment-terms" />} />
                     <Route path="roles" element={<RoleManagement />} />
                     <Route path="settings" element={<SystemSettings />} />
                     <Route path="carrier-keys" element={<CarrierKeys />} />

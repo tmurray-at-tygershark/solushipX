@@ -54,22 +54,29 @@ const EDIUploader = ({ onUploadComplete }) => {
     useEffect(() => {
         const fetchCarriers = async () => {
             try {
-                // Fetch carriers from ediMappings in default DB
                 const carriersRef = collection(db, 'ediMappings');
                 const snapshot = await getDocs(carriersRef);
-                const options = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    name: doc.data().name || doc.id
-                }));
+                const options = snapshot.docs
+                    .map(doc => ({
+                        id: doc.id,
+                        name: doc.data().name || doc.id,
+                        enabled: doc.data().enabled
+                    }))
+                    .filter(carrier => carrier.enabled === true);
+
                 setCarrierOptions(options);
+                if (options.length > 0 && !selectedCarrier) {
+                    // Optionally, auto-select the first enabled carrier if none is selected
+                    // setSelectedCarrier(options[0].id);
+                }
             } catch (e) {
                 console.error("Error fetching carriers:", e);
-                setCarrierOptions([]); // Set to empty on error
+                setCarrierOptions([]);
                 setError("Could not load carrier options.");
             }
         };
         fetchCarriers();
-    }, []); // Empty dependency array - fetch carriers once on mount
+    }, []); // Dependency array is empty, consider adding selectedCarrier if auto-selection is added
 
     const handleDrag = (e) => {
         e.preventDefault();

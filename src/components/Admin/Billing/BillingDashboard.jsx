@@ -76,6 +76,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
 import EDIMapping from './EDIMapping';
+import PaymentTerms from './PaymentTerms';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useSnackbar } from 'notistack';
@@ -196,26 +197,28 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         const path = location.pathname;
         console.log('BillingDashboard path listener:', path);
 
-        if (path.includes('/admin/billing/edi-mapping')) { // More specific first
+        if (path.includes('/admin/billing/payment-terms')) {
+            setActiveTab('payment-terms');
+        } else if (path.includes('/admin/billing/edi-mapping')) {
             setActiveTab('edi-mapping');
         } else if (path.includes('/admin/billing/edi')) {
             setActiveTab('edi');
+        } else if (path.includes('/admin/billing/generate')) {
         } else if (path.includes('/admin/billing/business')) {
             setActiveTab('business');
-        } else if (path.includes('/admin/billing/pay')) {
-            setActiveTab('pay');
         } else if (path.includes('/admin/billing/payments')) {
             setActiveTab('payments');
         } else if (path.includes('/admin/billing/overview')) {
             setActiveTab('overview');
-        } else if (path.startsWith('/admin/billing') && !path.includes('/admin/billing/generate') && !path.includes('/admin/billing/invoice/')) {
-            // Default to invoices for /admin/billing base, but not for sub-pages like generate or specific invoices
+        } else if (path.startsWith('/admin/billing') &&
+            !path.includes('/generate') &&
+            !path.includes('/invoice/') &&
+            !path.includes('/payment-terms') &&
+            !path.includes('/edi') &&
+            !path.includes('/edi-mapping')) {
             setActiveTab('invoices');
         }
-        // Note: /admin/billing/generate is handled by its own page component via App.js routing
-        // Note: /admin/billing/invoice/:id or /new are handled by InvoiceForm component via App.js
-
-    }, [location.pathname]); // Removed setActiveTab from dependencies as it causes loops
+    }, [location.pathname]);
 
     useEffect(() => {
         fetchBillingData();
@@ -544,6 +547,9 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             case 'business':
                 navigate('/admin/billing/business');
                 break;
+            case 'payment-terms':
+                navigate('/admin/billing/payment-terms');
+                break;
             case 'payments':
                 navigate('/admin/billing/payments');
                 break;
@@ -762,7 +768,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     <Tab label="EDI Processing" value="edi" />
                     <Tab label="EDI Mapping" value="edi-mapping" />
                     <Tab label="Generate Invoices" value="generate" />
-                    <Tab label="Generate Business Invoices" value="business" />
+                    <Tab label="Business Invoicing" value="business" />
+                    <Tab label="Payment Terms" value="payment-terms" />
                     <Tab label="Received Payments" value="payments" />
                 </Tabs>
             </Box>
@@ -1260,6 +1267,10 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 <Box sx={{ mb: 3 }}>
                     <EDIMapping />
                 </Box>
+            )}
+
+            {activeTab === 'payment-terms' && (
+                <PaymentTerms />
             )}
 
             {/* EDI Upload Dialog */}
