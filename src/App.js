@@ -58,6 +58,12 @@ const OrganizationDetail = lazy(() => import('./components/Admin/Organizations/O
 // New Admin Carriers component
 const AdminCarriers = lazy(() => import('./components/Admin/Carriers/AdminCarriers'));
 
+// Markups Page (New)
+const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'));
+
+// New Generate Invoices Page
+const GenerateInvoicesPage = lazy(() => import('./components/Admin/Billing/GenerateInvoicesPage'));
+
 // Loading Component
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -180,10 +186,13 @@ function AppRoutes() {
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />
                     <Route path="billing/edi" element={<BillingDashboard initialTab="edi" />} />
                     <Route path="billing/edi/:uploadId" element={<BillingDashboard initialTab="edi" />} />
-                    <Route path="billing/generate" element={<BillingDashboard initialTab="generate" />} />
+                    
+                    {/* Route for the old generate tab content (if kept) */}
+                    <Route path="billing/generate-old" element={<BillingDashboard initialTab="generate" />} /> 
+                    {/* New dedicated page for invoice generation simulation */}
+                    <Route path="billing/generate" element={<GenerateInvoicesPage />} />
+
                     <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
-                    <Route path="billing/not-invoiced" element={<BillingDashboard initialTab="not-invoiced" />} />
-                    <Route path="billing/pay" element={<BillingDashboard initialTab="pay" />} />
                     <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
                     <Route path="roles" element={<RoleManagement />} />
                     <Route path="settings" element={<SystemSettings />} />
@@ -199,6 +208,7 @@ function AppRoutes() {
                     <Route path="billing/edi-mapping/:carrierId/view" element={<AddCarrierMapping />} />
                     <Route path="billing/edi-mapping/:carrierId/edit" element={<AddCarrierMapping />} />
                     <Route path="carriers" element={<AdminCarriers />} />
+                    <Route path="markups" element={<MarkupsPage />} />
                 </Route>
 
                 {/* Fallback Route */}

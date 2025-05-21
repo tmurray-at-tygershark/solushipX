@@ -194,23 +194,28 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     // Listen for path changes to update the active tab
     useEffect(() => {
         const path = location.pathname;
+        console.log('BillingDashboard path listener:', path);
 
-        if (path.includes('/admin/billing/edi')) {
+        if (path.includes('/admin/billing/edi-mapping')) { // More specific first
+            setActiveTab('edi-mapping');
+        } else if (path.includes('/admin/billing/edi')) {
             setActiveTab('edi');
-        } else if (path.includes('/admin/billing/generate')) {
-            setActiveTab('generate');
         } else if (path.includes('/admin/billing/business')) {
             setActiveTab('business');
-        } else if (path.includes('/admin/billing/not-invoiced')) {
-            setActiveTab('not-invoiced');
         } else if (path.includes('/admin/billing/pay')) {
             setActiveTab('pay');
         } else if (path.includes('/admin/billing/payments')) {
             setActiveTab('payments');
-        } else if (path.includes('/admin/billing')) {
+        } else if (path.includes('/admin/billing/overview')) {
+            setActiveTab('overview');
+        } else if (path.startsWith('/admin/billing') && !path.includes('/admin/billing/generate') && !path.includes('/admin/billing/invoice/')) {
+            // Default to invoices for /admin/billing base, but not for sub-pages like generate or specific invoices
             setActiveTab('invoices');
         }
-    }, [location.pathname]);
+        // Note: /admin/billing/generate is handled by its own page component via App.js routing
+        // Note: /admin/billing/invoice/:id or /new are handled by InvoiceForm component via App.js
+
+    }, [location.pathname]); // Removed setActiveTab from dependencies as it causes loops
 
     useEffect(() => {
         fetchBillingData();
@@ -515,13 +520,14 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
 
     const handleTabChange = (event, newValue) => {
         setActiveTab(newValue);
-        // Update the URL based on the selected tab
         switch (newValue) {
+            case 'overview':
+                navigate('/admin/billing/overview');
+                break;
             case 'invoices':
                 navigate('/admin/billing');
                 break;
             case 'edi':
-                // If we have a selected upload ID, include it in the URL
                 if (selectedUploadId && showEdiResults) {
                     navigate(`/admin/billing/edi/${selectedUploadId}`);
                 } else {
@@ -529,17 +535,14 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     setShowEdiResults(false);
                 }
                 break;
+            case 'edi-mapping':
+                navigate('/admin/billing/edi-mapping');
+                break;
             case 'generate':
                 navigate('/admin/billing/generate');
                 break;
             case 'business':
                 navigate('/admin/billing/business');
-                break;
-            case 'not-invoiced':
-                navigate('/admin/billing/not-invoiced');
-                break;
-            case 'pay':
-                navigate('/admin/billing/pay');
                 break;
             case 'payments':
                 navigate('/admin/billing/payments');
@@ -760,8 +763,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     <Tab label="EDI Mapping" value="edi-mapping" />
                     <Tab label="Generate Invoices" value="generate" />
                     <Tab label="Generate Business Invoices" value="business" />
-                    <Tab label="Not Invoiced" value="not-invoiced" />
-                    <Tab label="Pay Invoices" value="pay" />
                     <Tab label="Received Payments" value="payments" />
                 </Tabs>
             </Box>

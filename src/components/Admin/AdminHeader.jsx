@@ -85,6 +85,11 @@ const AdminHeader = () => {
                             </Link>
                         </li>
                         <li className="nav-item">
+                            <Link className={`nav-link ${location.pathname.startsWith('/admin/markups') ? 'active' : ''}`} to="/admin/markups">
+                                <span>Markups</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
                             <Link className={`nav-link ${location.pathname.startsWith('/admin/roles') ? 'active' : ''}`} to="/admin/roles">
                                 <span>Roles</span>
                             </Link>

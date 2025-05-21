@@ -368,7 +368,7 @@ exports.processEdiFile = functions.pubsub.onMessagePublished({
         promptUsed: promptIdentifierUsed
       };
 
-    await uploadRef.update(updateData);
+      await uploadRef.update(updateData);
     
     return { success: true, recordCount: enhancedRecords.length, confidenceScore };
 

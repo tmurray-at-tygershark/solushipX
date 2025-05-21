@@ -84,6 +84,7 @@ const AddCarrierMapping = () => {
     const [isGeneratingMapping, setIsGeneratingMapping] = useState(false);
     const [dragActive, setDragActive] = useState(false);
     const [editingMapping, setEditingMapping] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         fetchCarriers();
@@ -179,92 +180,105 @@ const AddCarrierMapping = () => {
     const handleFileUpload = async (event) => {
         const file = event.target.files[0];
         if (file) {
+            setIsUploading(true);
+            setError(null);
+            setSuccess(null);
             setCsvFile(file);
+            console.log('Starting Papa.parse for file:', file.name);
             Papa.parse(file, {
                 header: true,
                 preview: 5,
                 complete: async (results) => {
-                    setCsvHeaders(results.meta.fields);
-                    setCsvSample(results.data);
-                    try {
-                        setLoading(true);
-                        const apiBaseUrl = getApiBaseUrl();
-                        const response = await fetch(`${apiBaseUrl}/generateEdiMapping`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                carrierName,
-                                csvHeadersString: results.meta.fields.join(','),
-                                sampleDataRows: results.data.slice(0, 5),
-                                prompt: carrierPrompt
-                            })
-                        });
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            throw new Error(errorText || 'Failed to get AI mapping suggestion');
-                        }
-                        const aiMapping = await response.json();
-                        setMappings(aiMapping.fieldMappings || []);
-                        setPromptUsedForGeneration(aiMapping.prompt || carrierPrompt);
-                    } catch (err) {
-                        setError('Failed to get AI mapping suggestion. ' + (err.message || 'Please check your prompt or try again.'));
-                    } finally {
-                        setLoading(false);
+                    console.log('Papa.parse complete. Results:', results);
+                    setCsvHeaders(results.meta.fields || []);
+                    setCsvSample(results.data || []);
+
+                    if (!results.meta.fields || results.meta.fields.length === 0) {
+                        setError('Could not parse headers from CSV. Please check the file format.');
+                        enqueueSnackbar('Could not parse CSV headers.', { variant: 'error' });
+                        setIsUploading(false);
+                        return;
                     }
+
+                    console.log('CSV parsed, headers and sample set. User should proceed to next step.');
+                    setHeadersAccepted(false);
+                    setIsUploading(false);
+                    enqueueSnackbar('File processed. Please review and accept headers.', { variant: 'info' });
+                },
+                error: (error) => {
+                    console.error('Papa.parse error:', error);
+                    setError('Failed to parse CSV file: ' + error.message);
+                    enqueueSnackbar('Error parsing CSV file.', { variant: 'error' });
+                    setIsUploading(false);
                 }
             });
         }
     };
 
     const handleSave = async () => {
-        if (!mappings.length) {
-            setError('No mapping available to save. Please generate a mapping first.');
+        if (!mappings.length && activeStep === STEPS.findIndex(step => step.path === 'review')) { // Only block save from review step if no mappings
+            setError('No mapping available to save. Please generate or define mappings first.');
+            enqueueSnackbar('No mapping available to save.', { variant: 'warning' });
+            return;
+        }
+        if (!carrierName.trim()) {
+            enqueueSnackbar('Carrier Name is required to save.', { variant: 'warning' });
             return;
         }
 
         setLoading(true);
+        setError(null);
+        setSuccess(null);
         try {
-            const carrierId = carrierName.toLowerCase().replace(/\s+/g, '_');
-            const carrierRef = doc(db, 'ediMappings', carrierId);
-
-            // Update carrier document
-            await setDoc(carrierRef, {
+            const finalCarrierDocId = carrierId || carrierName.toLowerCase().replace(/\s+/g, '_');
+            const isNewMappingFlow = !carrierId;
+            const carrierRef = doc(db, 'ediMappings', finalCarrierDocId);
+            const carrierDocPayload = {
                 name: carrierName,
                 description: carrierDescription,
-                prompt: promptUsedForGeneration,
-                updatedAt: new Date(),
-                ...(carrierId ? {} : { createdAt: new Date() }) // Only set createdAt for new carriers
-            });
+                prompt: carrierPrompt,
+                updatedAt: serverTimestamp(),
+            };
+            if (isNewMappingFlow) {
+                carrierDocPayload.createdAt = serverTimestamp();
+            }
+            await setDoc(carrierRef, carrierDocPayload, { merge: !isNewMappingFlow });
 
-            // Update mapping document
             const mappingRef = doc(carrierRef, 'default', 'mapping');
-            await setDoc(mappingRef, {
+            const mappingDocPayload = {
                 carrierName: carrierName.toUpperCase(),
                 fileType: 'text/csv',
-                headerHash: generateHeaderHash(csvHeaders),
+                headerHash: csvHeaders.length > 0 ? generateHeaderHash(csvHeaders) : null,
                 parsingOptions: {
                     csvDelimiter: ',',
-                    dateFormat: 'YYYYMMDD'
+                    dateFormat: 'YYYYMMDD',
                 },
                 fieldMappings: mappings,
-                prompt: promptUsedForGeneration,
+                prompt: carrierPrompt,
+                promptUsedForLastSuccessfulGeneration: promptUsedForGeneration,
                 defaultValues: {
                     carrier: carrierName.toUpperCase(),
-                    recordType: 'shipment'
+                    recordType: 'shipment',
                 },
-                updatedAt: new Date(),
-                ...(carrierId ? {} : { createdAt: new Date() }) // Only set createdAt for new mappings
-            });
+                updatedAt: serverTimestamp(),
+            };
+            const mappingDocSnap = await getDoc(mappingRef);
+            if (!mappingDocSnap.exists() || isNewMappingFlow) {
+                mappingDocPayload.createdAt = serverTimestamp();
+            }
+            await setDoc(mappingRef, mappingDocPayload, { merge: true });
 
             setSuccess('Carrier mapping saved successfully!');
             enqueueSnackbar('Carrier mapping saved successfully!', { variant: 'success' });
+
             setTimeout(() => {
-                navigate('/admin/billing/edi-mapping');
-            }, 2000);
+                navigate('/admin/billing/edi-mapping'); // Always navigate to the EDI mapping list screen
+            }, 1500); // Keep a short delay for the user to see the success message
+
         } catch (error) {
             console.error('Error saving carrier mapping:', error);
-            setError('Failed to save carrier mapping. Please try again.');
-            enqueueSnackbar('Failed to save carrier mapping', { variant: 'error' });
+            setError('Failed to save carrier mapping. ' + error.message);
+            enqueueSnackbar('Error saving carrier mapping: ' + error.message, { variant: 'error' });
         } finally {
             setLoading(false);
         }
@@ -332,7 +346,9 @@ const AddCarrierMapping = () => {
     const handleDragOver = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        setDragActive(true);
+        if (!isUploading) {
+            setDragActive(true);
+        }
     };
     const handleDragLeave = (e) => {
         e.preventDefault();
@@ -343,6 +359,8 @@ const AddCarrierMapping = () => {
         e.preventDefault();
         e.stopPropagation();
         setDragActive(false);
+        if (isUploading) return;
+
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             const fakeEvent = { target: { files: e.dataTransfer.files } };
             handleFileUpload(fakeEvent);
@@ -532,39 +550,49 @@ const AddCarrierMapping = () => {
                         <Typography variant="h6" gutterBottom>
                             Upload Sample CSV
                         </Typography>
-                        <Box
-                            sx={{
-                                border: dragActive ? '2px solid #1976d2' : '2px dashed #ccc',
-                                borderRadius: 2,
-                                p: 3,
-                                textAlign: 'center',
-                                cursor: 'pointer',
-                                backgroundColor: dragActive ? 'rgba(25, 118, 210, 0.04)' : 'inherit',
-                                transition: 'background 0.2s',
-                                '&:hover': {
-                                    borderColor: 'primary.main',
-                                },
-                            }}
-                            onClick={() => document.getElementById('csv-upload').click()}
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            onDrop={handleDropFile}
-                        >
-                            <input
-                                id="csv-upload"
-                                type="file"
-                                accept=".csv"
-                                onChange={handleFileUpload}
-                                style={{ display: 'none' }}
-                            />
-                            <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                            <Typography variant="h6" gutterBottom>
-                                {csvFile ? csvFile.name : dragActive ? 'Drop your CSV file here' : 'Click or drag CSV file to upload'}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Upload a sample CSV file with headers and a few rows of data
-                            </Typography>
-                        </Box>
+                        {isUploading ? (
+                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 3, minHeight: 200 }}>
+                                <CircularProgress sx={{ mb: 2 }} />
+                                <Typography variant="body1">Processing file, please wait...</Typography>
+                            </Box>
+                        ) : (
+                            <Box
+                                sx={{
+                                    border: dragActive ? '2px solid #1976d2' : '2px dashed #ccc',
+                                    borderRadius: 2,
+                                    p: 3,
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    backgroundColor: dragActive ? 'rgba(25, 118, 210, 0.04)' : 'inherit',
+                                    transition: 'background 0.2s',
+                                    '&:hover': {
+                                        borderColor: 'primary.main',
+                                    },
+                                }}
+                                onClick={() => !isUploading && document.getElementById('csv-upload').click()}
+                                onDragOver={handleDragOver}
+                                onDragLeave={handleDragLeave}
+                                onDrop={handleDropFile}
+                            >
+                                <input
+                                    id="csv-upload"
+                                    type="file"
+                                    accept=".csv"
+                                    onChange={handleFileUpload}
+                                    style={{ display: 'none' }}
+                                    disabled={isUploading}
+                                />
+                                <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                                <Typography variant="h6" gutterBottom>
+                                    {csvFile && !isUploading ? csvFile.name : dragActive ? 'Drop your CSV file here' : 'Click or drag CSV file to upload'}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Upload a sample CSV file with headers and a few rows of data
+                                </Typography>
+                            </Box>
+                        )}
+                        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+                        {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
                     </Paper>
                 );
             case 2:
