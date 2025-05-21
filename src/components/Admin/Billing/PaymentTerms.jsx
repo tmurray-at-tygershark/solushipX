@@ -164,7 +164,7 @@ const PaymentTerms = () => {
                     <TableBody>
                         {filteredCompanies.map((company) => (
                             <TableRow key={company.id} hover>
-                                <TableCell>{company.customerID || 'N/A'}</TableCell>
+                                <TableCell>{company.companyID}</TableCell>
                                 <TableCell>
                                     <Button
                                         variant="text"
