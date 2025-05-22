@@ -30,7 +30,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 // Import function handlers
-const { getRatesEShipPlus } = require('./src/getRates-EShipPlus');
+const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
 const ediProcessing = require('./src/edi-processing');
 const { checkEdiUploads } = require('./src/check-edi-uploads');
 const { generateEdiMapping } = require('./src/mapping_functions');

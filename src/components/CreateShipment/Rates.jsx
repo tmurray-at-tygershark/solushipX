@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import ReactMarkdown from 'react-markdown';
-import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid } from '@mui/material';
+import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, Link, CircularProgress, Button, Grid, Container, Paper } from '@mui/material';
 import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 
 const Rates = ({ formData, onPrevious, onNext }) => {
     const { updateFormSection } = useShipmentForm();
@@ -799,371 +800,335 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         return `${weight.toFixed(2)} lbs`;
     }, [formData.packages]);
 
-    return (
-        <div className="container mt-4">
-            <h2>Available Rates</h2>
-            <div className="form-section active" data-step="5">
-                <div className="section-content">
-                    {error && (
-                        <div className="alert alert-danger" role="alert">
-                            {error}
-                        </div>
-                    )}
-
-                    {!ratesLoaded ? (
-                        <Box sx={{ textAlign: 'center', padding: '20px', width: '100%' }}>
-                            {/* Enhanced Shipment Summary Card */}
-                            <Card variant="outlined" sx={{ mb: 3, textAlign: 'left', bgcolor: 'grey.50', borderRadius: 2 }}>
-                                <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
-                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 500, fontSize: '1.1rem' }}>
-                                        Fetching Rates For:
-                                    </Typography>
-                                    {/* --- Location Info --- */}
-                                    <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 1 }}>
-                                        <Grid item xs={12} md={6}>
-                                            <Typography variant="overline" display="block" color="text.secondary" sx={{ lineHeight: 1.2, mb: 0.5 }}>Origin</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                {formData.shipFrom?.company || formData.shipFrom?.name || 'N/A'}<br />
-                                                {formData.shipFrom?.street || 'N/A'}
-                                                {formData.shipFrom?.street2 && <><br />{formData.shipFrom.street2}</>}<br />
-                                                {formData.shipFrom?.city || 'N/A'}, {formData.shipFrom?.state || 'N/A'} {formData.shipFrom?.postalCode || ''}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            <Typography variant="overline" display="block" color="text.secondary" sx={{ lineHeight: 1.2, mb: 0.5 }}>Destination</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                {formData.shipTo?.company || formData.shipTo?.name || 'N/A'}<br />
-                                                {formData.shipTo?.street || 'N/A'}
-                                                {formData.shipTo?.street2 && <><br />{formData.shipTo.street2}</>}<br />
-                                                {formData.shipTo?.city || 'N/A'}, {formData.shipTo?.state || 'N/A'} {formData.shipTo?.postalCode || ''}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
-                                    <Divider sx={{ my: 1.5 }} />
-                                    {/* --- Shipment Info --- */}
-                                    <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 1 }}>
-                                        <Grid item xs={6} sm={3}>
-                                            <Typography variant="caption" display="block" color="text.secondary">Ship Date</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                {formData.shipmentInfo?.shipmentDate || 'N/A'}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6} sm={3}>
-                                            <Typography variant="caption" display="block" color="text.secondary">Type</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                {formData.shipmentInfo?.shipmentType?.toUpperCase() || 'N/A'}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="caption" display="block" color="text.secondary">Reference</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {formData.shipmentInfo?.shipperReferenceNumber || '-'}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
-                                    <Divider sx={{ my: 1.5 }} />
-                                    {/* --- Package Summary --- */}
-                                    <Typography variant="overline" display="block" color="text.secondary" sx={{ lineHeight: 1.2, mb: 1 }}>Packages</Typography>
-                                    {formData.packages?.map((pkg, index) => (
-                                        <Box key={pkg.id || index} sx={{ mb: index < formData.packages.length - 1 ? 1.5 : 0 }}>
-                                            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
-                                                {pkg.packagingQuantity || 1} x {pkg.itemDescription || `Package ${index + 1}`}
-                                            </Typography>
-                                            <Grid container spacing={{ xs: 1, sm: 2 }}>
-                                                <Grid item xs={6} sm={4}>
-                                                    <Typography variant="caption" display="block" color="text.secondary">Dimensions (LxWxH)</Typography>
-                                                    <Typography variant="body2">
-                                                        {`${pkg.length || '?'}" x ${pkg.width || '?'}" x ${pkg.height || '?'}"`}
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid item xs={6} sm={3}>
-                                                    <Typography variant="caption" display="block" color="text.secondary">Weight</Typography>
-                                                    <Typography variant="body2">{`${pkg.weight || '?'} lbs`}</Typography>
-                                                </Grid>
-                                                <Grid item xs={6} sm={3}>
-                                                    <Typography variant="caption" display="block" color="text.secondary">Freight Class</Typography>
-                                                    <Typography variant="body2">{pkg.freightClass || 'N/A'}</Typography>
-                                                </Grid>
-                                            </Grid>
-                                        </Box>
-                                    ))}
-                                    {/* Display total weight/pieces if needed, but individual breakdown is often more useful */}
-                                    {/*
-                                     <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mt: 1 }}>
-                                         <Grid item xs={6} sm={3}>
-                                            <Typography variant="caption" display="block" color="text.secondary">Pieces</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{totalPackages}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6} sm={3}>
-                                            <Typography variant="caption" display="block" color="text.secondary">Total Weight</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{totalWeight}</Typography>
-                                        </Grid>
-                                    </Grid>
-                                    */}
-                                </CardContent>
-                            </Card>
-
-                            {/* Loading Animation */}
-                            <img
-                                src="/animations/truck.gif"
-                                alt="Loading rates"
-                                style={{ width: '200px', height: '200px', margin: '10px auto 0 auto' }} // Smaller size
-                            />
-                            <Typography sx={{ marginTop: '5px', color: 'text.secondary' }}>
-                                <CircularProgress size={16} sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                Searching All Carrier Rates{loadingDots}
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <>
-                            <div className="rate-filters mb-3">
-                                <div className="row align-items-center">
-                                    <div className="col-md-3">
-                                        <label className="form-label">Sort By</label>
-                                        <select
-                                            className="form-select"
-                                            value={sortBy}
-                                            onChange={(e) => setSortBy(e.target.value)}
-                                        >
-                                            <option value="price">Price (Lowest First)</option>
-                                            <option value="transit">Transit Time (Fastest First)</option>
-                                            <option value="carrier">Carrier (A-Z)</option>
-                                        </select>
-                                    </div>
-                                    <div className="col-md-3">
-                                        <label className="form-label">Service Type</label>
-                                        <select
-                                            className="form-select"
-                                            value={serviceFilter}
-                                            onChange={(e) => setServiceFilter(e.target.value)}
-                                        >
-                                            <option value="all">All Services</option>
-                                            <option value="guaranteed">Guaranteed Only</option>
-                                            <option value="economy">Economy</option>
-                                            <option value="express">Express</option>
-                                        </select>
-                                    </div>
-                                    <div className="col-md-6 text-end">
-                                        <button
-                                            type="button"
-                                            className={`btn btn-outline-primary rate-details-toggle me-2 ${showRateDetails ? 'active' : ''}`}
-                                            onClick={toggleAllRateDetails}
-                                        >
-                                            <i className={`bi bi-list-${showRateDetails ? 'check' : 'ul'}`}></i>
-                                            {showRateDetails ? ' Hide Details' : ' Rate Details'}
-                                        </button>
-                                        <button
-                                            className="btn btn-primary"
-                                            onClick={handleAnalyzeRates}
-                                            disabled={isAnalyzing || rates.length === 0}
-                                        >
-                                            <i className="fas fa-robot"></i> {isAnalyzing ? 'Analyzing...' : 'AI Analysis'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <Card sx={{ mb: 3, backgroundColor: '#f5f5f5' }}>
-                                <CardHeader
-                                    onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
-                                    sx={{
-                                        backgroundColor: '#000000',
-                                        color: '#ffffff',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            backgroundColor: '#333333'
-                                        },
-                                        '& .MuiCardHeader-title': {
-                                            color: '#ffffff'
-                                        },
-                                        '& .MuiCardHeader-action': {
-                                            color: '#ffffff'
-                                        }
-                                    }}
-                                    title={
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#ffffff' }}>
-                                            <SmartToyIcon sx={{ color: '#ffffff' }} />
-                                            <Typography variant="h5" sx={{ color: '#ffffff' }}>AI Rate Analysis</Typography>
-                                        </Box>
-                                    }
-                                    action={
-                                        <IconButton
-                                            sx={{
-                                                color: '#ffffff',
-                                                transform: isAnalysisExpanded ? 'rotate(180deg)' : 'none',
-                                                transition: 'transform 0.3s'
-                                            }}
-                                        >
-                                            <KeyboardArrowDownIcon sx={{ color: '#ffffff' }} />
-                                        </IconButton>
-                                    }
-                                />
-                                <Collapse in={isAnalysisExpanded}>
-                                    <CardContent>
-                                        {isAnalyzing ? (
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                                                <CircularProgress />
-                                                <Typography>Analyzing rates{loadingDots}</Typography>
-                                            </Box>
-                                        ) : analysisResult ? (
-                                            <Box>
-                                                <ReactMarkdown
-                                                    components={{
-                                                        h2: ({ node, ...props }) => (
-                                                            <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }} {...props} />
-                                                        ),
-                                                        ul: ({ node, ...props }) => (
-                                                            <Box component="ul" sx={{ pl: 2, mb: 1 }} {...props} />
-                                                        ),
-                                                        li: ({ node, ...props }) => (
-                                                            <Box component="li" sx={{ mb: 0.5 }} {...props} />
-                                                        ),
-                                                        p: ({ node, ...props }) => (
-                                                            <Typography variant="body1" sx={{ mb: 1 }} {...props} />
-                                                        )
-                                                    }}
-                                                >
-                                                    {analysisResult}
-                                                </ReactMarkdown>
-                                                <Divider sx={{ my: 2 }} />
-                                                <Typography variant="subtitle2" color="text.secondary">
-                                                    This analysis is based on current market rates and historical shipping data.
-                                                </Typography>
-                                            </Box>
-                                        ) : (
-                                            <Typography color="text.primary">
-                                                Activate Soluship AI Analysis to see our real-time recommendations.{' '}
-                                                <Link
-                                                    component="button"
-                                                    onClick={handleAnalyzeRates}
-                                                    sx={{
-                                                        color: '#1976d2',
-                                                        textDecoration: 'underline',
-                                                        cursor: 'pointer',
-                                                        '&:hover': {
-                                                            color: '#1565c0'
-                                                        }
-                                                    }}
-                                                >
-                                                    Click here
-                                                </Link>
-                                            </Typography>
-                                        )}
-                                    </CardContent>
-                                </Collapse>
-                            </Card>
-
-                            {analysisError && (
-                                <div className="alert alert-danger mb-4">
-                                    <i className="fas fa-exclamation-circle me-2"></i>
-                                    {analysisError}
-                                </div>
-                            )}
-
-                            <div className="row g-3">
-                                {filteredRates.map((rate) => (
-                                    <div key={rate.id} className="col-md-4">
-                                        <div className="card mb-4">
-                                            <div className="card-header">
-                                                <h5 className="mb-0">{rate.carrier}</h5>
-                                            </div>
-                                            <div className="card-body">
-                                                <div className="days-container">
-                                                    <i className="fa-light fa-truck"></i>
-                                                    <div>
-                                                        <span className="days-number">{rate.transitDays}</span>
-                                                        <span className="days-text">days</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="mb-3">
-                                                    <div className="text-muted small">Est. Delivery: {rate.estimatedDeliveryDate}</div>
-                                                </div>
-
-                                                <div className="total-charges">
-                                                    <div className="label">Total Charges</div>
-                                                    <div className="amount">${rate.price.toFixed(2)} <span className="currency-code">{rate.currency}</span></div>
-                                                </div>
-
-                                                {rate.guaranteedOptionAvailable && (
-                                                    <div className="guarantee-option">
-                                                        <div className="form-check">
-                                                            <input
-                                                                type="checkbox"
-                                                                className="form-check-input"
-                                                                id={`guarantee-${rate.id}`}
-                                                                checked={selectedRate?.id === rate.id && selectedRate.guaranteed}
-                                                                onChange={(e) => handleGuaranteeChange(rate, e.target.checked)}
-                                                            />
-                                                            <label className="form-check-label" htmlFor={`guarantee-${rate.id}`}>
-                                                                Add Guarantee (+${rate.guaranteedPrice?.toFixed(2) || '0.00'})
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className={`rate-details-content ${showRateDetails ? 'show' : ''}`}>
-                                                    <ul className="rate-details-list">
-                                                        <li>
-                                                            <span className="charge-name">Service Mode</span>
-                                                            <span className="charge-amount">{rate.originalRate?.serviceMode || 'Standard'}</span>
-                                                        </li>
-                                                        <li>
-                                                            <span className="charge-name">Freight Charges</span>
-                                                            <span className="charge-amount">${rate.originalRate?.freightCharges?.toFixed(2) || '0.00'}</span>
-                                                        </li>
-                                                        <li>
-                                                            <span className="charge-name">Fuel Charges</span>
-                                                            <span className="charge-amount">${rate.originalRate?.fuelCharges?.toFixed(2) || '0.00'}</span>
-                                                        </li>
-                                                        <li>
-                                                            <span className="charge-name">Service Charges</span>
-                                                            <span className="charge-amount">${rate.originalRate?.serviceCharges?.toFixed(2) || '0.00'}</span>
-                                                        </li>
-                                                        {rate.originalRate?.accessorialCharges > 0 && (
-                                                            <li>
-                                                                <span className="charge-name">Accessorial Charges</span>
-                                                                <span className="charge-amount">${rate.originalRate.accessorialCharges.toFixed(2)}</span>
-                                                            </li>
-                                                        )}
-                                                    </ul>
-                                                </div>
-
-                                                <button
-                                                    type="button"
-                                                    className={`btn ${selectedRate?.id === rate.id ? 'btn-primary' : 'btn-outline-primary'} select-button`}
-                                                    onClick={() => handleRateSelect(rate)}
-                                                >
-                                                    {selectedRate?.id === rate.id ? 'Selected' : 'Select'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                <div className="navigation-buttons">
-                    <button
-                        type="button"
-                        className="btn btn-outline-primary btn-navigation"
+    if (isLoading) {
+        return (
+            <Container maxWidth="lg" sx={{ py: 4 }}>
+                <Grid container spacing={4} alignItems="center" justifyContent="center">
+                    <Grid item xs={12} md={6}>
+                        <ShipmentRateRequestSummary
+                            origin={formData.shipFrom}
+                            destination={formData.shipTo}
+                            shipmentDetails={formData.shipmentInfo}
+                            packages={formData.packages}
+                        />
+                    </Grid>
+                    <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
+                        <CircularProgress size={50} sx={{ mb: 3 }} />
+                        <Typography variant="h5" component="p" color="text.secondary" textAlign="center">
+                            Searching All Carrier Rates...
+                        </Typography>
+                        <Typography variant="body2" color="text.tertiary" sx={{ mt: 1 }} textAlign="center">
+                            This may take a moment. Please wait.
+                        </Typography>
+                    </Grid>
+                </Grid>
+                <Box
+                    className="navigation-buttons"
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        mt: 5,
+                        pt: 2,
+                        borderTop: (theme) => `1px solid ${theme.palette.divider}`
+                    }}
+                >
+                    <Button
+                        variant="outlined"
                         onClick={onPrevious}
                     >
-                        <i className="bi bi-arrow-left"></i> Previous
-                    </button>
-                    <button
-                        type="button"
-                        className="btn btn-primary btn-navigation"
-                        onClick={handleSubmit}
+                        Previous
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={onNext}
+                        disabled={true}
+                    >
+                        Next
+                    </Button>
+                </Box>
+            </Container>
+        );
+    }
+
+    if (error) {
+        return (
+            <Container maxWidth="md" sx={{ py: 4, textAlign: 'center' }}>
+                <Typography color="error" gutterBottom>Error fetching rates: {error}</Typography>
+                <div className="navigation-buttons" style={{ justifyContent: 'center' }}>
+                    <Button variant="outlined" onClick={onPrevious} className="btn-navigation">Previous</Button>
+                </div>
+            </Container>
+        );
+    }
+
+    if (!ratesLoaded) {
+        return (
+            <Container maxWidth="md" sx={{ py: 4, textAlign: 'center' }}>
+                <Typography>Preparing to fetch rates...</Typography>
+                <CircularProgress sx={{ mt: 2 }} />
+                <div className="navigation-buttons" style={{ justifyContent: 'center' }}>
+                    <Button variant="outlined" onClick={onPrevious} className="btn-navigation">Previous</Button>
+                </div>
+            </Container>
+        );
+    }
+
+    return (
+        <Container maxWidth="lg" sx={{ py: 3 }}>
+            <Typography variant="h4" component="h2" gutterBottom>
+                Available Rates
+            </Typography>
+
+            <div className="form-section active" data-step="5">
+                <div className="section-content">
+                    <Paper elevation={1} sx={{ p: 2, mb: 3 }} className="rate-filters">
+                        <Grid container spacing={2} alignItems="center">
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="subtitle2" gutterBottom className="form-label">Sort By</Typography>
+                                <select
+                                    className="form-select"
+                                    value={sortBy}
+                                    onChange={(e) => setSortBy(e.target.value)}
+                                    style={{ width: '100%' }}
+                                >
+                                    <option value="price">Price (Lowest First)</option>
+                                    <option value="transit">Transit Time (Fastest First)</option>
+                                    <option value="carrier">Carrier (A-Z)</option>
+                                </select>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={3}>
+                                <Typography variant="subtitle2" gutterBottom className="form-label">Service Type</Typography>
+                                <select
+                                    className="form-select"
+                                    value={serviceFilter}
+                                    onChange={(e) => setServiceFilter(e.target.value)}
+                                    style={{ width: '100%' }}
+                                >
+                                    <option value="all">All Services</option>
+                                    <option value="guaranteed">Guaranteed Only</option>
+                                    <option value="economy">Economy</option>
+                                    <option value="express">Express</option>
+                                </select>
+                            </Grid>
+                            <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' }, mt: { xs: 2, md: 0 } }}>
+                                <Button
+                                    variant="outlined"
+                                    onClick={toggleAllRateDetails}
+                                    sx={{ mr: 1 }}
+                                >
+                                    {showRateDetails ? 'Hide Details' : 'Rate Details'}
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    onClick={handleAnalyzeRates}
+                                    disabled={isAnalyzing || rates.length === 0}
+                                    startIcon={<SmartToyIcon />}
+                                >
+                                    {isAnalyzing ? 'Analyzing...' : 'AI Analysis'}
+                                </Button>
+                            </Grid>
+                        </Grid>
+                    </Paper>
+
+                    {ratesLoaded && filteredRates.length > 0 && isAnalysisExpanded && (
+                        <Card sx={{ mb: 3, bgcolor: 'background.paper' }} elevation={2}>
+                            <CardHeader
+                                onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                                sx={{
+                                    cursor: 'pointer',
+                                }}
+                                title={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <SmartToyIcon />
+                                        <Typography variant="h6">AI Rate Analysis</Typography>
+                                    </Box>
+                                }
+                                action={
+                                    <IconButton
+                                        sx={{
+                                            transform: isAnalysisExpanded ? 'rotate(180deg)' : 'none',
+                                            transition: 'transform 0.3s'
+                                        }}
+                                    >
+                                        <KeyboardArrowDownIcon />
+                                    </IconButton>
+                                }
+                            />
+                            <Collapse in={isAnalysisExpanded}>
+                                <CardContent>
+                                    {isAnalyzing ? (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
+                                            <CircularProgress />
+                                            <Typography>Analyzing rates{loadingDots}</Typography>
+                                        </Box>
+                                    ) : analysisResult ? (
+                                        <Box>
+                                            <ReactMarkdown
+                                                components={{
+                                                    h2: ({ ...props }) => (
+                                                        <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }} {...props} />
+                                                    ),
+                                                    ul: ({ ...props }) => (
+                                                        <Box component="ul" sx={{ pl: 2, mb: 1 }} {...props} />
+                                                    ),
+                                                    li: ({ ...props }) => (
+                                                        <Box component="li" sx={{ mb: 0.5 }} {...props} />
+                                                    ),
+                                                    p: ({ ...props }) => (
+                                                        <Typography variant="body1" sx={{ mb: 1 }} {...props} />
+                                                    )
+                                                }}
+                                            >
+                                                {analysisResult}
+                                            </ReactMarkdown>
+                                            <Divider sx={{ my: 2 }} />
+                                            <Typography variant="caption" color="text.secondary">
+                                                This analysis is based on current market rates and historical shipping data.
+                                            </Typography>
+                                        </Box>
+                                    ) : (
+                                        <Typography color="text.primary">
+                                            Activate Soluship AI Analysis to see our real-time recommendations.{' '}
+                                            <Link
+                                                component="button"
+                                                onClick={handleAnalyzeRates}
+                                                sx={{
+                                                    color: 'primary.main',
+                                                    textDecoration: 'underline',
+                                                    cursor: 'pointer',
+                                                    '&:hover': {
+                                                        color: 'primary.dark'
+                                                    }
+                                                }}
+                                            >
+                                                Click here
+                                            </Link>
+                                        </Typography>
+                                    )}
+                                </CardContent>
+                            </Collapse>
+                        </Card>
+                    )}
+
+                    {analysisError && (
+                        <Paper elevation={2} sx={{ p: 2, my: 2, backgroundColor: 'error.lighter', color: 'error.dark' }}>
+                            <Typography>{analysisError}</Typography>
+                        </Paper>
+                    )}
+
+                    {ratesLoaded && filteredRates.length === 0 && !error && (
+                        <Paper sx={{ p: 3, textAlign: 'center', my: 3 }} elevation={2}>
+                            <Typography variant="h6">No Rates Found</Typography>
+                            <Typography>No shipping rates are currently available for the provided details. Please check the addresses and package information, or try again later.</Typography>
+                        </Paper>
+                    )}
+
+                    <Grid container spacing={3}>
+                        {filteredRates.map((rate) => (
+                            <Grid item xs={12} md={6} lg={4} key={rate.id}>
+                                <Card className="card mb-4" elevation={2}>
+                                    <CardHeader title={<Typography variant="h6" component="div">{rate.carrier}</Typography>} sx={{ pb: 0 }} />
+                                    <CardContent>
+                                        <div className="days-container">
+                                            <i className="fa-light fa-truck"></i>
+                                            <div>
+                                                <span className="days-number">{rate.transitDays}</span>
+                                                <span className="days-text">days</span>
+                                            </div>
+                                        </div>
+                                        <div className="mb-3">
+                                            <div className="text-muted small">Est. Delivery: {rate.estimatedDeliveryDate}</div>
+                                        </div>
+                                        <div className="total-charges">
+                                            <div className="label">Total Charges</div>
+                                            <div className="amount">${rate.price.toFixed(2)} <span className="currency-code">{rate.currency}</span></div>
+                                        </div>
+                                        {rate.guaranteedOptionAvailable && (
+                                            <div className="guarantee-option">
+                                                <div className="form-check">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        id={`guarantee-${rate.id}`}
+                                                        checked={selectedRate?.id === rate.id && selectedRate.guaranteed}
+                                                        onChange={(e) => handleGuaranteeChange(rate, e.target.checked)}
+                                                    />
+                                                    <label className="form-check-label" htmlFor={`guarantee-${rate.id}`}>
+                                                        Add Guarantee (+${rate.guaranteedPrice?.toFixed(2) || '0.00'})
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className={`rate-details-content ${showRateDetails ? 'show' : ''}`}>
+                                            <ul className="rate-details-list">
+                                                <li>
+                                                    <span className="charge-name">Service Mode</span>
+                                                    <span className="charge-amount">{rate.originalRate?.serviceMode || 'Standard'}</span>
+                                                </li>
+                                                <li>
+                                                    <span className="charge-name">Freight Charges</span>
+                                                    <span className="charge-amount">${rate.originalRate?.freightCharges?.toFixed(2) || '0.00'}</span>
+                                                </li>
+                                                <li>
+                                                    <span className="charge-name">Fuel Charges</span>
+                                                    <span className="charge-amount">${rate.originalRate?.fuelCharges?.toFixed(2) || '0.00'}</span>
+                                                </li>
+                                                <li>
+                                                    <span className="charge-name">Service Charges</span>
+                                                    <span className="charge-amount">${rate.originalRate?.serviceCharges?.toFixed(2) || '0.00'}</span>
+                                                </li>
+                                                {rate.originalRate?.accessorialCharges > 0 && (
+                                                    <li>
+                                                        <span className="charge-name">Accessorial Charges</span>
+                                                        <span className="charge-amount">${rate.originalRate.accessorialCharges.toFixed(2)}</span>
+                                                    </li>
+                                                )}
+                                            </ul>
+                                        </div>
+                                        <Button
+                                            variant={selectedRate?.id === rate.id ? 'contained' : 'outlined'}
+                                            onClick={() => handleRateSelect(rate)}
+                                            fullWidth
+                                            sx={{ mt: 2 }}
+                                        >
+                                            {selectedRate?.id === rate.id ? 'Selected' : 'Select'}
+                                        </Button>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        ))}
+                    </Grid>
+                </div>
+                <Box
+                    className="navigation-buttons"
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        mt: 3,
+                        pt: 2,
+                        borderTop: (theme) => `1px solid ${theme.palette.divider}`
+                    }}
+                >
+                    <Button
+                        variant="outlined"
+                        onClick={onPrevious}
+                    >
+                        Previous
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={onNext}
                         disabled={!selectedRate}
                     >
-                        Next <i className="bi bi-arrow-right"></i>
-                    </button>
-                </div>
+                        Next
+                    </Button>
+                </Box>
             </div>
-        </div>
+        </Container>
     );
 };
 

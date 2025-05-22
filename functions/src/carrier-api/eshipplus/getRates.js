@@ -1,22 +1,33 @@
-// Import only v2 functions API
-const functions = require('firebase-functions');
-const { onCall } = require("firebase-functions/v2/https");
+console.log('LOG: getRates.js - Top of file, imports starting.');
+const functions = require('firebase-functions'); // Changed to v1 for consistency if onRequest is v1 style
+const { onCall, HttpsError } = require("firebase-functions/v2/https"); // Keeping v2 for onCall
 const logger = require("firebase-functions/logger");
 const axios = require('axios');
 // const { parseStringPromise } = require("xml2js"); // No longer needed for JSON API
 const admin = require('firebase-admin');
 const dayjs = require('dayjs');
+console.log('LOG: getRates.js - Basic imports complete.');
 
-// Initialize Firebase Admin with default credentials
-if (!admin.apps.length) {
-  admin.initializeApp();
-  console.log('Firebase Admin initialized with default credentials');
-}
+// Initialize Firebase Admin with default credentials - ENSURE THIS IS NOT RE-INITIALIZING if already done in main index.js
+// The main index.js now handles global initialization.
+// if (!admin.apps.length) {
+//   try {
+//     admin.initializeApp();
+//     console.log('LOG: getRates.js - Firebase Admin initialized locally.');
+//   } catch (e) {
+//     console.error('LOG: getRates.js - Error initializing admin locally (might be ok if already init globally):', e.message);
+//   }
+// } else {
+//   console.log('LOG: getRates.js - Firebase Admin was already initialized.');
+// }
 
 // Constants
+console.log('LOG: getRates.js - Defining constants.');
 const ESHIPPLUS_API_URL = process.env.ESHIPPLUS_URL || "https://cloudstaging.eshipplus.com/services/rest/RateShipment.aspx";
+console.log(`LOG: getRates.js - ESHIPPLUS_API_URL: ${ESHIPPLUS_API_URL}`);
 
 // Helper to safely access nested properties, especially for arrays that might be missing or empty
+console.log('LOG: getRates.js - safeAccess helper defined.');
 const safeAccess = (obj, path, defaultValue = null) => {
     const keys = path.split('.');
     let current = obj;
@@ -122,9 +133,13 @@ function transformRestResponseToInternalFormat(apiResponse) {
     };
     return transformed;
 }
+console.log('LOG: getRates.js - transformRestResponseToInternalFormat defined.');
 
 // Shared function logic to process rate requests
+console.log('LOG: getRates.js - processRateRequest defined.');
 async function processRateRequest(data) {
+  console.log('LOG: processRateRequest - Function invoked.');
+  logger.info('LOG: processRateRequest - INFO: Function invoked with data:', data ? Object.keys(data) : 'No data');
   try {
     const skipApiKeyValidation = process.env.NODE_ENV === 'development' || process.env.SKIP_API_KEY_VALIDATION === 'true';
     const apiKey = data.apiKey;
@@ -152,7 +167,7 @@ async function processRateRequest(data) {
     // Example: Ensure BookingReferenceNumberType is an integer if API expects it.
     // This depends on what the frontend sends vs what the API strictly needs.
     if (eShipPlusRequestData.BookingReferenceNumberType && typeof eShipPlusRequestData.BookingReferenceNumberType === 'string') {
-        const typeMap = {"SHIPMENT": 2, "ProNumber": 1, "BillOfLading": 3 }; // Example mapping
+        const typeMap = {"SHIPMENT": 2, "PRONUMBER": 1, "BILLOFLADING": 3 }; // Example mapping
         if (typeMap[eShipPlusRequestData.BookingReferenceNumberType.toUpperCase()]){
             eShipPlusRequestData.BookingReferenceNumberType = typeMap[eShipPlusRequestData.BookingReferenceNumberType.toUpperCase()];
         } else {
@@ -250,23 +265,20 @@ async function processRateRequest(data) {
     throw new functions.https.HttpsError('internal', error.message || 'An internal error occurred while processing the rate request.');
   }
 }
+console.log('LOG: getRates.js - processRateRequest defined.');
 
 /**
  * Export v2 callable function 
  */
+console.log('LOG: getRates.js - Setting up exports.getRatesEShipPlus.');
 exports.getRatesEShipPlus = onCall({
   cors: true,
   timeoutSeconds: 60,
   memory: "256MiB",
-  // enforceAppCheck: true, // Consider enabling App Check for v2 functions
+  region: 'us-central1' // Explicitly set region
 }, async (request) => {
-  // request.app will be undefined in v2. Use environment variables or predefined config for app check.
-  // if (request.app == undefined && process.env.NODE_ENV !== 'development') {
-  //   throw new functions.https.HttpsError(
-  //     'failed-precondition',
-  //     'The function must be called from an App Check verified app.'
-  //   );
-  // }
+  console.log('LOG: exports.getRatesEShipPlus - onCall handler invoked.');
+  logger.info('LOG: exports.getRatesEShipPlus - INFO: onCall handler invoked. Auth context:', request.auth ? 'Present' : 'Absent');
   try {
     // request.data already contains the JSON payload from the client
     return await processRateRequest(request.data);
@@ -282,12 +294,14 @@ exports.getRatesEShipPlus = onCall({
     throw new functions.https.HttpsError('internal', error.message || 'Internal server error during rate request.', {stack: error.stack});
   }
 });
+console.log('LOG: getRates.js - exports.getRatesEShipPlus defined and exported. File loading complete.');
 
 /**
  * Validates the API key against stored valid keys
  * @param {string} apiKey - The API key to validate
  * @returns {Promise<boolean>} - Whether the API key is valid
  */
+console.log('LOG: getRates.js - validateApiKey defined.');
 async function validateApiKey(apiKey) {
   try {
     // Get configured API key from Firebase config
@@ -314,8 +328,10 @@ async function validateApiKey(apiKey) {
     return false;
   }
 }
+console.log('LOG: getRates.js - validateApiKey defined.');
 
 // TODO: Update this function to validate against the new JSON structure
+console.log('LOG: getRates.js - validateJsonRateRequest defined.');
 function validateJsonRateRequest(data) {
   logger.info('Validating JSON rate request:', data);
   if (!data) return 'Request body is required';
@@ -364,3 +380,4 @@ function validateJsonRateRequest(data) {
   }
   return null;
 }
+console.log('LOG: getRates.js - validateJsonRateRequest defined.'); 
