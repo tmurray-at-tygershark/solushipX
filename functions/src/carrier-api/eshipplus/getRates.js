@@ -8,19 +8,6 @@ const admin = require('firebase-admin');
 const dayjs = require('dayjs');
 console.log('LOG: getRates.js - Basic imports complete.');
 
-// Initialize Firebase Admin with default credentials - ENSURE THIS IS NOT RE-INITIALIZING if already done in main index.js
-// The main index.js now handles global initialization.
-// if (!admin.apps.length) {
-//   try {
-//     admin.initializeApp();
-//     console.log('LOG: getRates.js - Firebase Admin initialized locally.');
-//   } catch (e) {
-//     console.error('LOG: getRates.js - Error initializing admin locally (might be ok if already init globally):', e.message);
-//   }
-// } else {
-//   console.log('LOG: getRates.js - Firebase Admin was already initialized.');
-// }
-
 // Constants
 console.log('LOG: getRates.js - Defining constants.');
 const ESHIPPLUS_API_URL = process.env.ESHIPPLUS_URL || "https://cloudstaging.eshipplus.com/services/rest/RateShipment.aspx";

@@ -24,7 +24,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState('');
     const [analysisError, setAnalysisError] = useState(null);
-    const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
+    const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -741,11 +741,13 @@ const Rates = ({ formData, onPrevious, onNext }) => {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to analyze rates: ${response.status}`);
+                const errorText = await response.text();
+                throw new Error(`Failed to analyze rates: ${response.status} - ${errorText}`);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let streamedResult = '';
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -759,32 +761,47 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                         try {
                             const data = JSON.parse(line.slice(5));
 
-                            if (!data.success) {
-                                throw new Error(data.message || 'Analysis failed');
+                            if (!data.success && data.message) { // Check for specific error message from function
+                                throw new Error(data.message || 'AI Analysis stream reported an error');
+                            }
+                            if (!data.success && !data.message) {
+                                throw new Error('AI Analysis stream failed without a specific message.');
                             }
 
+
                             if (data.chunk) {
-                                setAnalysisResult(prev => {
-                                    const newResult = prev + data.chunk;
-                                    return newResult;
-                                });
+                                streamedResult += data.chunk;
+                                setAnalysisResult(prev => prev + data.chunk);
                             }
 
                             if (data.done) {
-                                setIsAnalyzing(false);
-                                break;
+                                console.log("AI Analysis stream finished.");
+                                setIsAnalysisExpanded(true); // Expand fully only when done and successful
+                                break; // Break from inner loop
                             }
                         } catch (e) {
                             console.error('Error parsing stream data:', e);
-                            setAnalysisError('Error processing AI analysis response');
+                            setAnalysisError('Error processing AI analysis response: ' + e.message);
+                            setIsAnalyzing(false);
+                            setIsAnalysisExpanded(false); // Keep it closed on error
+                            return; // Exit handleAnalyzeRates due to parsing error
                         }
                     }
+                }
+                if (lines.some(line => line.startsWith('data: ') && JSON.parse(line.slice(5)).done)) {
+                    break; // Break from while loop if done
                 }
             }
         } catch (error) {
             console.error('AI Analysis Error:', error);
             setAnalysisError(error.message);
+            setIsAnalysisExpanded(false); // Keep it closed on error
+        } finally {
             setIsAnalyzing(false);
+            // If there was a result, ensure it's expanded. If error, it remains closed (or previous state).
+            if (analysisResult && !analysisError) {
+                setIsAnalysisExpanded(true);
+            }
         }
     };
 
