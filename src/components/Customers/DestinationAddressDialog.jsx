@@ -36,7 +36,10 @@ const DestinationAddressDialog = ({ open, onClose, addressData, onSave, customer
     const [formState, setFormState] = useState(initialFormState);
 
     useEffect(() => {
-        if (addressData) {
+        console.log("DestinationAddressDialog: useEffect triggered. addressData prop is:", addressData ? JSON.parse(JSON.stringify(addressData)) : addressData, "Open prop is:", open);
+
+        if (open && addressData && addressData.id) { // Ensure dialog is open AND we have an address with an ID for editing
+            console.log("DestinationAddressDialog: Populating form for EDIT with addressData.id:", addressData.id);
             setFormState({
                 nickname: addressData.nickname || '',
                 companyName: addressData.companyName || '',
@@ -52,12 +55,20 @@ const DestinationAddressDialog = ({ open, onClose, addressData, onSave, customer
                 country: addressData.country || 'US',
                 isDefault: addressData.isDefault || false,
                 specialInstructions: addressData.specialInstructions || '',
-                id: addressData.id || null // Keep id if editing
+                id: addressData.id
             });
+        } else if (open) { // Dialog is open, but not for edit (either new or prefill without id yet)
+            console.log("DestinationAddressDialog: Open, but no ID on addressData. Resetting/prefilling.");
+            const initialStateToUse = addressData ? // addressData might be a prefill object without an ID
+                { ...initialFormState, ...addressData, id: null } :
+                initialFormState;
+            setFormState(initialStateToUse);
         } else {
-            setFormState(initialFormState);
+            // If dialog is not open, we could optionally reset, but often not necessary 
+            // as it resets on close anyway via handleClose.
+            // setFormState(initialFormState); 
         }
-    }, [addressData, open]);
+    }, [addressData, open]); // RESTORED `open` to dependency array, also check `open` in conditions
 
     const handleChange = (event) => {
         const { name, value, type, checked } = event.target;

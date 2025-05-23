@@ -63,7 +63,7 @@ const validRequest = {
 };
 
 async function testGetRates() {
-  console.log('Testing getRates-EShipPlus API...');
+  console.log('Testing getRatesEShipPlus API...');
   console.log('Request:', JSON.stringify(validRequest, null, 2));
   
   try {

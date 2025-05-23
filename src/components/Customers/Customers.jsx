@@ -235,10 +235,9 @@ const Customers = () => {
         const searchLower = searchQuery.toLowerCase();
         return (
             customer.name?.toLowerCase().includes(searchLower) ||
-            customer.companyName?.toLowerCase().includes(searchLower) ||
-            customer.accountNumber?.toLowerCase().includes(searchLower) ||
+            customer.customerID?.toLowerCase().includes(searchLower) ||
             customer.contactName?.toLowerCase().includes(searchLower) ||
-            customer.email?.toLowerCase().includes(searchLower)
+            (customer.contact?.email)?.toLowerCase().includes(searchLower)
         );
     });
 
@@ -258,8 +257,8 @@ const Customers = () => {
             </div>
 
             <Paper className="customers-paper">
-                <Box className="customers-header">
-                    <Typography variant="h4" component="h1" gutterBottom>
+                <Box className="customers-header" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h4" component="h1">
                         Customers
                     </Typography>
                     <Button
@@ -342,9 +341,9 @@ const Customers = () => {
                             <TableHead>
                                 <TableRow>
                                     <TableCell>Customer ID</TableCell>
-                                    <TableCell>Company Name</TableCell>
-                                    <TableCell>Contact Name</TableCell>
-                                    <TableCell>Email</TableCell>
+                                    <TableCell>Name / Company</TableCell>
+                                    <TableCell>Contact Person</TableCell>
+                                    <TableCell>Contact Email</TableCell>
                                     <TableCell>Status</TableCell>
                                     <TableCell>Created At</TableCell>
                                     <TableCell align="right">Actions</TableCell>
@@ -364,9 +363,9 @@ const Customers = () => {
                                         }}
                                     >
                                         <TableCell>{customer.customerID}</TableCell>
-                                        <TableCell>{customer.companyName || customer.name}</TableCell>
-                                        <TableCell>{customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A'}</TableCell>
-                                        <TableCell>{customer.contact ? customer.contact.email : 'N/A'}</TableCell>
+                                        <TableCell>{customer.name || 'N/A'}</TableCell>
+                                        <TableCell>{customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A')}</TableCell>
+                                        <TableCell>{customer.contact?.email || 'N/A'}</TableCell>
                                         <TableCell>
                                             <Chip
                                                 label={customer.status || 'Unknown'}
@@ -377,15 +376,16 @@ const Customers = () => {
                                         <TableCell>
                                             {customer.createdAt?.toDate ?
                                                 customer.createdAt.toDate().toLocaleDateString() :
-                                                new Date(customer.createdAt).toLocaleDateString()}
+                                                (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'N/A')}
                                         </TableCell>
                                         <TableCell align="right">
                                             <IconButton
                                                 size="small"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleRowClick(customer.id);
+                                                    navigate(`/customers/${customer.id}`);
                                                 }}
+                                                title="View Details"
                                             >
                                                 <VisibilityIcon />
                                             </IconButton>
@@ -395,6 +395,7 @@ const Customers = () => {
                                                     e.stopPropagation();
                                                     navigate(`/customers/${customer.id}/edit`);
                                                 }}
+                                                title="Edit Customer"
                                             >
                                                 <EditIcon />
                                             </IconButton>

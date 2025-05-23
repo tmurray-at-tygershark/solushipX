@@ -29,6 +29,7 @@ const Pricing = lazy(() => import('./components/Pricing/Pricing'));
 const Homepage = lazy(() => import('./components/Homepage/Homepage'));
 const Login = lazy(() => import('./components/Auth/Login'));
 const Signup = lazy(() => import('./components/Auth/Signup'));
+const AddCustomer = lazy(() => import('./components/Customers/AddCustomer'));
 const EditCustomer = lazy(() => import('./components/Customers/EditCustomer'));
 const Profile = lazy(() => import('./components/Profile/Profile'));
 const Carriers = lazy(() => import('./components/Carriers/Carriers'));
@@ -102,10 +103,15 @@ function AppRoutes() {
                 } />
                 <Route path="/create-shipment" element={
                     <ProtectedRoute>
-                        <Navigate to="/create-shipment/shipment-info" replace />
+                        <CreateShipment />
                     </ProtectedRoute>
                 } />
                 <Route path="/create-shipment/:step" element={
+                    <ProtectedRoute>
+                        <CreateShipment />
+                    </ProtectedRoute>
+                } />
+                <Route path="/create-shipment/:step/:draftId" element={
                     <ProtectedRoute>
                         <CreateShipment />
                     </ProtectedRoute>
@@ -123,6 +129,11 @@ function AppRoutes() {
                 <Route path="/customers" element={
                     <ProtectedRoute>
                         <Customers />
+                    </ProtectedRoute>
+                } />
+                <Route path="/customers/new" element={
+                    <ProtectedRoute>
+                        <AddCustomer />
                     </ProtectedRoute>
                 } />
                 <Route path="/customers/:id" element={

@@ -11,73 +11,146 @@ if (!admin.apps.length) {
     console.log('Firebase Admin already initialized.');
 }
 
+console.log('LOG-MAIN-INDEX: Starting module imports...');
+
 // Import function modules/files
 const mappingFunctions = require("./mapping_functions");
+console.log('LOG-MAIN-INDEX: mappingFunctions imported.');
+
 const mappingTestRouter = require('./api/edi-mapping-test');
-const carrierApiFunctions = require('./carrier-api');
+console.log('LOG-MAIN-INDEX: mappingTestRouter imported.');
+
+const carrierApiFunctions = require('./carrier-api'); 
+console.log('LOG-MAIN-INDEX: carrierApiFunctions imported.');
+
 const ediProcessingFunctions = require('./edi-processing');
+console.log('LOG-MAIN-INDEX: ediProcessingFunctions imported.');
+
 const checkEdiUploadsFunctions = require('./check-edi-uploads');
+console.log('LOG-MAIN-INDEX: checkEdiUploadsFunctions imported.');
+
 const adminUserManagementFunctions = require('./admin-user-management');
+console.log('LOG-MAIN-INDEX: adminUserManagementFunctions imported.');
+
 const adminCreateUserFunctions = require('./admin-create-user'); 
+console.log('LOG-MAIN-INDEX: adminCreateUserFunctions imported.');
+
+const shipmentManagementFunctions = require('./shipment-management');
+console.log('LOG-MAIN-INDEX: shipmentManagementFunctions imported.');
+// Import initiateDraftShipment directly
+const { initiateDraftShipment } = require('./shipment-management');
+
 
 // Initialize Express app
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
+console.log('LOG-MAIN-INDEX: Express app initialized.');
 
 // Mount the mapping test router
 app.use('/api/edi-mapping', mappingTestRouter);
+console.log('LOG-MAIN-INDEX: edi-mapping-test router mounted.');
 
 // --- Define all exports for Firebase --- 
+console.log('LOG-MAIN-INDEX: Defining exports...');
 
 // HTTP Express App
 exports.api = functions.https.onRequest(app);
+console.log('LOG-MAIN-INDEX: exports.api defined.');
 
 // Callable/Triggered functions exported individually by their exact exported name
-exports.generateEdiMapping = mappingFunctions.generateEdiMapping;
+if (mappingFunctions && mappingFunctions.generateEdiMapping) {
+    exports.generateEdiMapping = mappingFunctions.generateEdiMapping;
+    console.log('LOG-MAIN-INDEX: exports.generateEdiMapping defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: generateEdiMapping not found in mappingFunctions module.');
+}
 
 // Functions from carrier-api structure
-if (carrierApiFunctions.getRatesEShipPlus) {
+if (carrierApiFunctions && carrierApiFunctions.getRatesEShipPlus) {
     exports.getRatesEShipPlus = carrierApiFunctions.getRatesEShipPlus;
+    console.log('LOG-MAIN-INDEX: exports.getRatesEShipPlus defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: getRatesEShipPlus not found in carrierApiFunctions module.');
 }
 
 // Functions from edi-processing.js
-if (ediProcessingFunctions.onFileUploaded) {
+if (ediProcessingFunctions && ediProcessingFunctions.onFileUploaded) {
     exports.onFileUploaded = ediProcessingFunctions.onFileUploaded;
+    console.log('LOG-MAIN-INDEX: exports.onFileUploaded defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: onFileUploaded not found in ediProcessingFunctions module.');
 }
-if (ediProcessingFunctions.processEdiFile) {
+if (ediProcessingFunctions && ediProcessingFunctions.processEdiFile) {
     exports.processEdiFile = ediProcessingFunctions.processEdiFile;
+    console.log('LOG-MAIN-INDEX: exports.processEdiFile defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: processEdiFile not found in ediProcessingFunctions module.');
 }
-if (ediProcessingFunctions.processEdiHttp) {
+if (ediProcessingFunctions && ediProcessingFunctions.processEdiHttp) {
     exports.processEdiHttp = ediProcessingFunctions.processEdiHttp;
+    console.log('LOG-MAIN-INDEX: exports.processEdiHttp defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: processEdiHttp not found in ediProcessingFunctions module.');
 }
-if (ediProcessingFunctions.processEdiManual) {
+if (ediProcessingFunctions && ediProcessingFunctions.processEdiManual) {
     exports.processEdiManual = ediProcessingFunctions.processEdiManual;
+    console.log('LOG-MAIN-INDEX: exports.processEdiManual defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: processEdiManual not found in ediProcessingFunctions module.');
 }
 
 // Functions from check-edi-uploads.js
-if (checkEdiUploadsFunctions.checkEdiUploads) {
+if (checkEdiUploadsFunctions && checkEdiUploadsFunctions.checkEdiUploads) {
     exports.checkEdiUploads = checkEdiUploadsFunctions.checkEdiUploads;
+    console.log('LOG-MAIN-INDEX: exports.checkEdiUploads defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: checkEdiUploads not found in checkEdiUploadsFunctions module.');
 }
 
 // Functions from admin-user-management.js
-if (adminUserManagementFunctions.checkUserCompanyOwnership) {
+if (adminUserManagementFunctions && adminUserManagementFunctions.checkUserCompanyOwnership) {
     exports.checkUserCompanyOwnership = adminUserManagementFunctions.checkUserCompanyOwnership;
+    console.log('LOG-MAIN-INDEX: exports.checkUserCompanyOwnership defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: checkUserCompanyOwnership not found in adminUserManagementFunctions.');
 }
-if (adminUserManagementFunctions.adminDeleteUser) {
+if (adminUserManagementFunctions && adminUserManagementFunctions.adminDeleteUser) {
     exports.adminDeleteUser = adminUserManagementFunctions.adminDeleteUser;
+    console.log('LOG-MAIN-INDEX: exports.adminDeleteUser defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminDeleteUser not found in adminUserManagementFunctions.');
 }
-if (adminUserManagementFunctions.adminResetUserPassword) {
+if (adminUserManagementFunctions && adminUserManagementFunctions.adminResetUserPassword) {
     exports.adminResetUserPassword = adminUserManagementFunctions.adminResetUserPassword;
+    console.log('LOG-MAIN-INDEX: exports.adminResetUserPassword defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminResetUserPassword not found in adminUserManagementFunctions.');
 }
-if (adminUserManagementFunctions.adminGetUsersAuthData) {
+if (adminUserManagementFunctions && adminUserManagementFunctions.adminGetUsersAuthData) {
     exports.adminGetUsersAuthData = adminUserManagementFunctions.adminGetUsersAuthData;
+    console.log('LOG-MAIN-INDEX: exports.adminGetUsersAuthData defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminGetUsersAuthData not found in adminUserManagementFunctions.');
 }
 
 // Functions from admin-create-user.js
-if (adminCreateUserFunctions.adminCreateUser) {
+if (adminCreateUserFunctions && adminCreateUserFunctions.adminCreateUser) {
     exports.adminCreateUser = adminCreateUserFunctions.adminCreateUser;
+    console.log('LOG-MAIN-INDEX: exports.adminCreateUser defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminCreateUser not found in adminCreateUserFunctions.');
 }
 
-// Note: Any functions previously deployed but not explicitly exported here will be removed from deployment.
-// If you have other function files (e.g., getCompany.js), they need to be imported and their functions exported similarly.
+// Functions from shipment-management.js
+if (shipmentManagementFunctions && shipmentManagementFunctions.initiateDraftShipment) {
+    exports.initiateDraftShipment = shipmentManagementFunctions.initiateDraftShipment;
+    console.log('LOG-MAIN-INDEX: exports.initiateDraftShipment defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: initiateDraftShipment not found in shipmentManagementFunctions module.');
+}
+
+// Direct export of initiateDraftShipment
+exports.initiateDraftShipment = initiateDraftShipment;
+
+console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

@@ -1,4 +1,4 @@
-# getRates-EShipPlus API Documentation
+# getRatesEShipPlus API Documentation
 
 This API provides access to eShip Plus shipping rates through a SOAP integration. It's designed for external third-party integration.
 

@@ -10,7 +10,7 @@ console.log('LOG: getRates.js - Basic imports complete.');
 
 // Constants
 console.log('LOG: getRates.js - Defining constants.');
-const ESHIPPLUS_API_URL = process.env.ESHIPPLUS_URL || "https://cloudstaging.eshipplus.com/services/rest/RateShipment.aspx";
+const ESHIPPLUS_API_URL = "https://cloudstaging.eshipplus.com/services/rest/RateShipment.aspx";
 console.log(`LOG: getRates.js - ESHIPPLUS_API_URL: ${ESHIPPLUS_API_URL}`);
 
 // Helper to safely access nested properties, especially for arrays that might be missing or empty
@@ -166,7 +166,7 @@ async function processRateRequest(data) {
          eShipPlusRequestData.BookingReferenceNumberType = 2; // Default based on your sample
     }
 
-    // Validate required fields in the rate request data against the new JSON structure
+    // Validate required fields in the rate request data
     const validationError = validateJsonRateRequest(eShipPlusRequestData);
     if (validationError) {
       logger.error('Validation Error:', validationError);
@@ -203,31 +203,55 @@ async function processRateRequest(data) {
         // 'Accept': 'application/json' // Usually good practice
       },
       validateStatus: function (status) {
-        return status >= 200 && status < 500; // Process responses even with client/server errors
+        return status >= 200 && status < 600; // Accept all statuses to inspect body
       }
     });
 
     logger.info(`eShipPlus API Response Status: ${response.status}`);
-    logger.debug('eShipPlus API Raw Response Data:', response.data);
+    // Log the raw response body, especially for non-2xx statuses
+    if (response.status >= 300) { 
+        logger.warn('eShipPlus API Raw Response Data (Status >= 300):', response.data);
+    } else {
+        logger.debug('eShipPlus API Raw Response Data (Status 2xx):', response.data);
+    }
 
-    if (response.status >= 400 || response.data.ContainsErrorMessage === true || (response.data.Messages && response.data.Messages.length > 0) ) {
-        let errorMessage = `eShipPlus API Error: Status ${response.status}`;
-        let errorDetails = response.data;
+    if (response.status >= 400) { // Covers 4xx and 5xx client or server errors from EShipPlus
+        let errorMessage = `EShipPlus API Error: HTTP Status ${response.status}.`;
+        let errorDetailsForClient = { rawResponse: 'See function logs for full details.' }; // Default client detail
+
         if (response.data) {
-            if (response.data.Messages && Array.isArray(response.data.Messages) && response.data.Messages.length > 0) {
-                 errorMessage += ` - ${response.data.Messages.map(m => m.Text || JSON.stringify(m)).join('; ')}`;
-            } else if (typeof response.data === 'string') {
-                errorMessage += ` - ${response.data}`;
-            } else if (response.data.message) {
-                 errorMessage += ` - ${response.data.message}`;
-            } else if (response.data.error) {
-                 errorMessage += ` - ${response.data.error}`;
-            }            
+            if (typeof response.data === 'object') {
+                errorDetailsForClient = response.data; // Send structured error if available
+                if (response.data.Messages && Array.isArray(response.data.Messages) && response.data.Messages.length > 0) {
+                     errorMessage += ` Messages: ${response.data.Messages.map(m => m.Text || JSON.stringify(m)).join('; ')}`;
+                } else if (response.data.ErrorMessage) { 
+                     errorMessage += ` ErrorMessage: ${response.data.ErrorMessage}`;
+                } else if (response.data.message) { 
+                     errorMessage += ` Message: ${response.data.message}`;
+                } else if (response.data.error) {
+                     errorMessage += ` Error: ${response.data.error}`;
+                } 
+                // If it's an object but no specific error message fields, it will be logged fully below
+            } else if (typeof response.data === 'string' && response.data.length < 1024) { // Limit string length for client
+                errorMessage += ` Response: ${response.data}`;
+                errorDetailsForClient = { rawResponse: response.data };
+            }
         }
-        logger.error(errorMessage, errorDetails);
-        // Determine a more specific error code if possible from eShipPlus response
-        const errorCode = response.data.ContainsErrorMessage ? 'failed-precondition' : 'internal';
-        throw new functions.https.HttpsError(errorCode, errorMessage, errorDetails);
+        // Log the full response data for server-side debugging, regardless of its type/size
+        logger.error("Full EShipPlus Error Response: ", errorMessage, { fullEShipPlusResponse: response.data });
+        
+        const f_error_code = response.data?.ContainsErrorMessage || response.status === 503 ? 'unavailable' : 'internal';
+        throw new functions.https.HttpsError(f_error_code, errorMessage, errorDetailsForClient);
+    }
+    
+    // Specific check for ContainsErrorMessage even on 2xx (as per original logic), this indicates business logic error
+    if (response.data && response.data.ContainsErrorMessage === true) {
+        let errorMessage = `EShipPlus API indicated an error in the response despite HTTP ${response.status} status.`;
+        if (response.data.Messages && Array.isArray(response.data.Messages) && response.data.Messages.length > 0) {
+            errorMessage += ` Messages: ${response.data.Messages.map(m => m.Text || JSON.stringify(m)).join('; ')}`;
+        }
+        logger.error(errorMessage, { fullEShipPlusResponse: response.data });
+        throw new functions.https.HttpsError('failed-precondition', errorMessage, response.data);
     }
 
     const transformedData = transformRestResponseToInternalFormat(response.data);
@@ -325,8 +349,7 @@ function validateJsonRateRequest(data) {
 
   const requiredTopLevel = [
     'BookingReferenceNumber', 
-    //'BookingReferenceNumberType', // As per your example, it is 2. We might enforce or default this.
-    'ShipmentBillType',
+    // 'BookingReferenceNumberType', // Now defaulted/mapped in calling code
     'ShipmentDate',
     'EarliestPickup', 'LatestPickup',
     'EarliestDelivery', 'LatestDelivery',

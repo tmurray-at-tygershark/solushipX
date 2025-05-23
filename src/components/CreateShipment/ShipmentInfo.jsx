@@ -22,6 +22,14 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import './ShipmentInfo.css';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext'; // Import the context hook
 
+// Helper to format date as YYYY-MM-DD
+const formatDateForInput = (date) => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 // Removed data and onDataChange from props
 const ShipmentInfo = ({ onNext, onPrevious }) => {
     console.log('deploy test confirmed - ShipmentInfo component loaded');
@@ -33,8 +41,13 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     const [errorMessage, setErrorMessage] = useState('');
     const [loading, setLoading] = useState(true);
 
-    // No need for useEffect to sync props to local state anymore
-    // No need for useEffect to call onDataChange anymore
+    useEffect(() => {
+        // Set default shipment date to today if not already set
+        // and if shipmentInfo itself exists to avoid errors on initial context load
+        if (formData.shipmentInfo && !formData.shipmentInfo.shipmentDate) {
+            updateFormSection('shipmentInfo', { ...formData.shipmentInfo, shipmentDate: formatDateForInput(new Date()) });
+        }
+    }, [formData.shipmentInfo, updateFormSection]); // Rerun if shipmentInfo object changes or updateFormSection changes
 
     // Add loading effect
     useEffect(() => {
@@ -66,57 +79,49 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     };
 
     const validateForm = () => {
-        // Validate using formData from context
-        console.log('Validating form with data from context:', formData.shipmentInfo);
         const newErrors = {};
-        const currentData = formData.shipmentInfo || {}; // Use context data
-
-        // Check if any required field is empty
+        const currentData = formData.shipmentInfo || {};
+        // ... (existing validation logic using currentData, which comes from formData.shipmentInfo)
+        // This validation logic itself seems fine as it reads from the context state.
+        // The critical part is ensuring context IS the latest before this validateForm is called IF we solely rely on context.
+        // Or, validate a passed-in data object if handleSubmit passes its own collected data.
+        // For now, assuming currentData from context is what we validate.
         const requiredFields = ['shipmentType', 'shipmentDate'];
         const hasEmptyRequiredFields = requiredFields.some(field => !currentData[field]);
 
         if (hasEmptyRequiredFields) {
             setErrorMessage('Please fill in all required fields');
             setShowErrorSnackbar(true);
-            // Still set individual errors for fields
             if (!currentData.shipmentType) newErrors.shipmentType = 'Please select a shipment type';
             if (!currentData.shipmentDate) newErrors.shipmentDate = 'Please select a shipment date';
         } else {
-            // Check required fields specifically if overall check passed
             if (!currentData.shipmentType) {
                 newErrors.shipmentType = 'Please select a shipment type';
             }
-
             if (!currentData.shipmentDate) {
                 newErrors.shipmentDate = 'Please select a shipment date';
             } else {
-                // Validate shipment date is not in the past
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const selectedDate = new Date(currentData.shipmentDate);
-                if (selectedDate < today) {
+                const todayDate = new Date();
+                const todayAtMidnightUTC = new Date(Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate()));
+                const parts = currentData.shipmentDate.split('-');
+                const selectedDateAtMidnightUTC = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+                if (selectedDateAtMidnightUTC < todayAtMidnightUTC) {
                     newErrors.shipmentDate = 'Shipment date cannot be in the past';
                 }
             }
         }
-
-        // Validate time windows using context data
         const earliestPickup = new Date(`2000-01-01T${currentData.earliestPickupTime || '00:00'}`);
         const latestPickup = new Date(`2000-01-01T${currentData.latestPickupTime || '00:00'}`);
         if (earliestPickup >= latestPickup) {
             newErrors.pickupTime = 'Latest pickup time must be after earliest pickup time';
         }
-
         const earliestDelivery = new Date(`2000-01-01T${currentData.earliestDeliveryTime || '00:00'}`);
         const latestDelivery = new Date(`2000-01-01T${currentData.latestDeliveryTime || '00:00'}`);
         if (earliestDelivery >= latestDelivery) {
             newErrors.deliveryTime = 'Latest delivery time must be after earliest delivery time';
         }
-
         setErrors(newErrors);
         const isValid = Object.keys(newErrors).length === 0;
-        console.log('Form validation result:', isValid, newErrors);
-        // Show snackbar only if there are errors after validation attempt
         if (!isValid && !hasEmptyRequiredFields) {
             setErrorMessage('Please correct the errors highlighted below.');
             setShowErrorSnackbar(true);
@@ -128,43 +133,30 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
         e.preventDefault();
         e.stopPropagation();
 
-        // Use context data for submission check
-        console.log('Form submitted attempt with context data:', formData.shipmentInfo);
-
-        // Check if form data is empty - Reading from context
+        // currentShipmentInfo IS formData.shipmentInfo from context, which should have been updated by handleInputChange
         const currentShipmentInfo = formData.shipmentInfo || {};
-        const isEmpty = Object.values(currentShipmentInfo).every(value =>
-            value === '' || value === false || value === null || value === undefined
-            // We might need a better check depending on the initial state vs truly empty fields
-        );
+        console.log('ShipmentInfo handleSubmit: Validating data from context:', currentShipmentInfo);
 
-        // Basic check - refine if needed based on required fields
-        if (!currentShipmentInfo.shipmentType && !currentShipmentInfo.shipmentDate) {
-            setErrorMessage('Please fill in the required fields before proceeding');
-            setShowErrorSnackbar(true);
-            return;
-        }
-
+        // Validate form using the data currently in context (formData.shipmentInfo)
         const isValid = validateForm();
 
         if (!isValid) {
-            // Scroll to the first error
             const firstErrorField = Object.keys(errors)[0];
             if (firstErrorField) {
                 const element = document.getElementById(firstErrorField);
-                // Need to check if element exists before scrolling
                 if (element) {
                     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 } else {
-                    // If element not found (e.g., shipmentType card), maybe scroll to top
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
             }
             return;
         }
 
-        // No need for onDataChange(formData);
-        onNext();
+        // Since handleInputChange updates context directly, formData.shipmentInfo IS the source of truth.
+        // No need to explicitly call updateFormSection here again with the same object unless there was local state being managed.
+        console.log("ShipmentInfo handleSubmit: Validation passed. Calling onNext with data from context:", currentShipmentInfo);
+        onNext(currentShipmentInfo); // Pass the validated shipmentInfo data from context to the parent
     };
 
     const handleCloseSnackbar = () => {

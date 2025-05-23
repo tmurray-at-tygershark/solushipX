@@ -4,7 +4,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import './ShipTo.css';
-import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton, IconButton } from '@mui/material';
+import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton, IconButton, Alert } from '@mui/material';
 import {
     LocationOn as LocationOnIcon,
     LocalPhone as LocalPhoneIcon,
@@ -17,14 +17,32 @@ import {
     Person as PersonIcon
 } from '@mui/icons-material';
 
+const emptyAddress = () => ({
+    company: '',
+    name: '',
+    attention: '',
+    street: '',
+    street2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: 'US',
+    contactName: '',
+    contactPhone: '',
+    contactEmail: '',
+    specialInstructions: '',
+    customerID: null,
+    selectedAddressId: null
+});
+
 const ShipTo = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
     const { formData, updateFormSection } = useShipmentForm();
 
     const [customers, setCustomers] = useState([]);
-    const [selectedCustomer, setSelectedCustomer] = useState(null);
+    const [selectedCustomerState, setSelectedCustomerState] = useState(null);
     const [customerAddresses, setCustomerAddresses] = useState([]);
-    const [selectedAddressId, setSelectedAddressId] = useState(null);
+    const [selectedAddressId, setSelectedAddressId] = useState(formData.shipTo?.selectedAddressId || null);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
@@ -37,116 +55,63 @@ const ShipTo = ({ onNext, onPrevious }) => {
     const [companyId, setCompanyId] = useState(null);
 
     useEffect(() => {
-        if (formData.shipTo?.selectedCustomer) {
-            setSelectedCustomer(formData.shipTo.selectedCustomer);
+        const customerIdFromContext = formData.shipTo?.customerID;
+        if (customerIdFromContext && (!selectedCustomerState || selectedCustomerState.customerID !== customerIdFromContext)) {
+            const customerFromList = customers.find(c => c.customerID === customerIdFromContext || c.id === customerIdFromContext);
+            if (customerFromList) {
+                setSelectedCustomerState(customerFromList);
+            }
         }
-        if (formData.shipTo?.selectedAddressId) {
-            setSelectedAddressId(formData.shipTo.selectedAddressId);
+        if (formData.shipTo?.selectedAddressId !== selectedAddressId) {
+            setSelectedAddressId(formData.shipTo?.selectedAddressId || null);
         }
-    }, [formData.shipTo?.selectedCustomer, formData.shipTo?.selectedAddressId]);
+    }, [formData.shipTo?.customerID, formData.shipTo?.selectedAddressId, customers, selectedCustomerState]);
 
     useEffect(() => {
         setTotalPages(Math.ceil(customers.length / customersPerPage));
     }, [customers, customersPerPage]);
 
-    // Define fetchCustomers before any useEffect that depends on it
     const fetchCustomers = useCallback(async (id) => {
         if (!id) return;
+        setLoading(true);
         try {
             setError(null);
-            console.log("Fetching customers for company ID:", id);
-
-            // Query customers collection with both uppercase and lowercase companyID fields for backward compatibility
-            const customersSnapshot = await getDocs(
-                query(
-                    collection(db, 'customers'),
-                    where('companyID', '==', id)
-                )
-            );
-
+            const customersSnapshot = await getDocs(query(collection(db, 'customers'), where('companyID', '==', id)));
             let customersData = [];
-
             if (!customersSnapshot.empty) {
-                console.log(`Found ${customersSnapshot.size} customers for company ID: ${id}`);
                 customersData = customersSnapshot.docs.map(doc => {
                     const data = doc.data();
-                    // Handle timestamp conversion
-                    let createdAt = null;
-                    let updatedAt = null;
-                    if (data.createdAt && typeof data.createdAt.toDate === 'function') {
-                        createdAt = data.createdAt.toDate().toISOString();
-                    }
-                    if (data.updatedAt && typeof data.updatedAt.toDate === 'function') {
-                        updatedAt = data.updatedAt.toDate().toISOString();
-                    }
-                    // Create customer object
-                    return {
-                        id: doc.id,
-                        customerID: data.customerID || doc.id,
-                        customerId: data.customerID || doc.id,
-                        ...data,
-                        createdAt,
-                        updatedAt
-                    };
+                    return { id: doc.id, customerID: data.customerID || doc.id, ...data };
                 });
-            } else {
-                console.log(`No customers found for company ID: ${id}`);
             }
-
             setCustomers(customersData);
-            setCurrentPage(1);
+            if (formData.shipTo?.customerID && customersData.length > 0) {
+                const preSelected = customersData.find(c => c.customerID === formData.shipTo.customerID || c.id === formData.shipTo.customerID);
+                if (preSelected) setSelectedCustomerState(preSelected);
+            }
         } catch (err) {
-            console.error('Error fetching customers - Exception details:', {
-                message: err.message,
-                name: err.name,
-                stack: err.stack,
-                code: err.code,
-                fullError: err
-            });
-            setError('Failed to load customers. Please try again.');
+            console.error('Error fetching customers:', err);
+            setError('Failed to load customers.');
             setCustomers([]);
+        } finally {
+            setLoading(false);
         }
     }, []);
 
     useEffect(() => {
         const fetchCompanyId = async () => {
-            if (!currentUser) return;
+            if (!currentUser) { setLoading(false); return; }
+            setLoading(true);
             try {
-                setError(null);
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                if (!userDoc.exists()) {
-                    setError('User data not found.');
-                    setLoading(false);
-                    return;
-                }
+                if (!userDoc.exists()) throw new Error('User data not found.');
                 const userData = userDoc.data();
-
-                // Look for company ID in various possible locations in the user profile
-                let id = null;
-
-                // Try different field names and locations
-                if (userData.companyID) {
-                    id = userData.companyID;
-                } else if (userData.companyId) {
-                    id = userData.companyId;
-                } else if (userData.connectedCompanies?.companies?.length > 0) {
-                    id = userData.connectedCompanies.companies[0];
-                } else if (userData.companies?.length > 0) {
-                    id = userData.companies[0];
-                }
-
-                if (!id) {
-                    setError('No company associated with this user.');
-                    setLoading(false);
-                    return;
-                }
-
-                console.log(`Found company ID in user profile: ${id}`);
-                setCompanyId(id);
+                const id = userData.companyID || userData.companyId || userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+                if (!id) throw new Error('No company associated with this user.');
                 await fetchCustomers(id);
             } catch (err) {
-                console.error('Error fetching company ID:', err);
-                setError('Failed to load company data. Please try again.');
+                console.error('Error fetching company ID for ShipTo:', err);
+                setError(err.message || 'Failed to load company data.');
             } finally {
                 setLoading(false);
             }
@@ -154,175 +119,61 @@ const ShipTo = ({ onNext, onPrevious }) => {
         fetchCompanyId();
     }, [currentUser, fetchCustomers]);
 
-    const loadAndProcessAddresses = useCallback(async (customer) => {
-        // Support both field naming conventions for backward compatibility
-        const customerID = customer?.customerID || customer?.customerId || customer?.id;
-
-        if (!customerID) {
+    const loadAndProcessAddresses = useCallback(async (customerForAddresses) => {
+        const localCustomerID = customerForAddresses?.customerID || customerForAddresses?.id;
+        if (!localCustomerID) {
             setCustomerAddresses([]);
             return;
         }
-
-        setLoadingDestinations(true);
-        setError(null);
-
+        setLoadingDestinations(true); setError(null);
         try {
             let addressesToProcess = [];
-            if (customer.addresses && customer.addresses.length > 0 && customer.addresses[0]?.street) {
-                console.log('Using addresses directly from customer object:', customer.addresses);
-                addressesToProcess = customer.addresses;
-            } else {
-                console.log('Fetching destinations from addressBook for customer:', customerID);
-
-                // Direct Firestore query for customer addresses in addressBook
-                const addressesQuery = query(
-                    collection(db, 'addressBook'),
-                    where('addressClass', '==', 'customer'),
-                    where('addressType', '==', 'destination'),
-                    where('addressClassID', '==', customerID)
-                );
-
-                const addressesSnapshot = await getDocs(addressesQuery);
-                console.log(`Found ${addressesSnapshot.docs.length} addresses in addressBook for customer ${customerID}`);
-
-                if (!addressesSnapshot.empty) {
-                    // Updated mapping to match new addressBook format
-                    addressesToProcess = addressesSnapshot.docs.map(doc => {
-                        const data = doc.data();
-                        return {
-                            id: doc.id,
-                            type: 'shipping',
-                            street: data.address1, // Using address1 as street
-                            street2: data.address2 || '',
-                            city: data.city,
-                            state: data.stateProv, // Using stateProv as state
-                            zip: data.zipPostal, // Using zipPostal as zip
-                            country: data.country || 'US',
-                            attention: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-                            name: data.nickname || data.companyName, // Using nickname for name
-                            default: data.isDefault || false,
-                            specialInstructions: data.specialInstructions || '',
-                            // Include direct contact info from the address record
-                            contactName: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-                            contactPhone: data.phone || '',
-                            contactEmail: data.email || ''
-                        };
-                    });
-                } else {
-                    console.log('No addresses found in addressBook, checking legacy customer document');
-
-                    // If no addresses in addressBook, try the customer document directly
-                    const customerRef = doc(db, 'customers', customerID);
-                    const customerDoc = await getDoc(customerRef);
-
-                    if (customerDoc.exists() && customerDoc.data().addresses && Array.isArray(customerDoc.data().addresses)) {
-                        addressesToProcess = customerDoc.data().addresses;
-                    } else {
-                        console.log('No addresses found for this customer');
-                        addressesToProcess = [];
-                    }
-                }
+            const addressesQuery = query(collection(db, 'addressBook'), where('addressClass', '==', 'customer'), where('addressType', '==', 'destination'), where('addressClassID', '==', localCustomerID));
+            const addressesSnapshot = await getDocs(addressesQuery);
+            if (!addressesSnapshot.empty) {
+                addressesToProcess = addressesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } else if (customerForAddresses.addresses && customerForAddresses.addresses.length > 0 && customerForAddresses.addresses[0]?.street) {
+                addressesToProcess = customerForAddresses.addresses.map((addr, idx) => ({ ...addr, id: addr.id || `legacy_${idx}` }));
             }
 
-            // Updated mapping for legacy addresses from customer record
-            const primaryContact = customer.contacts?.find(contact => contact.isPrimary === true) || customer.contacts?.[0] || {};
-            const formattedAddresses = addressesToProcess
-                .filter(addr => addr?.type === 'shipping')
-                .map((addr, index) => {
-                    // Check if this is an addressBook record (contains contactName, contactPhone, contactEmail)
-                    const isAddressBookRecord =
-                        'contactName' in addr ||
-                        'contactPhone' in addr ||
-                        'contactEmail' in addr;
-
-                    return {
-                        id: addr.id || `addr_${index}`,
-                        customerId: customerID,
-                        attention: addr.attention || '',
-                        name: addr.name || customer.name || '',
-                        // Use contact info directly from address record if available
-                        contactName: addr.contactName ||
-                            (addr.firstName && addr.lastName ?
-                                `${addr.firstName} ${addr.lastName}`.trim() :
-                                primaryContact.name || ''),
-                        contactPhone: addr.contactPhone || addr.phone || primaryContact.phone || '',
-                        contactEmail: addr.contactEmail || addr.email || primaryContact.email || '',
-                        default: addr.default || addr.isDefault || false,
-                        street: addr.street || addr.address1 || '',
-                        street2: addr.street2 || addr.address2 || '',
-                        city: addr.city || '',
-                        state: addr.state || addr.stateProv || '',
-                        postalCode: addr.postalCode || addr.zip || addr.zipPostal || '',
-                        country: addr.country || 'US',
-                        specialInstructions: addr.specialInstructions || ''
-                    };
-                });
-
-            formattedAddresses.sort((a, b) => {
-                if (a.default === true && b.default !== true) return -1;
-                if (a.default !== true && b.default === true) return 1;
-                return 0;
-            });
-
+            const primaryContact = customerForAddresses.contacts?.find(c => c.isPrimary) || customerForAddresses.contacts?.[0] || {};
+            const formattedAddresses = addressesToProcess.map(addr => ({
+                id: addr.id,
+                customerID: localCustomerID,
+                name: addr.nickname || addr.name || customerForAddresses.name || '',
+                company: addr.companyName || customerForAddresses.company || '',
+                attention: addr.attention || `${addr.firstName || ''} ${addr.lastName || ''}`.trim() || primaryContact.name || '',
+                street: addr.address1 || addr.street || '',
+                street2: addr.address2 || addr.street2 || '',
+                city: addr.city || '',
+                state: addr.stateProv || addr.state || '',
+                postalCode: addr.zipPostal || addr.postalCode || addr.zip || '',
+                country: addr.country || 'US',
+                contactName: addr.contactName || `${addr.firstName || ''} ${addr.lastName || ''}`.trim() || primaryContact.name || '',
+                contactPhone: addr.contactPhone || addr.phone || primaryContact.phone || '',
+                contactEmail: addr.contactEmail || addr.email || primaryContact.email || '',
+                specialInstructions: addr.specialInstructions || '',
+                isDefault: addr.isDefault || false
+            }));
+            formattedAddresses.sort((a, b) => (a.isDefault === b.isDefault) ? 0 : a.isDefault ? -1 : 1);
             setCustomerAddresses(formattedAddresses);
-            console.log('Processed and sorted addresses:', formattedAddresses);
 
-            let addressToSelect = null;
-            const contextAddressId = formData.shipTo?.selectedAddressId;
-
-            if (contextAddressId) {
-                addressToSelect = formattedAddresses.find(addr => String(addr.id) === String(contextAddressId));
-                console.log(`Address Selection: Found match for context ID (${contextAddressId})?`, !!addressToSelect);
+            let addressToSelectObject = null;
+            if (formData.shipTo?.selectedAddressId && formattedAddresses.length > 0) {
+                addressToSelectObject = formattedAddresses.find(addr => String(addr.id) === String(formData.shipTo.selectedAddressId));
+            }
+            if (!addressToSelectObject && formattedAddresses.length > 0) {
+                addressToSelectObject = formattedAddresses.find(addr => addr.isDefault) || formattedAddresses[0];
             }
 
-            if (!addressToSelect && formattedAddresses.length > 0) {
-                addressToSelect = formattedAddresses.find(addr => addr.default === true) || formattedAddresses[0];
-                console.log('Address Selection: Using default/first address:', addressToSelect?.id);
-            }
-
-            if (addressToSelect) {
-                setSelectedAddressId(String(addressToSelect.id));
-                const needsContextUpdate = (
-                    !formData.shipTo?.selectedAddressId ||
-                    String(formData.shipTo.selectedAddressId) !== String(addressToSelect.id) ||
-                    !formData.shipTo?.street
-                );
-
-                if (needsContextUpdate) {
-                    console.log(`Updating context with details for address ID: ${addressToSelect.id}`);
-                    updateFormSection('shipTo', {
-                        selectedCustomer: customer,
-                        selectedAddressId: String(addressToSelect.id),
-                        name: addressToSelect.name || '',
-                        company: customer.company || addressToSelect.companyName || '',
-                        attention: addressToSelect.attention || '',
-                        street: addressToSelect.street || '',
-                        street2: addressToSelect.street2 || '',
-                        city: addressToSelect.city || '',
-                        state: addressToSelect.state || '',
-                        postalCode: addressToSelect.postalCode || '',
-                        country: addressToSelect.country || 'US',
-                        contactName: addressToSelect.contactName || '',
-                        contactPhone: addressToSelect.contactPhone || '',
-                        contactEmail: addressToSelect.contactEmail || '',
-                        specialInstructions: addressToSelect.specialInstructions || ''
-                    });
-                } else {
-                    console.log("Context already reflects selected address, no update needed.");
-                }
-
+            if (addressToSelectObject) {
+                setSelectedAddressId(String(addressToSelectObject.id));
+                const shipToUpdate = { ...addressToSelectObject, customerID: localCustomerID, selectedAddressId: String(addressToSelectObject.id) };
+                updateFormSection('shipTo', shipToUpdate);
             } else if (formattedAddresses.length === 0) {
-                console.log("No addresses found, clearing address in context.");
+                updateFormSection('shipTo', { ...emptyAddress(), customerID: localCustomerID, company: customerForAddresses.company || '' });
                 setSelectedAddressId(null);
-                updateFormSection('shipTo', {
-                    selectedCustomer: customer,
-                    selectedAddressId: null,
-                    name: '', company: '', attention: '', street: '', street2: '',
-                    city: '', state: '', postalCode: '', country: 'US',
-                    contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
-                });
             }
-
         } catch (err) {
             console.error('Error loading/processing addresses:', err);
             setError(`Failed to load addresses: ${err.message}`);
@@ -330,111 +181,63 @@ const ShipTo = ({ onNext, onPrevious }) => {
         } finally {
             setLoadingDestinations(false);
         }
-    }, [updateFormSection, formData.shipTo]);
+    }, [updateFormSection, formData.shipTo?.selectedAddressId]);
 
     useEffect(() => {
-        const customerFromContext = formData.shipTo?.selectedCustomer;
-        const addressIdFromContext = formData.shipTo?.selectedAddressId;
-        console.log("Context Sync Effect: Checking context...");
-
-        if (selectedCustomer?.customerId !== customerFromContext?.customerId) {
-            console.log(`Context Sync Effect: Updating local customer from ${selectedCustomer?.customerId} to ${customerFromContext?.customerId}`);
-            setSelectedCustomer(customerFromContext || null);
-        }
-
-        if (selectedAddressId !== addressIdFromContext) {
-            console.log(`Context Sync Effect: Updating local address ID from ${selectedAddressId} to ${addressIdFromContext}`);
-            setSelectedAddressId(addressIdFromContext || null);
-        }
-    }, [formData.shipTo?.selectedCustomer, formData.shipTo?.selectedAddressId]);
-
-    useEffect(() => {
-        if (selectedCustomer && selectedCustomer.customerId) {
-            const addressesLoadedForThisCustomer = customerAddresses.length > 0 &&
-                customerAddresses[0]?.customerId === selectedCustomer.customerId;
-
-            if (!addressesLoadedForThisCustomer) {
-                console.log(`Load Address Effect: Triggering address load for customer ${selectedCustomer.customerId}`);
-                loadAndProcessAddresses(selectedCustomer);
-            } else {
-                console.log(`Load Address Effect: Addresses seem already loaded for customer ${selectedCustomer.customerId}`);
+        if (selectedCustomerState && selectedCustomerState.customerID) {
+            const currentContextCustomerId = formData.shipTo?.customerID;
+            if (currentContextCustomerId !== selectedCustomerState.customerID || customerAddresses.length === 0 || (customerAddresses.length > 0 && customerAddresses[0].customerID !== selectedCustomerState.customerID)) {
+                console.log(`Load Address Effect: Triggering address load for customer ${selectedCustomerState.customerID}`);
+                loadAndProcessAddresses(selectedCustomerState);
             }
         } else {
-            if (customerAddresses.length > 0) {
-                console.log("Load Address Effect: No selected customer, clearing addresses.");
-                setCustomerAddresses([]);
-            }
+            setCustomerAddresses([]);
         }
-    }, [selectedCustomer, loadAndProcessAddresses]);
+    }, [selectedCustomerState, loadAndProcessAddresses, formData.shipTo?.customerID, customerAddresses]);
 
     const handleCustomerSelect = useCallback((customer) => {
         if (!customer) {
-            console.log("Customer selection cleared");
-            setSelectedCustomer(null);
+            setSelectedCustomerState(null);
             setSelectedAddressId(null);
             setCustomerAddresses([]);
-            updateFormSection('shipTo', {
-                selectedCustomer: null, selectedAddressId: null, name: '', company: '', attention: '',
-                street: '', street2: '', city: '', state: '', postalCode: '', country: 'US',
-                contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
-            });
+            updateFormSection('shipTo', { ...emptyAddress(), customerID: null, selectedAddressId: null });
             return;
         }
-
-        // Support both field naming conventions for backward compatibility
-        const customerID = customer?.customerID || customer?.customerId || customer?.id;
-
-        console.log("Customer selected interactively:", customerID);
-
-        // Ensure both field names exist for backward compatibility
-        if (customer.customerId && !customer.customerID) {
-            customer.customerID = customer.customerId;
-        } else if (customer.customerID && !customer.customerId) {
-            customer.customerId = customer.customerID;
-        }
-
-        setSelectedCustomer(customer);
+        const customerID = customer.customerID || customer.id;
+        setSelectedCustomerState({ ...customer, customerID });
         setSelectedAddressId(null);
-        setCustomerAddresses([]);
+        updateFormSection('shipTo', {
+            ...emptyAddress(),
+            customerID: customerID,
+            company: customer.company || '',
+            selectedAddressId: null
+        });
+    }, [updateFormSection]);
 
-        updateFormSection('shipTo', { selectedCustomer: customer, selectedAddressId: null });
-
-        loadAndProcessAddresses(customer);
-
-    }, [updateFormSection, loadAndProcessAddresses]);
-
-    // Fix contact name issues by consistently ensuring contact fields are filled
     useEffect(() => {
-        // If the form has an attention field but missing contactName, fix it
         if (formData.shipTo &&
             formData.shipTo.attention &&
             !formData.shipTo.contactName) {
 
             console.log("ShipTo: Found attention but no contactName, copying value:", formData.shipTo.attention);
 
-            // Update the form with the attention value copied to contactName
             updateFormSection('shipTo', {
                 contactName: formData.shipTo.attention,
-                // If we're missing phone/email, check the database
                 contactPhone: formData.shipTo.contactPhone || formData.shipTo.phone || '',
                 contactEmail: formData.shipTo.contactEmail || formData.shipTo.email || ''
             });
         }
     }, [formData.shipTo, updateFormSection]);
 
-    // Add a utility function to ensure all contact fields are properly set
     const ensureContactFields = useCallback((data) => {
-        // Make sure contactName is set if attention exists
         if (!data.contactName && data.attention) {
             data.contactName = data.attention;
         }
 
-        // Make sure contactPhone is set
         if (!data.contactPhone && data.phone) {
             data.contactPhone = data.phone;
         }
 
-        // Make sure contactEmail is set
         if (!data.contactEmail && data.email) {
             data.contactEmail = data.email;
         }
@@ -444,150 +247,70 @@ const ShipTo = ({ onNext, onPrevious }) => {
 
     const handleAddressChange = useCallback((addressId) => {
         const addressIdStr = addressId ? String(addressId) : null;
-        console.log(`Address selection changed to ID: "${addressIdStr}"`);
-        if (!addressIdStr || !selectedCustomer) return;
+        if (!addressIdStr || !selectedCustomerState) return;
 
         setSelectedAddressId(addressIdStr);
+        const selectedAddressData = customerAddresses.find(addr => String(addr.id) === addressIdStr);
 
-        const selectedAddress = customerAddresses.find(addr => String(addr.id) === addressIdStr);
-
-        if (selectedAddress) {
-            console.log("Found matching address in local state:", selectedAddress);
-
-            // Directly query the address from the database to get the latest data
-            const fetchAddressDetails = async () => {
-                try {
-                    const addressRef = doc(db, 'addressBook', addressIdStr);
-                    const addressSnap = await getDoc(addressRef);
-
-                    // Get the most up-to-date contact information
-                    let firstName = selectedAddress.firstName || '';
-                    let lastName = selectedAddress.lastName || '';
-                    let phone = selectedAddress.phone || selectedAddress.contactPhone || '';
-                    let email = selectedAddress.email || selectedAddress.contactEmail || '';
-
-                    if (addressSnap.exists()) {
-                        const data = addressSnap.data();
-                        firstName = data.firstName || firstName;
-                        lastName = data.lastName || lastName;
-                        phone = data.phone || phone;
-                        email = data.email || email;
-                    }
-
-                    // Ensure contact name is properly set
-                    const contactName = firstName && lastName
-                        ? `${firstName} ${lastName}`
-                        : selectedAddress.attention || selectedAddress.contactName || selectedAddress.name || "Receiving Department";
-
-                    // If we don't have contact info from the address, try to get it from the customer's primary contact
-                    if (!phone || !email) {
-                        const primaryContact = selectedCustomer.contacts?.find(c => c.isPrimary) || selectedCustomer.contacts?.[0];
-                        if (primaryContact) {
-                            phone = phone || primaryContact.phone || '';
-                            email = email || primaryContact.email || '';
-                        }
-                    }
-
-                    const formattedAddress = {
-                        ...selectedAddress,
-                        name: selectedAddress.nickname || selectedAddress.name || '',
-                        company: selectedAddress.company || selectedAddress.companyName || '',
-                        attention: contactName,
-                        street: selectedAddress.address1 || selectedAddress.street || '',
-                        street2: selectedAddress.address2 || selectedAddress.street2 || '',
-                        city: selectedAddress.city || '',
-                        state: selectedAddress.stateProv || selectedAddress.state || '',
-                        postalCode: selectedAddress.zipPostal || selectedAddress.postalCode || '',
-                        country: selectedAddress.country || 'US',
-                        contactName: contactName,
-                        contactPhone: phone,
-                        contactEmail: email,
-                        specialInstructions: selectedAddress.specialInstructions || '',
-                        firstName,
-                        lastName,
-                        phone,
-                        email,
-                        selectedCustomer,
-                        selectedAddressId: addressIdStr
-                    };
-
-                    console.log("ShipTo: Updating form with address including contact information:", {
-                        contactName: formattedAddress.contactName,
-                        contactPhone: formattedAddress.contactPhone,
-                        contactEmail: formattedAddress.contactEmail
-                    });
-
-                    updateFormSection('shipTo', formattedAddress);
-                } catch (err) {
-                    console.error("Error fetching address details:", err);
-
-                    // Fall back to using the data we already have
-                    const contactName = selectedAddress.firstName && selectedAddress.lastName
-                        ? `${selectedAddress.firstName} ${selectedAddress.lastName}`
-                        : selectedAddress.attention || selectedAddress.contactName || selectedAddress.name || "Receiving Department";
-
-                    const primaryContact = selectedCustomer.contacts?.find(c => c.isPrimary) || selectedCustomer.contacts?.[0] || {};
-                    const phone = selectedAddress.phone || selectedAddress.contactPhone || primaryContact.phone || '';
-                    const email = selectedAddress.email || selectedAddress.contactEmail || primaryContact.email || '';
-
-                    const formattedAddress = {
-                        ...selectedAddress,
-                        name: selectedAddress.nickname || selectedAddress.name || '',
-                        company: selectedAddress.company || selectedAddress.companyName || '',
-                        attention: contactName,
-                        street: selectedAddress.address1 || selectedAddress.street || '',
-                        street2: selectedAddress.address2 || selectedAddress.street2 || '',
-                        city: selectedAddress.city || '',
-                        state: selectedAddress.stateProv || selectedAddress.state || '',
-                        postalCode: selectedAddress.zipPostal || selectedAddress.postalCode || '',
-                        country: selectedAddress.country || 'US',
-                        contactName: contactName,
-                        contactPhone: phone,
-                        contactEmail: email,
-                        specialInstructions: selectedAddress.specialInstructions || '',
-                        selectedCustomer,
-                        selectedAddressId: addressIdStr
-                    };
-
-                    updateFormSection('shipTo', formattedAddress);
-                }
+        if (selectedAddressData) {
+            const shipToUpdate = {
+                ...selectedAddressData,
+                customerID: selectedCustomerState.customerID || selectedCustomerState.id,
+                selectedAddressId: addressIdStr
             };
-
-            fetchAddressDetails();
+            updateFormSection('shipTo', shipToUpdate);
         } else {
-            console.error(`No address found with ID: ${addressIdStr}`);
+            console.error(`No address found with ID: ${addressIdStr} in local list.`);
         }
-    }, [customerAddresses, selectedCustomer, updateFormSection]);
+    }, [customerAddresses, selectedCustomerState, updateFormSection]);
 
     const handleSubmit = useCallback(() => {
-        const currentShipToData = formData.shipTo || {};
         setError(null);
+        const currentShipToData = formData.shipTo || {};
+        let validationErrorMessages = [];
 
-        if (!currentShipToData.selectedCustomer) {
-            setError('Please select a customer');
-            return;
+        console.log("ShipTo handleSubmit: Validating currentShipToData from context:", currentShipToData);
+
+        if (!currentShipToData.customerID) {
+            validationErrorMessages.push('Please select a customer.');
+            console.warn("ShipTo Validation: No selected customer ID.");
         }
-        if (!currentShipToData.selectedAddressId && !currentShipToData.street) {
-            setError('Please select or confirm a shipping address');
-            return;
+
+        if (!currentShipToData.street) {
+            validationErrorMessages.push('Please select or complete a shipping address (street is missing).');
+            console.warn("ShipTo Validation: Street is missing.");
         }
-        const requiredFields = ['street', 'city', 'state', 'postalCode', 'country'];
-        const missingFields = requiredFields.filter(field => !currentShipToData[field]);
+
+        const requiredAddressFields = ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName', 'contactPhone', 'contactEmail'];
+        const missingFields = requiredAddressFields.filter(field => !currentShipToData[field] || String(currentShipToData[field]).trim() === '');
+
         if (missingFields.length > 0) {
-            setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
+            missingFields.forEach(field => {
+                let fieldName = field.charAt(0).toUpperCase() + field.slice(1);
+                if (field === 'contactPhone') fieldName = 'Contact Phone';
+                else if (field === 'contactEmail') fieldName = 'Contact Email';
+                else if (field === 'contactName') fieldName = 'Contact Name';
+                else if (field === 'postalCode') fieldName = 'Postal Code';
+                validationErrorMessages.push(`Ship To ${fieldName} is required.`);
+            });
+            console.warn("ShipTo Validation: Missing required address fields:", missingFields);
+        }
+
+        if (validationErrorMessages.length > 0) {
+            const errorMessage = validationErrorMessages.join(' \n ');
+            setError(errorMessage);
             return;
         }
-        onNext();
+
+        console.log("ShipTo handleSubmit: Validation passed. Calling onNext with:", currentShipToData);
+        onNext(currentShipToData);
     }, [formData.shipTo, onNext]);
 
     const handleClearCustomer = useCallback(() => {
-        setSelectedCustomer(null);
+        setSelectedCustomerState(null);
         setSelectedAddressId(null);
         setCustomerAddresses([]);
-        updateFormSection('shipTo', {
-            selectedCustomer: null, selectedAddressId: null, name: '', company: '', attention: '', street: '', street2: '',
-            city: '', state: '', postalCode: '', country: 'US', contactName: '', contactPhone: '', contactEmail: '', specialInstructions: ''
-        });
+        updateFormSection('shipTo', { ...emptyAddress(), customerID: null, selectedAddressId: null });
     }, [updateFormSection]);
 
     const handleAddCustomerClick = () => {
@@ -595,7 +318,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
     };
 
     const handleAddAddressClick = () => {
-        console.log("Add new address clicked", selectedCustomer?.id);
+        console.log("Add new address clicked", selectedCustomerState?.id);
     };
 
     const renderCustomerSearch = () => (
@@ -603,7 +326,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
             <Autocomplete
                 options={customers}
                 getOptionLabel={(option) => option.name || ''}
-                value={selectedCustomer}
+                value={selectedCustomerState}
                 onChange={(event, newValue) => {
                     handleCustomerSelect(newValue);
                 }}
@@ -752,12 +475,9 @@ const ShipTo = ({ onNext, onPrevious }) => {
             <>
                 <Grid container spacing={2}>
                     {currentCustomers.map((customer, index) => {
-                        // Support both field naming conventions
-                        const customerID = customer?.customerID || customer?.customerId || customer?.id;
-                        const isSelected = selectedCustomer && (
-                            (selectedCustomer?.customerID && selectedCustomer.customerID === customerID) ||
-                            (selectedCustomer?.customerId && selectedCustomer.customerId === customerID) ||
-                            selectedCustomer?.id === customerID
+                        const isSelected = selectedCustomerState && (
+                            (selectedCustomerState?.customerID && selectedCustomerState.customerID === customer.customerID) ||
+                            (selectedCustomerState?.id && selectedCustomerState.id === customer.id)
                         );
                         const customerName = customer.name || 'Unnamed Customer';
                         const customerCompany = customer.company || '';
@@ -814,7 +534,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                     }}
                                     onClick={() => handleCustomerSelect(customer)}
                                     data-selected={isSelected ? "true" : "false"}
-                                    data-customer-id={customerID}
+                                    data-customer-id={customer.customerID || customer.id}
                                 >
                                     <CardContent>
                                         <Grid container spacing={2}>
@@ -840,7 +560,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                                             textTransform: 'uppercase'
                                                         }}
                                                     >
-                                                        ID: {customer.customerID || customer.customerId || customer.id}
+                                                        ID: {customer.customerID || customer.id}
                                                     </Typography>
                                                 </Box>
 
@@ -911,7 +631,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
     };
 
     const renderAddressSuggestions = () => {
-        if (!selectedCustomer) {
+        if (!selectedCustomerState) {
             return (
                 <Box sx={{ textAlign: 'center', py: 5 }}>
                     <Typography variant="body1" color="text.secondary">
@@ -961,7 +681,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                     const isSelected = String(selectedAddressId) === String(address.id);
 
                     if (isSelected) {
-                        console.log(`Selected address ${index}: ${address.name} (ID: ${address.id}, default: ${address.default})`);
+                        console.log(`Selected address ${index}: ${address.name} (ID: ${address.id}, default: ${address.isDefault})`);
                     }
 
                     return (
@@ -1020,7 +740,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                 onClick={() => handleAddressChange(address.id)}
                                 data-selected={isSelected ? "true" : "false"}
                                 data-address-id={address.id}
-                                data-is-default={address.default ? "true" : "false"}
+                                data-is-default={address.isDefault ? "true" : "false"}
                             >
                                 <CardContent>
                                     <Grid container spacing={2}>
@@ -1029,7 +749,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                                 <Typography variant="subtitle1" component="h6" sx={{ mr: 1 }}>
                                                     {address.name || "Unnamed Address"}
                                                 </Typography>
-                                                {address.default && (
+                                                {address.isDefault && (
                                                     <Chip
                                                         label="Default"
                                                         color="primary"
@@ -1038,7 +758,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                                 )}
                                             </Box>
                                             <Typography variant="body2">
-                                                {selectedCustomer?.name || address.company || ""}
+                                                {selectedCustomerState?.name || address.company || ""}
                                             </Typography>
                                             {address.attention && (
                                                 <Typography variant="body2" sx={{ mt: 0.5, fontStyle: 'italic' }}>
@@ -1154,34 +874,35 @@ const ShipTo = ({ onNext, onPrevious }) => {
                         variant="outlined"
                         color="primary"
                         startIcon={<AddIcon />}
-                        onClick={selectedCustomer ? handleAddAddressClick : handleAddCustomerClick}
+                        onClick={selectedCustomerState ? handleAddAddressClick : handleAddCustomerClick}
                     >
-                        {selectedCustomer ? "Add Address" : "Add Customer"}
+                        {selectedCustomerState ? "Add Address" : "Add Customer"}
                     </Button>
                 </div>
             </div>
 
             {error && (
-                <div className="alert alert-danger mb-3" role="alert">
-                    <i className="bi bi-exclamation-triangle-fill me-2"></i>
-                    {error}
-                </div>
+                <Alert severity="error" sx={{ mb: 2, mt: 2 }}
+                    onClose={() => setError(null)}
+                >
+                    {error.split(' \n ').map((line, index) => <div key={index}>{line}</div>)}
+                </Alert>
             )}
 
             {renderCustomerSearch()}
 
-            {!selectedCustomer && renderCustomerList()}
+            {!selectedCustomerState && renderCustomerList()}
 
-            {selectedCustomer && (
+            {selectedCustomerState && (
                 <>
                     <div className="selected-customer mb-4">
                         <div className="d-flex justify-content-between align-items-start w-100">
                             <div className="customer-info">
                                 <div>
-                                    <h3>{selectedCustomer.name}</h3>
-                                    {selectedCustomer.contacts?.[0] && (
+                                    <h3>{selectedCustomerState.name}</h3>
+                                    {selectedCustomerState.contacts?.[0] && (
                                         <p className="text-muted mb-0">
-                                            <i className="bi bi-person me-1"></i> {selectedCustomer.contacts[0].name}
+                                            <i className="bi bi-person me-1"></i> {selectedCustomerState.contacts[0].name}
                                         </p>
                                     )}
                                 </div>
@@ -1213,13 +934,13 @@ const ShipTo = ({ onNext, onPrevious }) => {
                     type="button"
                     className="btn btn-primary btn-navigation"
                     onClick={handleSubmit}
-                    disabled={!selectedCustomer || (!currentShipToData.selectedAddressId && !currentShipToData.street)}
+                    disabled={!selectedCustomerState || (!currentShipToData.selectedAddressId && !currentShipToData.street) || loadingDestinations}
                 >
                     Next <i className="bi bi-arrow-right"></i>
                 </button>
             </div>
 
-            {selectedCustomer && !currentShipToData.selectedAddressId && !currentShipToData.street && (
+            {selectedCustomerState && !currentShipToData.selectedAddressId && !currentShipToData.street && (
                 <div className="text-center mt-3">
                     <small className="text-danger">
                         <i className="bi bi-exclamation-triangle-fill me-1"></i>

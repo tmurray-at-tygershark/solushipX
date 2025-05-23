@@ -2,10 +2,12 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 
 // Initial empty state for the shipment form
 const initialFormState = {
+    draftFirestoreDocId: null,
+    readableShipmentID: null,
     // ShipFrom data
     shipFrom: {
-        name: '',
         company: '',
+        name: '',
         attention: '',
         street: '',
         street2: '',
@@ -22,8 +24,8 @@ const initialFormState = {
     },
     // ShipTo data
     shipTo: {
-        name: '',
         company: '',
+        name: '',
         attention: '',
         street: '',
         street2: '',
@@ -36,29 +38,34 @@ const initialFormState = {
         contactEmail: '',
         specialInstructions: '',
         selectedCustomer: null,
+        customerID: null,
         selectedAddressId: null
     },
     // ShipmentInfo data
     shipmentInfo: {
-        shipmentDate: '',
-        referenceNumber: '',
-        referenceType: 'PO',
         shipmentType: 'LTL',
-        serviceLevel: 'standard',
-        pickupWindow: {
-            earliest: '09:00',
-            latest: '17:00',
-        },
-        deliveryWindow: {
-            earliest: '09:00',
-            latest: '17:00',
-        },
+        internationalShipment: false,
+        shipperReferenceNumber: '',
+        bookingReferenceNumber: '',
+        bookingReferenceType: 'PO',
+        shipmentBillType: 'PREPAID',
+        shipmentDate: new Date().toISOString().split('T')[0],
+        earliestPickupTime: '09:00',
+        latestPickupTime: '17:00',
+        earliestDeliveryTime: '09:00',
+        latestDeliveryTime: '17:00',
+        dangerousGoodsType: 'none',
+        signatureServiceType: 'none',
+        holdForPickup: false,
+        saturdayDelivery: false,
         notes: ''
     },
     // Packages data
     packages: [],
     // Selected rate
     selectedRate: null,
+    // Rate details
+    rateDetails: {}
 };
 
 const STORAGE_KEY = 'shipmentFormData';
@@ -76,6 +83,9 @@ export const ShipmentFormProvider = ({ children }) => {
                 if (!Array.isArray(parsedData.packages)) {
                     parsedData.packages = [];
                 }
+                // Ensure new fields are initialized if not in localStorage
+                parsedData.draftFirestoreDocId = parsedData.draftFirestoreDocId || null;
+                parsedData.readableShipmentID = parsedData.readableShipmentID || null;
                 return parsedData;
             } catch (error) {
                 console.error('Failed to parse saved form data:', error);
@@ -108,6 +118,14 @@ export const ShipmentFormProvider = ({ children }) => {
         });
     }, []); // No dependencies needed as it only uses setFormData
 
+    const setDraftShipmentIdentifiers = useCallback((firestoreDocId, shipmentID) => {
+        setFormData(prevData => ({
+            ...prevData,
+            draftFirestoreDocId: firestoreDocId,
+            readableShipmentID: shipmentID
+        }));
+    }, []);
+
     // Memoize clear function with useCallback
     const clearFormData = useCallback(() => {
         localStorage.removeItem(STORAGE_KEY);
@@ -125,8 +143,9 @@ export const ShipmentFormProvider = ({ children }) => {
         formData,
         updateFormSection,
         clearFormData,
-        completeShipment
-    }), [formData, updateFormSection, clearFormData, completeShipment]); // Dependencies are the state and memoized functions
+        completeShipment,
+        setDraftShipmentIdentifiers
+    }), [formData, updateFormSection, clearFormData, completeShipment, setDraftShipmentIdentifiers]); // Dependencies are the state and memoized functions
 
     return (
         <ShipmentFormContext.Provider value={contextValue}>

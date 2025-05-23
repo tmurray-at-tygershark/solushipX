@@ -8,6 +8,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
+import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
 
 const Rates = ({ formData, onPrevious, onNext }) => {
     const { updateFormSection } = useShipmentForm();
@@ -372,163 +373,109 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         setRatesLoaded(false);
 
         try {
-            // Convert form data to rate request format
-            const rateRequestData = {
-                // Origin Address Details
-                fromAddress: {
-                    company: formData.shipFrom?.company || '',
-                    name: formData.shipFrom?.name || '',
-                    attention: formData.shipFrom?.attention || '',
-                    streetOne: formData.shipFrom?.street || '',
-                    streetTwo: formData.shipFrom?.street2 || '',
-                    city: formData.shipFrom?.city || '',
-                    state: formData.shipFrom?.state || '',
-                    postalCode: formData.shipFrom?.postalCode || formData.shipFrom?.zipPostal || '',
-                    country: formData.shipFrom?.country || 'US',
-                    phone: formData.shipFrom?.phone || formData.shipFrom?.contactPhone || '',
-                    email: formData.shipFrom?.email || formData.shipFrom?.contactEmail || '',
-                    contactName: formData.shipFrom?.contactName || formData.shipFrom?.attention || '',
-                    specialInstructions: formData.shipFrom?.specialInstructions || 'none'
-                },
-                // Destination Address Details
-                toAddress: {
-                    company: formData.shipTo?.company || '',
-                    name: formData.shipTo?.name || '',
-                    attention: formData.shipTo?.attention || '',
-                    streetOne: formData.shipTo?.street || '',
-                    streetTwo: formData.shipTo?.street2 || '',
-                    city: formData.shipTo?.city || '',
-                    state: formData.shipTo?.state || '',
-                    postalCode: formData.shipTo?.postalCode || formData.shipTo?.zipPostal || '',
-                    country: formData.shipTo?.country || 'US',
-                    phone: formData.shipTo?.phone || formData.shipTo?.contactPhone || '',
-                    email: formData.shipTo?.email || formData.shipTo?.contactEmail || '',
-                    contactName: formData.shipTo?.contactName || formData.shipTo?.attention || '',
-                    specialInstructions: formData.shipTo?.specialInstructions || 'none'
-                },
-                // Shipment Details
-                bookingReferenceNumber: formData.shipmentInfo?.referenceNumber || '',
-                bookingReferenceNumberType: formData.shipmentInfo?.referenceType || '',
-                shipmentBillType: formData.shipmentInfo?.shipmentType || 'courier',
-                shipmentDate: formData.shipmentInfo?.shipmentDate || new Date().toISOString().split('T')[0],
-                pickupWindow: {
-                    earliest: formData.shipmentInfo?.pickupWindow?.earliest || '09:00',
-                    latest: formData.shipmentInfo?.pickupWindow?.latest || '17:00'
-                },
-                deliveryWindow: {
-                    earliest: formData.shipmentInfo?.deliveryWindow?.earliest || '09:00',
-                    latest: formData.shipmentInfo?.deliveryWindow?.latest || '17:00'
-                },
-                // Package Details
-                items: formData.packages?.map(pkg => ({
-                    name: pkg.itemDescription || 'Package',
-                    type: parseInt(pkg.packagingType) || 258, // Default to generic package type
-                    quantity: parseInt(pkg.packagingQuantity) || 1,
-                    weight: parseFloat(pkg.weight) || 0,
-                    length: parseFloat(pkg.length) || 0,
-                    width: parseFloat(pkg.width) || 0,
-                    height: parseFloat(pkg.height) || 0,
-                    freightClass: pkg.freightClass || '50',
-                    value: parseFloat(pkg.declaredValue) || 0,
-                    currency: pkg.currency || 'USD',
-                    isSackOrMailbag: false,
-                    stackable: pkg.stackable || false,
-                    hazardous: false,
-                    commodityDescription: pkg.itemDescription || 'General Merchandise',
-                    packageReferenceID: pkg.packageReferenceID || '',
-                })) || []
-            };
+            // Use the EShipPlus translator to build the request
+            const rateRequestData = toEShipPlusRequest(formData);
 
-            // Debug postal code fields
-            console.log('DEBUG - Postal Code Fields:', {
-                'shipFrom.postalCode': formData.shipFrom?.postalCode,
-                'shipFrom.zipPostal': formData.shipFrom?.zipPostal,
-                'shipFrom fields': Object.keys(formData.shipFrom || {}),
-                'fromAddress.postalCode (final)': rateRequestData.fromAddress.postalCode
+            // Debug booking reference number
+            console.log('DEBUG - Booking Reference:', {
+                'shipmentInfo': formData.shipmentInfo,
+                'shipperReferenceNumber': formData.shipmentInfo?.shipperReferenceNumber,
+                'BookingReferenceNumber (final)': rateRequestData.BookingReferenceNumber
             });
 
-            // Auto-fix missing contactName fields before validation
-            if (!rateRequestData.fromAddress.contactName || rateRequestData.fromAddress.contactName.trim() === '') {
-                console.log("Auto-fixing missing origin contactName");
-                // Try to use attention, name, or company as fallbacks
-                rateRequestData.fromAddress.contactName =
-                    rateRequestData.fromAddress.attention ||
-                    rateRequestData.fromAddress.name ||
-                    rateRequestData.fromAddress.company ||
+            // Auto-fix missing Contact fields before validation
+            if (!rateRequestData.Origin.Contact || rateRequestData.Origin.Contact.trim() === '') {
+                console.log("Auto-fixing missing origin Contact");
+                rateRequestData.Origin.Contact =
+                    rateRequestData.Origin.Attention ||
+                    rateRequestData.Origin.Name ||
+                    rateRequestData.Origin.Company ||
                     "Shipping Department";
             }
 
-            if (!rateRequestData.toAddress.contactName || rateRequestData.toAddress.contactName.trim() === '') {
-                console.log("Auto-fixing missing destination contactName");
-                // Try to use attention, name, or company as fallbacks  
-                rateRequestData.toAddress.contactName =
-                    rateRequestData.toAddress.attention ||
-                    rateRequestData.toAddress.name ||
-                    rateRequestData.toAddress.company ||
+            if (!rateRequestData.Destination.Contact || rateRequestData.Destination.Contact.trim() === '') {
+                console.log("Auto-fixing missing destination Contact");
+                rateRequestData.Destination.Contact =
+                    rateRequestData.Destination.Attention ||
+                    rateRequestData.Destination.Name ||
+                    rateRequestData.Destination.Company ||
                     "Receiving Department";
             }
 
-            // Auto-fix missing special instructions fields
-            if (!rateRequestData.fromAddress.specialInstructions ||
-                rateRequestData.fromAddress.specialInstructions.trim() === '') {
-                rateRequestData.fromAddress.specialInstructions = 'none';
+            // Auto-fix missing SpecialInstructions fields
+            if (!rateRequestData.Origin.SpecialInstructions ||
+                rateRequestData.Origin.SpecialInstructions.trim() === '') {
+                rateRequestData.Origin.SpecialInstructions = 'none';
             }
 
-            if (!rateRequestData.toAddress.specialInstructions ||
-                rateRequestData.toAddress.specialInstructions.trim() === '') {
-                rateRequestData.toAddress.specialInstructions = 'none';
+            if (!rateRequestData.Destination.SpecialInstructions ||
+                rateRequestData.Destination.SpecialInstructions.trim() === '') {
+                rateRequestData.Destination.SpecialInstructions = 'none';
             }
 
-            // Basic validation for required fields
-            if (!rateRequestData.fromAddress.city || rateRequestData.fromAddress.city.trim() === '') {
+            // Basic validation for required fields on rateRequestData
+            if (!rateRequestData.Origin.City || rateRequestData.Origin.City.trim() === '') {
                 throw new Error('Missing or invalid city in origin address');
             }
 
-            if (!rateRequestData.fromAddress.postalCode || rateRequestData.fromAddress.postalCode.trim() === '') {
+            if (!rateRequestData.Origin.PostalCode || rateRequestData.Origin.PostalCode.trim() === '') {
                 throw new Error('Missing or invalid postal code in origin address');
             }
+            if (!rateRequestData.Origin.Country?.Code || rateRequestData.Origin.Country.Code.trim() === '') {
+                throw new Error('Missing or invalid country code in origin address');
+            }
 
-            if (!rateRequestData.toAddress.city || rateRequestData.toAddress.city.trim() === '') {
+
+            if (!rateRequestData.Destination.City || rateRequestData.Destination.City.trim() === '') {
                 throw new Error('Missing or invalid city in destination address');
             }
 
-            if (!rateRequestData.toAddress.postalCode || rateRequestData.toAddress.postalCode.trim() === '') {
+            if (!rateRequestData.Destination.PostalCode || rateRequestData.Destination.PostalCode.trim() === '') {
                 throw new Error('Missing or invalid postal code in destination address');
             }
+            if (!rateRequestData.Destination.Country?.Code || rateRequestData.Destination.Country.Code.trim() === '') {
+                throw new Error('Missing or invalid country code in destination address');
+            }
 
-            // Validate contact names before making the API call
-            if (!rateRequestData.fromAddress.contactName || rateRequestData.fromAddress.contactName.trim() === '') {
+            // Validate Contact fields before making the API call
+            if (!rateRequestData.Origin.Contact || rateRequestData.Origin.Contact.trim() === '') {
                 throw new Error('Missing or invalid contact name in origin address');
             }
 
-            if (!rateRequestData.toAddress.contactName || rateRequestData.toAddress.contactName.trim() === '') {
+            if (!rateRequestData.Destination.Contact || rateRequestData.Destination.Contact.trim() === '') {
                 throw new Error('Missing or invalid contact name in destination address');
             }
 
-            // Log the complete validated request 
-            console.group('🚢 Rate Request Data');
+            // Log the complete validated request
+            console.group('🚢 Rate Request Data (POST TRANSLATION):');
             console.log('📅 Shipment Details:', {
-                bookingReference: rateRequestData.bookingReferenceNumber,
-                bookingReferenceType: rateRequestData.bookingReferenceNumberType,
-                shipmentBillType: rateRequestData.shipmentBillType,
-                shipmentDate: rateRequestData.shipmentDate,
-                pickupWindow: rateRequestData.pickupWindow,
-                deliveryWindow: rateRequestData.deliveryWindow
+                BookingReferenceNumber: rateRequestData.BookingReferenceNumber,
+                BookingReferenceNumberType: rateRequestData.BookingReferenceNumberType,
+                ShipmentBillType: rateRequestData.ShipmentBillType,
+                ShipmentDate: rateRequestData.ShipmentDate,
+                EarliestPickup: rateRequestData.EarliestPickup,
+                LatestPickup: rateRequestData.LatestPickup,
+                EarliestDelivery: rateRequestData.EarliestDelivery,
+                LatestDelivery: rateRequestData.LatestDelivery
             });
 
-            console.log('📍 From Address:', rateRequestData.fromAddress);
-            console.log('📍 To Address:', rateRequestData.toAddress);
+            console.log('📍 Origin Address:', rateRequestData.Origin);
+            console.log('📍 Destination Address:', rateRequestData.Destination);
 
-            console.log('📦 Packages:', rateRequestData.items.map(item => ({
-                name: item.name,
-                weight: item.weight,
-                dimensions: `${item.length}x${item.width}x${item.height}`,
-                quantity: item.quantity,
-                freightClass: item.freightClass,
-                value: item.value,
-                stackable: item.stackable
+            console.log('📦 Items:', rateRequestData.Items.map(item => ({
+                Name: item.Name,
+                Type: item.Type,
+                Quantity: item.Quantity,
+                Weight: item.Weight,
+                Length: item.Length,
+                Width: item.Width,
+                Height: item.Height,
+                FreightClass: item.FreightClass,
+                Value: item.Value,
+                Currency: item.Currency,
+                CommodityDescription: item.CommodityDescription,
+                Stackable: item.Stackable
             })));
-
             console.groupEnd();
 
             // Initialize Firebase Functions and get the callable function

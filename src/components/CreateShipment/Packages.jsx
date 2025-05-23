@@ -119,17 +119,26 @@ const Packages = ({ onNext, onPrevious }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const hasEmptyFields = packages.some(pkg =>
-            !pkg.itemDescription || !pkg.packagingType || !pkg.packagingQuantity ||
-            !pkg.weight || !pkg.height || !pkg.width || !pkg.length
+        const currentPackages = formData.packages || [];
+
+        const hasEmptyFields = currentPackages.some(pkg =>
+            !pkg.itemDescription || String(pkg.itemDescription).trim() === '' ||
+            !pkg.packagingType ||
+            !pkg.packagingQuantity || String(pkg.packagingQuantity).trim() === '' || isNaN(parseInt(pkg.packagingQuantity)) || parseInt(pkg.packagingQuantity) < 1 ||
+            !pkg.weight || String(pkg.weight).trim() === '' || isNaN(parseFloat(pkg.weight)) || parseFloat(pkg.weight) <= 0 ||
+            !pkg.height || String(pkg.height).trim() === '' || isNaN(parseFloat(pkg.height)) || parseFloat(pkg.height) <= 0 ||
+            !pkg.width || String(pkg.width).trim() === '' || isNaN(parseFloat(pkg.width)) || parseFloat(pkg.width) <= 0 ||
+            !pkg.length || String(pkg.length).trim() === '' || isNaN(parseFloat(pkg.length)) || parseFloat(pkg.length) <= 0
         );
 
         if (hasEmptyFields) {
-            alert('Please fill in all required fields for each package.');
+            alert('Please fill in all required fields for each package (Description, Type, Qty > 0, Weight > 0, Dimensions > 0).');
+            console.warn("Packages handleSubmit: Validation failed due to empty/invalid required fields.", currentPackages);
             return;
         }
 
-        onNext();
+        console.log("Packages handleSubmit: Validation passed. Calling onNext with data from context:", currentPackages);
+        onNext(currentPackages);
     };
 
     return (

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, limit, serverTimestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
-import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button } from '@mui/material';
+import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button, Alert } from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
 import './ShipFrom.css';
 
@@ -14,14 +14,13 @@ const ShipFrom = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
     const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
     const { formData, updateFormSection } = useShipmentForm();
-    const [shipFromAddresses, setShipFromAddresses] = useState(formData.shipFrom?.shipFromAddresses || []);
+    const [shipFromAddresses, setShipFromAddresses] = useState([]);
     const [selectedAddressId, setSelectedAddressId] = useState(formData.shipFrom?.id || null);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
     const [showAddAddressForm, setShowAddAddressForm] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [currentStep, setCurrentStep] = useState(1);
+    const [isSubmittingNew, setIsSubmittingNew] = useState(false);
+    const [loadingAddresses, setLoadingAddresses] = useState(true);
     const [newAddress, setNewAddress] = useState({
         nickname: '',
         companyName: '',
@@ -38,504 +37,192 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         isDefault: false
     });
 
-    // Fetch addresses from addressBook collection
     useEffect(() => {
         const fetchAddresses = async () => {
+            if (!companyIdForAddress) {
+                console.log("ShipFrom: No company ID for address lookup yet.");
+                setShipFromAddresses([]);
+                setLoadingAddresses(false);
+                return;
+            }
+
+            console.log(`ShipFrom: Fetching origin addresses for company ID: ${companyIdForAddress}`);
+            setLoadingAddresses(true);
+            setError(null);
             try {
-                if (!companyIdForAddress) {
-                    console.log("ShipFrom: No company ID for address lookup yet");
-                    return;
-                }
-
-                setLoading(true);
-                console.log(`ShipFrom: Fetching addresses from addressBook for company ID: ${companyIdForAddress}`);
-
-                // Query the addressBook collection for origin addresses associated with this company
                 const addressesQuery = query(
                     collection(db, 'addressBook'),
                     where('addressClass', '==', 'company'),
                     where('addressType', '==', 'origin'),
                     where('addressClassID', '==', companyIdForAddress)
                 );
-
                 const addressesSnapshot = await getDocs(addressesQuery);
+                const fetchedAddresses = addressesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log(`ShipFrom: Found ${fetchedAddresses.length} origin addresses from addressBook:`, fetchedAddresses);
+                setShipFromAddresses(fetchedAddresses);
 
-                if (addressesSnapshot.empty) {
-                    console.log("ShipFrom: No addresses found in addressBook");
-                    setShipFromAddresses([]);
-
-                    // Only update form context if needed
-                    if (formData.shipFrom?.shipFromAddresses?.length > 0) {
-                        // Also update the form context with empty addresses
-                        updateFormSection('shipFrom', {
-                            ...formData.shipFrom,
-                            shipFromAddresses: []
-                        });
+                if (!(formData.shipFrom?.id || formData.shipFrom?.street) && fetchedAddresses.length > 0) {
+                    const defaultAddressDoc = fetchedAddresses.find(addr => addr.isDefault) || fetchedAddresses[0];
+                    if (defaultAddressDoc) {
+                        console.log("ShipFrom: Applying default origin address to context as current shipFrom is empty.", defaultAddressDoc);
+                        const defaultSelectedOrigin = mapAddressBookToShipFrom(defaultAddressDoc, companyData);
+                        updateFormSection('shipFrom', defaultSelectedOrigin);
+                        setSelectedAddressId(defaultSelectedOrigin.id);
                     }
-
-                    setLoading(false);
-                    return;
-                }
-
-                const addresses = addressesSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-
-                console.log(`ShipFrom: Found ${addresses.length} addresses in addressBook:`, addresses);
-
-                // Check if addresses are different from what we already have
-                const currentAddressIds = shipFromAddresses.map(a => a.id).sort().join(',');
-                const newAddressIds = addresses.map(a => a.id).sort().join(',');
-
-                if (currentAddressIds === newAddressIds) {
-                    console.log("ShipFrom: Addresses unchanged, skipping update");
-                    setLoading(false);
-                    return;
-                }
-
-                setShipFromAddresses(addresses);
-
-                // Map the addressBook format to the format expected by the rest of the application
-                const formattedAddresses = addresses.map(addr => {
-                    // Ensure firstName and lastName are defined before concatenation
-                    const firstName = addr.firstName || '';
-                    const lastName = addr.lastName || '';
-                    const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : '';
-
-                    return {
-                        id: addr.id,
-                        name: addr.nickname,
-                        company: addr.companyName,
-                        attention: contactName,
-                        street: addr.address1,
-                        street2: addr.address2 || '',
-                        city: addr.city,
-                        state: addr.stateProv,
-                        postalCode: addr.zipPostal,
-                        country: addr.country,
-                        contactName: contactName,
-                        contactPhone: addr.phone,
-                        contactEmail: addr.email,
-                        isDefault: addr.isDefault,
-                        nickname: addr.nickname,
-                        companyName: addr.companyName,
-                        address1: addr.address1,
-                        address2: addr.address2 || '',
-                        stateProv: addr.stateProv,
-                        zipPostal: addr.zipPostal,
-                        firstName: firstName,
-                        lastName: lastName,
-                        phone: addr.phone,
-                        email: addr.email
-                    };
-                });
-
-                // If we have a default address and no address is currently selected, select the default
-                const defaultAddress = addresses.find(addr => addr.isDefault);
-                if (defaultAddress && !selectedAddressId) {
-                    console.log("ShipFrom: Selecting default address:", defaultAddress.id);
-                    setSelectedAddressId(defaultAddress.id);
-
-                    // Find the formatted version of this address
-                    const formattedDefaultAddress = formattedAddresses.find(addr => addr.id === defaultAddress.id);
-
-                    updateFormSection('shipFrom', {
-                        ...formattedDefaultAddress,
-                        id: defaultAddress.id,
-                        shipFromAddresses: formattedAddresses
-                    });
-                } else {
-                    // Only update form context if addresses have changed
-                    const formAddressIds = formData.shipFrom?.shipFromAddresses?.map(a => a.id).sort().join(',') || '';
-
-                    if (formAddressIds !== newAddressIds) {
-                        console.log("ShipFrom: Updating form context with addresses");
-                        updateFormSection('shipFrom', {
-                            ...formData.shipFrom,
-                            shipFromAddresses: formattedAddresses
-                        });
-                    } else {
-                        console.log("ShipFrom: Form already has current addresses, skipping update");
-                    }
+                } else if (formData.shipFrom?.id) {
+                    setSelectedAddressId(formData.shipFrom.id);
                 }
 
             } catch (err) {
-                console.error('Error fetching addresses:', err);
+                console.error('ShipFrom: Error fetching addresses:', err);
                 setError(err.message || 'Failed to fetch shipping addresses.');
+                setShipFromAddresses([]);
             } finally {
-                setLoading(false);
+                setLoadingAddresses(false);
             }
         };
-
         fetchAddresses();
-    }, [companyIdForAddress, updateFormSection, selectedAddressId, shipFromAddresses, formData.shipFrom]);
+    }, [companyIdForAddress, companyData]);
 
-    // Log the current state of the component for debugging
-    useEffect(() => {
-        console.log("ShipFrom: Current state:", {
-            companyId: companyData?.id,
-            companyIdForAddress,
-            selectedAddressId,
-            addressesCount: shipFromAddresses.length,
-            addressIds: shipFromAddresses.map(a => a.id),
-            formDataShipFrom: formData.shipFrom,
-            formDataAddressIds: formData.shipFrom?.shipFromAddresses?.map(a => a.id) || []
-        });
+    const mapAddressBookToShipFrom = (addressDoc, currentCompanyData) => {
+        if (!addressDoc) return {};
+        const firstName = addressDoc.firstName || '';
+        const lastName = addressDoc.lastName || '';
+        const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : addressDoc.nickname || '';
+        return {
+            id: addressDoc.id,
+            name: addressDoc.nickname || '',
+            company: addressDoc.companyName || currentCompanyData?.name || '',
+            attention: contactName,
+            street: addressDoc.address1 || '',
+            street2: addressDoc.address2 || '',
+            city: addressDoc.city || '',
+            state: addressDoc.stateProv || '',
+            postalCode: addressDoc.zipPostal || '',
+            country: addressDoc.country || 'US',
+            contactName: contactName,
+            contactPhone: addressDoc.phone || '',
+            contactEmail: addressDoc.email || '',
+            specialInstructions: addressDoc.specialInstructions || '',
+            isDefault: addressDoc.isDefault || false,
+        };
+    };
 
-        // Debug the currently selected address
-        if (selectedAddressId && shipFromAddresses.length > 0) {
-            const selectedAddr = shipFromAddresses.find(a => a.id === selectedAddressId);
-            if (selectedAddr) {
-                console.log("ShipFrom: Selected address raw data:", {
-                    id: selectedAddr.id,
-                    firstName: selectedAddr.firstName,
-                    lastName: selectedAddr.lastName,
-                    hasFirstName: !!selectedAddr.firstName,
-                    hasLastName: !!selectedAddr.lastName,
-                    nickname: selectedAddr.nickname
-                });
-            }
-        }
-
-        // Debug form data to see what's getting passed to the UI
-        if (formData.shipFrom) {
-            console.log("ShipFrom: Form data for UI:", {
-                attention: formData.shipFrom.attention,
-                contactName: formData.shipFrom.contactName,
-                firstName: formData.shipFrom.firstName,
-                lastName: formData.shipFrom.lastName
-            });
-        }
-    }, [companyData?.id, companyIdForAddress, selectedAddressId, shipFromAddresses, formData.shipFrom]);
-
-    // Add a useEffect to directly update the form data when needed
-    useEffect(() => {
-        // Only run this if we have a selected address with empty contactName fields
-        if (formData.shipFrom && selectedAddressId &&
-            (!formData.shipFrom.contactName || !formData.shipFrom.attention)) {
-
-            console.log("ShipFrom: Detected empty contact fields, checking database for values...");
-
-            // Directly query the address from the database to ensure we have the latest data
-            const fetchAddressDetails = async () => {
-                try {
-                    const addressRef = doc(db, 'addressBook', selectedAddressId);
-                    const addressDoc = await getDoc(addressRef);
-
-                    if (addressDoc.exists()) {
-                        const addressData = addressDoc.data();
-                        console.log("ShipFrom: Direct DB lookup for address:", addressData);
-
-                        // Get actual name fields from the database record
-                        const firstName = addressData.firstName || '';
-                        const lastName = addressData.lastName || '';
-
-                        // If we have firstName/lastName, use those
-                        if (firstName || lastName) {
-                            const contactName = `${firstName} ${lastName}`.trim();
-                            console.log("ShipFrom: Setting contactName from DB:", contactName);
-
-                            updateFormSection('shipFrom', {
-                                firstName,
-                                lastName,
-                                attention: contactName,
-                                contactName
-                            });
-                        }
-                        // Fall back to using the nickname as contactName if no firstName/lastName
-                        else if (addressData.nickname) {
-                            console.log("ShipFrom: Using nickname as contactName:", addressData.nickname);
-
-                            updateFormSection('shipFrom', {
-                                attention: addressData.nickname,
-                                contactName: addressData.nickname
-                            });
-                        }
-                    }
-                } catch (error) {
-                    console.error("Error fetching address details:", error);
-                }
-            };
-
-            fetchAddressDetails();
-        }
-    }, [formData.shipFrom, selectedAddressId, updateFormSection]);
-
-    // When an address is selected, ensure all form data is updated properly
     const handleAddressChange = useCallback(async (addressId) => {
-        // Find the selected address in our local state
-        const selectedAddress = shipFromAddresses.find(addr => addr.id === addressId);
-        console.log('ShipFrom: Selected address:', selectedAddress);
-
-        if (selectedAddress) {
+        const selectedDbAddress = shipFromAddresses.find(addr => addr.id === addressId);
+        if (selectedDbAddress) {
+            console.log('ShipFrom: Address card clicked:', selectedDbAddress);
             setSelectedAddressId(addressId);
-
-            // Directly query the database to ensure we have the latest data
-            const addressRef = doc(db, 'addressBook', addressId);
-            const addressSnap = await getDoc(addressRef);
-
-            // Get the most up-to-date firstName/lastName values
-            const firstName = addressSnap.exists()
-                ? (addressSnap.data().firstName || '')
-                : (selectedAddress.firstName || '');
-
-            const lastName = addressSnap.exists()
-                ? (addressSnap.data().lastName || '')
-                : (selectedAddress.lastName || '');
-
-            // Ensure contact name is properly set
-            const contactName = firstName && lastName
-                ? `${firstName} ${lastName}`
-                : selectedAddress.contactName || selectedAddress.attention || selectedAddress.name || "Shipping Department";
-
-            // Update all addresses in the array with proper contact information
-            const updatedAddresses = shipFromAddresses.map(addr => {
-                if (addr.id === addressId) {
-                    return {
-                        ...addr,
-                        firstName,
-                        lastName,
-                        contactName: addr.id === addressId ? contactName : addr.contactName,
-                        attention: addr.id === addressId ? contactName : addr.attention
-                    };
-                }
-                return addr;
-            });
-
-            const formattedAddress = {
-                ...selectedAddress,
-                contactName: contactName,
-                attention: contactName,
-                id: selectedAddress.id,
-                company: selectedAddress.companyName || selectedAddress.company || '',
-                name: selectedAddress.nickname || selectedAddress.name || '',
-                street: selectedAddress.address1 || selectedAddress.street || '',
-                street2: selectedAddress.address2 || selectedAddress.street2 || '',
-                city: selectedAddress.city || '',
-                state: selectedAddress.stateProv || selectedAddress.state || '',
-                postalCode: selectedAddress.zipPostal || selectedAddress.postalCode || '',
-                country: selectedAddress.country || 'US',
-                contactPhone: selectedAddress.phone || selectedAddress.contactPhone || '',
-                contactEmail: selectedAddress.email || selectedAddress.contactEmail || '',
-                specialInstructions: selectedAddress.specialInstructions || '',
-                firstName,
-                lastName,
-                shipFromAddresses: updatedAddresses,
-            };
-
-            console.log('ShipFrom: Updating form with formatted address including contactName:', formattedAddress.contactName);
-
-            // Update the form context with the comprehensive address data
-            updateFormSection('shipFrom', formattedAddress);
+            const shipFromObject = mapAddressBookToShipFrom(selectedDbAddress, companyData);
+            updateFormSection('shipFrom', shipFromObject);
+            console.log("ShipFrom: Context updated with selected address:", shipFromObject);
         }
-    }, [shipFromAddresses, updateFormSection]);
+    }, [shipFromAddresses, companyData, updateFormSection]);
 
-    const handleInputChange = useCallback((e) => {
+    const handleSelectedAddressInputChange = useCallback((e) => {
         const { name, value } = e.target;
-        updateFormSection('shipFrom', { [name]: value });
-    }, [updateFormSection]);
+        updateFormSection('shipFrom', { ...formData.shipFrom, [name]: value });
+    }, [formData.shipFrom, updateFormSection]);
 
     const handleNewAddressChange = useCallback((e) => {
         const { name, value, type, checked } = e.target;
-        setNewAddress(prev => ({
-            ...prev,
-            [name]: type === 'checkbox' ? checked : value
-        }));
+        setNewAddress(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     }, []);
 
-    const checkDuplicateAddress = useCallback((address) => {
+    const checkDuplicateAddress = useCallback((addressToCheck) => {
         return shipFromAddresses.some(addr =>
-            addr.address1.toLowerCase() === address.address1.toLowerCase() &&
-            addr.city.toLowerCase() === address.city.toLowerCase() &&
-            addr.stateProv === address.stateProv &&
-            addr.zipPostal === address.zipPostal
+            addr.address1?.toLowerCase() === addressToCheck.address1?.toLowerCase() &&
+            addr.city?.toLowerCase() === addressToCheck.city?.toLowerCase() &&
+            addr.stateProv === addressToCheck.stateProv &&
+            addr.zipPostal === addressToCheck.zipPostal &&
+            (addr.companyName?.toLowerCase() === addressToCheck.companyName?.toLowerCase() || (!addr.companyName && !addressToCheck.companyName))
         );
     }, [shipFromAddresses]);
 
-    const resetLocalForm = () => {
-        setNewAddress({
-            nickname: '',
-            companyName: '',
-            address1: '',
-            address2: '',
-            city: '',
-            stateProv: '',
-            zipPostal: '',
-            country: 'US',
-            firstName: '',
-            lastName: '',
-            phone: '',
-            email: '',
-            isDefault: false
-        });
-        setCurrentStep(1);
+    const resetNewAddressForm = () => {
+        setNewAddress({ nickname: '', companyName: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'US', firstName: '', lastName: '', phone: '', email: '', isDefault: false });
     };
 
-    const handleCloseLocalForm = () => {
-        setShowAddAddressForm(false);
-        resetLocalForm();
-    };
-
-    const handleAddAddress = useCallback(async () => {
+    const handleAddNewAddressSubmit = useCallback(async () => {
+        setIsSubmittingNew(true);
+        setError(null);
+        setSuccess(null);
         try {
-            setIsSubmitting(true);
-            setError(null);
+            if (!companyIdForAddress) throw new Error('Company ID not found. Cannot save address.');
+            const requiredFields = ['nickname', 'companyName', 'address1', 'city', 'stateProv', 'zipPostal', 'country', 'firstName', 'lastName', 'phone', 'email'];
+            const missingFields = requiredFields.filter(field => !newAddress[field]?.trim());
+            if (missingFields.length > 0) throw new Error(`Please fill all required fields for the new address: ${missingFields.join(', ')}`);
+            if (checkDuplicateAddress(newAddress)) throw new Error('This address appears to already exist.');
 
-            if (!companyIdForAddress) throw new Error('Company ID not found.');
-
-            const requiredFields = ['nickname', 'companyName', 'address1', 'city', 'stateProv', 'zipPostal', 'firstName', 'lastName', 'phone', 'email'];
-            const missingFields = requiredFields.filter(field => !newAddress[field]);
-            if (missingFields.length > 0) throw new Error(`Please fill required fields: ${missingFields.join(', ')}`);
-            if (checkDuplicateAddress(newAddress)) throw new Error('Address already exists');
-
-            // If this is going to be a default address, we need to update any existing default addresses
             if (newAddress.isDefault) {
-                // Find all current default addresses
-                const defaultAddressesQuery = query(
-                    collection(db, 'addressBook'),
-                    where('addressClass', '==', 'company'),
-                    where('addressType', '==', 'origin'),
-                    where('addressClassID', '==', companyIdForAddress),
-                    where('isDefault', '==', true)
-                );
-
-                const defaultAddressesSnapshot = await getDocs(defaultAddressesQuery);
-
-                // Update all current default addresses to not be default
-                const updatePromises = defaultAddressesSnapshot.docs.map(docSnapshot => {
-                    return updateDoc(doc(db, 'addressBook', docSnapshot.id), {
-                        isDefault: false,
-                        updatedAt: new Date()
-                    });
-                });
-
-                await Promise.all(updatePromises);
+                const q = query(collection(db, 'addressBook'), where('addressClassID', '==', companyIdForAddress), where('addressType', '==', 'origin'), where('isDefault', '==', true));
+                const defaultsSnapshot = await getDocs(q);
+                const batchUpdates = defaultsSnapshot.docs.map(docSnapshot => updateDoc(doc(db, 'addressBook', docSnapshot.id), { isDefault: false }));
+                await Promise.all(batchUpdates);
             }
 
-            // Create new address document in addressBook collection
-            const newAddressData = {
-                ...newAddress,
-                addressClass: 'company',
-                addressType: 'origin',
-                addressClassID: companyIdForAddress,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            };
+            const addressDataToSave = { ...newAddress, addressClass: 'company', addressType: 'origin', addressClassID: companyIdForAddress, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+            const docRef = await addDoc(collection(db, 'addressBook'), addressDataToSave);
+            const newSavedAddress = { ...addressDataToSave, id: docRef.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 
-            console.log("ShipFrom: Adding new address to addressBook:", newAddressData);
+            setShipFromAddresses(prev => [...prev, newSavedAddress]);
+            setSelectedAddressId(docRef.id);
 
-            const newAddressRef = await addDoc(collection(db, 'addressBook'), newAddressData);
-            const newAddressId = newAddressRef.id;
+            const shipFromObject = mapAddressBookToShipFrom(newSavedAddress, companyData);
+            updateFormSection('shipFrom', shipFromObject);
+            console.log("ShipFrom: New address added and set as current shipFrom in context:", shipFromObject);
 
-            // Add the ID to the address data
-            const addressWithId = {
-                ...newAddressData,
-                id: newAddressId
-            };
-
-            // Update local state
-            const updatedAddresses = [...shipFromAddresses, addressWithId];
-            setShipFromAddresses(updatedAddresses);
-
-            // Ensure firstName and lastName are defined
-            const firstName = newAddress.firstName || '';
-            const lastName = newAddress.lastName || '';
-            const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : '';
-
-            // Create the formatted address with both new and old field names
-            const formattedAddress = {
-                id: newAddressId,
-                name: newAddress.nickname,
-                company: newAddress.companyName,
-                attention: contactName,
-                street: newAddress.address1,
-                street2: newAddress.address2 || '',
-                city: newAddress.city,
-                state: newAddress.stateProv,
-                postalCode: newAddress.zipPostal,
-                country: newAddress.country,
-                contactName: contactName,
-                contactPhone: newAddress.phone,
-                contactEmail: newAddress.email,
-                isDefault: newAddress.isDefault,
-                nickname: newAddress.nickname,
-                companyName: newAddress.companyName,
-                address1: newAddress.address1,
-                address2: newAddress.address2 || '',
-                stateProv: newAddress.stateProv,
-                zipPostal: newAddress.zipPostal,
-                firstName: firstName,
-                lastName: lastName,
-                phone: newAddress.phone,
-                email: newAddress.email,
-                // Map all addresses in the list to have both formats
-                shipFromAddresses: updatedAddresses.map(addr => {
-                    const addrFirstName = addr.firstName || '';
-                    const addrLastName = addr.lastName || '';
-                    const addrContactName = addrFirstName || addrLastName ? `${addrFirstName} ${addrLastName}`.trim() : '';
-
-                    return {
-                        id: addr.id,
-                        name: addr.nickname,
-                        company: addr.companyName,
-                        attention: addrContactName,
-                        street: addr.address1,
-                        street2: addr.address2 || '',
-                        city: addr.city,
-                        state: addr.stateProv,
-                        postalCode: addr.zipPostal,
-                        country: addr.country,
-                        contactName: addrContactName,
-                        contactPhone: addr.phone,
-                        contactEmail: addr.email,
-                        isDefault: addr.isDefault,
-                        nickname: addr.nickname,
-                        companyName: addr.companyName,
-                        address1: addr.address1,
-                        address2: addr.address2 || '',
-                        stateProv: addr.stateProv,
-                        zipPostal: addr.zipPostal,
-                        firstName: addrFirstName,
-                        lastName: addrLastName,
-                        phone: addr.phone,
-                        email: addr.email
-                    };
-                })
-            };
-
-            // Update the form context
-            console.log("ShipFrom: Updating form with new address:", formattedAddress);
-            updateFormSection('shipFrom', formattedAddress);
-
-            setSelectedAddressId(newAddressId);
             setShowAddAddressForm(false);
-            resetLocalForm();
-            setSuccess('Address added successfully');
+            resetNewAddressForm();
+            setSuccess('New origin address added and selected!');
             setTimeout(() => setSuccess(null), 3000);
-
         } catch (err) {
-            console.error('Error adding address:', err);
-            setError(err.message || 'Failed to add address. Please try again.');
+            console.error('ShipFrom: Error adding new address:', err);
+            setError(err.message || 'Failed to add address.');
         } finally {
-            setIsSubmitting(false);
+            setIsSubmittingNew(false);
         }
-    }, [newAddress, shipFromAddresses, companyIdForAddress, checkDuplicateAddress, updateFormSection]);
+    }, [newAddress, companyIdForAddress, shipFromAddresses, checkDuplicateAddress, updateFormSection, companyData, mapAddressBookToShipFrom]);
 
     const handleSubmit = useCallback(() => {
-        if (!selectedAddressId) {
-            setError('Please select or add a shipping origin address');
+        setError(null);
+        const currentShipFrom = formData.shipFrom || {};
+        let validationErrorMessages = [];
+
+        console.log("ShipFrom handleSubmit: Validating currentShipFrom from context:", currentShipFrom);
+
+        if (!selectedAddressId && !currentShipFrom.street) {
+            validationErrorMessages.push('Please select or add a shipping origin address.');
+        } else {
+            const requiredFields = ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName', 'contactPhone', 'contactEmail'];
+            const missingFields = requiredFields.filter(field => !currentShipFrom[field] || String(currentShipFrom[field]).trim() === '');
+
+            if (missingFields.length > 0) {
+                missingFields.forEach(field => {
+                    let fieldName = field.charAt(0).toUpperCase() + field.slice(1);
+                    if (field === 'contactPhone') fieldName = 'Contact Phone';
+                    if (field === 'contactEmail') fieldName = 'Contact Email';
+                    if (field === 'contactName') fieldName = 'Contact Name';
+                    if (field === 'postalCode') fieldName = 'Postal Code';
+                    validationErrorMessages.push(`Origin ${fieldName} is required.`);
+                });
+            }
+        }
+
+        if (validationErrorMessages.length > 0) {
+            const errorMessage = validationErrorMessages.join(' \n ');
+            setError(errorMessage);
+            console.warn("ShipFrom handleSubmit: Validation failed:", validationErrorMessages);
             return;
         }
-        setError(null);
-        onNext();
-    }, [selectedAddressId, onNext]);
 
-    // Helper function to get attention line from name fields
+        console.log("ShipFrom handleSubmit: Validation passed. Calling onNext with data from context:", currentShipFrom);
+        onNext(currentShipFrom);
+    }, [selectedAddressId, formData.shipFrom, onNext, companyData]);
+
     const getAttentionLine = useCallback((address) => {
         if (!address) return '';
 
-        // If firstName or lastName are undefined, default to empty strings
         const firstName = address.firstName || '';
         const lastName = address.lastName || '';
 
@@ -549,15 +236,14 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         return '';
     }, []);
 
-    const currentShipFromData = formData.shipFrom || {};
-
     return (
         <form className="ship-from-form">
             {error && (
-                <div className="alert alert-danger alert-dismissible fade show" role="alert">
-                    {error}
-                    <button type="button" className="btn-close" onClick={() => setError(null)}></button>
-                </div>
+                <Alert severity="error" sx={{ mb: 2, mt: 2 }}
+                    onClose={() => setError(null)}
+                >
+                    {error.split(' \n ').map((line, index) => <div key={index}>{line}</div>)}
+                </Alert>
             )}
             {success && (
                 <div className="alert alert-success alert-dismissible fade show" role="alert">
@@ -583,7 +269,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                             )}
                         </div>
 
-                        {loading ? (
+                        {loadingAddresses ? (
                             <div className="py-4">
                                 <Skeleton variant="rectangular" height={100} sx={{ mb: 2 }} />
                                 <Skeleton variant="rectangular" height={100} />
@@ -596,8 +282,8 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                         <button
                                             type="button"
                                             className="btn-close"
-                                            onClick={handleCloseLocalForm}
-                                            disabled={isSubmitting}
+                                            onClick={() => setShowAddAddressForm(false)}
+                                            disabled={isSubmittingNew}
                                         ></button>
                                     </div>
                                     <div className="card-body p-4">
@@ -805,18 +491,18 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                             <button
                                                 type="button"
                                                 className="btn btn-secondary"
-                                                onClick={handleCloseLocalForm}
-                                                disabled={isSubmitting}
+                                                onClick={() => setShowAddAddressForm(false)}
+                                                disabled={isSubmittingNew}
                                             >
                                                 Cancel
                                             </button>
                                             <button
                                                 type="button"
                                                 className="btn btn-success"
-                                                onClick={handleAddAddress}
-                                                disabled={isSubmitting}
+                                                onClick={handleAddNewAddressSubmit}
+                                                disabled={isSubmittingNew}
                                             >
-                                                {isSubmitting ? (
+                                                {isSubmittingNew ? (
                                                     <>
                                                         <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
                                                         Adding...
@@ -968,8 +654,8 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                         <textarea
                             name="specialInstructions"
                             className="form-control"
-                            value={currentShipFromData.specialInstructions || ''}
-                            onChange={handleInputChange}
+                            value={formData.shipFrom?.specialInstructions || ''}
+                            onChange={handleSelectedAddressInputChange}
                             rows="3"
                             placeholder="Enter any special handling instructions or notes for the carrier"
                         ></textarea>
@@ -989,7 +675,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                     type="button"
                     className="btn btn-primary"
                     onClick={handleSubmit}
-                    disabled={!selectedAddressId}
+                    disabled={!selectedAddressId && !formData.shipFrom?.street}
                 >
                     Next <i className="bi bi-arrow-right ms-2"></i>
                 </button>
