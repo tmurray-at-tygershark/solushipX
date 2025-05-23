@@ -233,20 +233,28 @@ const Customers = () => {
 
     const filteredCustomers = customers.filter(customer => {
         const searchLower = searchQuery.toLowerCase();
-        return (
-            customer.name?.toLowerCase().includes(searchLower) ||
-            customer.customerID?.toLowerCase().includes(searchLower) ||
-            customer.contactName?.toLowerCase().includes(searchLower) ||
-            (customer.contact?.email)?.toLowerCase().includes(searchLower)
-        );
+        let matchesSearch = true; // Assume true if no search query
+        if (searchQuery.trim() !== '') {
+            matchesSearch = (
+                customer.name?.toLowerCase().includes(searchLower) ||
+                customer.customerID?.toLowerCase().includes(searchLower) ||
+                (customer.contactName && typeof customer.contactName === 'string' && customer.contactName.toLowerCase().includes(searchLower)) || // Search on top-level contactName if it exists
+                (customer.contact?.firstName && `${customer.contact.firstName} ${customer.contact.lastName || ''}`.toLowerCase().includes(searchLower)) ||
+                (customer.contact?.lastName && `${customer.contact.firstName || ''} ${customer.contact.lastName}`.toLowerCase().includes(searchLower)) ||
+                (customer.contact?.email && typeof customer.contact.email === 'string' && customer.contact.email.toLowerCase().includes(searchLower))
+            );
+        }
+        // The `customers` array from state should already be filtered by status (selectedTab) from Firestore query
+        // So, no need for additional client-side status filtering here.
+        return matchesSearch;
     });
 
     return (
         <Box className="customers-container">
             <div className="breadcrumb-container">
-                <Link to="/" className="breadcrumb-link">
+                <Link to="/dashboard" className="breadcrumb-link">
                     <HomeIcon />
-                    <Typography variant="body2">Home</Typography>
+                    <Typography variant="body2">Dashboard</Typography>
                 </Link>
                 <div className="breadcrumb-separator">
                     <NavigateNextIcon />
