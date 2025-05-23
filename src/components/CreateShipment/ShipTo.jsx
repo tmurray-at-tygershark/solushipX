@@ -56,16 +56,32 @@ const ShipTo = ({ onNext, onPrevious }) => {
 
     useEffect(() => {
         const customerIdFromContext = formData.shipTo?.customerID;
+        const selectedAddressIdFromContext = formData.shipTo?.selectedAddressId;
+
+        console.log("ShipTo: Context sync effect triggered:", {
+            customerIdFromContext,
+            selectedAddressIdFromContext,
+            currentSelectedCustomer: selectedCustomerState?.customerID,
+            currentSelectedAddress: selectedAddressId
+        });
+
+        // Handle customer selection from context
         if (customerIdFromContext && (!selectedCustomerState || selectedCustomerState.customerID !== customerIdFromContext)) {
             const customerFromList = customers.find(c => c.customerID === customerIdFromContext || c.id === customerIdFromContext);
             if (customerFromList) {
+                console.log("ShipTo: Setting customer from context:", customerFromList);
                 setSelectedCustomerState(customerFromList);
+            } else {
+                console.log("ShipTo: Customer ID from context not found in customer list, will search when customers load");
             }
         }
-        if (formData.shipTo?.selectedAddressId !== selectedAddressId) {
-            setSelectedAddressId(formData.shipTo?.selectedAddressId || null);
+
+        // Handle address selection from context
+        if (selectedAddressIdFromContext !== selectedAddressId) {
+            console.log("ShipTo: Updating selected address ID from context:", selectedAddressIdFromContext);
+            setSelectedAddressId(selectedAddressIdFromContext || null);
         }
-    }, [formData.shipTo?.customerID, formData.shipTo?.selectedAddressId, customers, selectedCustomerState]);
+    }, [formData.shipTo?.customerID, formData.shipTo?.selectedAddressId, customers, selectedCustomerState?.customerID, selectedAddressId]);
 
     useEffect(() => {
         setTotalPages(Math.ceil(customers.length / customersPerPage));
@@ -159,19 +175,65 @@ const ShipTo = ({ onNext, onPrevious }) => {
             setCustomerAddresses(formattedAddresses);
 
             let addressToSelectObject = null;
+
+            // Enhanced address selection logic for draft data
+            const currentShipToData = formData.shipTo || {};
+            const hasExistingAddressData = currentShipToData.street || currentShipToData.city;
+
+            console.log("ShipTo: Address selection logic:", {
+                selectedAddressIdFromContext: formData.shipTo?.selectedAddressId,
+                hasExistingAddressData,
+                currentShipToData,
+                formattedAddressesCount: formattedAddresses.length
+            });
+
             if (formData.shipTo?.selectedAddressId && formattedAddresses.length > 0) {
+                // Try to find the address by ID first
                 addressToSelectObject = formattedAddresses.find(addr => String(addr.id) === String(formData.shipTo.selectedAddressId));
+                console.log("ShipTo: Found address by ID:", addressToSelectObject);
             }
+
+            if (!addressToSelectObject && hasExistingAddressData && formattedAddresses.length > 0) {
+                // Try to find matching address by street/city if no ID match
+                addressToSelectObject = formattedAddresses.find(addr =>
+                    addr.street?.toLowerCase() === currentShipToData.street?.toLowerCase() &&
+                    addr.city?.toLowerCase() === currentShipToData.city?.toLowerCase()
+                );
+                console.log("ShipTo: Found address by street/city match:", addressToSelectObject);
+            }
+
             if (!addressToSelectObject && formattedAddresses.length > 0) {
+                // Fall back to default or first address
                 addressToSelectObject = formattedAddresses.find(addr => addr.isDefault) || formattedAddresses[0];
+                console.log("ShipTo: Using default/first address:", addressToSelectObject);
             }
 
             if (addressToSelectObject) {
                 setSelectedAddressId(String(addressToSelectObject.id));
-                const shipToUpdate = { ...addressToSelectObject, customerID: localCustomerID, selectedAddressId: String(addressToSelectObject.id) };
+                const shipToUpdate = {
+                    ...addressToSelectObject,
+                    customerID: localCustomerID,
+                    selectedAddressId: String(addressToSelectObject.id)
+                };
+                console.log("ShipTo: Updating context with selected address:", shipToUpdate);
                 updateFormSection('shipTo', shipToUpdate);
+            } else if (hasExistingAddressData) {
+                // Keep existing address data but ensure customer ID is set
+                console.log("ShipTo: Keeping existing address data with customer ID");
+                updateFormSection('shipTo', {
+                    ...currentShipToData,
+                    customerID: localCustomerID,
+                    selectedAddressId: null
+                });
+                setSelectedAddressId(null);
             } else if (formattedAddresses.length === 0) {
-                updateFormSection('shipTo', { ...emptyAddress(), customerID: localCustomerID, company: customerForAddresses.company || '' });
+                // No addresses available - create empty address with customer info
+                console.log("ShipTo: No addresses available, creating empty address");
+                updateFormSection('shipTo', {
+                    ...emptyAddress(),
+                    customerID: localCustomerID,
+                    company: customerForAddresses.company || ''
+                });
                 setSelectedAddressId(null);
             }
         } catch (err) {
@@ -219,13 +281,34 @@ const ShipTo = ({ onNext, onPrevious }) => {
             formData.shipTo.attention &&
             !formData.shipTo.contactName) {
 
-            console.log("ShipTo: Found attention but no contactName, copying value:", formData.shipTo.attention);
+            // Only update if there's an actual change to avoid potential loops
+            const currentContactName = formData.shipTo.contactName;
+            const currentContactPhone = formData.shipTo.contactPhone;
+            const currentContactEmail = formData.shipTo.contactEmail;
 
-            updateFormSection('shipTo', {
-                contactName: formData.shipTo.attention,
-                contactPhone: formData.shipTo.contactPhone || formData.shipTo.phone || '',
-                contactEmail: formData.shipTo.contactEmail || formData.shipTo.email || ''
-            });
+            const newContactName = formData.shipTo.attention;
+            // Ensure fallback for phone/email considers existing formData.shipTo values first
+            const newContactPhone = formData.shipTo.contactPhone || formData.shipTo.phone || '';
+            const newContactEmail = formData.shipTo.contactEmail || formData.shipTo.email || '';
+
+            if (newContactName !== currentContactName ||
+                newContactPhone !== currentContactPhone ||
+                newContactEmail !== currentContactEmail) {
+
+                console.log("ShipTo: Auto-populating contact fields from attention/defaults.", {
+                    attention: formData.shipTo.attention,
+                    currentContactName, newContactName,
+                    currentContactPhone, newContactPhone,
+                    currentContactEmail, newContactEmail
+                });
+
+                updateFormSection('shipTo', {
+                    ...formData.shipTo, // Preserve existing shipTo fields
+                    contactName: newContactName,
+                    contactPhone: newContactPhone,
+                    contactEmail: newContactEmail
+                });
+            }
         }
     }, [formData.shipTo, updateFormSection]);
 

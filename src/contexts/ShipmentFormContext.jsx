@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 
 // Initial empty state for the shipment form
-const initialFormState = {
+export const initialFormState = {
     draftFirestoreDocId: null,
     readableShipmentID: null,
     // ShipFrom data
@@ -75,30 +75,30 @@ const ShipmentFormContext = createContext();
 export const ShipmentFormProvider = ({ children }) => {
     // Initialize state from localStorage or use initialFormState
     const [formData, setFormData] = useState(() => {
-        const savedData = localStorage.getItem(STORAGE_KEY);
-        if (savedData) {
-            try {
-                // Ensure packages is always an array after loading from storage
-                const parsedData = JSON.parse(savedData);
-                if (!Array.isArray(parsedData.packages)) {
-                    parsedData.packages = [];
-                }
-                // Ensure new fields are initialized if not in localStorage
-                parsedData.draftFirestoreDocId = parsedData.draftFirestoreDocId || null;
-                parsedData.readableShipmentID = parsedData.readableShipmentID || null;
-                return parsedData;
-            } catch (error) {
-                console.error('Failed to parse saved form data:', error);
-                return initialFormState;
-            }
-        }
-        return initialFormState;
+        // const savedData = localStorage.getItem(STORAGE_KEY);
+        // if (savedData) {
+        //     try {
+        //         // Ensure packages is always an array after loading from storage
+        //         const parsedData = JSON.parse(savedData);
+        //         if (!Array.isArray(parsedData.packages)) {
+        //             parsedData.packages = [];
+        //         }
+        //         // Ensure new fields are initialized if not in localStorage
+        //         parsedData.draftFirestoreDocId = parsedData.draftFirestoreDocId || null;
+        //         parsedData.readableShipmentID = parsedData.readableShipmentID || null;
+        //         return parsedData;
+        //     } catch (error) {
+        //         console.error('Failed to parse saved form data:', error);
+        //         return initialFormState;
+        //     }
+        // }
+        return initialFormState; // Always start with initialFormState for this test
     });
 
     // Sync to localStorage when formData changes
-    useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
-    }, [formData]);
+    // useEffect(() => {
+    //     localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
+    // }, [formData]);
 
     // Memoize update function with useCallback
     const updateFormSection = useCallback((section, data) => {
@@ -117,6 +117,42 @@ export const ShipmentFormProvider = ({ children }) => {
             return { ...prevData, [section]: updatedSectionData };
         });
     }, []); // No dependencies needed as it only uses setFormData
+
+    // Enhanced setFormData that properly merges draft data with initial structure
+    const setFormDataWithMerge = useCallback((newData) => {
+        setFormData(prevData => {
+            // Deep merge function to ensure all nested objects are properly merged
+            const deepMerge = (target, source) => {
+                const result = { ...target };
+
+                for (const key in source) {
+                    if (source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                        // For nested objects, recursively merge
+                        result[key] = deepMerge(target[key] || {}, source[key]);
+                    } else if (Array.isArray(source[key])) {
+                        // For arrays, use the source array directly
+                        result[key] = source[key];
+                    } else {
+                        // For primitive values, use source value
+                        result[key] = source[key];
+                    }
+                }
+
+                return result;
+            };
+
+            // Start with initial form state to ensure all required fields exist
+            const mergedData = deepMerge(initialFormState, newData);
+
+            console.log('ShipmentFormContext: Merging draft data with initial state:', {
+                initialState: initialFormState,
+                incomingData: newData,
+                mergedResult: mergedData
+            });
+
+            return mergedData;
+        });
+    }, []);
 
     const setDraftShipmentIdentifiers = useCallback((firestoreDocId, shipmentID) => {
         setFormData(prevData => ({
@@ -142,10 +178,11 @@ export const ShipmentFormProvider = ({ children }) => {
     const contextValue = useMemo(() => ({
         formData,
         updateFormSection,
+        setFormData: setFormDataWithMerge, // Use the enhanced merge function
         clearFormData,
         completeShipment,
         setDraftShipmentIdentifiers
-    }), [formData, updateFormSection, clearFormData, completeShipment, setDraftShipmentIdentifiers]); // Dependencies are the state and memoized functions
+    }), [formData, updateFormSection, setFormDataWithMerge, clearFormData, completeShipment, setDraftShipmentIdentifiers]); // Dependencies are the state and memoized functions
 
     return (
         <ShipmentFormContext.Provider value={contextValue}>

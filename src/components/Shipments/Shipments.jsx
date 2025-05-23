@@ -55,6 +55,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import './Shipments.css';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
 import { collection, getDocs, query, where, orderBy, limit, startAfter } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -82,6 +83,7 @@ const formatAddress = (address, label = '') => {
 
 const Shipments = () => {
     const { user, loading: authLoading } = useAuth();
+    const { companyIdForAddress, loading: companyCtxLoading } = useCompany();
     const [shipments, setShipments] = useState([]);
     const [customers, setCustomers] = useState({});
     const [page, setPage] = useState(0);
@@ -139,25 +141,38 @@ const Shipments = () => {
 
     // Remove generateMockShipments and replace loadShipments with Firestore logic
     const loadShipments = async () => {
+        if (!companyIdForAddress && !companyCtxLoading) {
+            console.log("Shipments.jsx: Waiting for companyIdForAddress or company context to finish loading.");
+            setLoading(false);
+            setShipments([]); // Clear shipments if no companyId
+            setTotalCount(0);
+            return;
+        }
+        if (!companyIdForAddress && companyCtxLoading) {
+            console.log("Shipments.jsx: Company context is loading, waiting for companyIdForAddress.");
+            setLoading(true); // Keep loading true while company context loads
+            return;
+        }
+        if (!companyIdForAddress) { // Should be caught by above, but as a safeguard
+            console.warn("Shipments.jsx: companyIdForAddress is not available. Cannot load shipments.");
+            setLoading(false);
+            setShipments([]);
+            setTotalCount(0);
+            return;
+        }
+
+        console.log(`Shipments.jsx: loadShipments called with companyIdForAddress: ${companyIdForAddress}`);
         setLoading(true);
         try {
             let shipmentsRef = collection(db, 'shipments');
-            let q = query(shipmentsRef, orderBy('createdAt', 'desc'));
-
-            // Optionally filter by user or company if needed
-            if (user && user.uid) {
-                // Uncomment and adjust the following line if you want to filter by userId or companyId
-                // q = query(q, where('userId', '==', user.uid));
-            }
+            // Always filter by companyID
+            let q = query(shipmentsRef, where('companyID', '==', companyIdForAddress), orderBy('createdAt', 'desc'));
 
             // Apply status filter
             if (filters.status !== 'all') {
                 q = query(q, where('status', '==', filters.status));
             }
-            // Apply carrier filter
-            if (filters.carrier !== 'all') {
-                q = query(q, where('carrier', '==', filters.carrier));
-            }
+            // Apply carrier filter - removed from Firestore query, will be handled client-side
             // Apply shipment type filter
             if (filters.shipmentType !== 'all') {
                 q = query(q, where('shipmentType', '==', filters.shipmentType));
@@ -169,6 +184,14 @@ const Shipments = () => {
                 id: doc.id,
                 ...doc.data()
             }));
+
+            // Apply carrier filter (client-side to check both carrier and selectedRate.carrier)
+            if (filters.carrier !== 'all') {
+                shipmentsData = shipmentsData.filter(shipment => {
+                    const shipmentCarrier = shipment.selectedRate?.carrier || shipment.carrier;
+                    return shipmentCarrier === filters.carrier;
+                });
+            }
 
             // Apply date range filter
             if (dateRange[0] && dateRange[1]) {
@@ -207,7 +230,10 @@ const Shipments = () => {
                             return Object.values(value).join(' ').toLowerCase().includes(searchTerm.toLowerCase());
                         }
                         return false;
-                    })
+                    }) ||
+                    // Also search in selectedRate.carrier
+                    (shipment.selectedRate?.carrier &&
+                        String(shipment.selectedRate.carrier).toLowerCase().includes(searchTerm.toLowerCase()))
                 );
             }
 
@@ -246,17 +272,17 @@ const Shipments = () => {
     };
 
     useEffect(() => {
-        if (!authLoading) {
+        if (!authLoading && !companyCtxLoading) {
             fetchCustomers();
             loadShipments();
         }
-    }, [user, authLoading]);
+    }, [user, authLoading, companyIdForAddress, companyCtxLoading]);
 
     useEffect(() => {
-        if (!authLoading) {
+        if (!authLoading && !companyCtxLoading && companyIdForAddress) {
             loadShipments();
         }
-    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
+    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange, companyIdForAddress, companyCtxLoading, authLoading]);
 
     // Handle status chip display
     const getStatusChip = (status) => {
@@ -298,7 +324,7 @@ const Shipments = () => {
             'Origin': shipment.origin,
             'Destination': shipment.destination,
             'Status': shipment.status,
-            'Carrier': shipment.carrier,
+            'Carrier': shipment.selectedRate?.carrier || shipment.carrier || 'N/A',
             'Items': shipment.items,
             'Cost': `$${shipment.cost.toFixed(2)}`
         }));
@@ -355,7 +381,11 @@ const Shipments = () => {
     };
 
     const handleShipmentClick = (shipment) => {
-        navigate(`/shipment/${shipment.id}`, { state: { from: '/shipments' } });
+        if (shipment.status === 'draft') {
+            navigate(`/create-shipment/shipment-info/${shipment.id}`);
+        } else {
+            navigate(`/shipment/${shipment.id}`, { state: { from: '/shipments' } });
+        }
     };
 
     const getStatusColor = (status) => {
@@ -634,13 +664,13 @@ const Shipments = () => {
                                     <TableBody>
                                         {loading ? (
                                             <TableRow>
-                                                <TableCell colSpan={9} align="center">
+                                                <TableCell colSpan={10} align="center">
                                                     <CircularProgress />
                                                 </TableCell>
                                             </TableRow>
                                         ) : shipments.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={9} align="center">
+                                                <TableCell colSpan={10} align="center">
                                                     No shipments found
                                                 </TableCell>
                                             </TableRow>
@@ -667,13 +697,13 @@ const Shipments = () => {
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
                                                         <Link to={`/shipment/${shipment.id}`} className="shipment-link">
-                                                            {shipment.shipmentId || shipment.id}
+                                                            {shipment.shipmentID || shipment.id}
                                                         </Link>
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {customers[shipment.customerId] || shipment.companyName || 'N/A'}
+                                                        {shipment.shipTo?.customerID ? customers[shipment.shipTo.customerID] || shipment.shipTo?.company || 'N/A' : shipment.shipTo?.company || 'N/A'}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
@@ -688,12 +718,12 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {shipment.carrier}
+                                                        {shipment.selectedRate?.carrier || shipment.carrier || 'N/A'}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {shipment.shipmentType}
+                                                        {shipment.shipmentInfo?.shipmentType || 'N/A'}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}

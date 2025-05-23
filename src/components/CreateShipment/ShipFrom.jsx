@@ -61,16 +61,42 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 console.log(`ShipFrom: Found ${fetchedAddresses.length} origin addresses from addressBook:`, fetchedAddresses);
                 setShipFromAddresses(fetchedAddresses);
 
-                if (!(formData.shipFrom?.id || formData.shipFrom?.street) && fetchedAddresses.length > 0) {
+                // Enhanced logic to handle partial draft data
+                const currentShipFrom = formData.shipFrom || {};
+                const hasExistingData = currentShipFrom.id || currentShipFrom.street || currentShipFrom.company;
+
+                console.log("ShipFrom: Current shipFrom data:", currentShipFrom);
+                console.log("ShipFrom: Has existing data:", hasExistingData);
+
+                if (hasExistingData) {
+                    // If we have existing data, try to match it with an address from the list
+                    if (currentShipFrom.id) {
+                        const matchingAddress = fetchedAddresses.find(addr => addr.id === currentShipFrom.id);
+                        if (matchingAddress) {
+                            console.log("ShipFrom: Found matching address for existing ID:", matchingAddress);
+                            setSelectedAddressId(currentShipFrom.id);
+                        } else {
+                            console.log("ShipFrom: No matching address found for ID, keeping current data");
+                            setSelectedAddressId(null);
+                        }
+                    } else {
+                        // No ID but has other data - this is custom/manual entry
+                        console.log("ShipFrom: Existing data without ID - keeping as custom entry");
+                        setSelectedAddressId(null);
+                    }
+                } else if (fetchedAddresses.length > 0) {
+                    // No existing data - apply default
                     const defaultAddressDoc = fetchedAddresses.find(addr => addr.isDefault) || fetchedAddresses[0];
                     if (defaultAddressDoc) {
-                        console.log("ShipFrom: Applying default origin address to context as current shipFrom is empty.", defaultAddressDoc);
+                        console.log("ShipFrom: No existing data, applying default origin address:", defaultAddressDoc);
                         const defaultSelectedOrigin = mapAddressBookToShipFrom(defaultAddressDoc, companyData);
                         updateFormSection('shipFrom', defaultSelectedOrigin);
                         setSelectedAddressId(defaultSelectedOrigin.id);
                     }
-                } else if (formData.shipFrom?.id) {
-                    setSelectedAddressId(formData.shipFrom.id);
+                } else {
+                    // No addresses available and no existing data
+                    console.log("ShipFrom: No addresses available and no existing data");
+                    setSelectedAddressId(null);
                 }
 
             } catch (err) {
@@ -82,7 +108,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
             }
         };
         fetchAddresses();
-    }, [companyIdForAddress, companyData]);
+    }, [companyIdForAddress, companyData, formData.shipFrom?.id]); // Added formData.shipFrom?.id to dependencies
 
     const mapAddressBookToShipFrom = (addressDoc, currentCompanyData) => {
         if (!addressDoc) return {};

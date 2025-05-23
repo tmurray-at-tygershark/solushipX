@@ -30,7 +30,36 @@ const Packages = ({ onNext, onPrevious }) => {
     ]);
 
     useEffect(() => {
-        setPackages(formData.packages?.length ? formData.packages : [defaultPackage]);
+        // Enhanced package initialization logic for draft data
+        const contextPackages = formData.packages;
+
+        console.log("Packages: Context packages changed:", contextPackages);
+
+        if (Array.isArray(contextPackages) && contextPackages.length > 0) {
+            // Process existing packages to ensure they have all required fields
+            const processedPackages = contextPackages.map((pkg, index) => ({
+                id: pkg.id || `${Date.now()}-${index}`,
+                itemDescription: pkg.itemDescription || '',
+                packagingType: pkg.packagingType || 258,
+                packagingQuantity: pkg.packagingQuantity || 1,
+                packageReferenceID: pkg.packageReferenceID || '',
+                stackable: pkg.stackable !== undefined ? pkg.stackable : true,
+                weight: pkg.weight || '',
+                height: pkg.height || '',
+                width: pkg.width || '',
+                length: pkg.length || '',
+                freightClass: pkg.freightClass || "50",
+                declaredValue: pkg.declaredValue || 0.00,
+                currency: pkg.currency || 'USD'
+            }));
+
+            console.log("Packages: Setting processed packages:", processedPackages);
+            setPackages(processedPackages);
+        } else {
+            // No packages in context or empty array - use default
+            console.log("Packages: No packages in context, using default package");
+            setPackages([defaultPackage]);
+        }
     }, [formData.packages]);
 
     const updateContext = (newPackages) => {

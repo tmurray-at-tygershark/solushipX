@@ -7,10 +7,12 @@ import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
 
-const Rates = ({ formData, onPrevious, onNext }) => {
+const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     const { updateFormSection } = useShipmentForm();
     const [isLoading, setIsLoading] = useState(true);
     const [rates, setRates] = useState([]);
@@ -621,7 +623,8 @@ const Rates = ({ formData, onPrevious, onNext }) => {
             alert('Please select a rate before submitting');
             return;
         }
-        onNext();
+        // Pass the selected rate data to the parent
+        onNext(selectedRate);
     };
 
     const handleGuaranteeChange = (rate, checked) => {
@@ -657,14 +660,28 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         return () => clearInterval(interval);
     }, [isLoading]);
 
-    const handleRateSelect = (rate) => {
+    const handleRateSelect = async (rate) => {
         if (selectedRate?.id === rate.id) {
-            setSelectedRate(null);
-            updateFormSection('selectedRate', null);
+            const newSelectedRate = null;
+            setSelectedRate(newSelectedRate);
+            updateFormSection('selectedRate', newSelectedRate);
+            // Save the deselection to Firestore (non-blocking)
+            saveSelectedRateToFirestore(newSelectedRate).catch(error => {
+                console.error('Error saving rate deselection:', error);
+            });
         } else {
             setSelectedRate(rate);
             updateFormSection('selectedRate', rate);
-            onNext();
+            console.log('Rate selected:', rate.carrier, rate.price);
+
+            // Save to Firestore in background (non-blocking)
+            saveSelectedRateToFirestore(rate).catch(error => {
+                console.error('Error saving selected rate:', error);
+                // Could show a toast notification here if needed
+            });
+
+            // Navigate immediately without waiting for Firestore save
+            onNext(rate);
         }
     };
 
@@ -764,6 +781,26 @@ const Rates = ({ formData, onPrevious, onNext }) => {
         return `${weight.toFixed(2)} lbs`;
     }, [formData.packages]);
 
+    // Function to save selected rate immediately to Firestore
+    const saveSelectedRateToFirestore = async (rateData) => {
+        if (!activeDraftId) {
+            console.warn('No activeDraftId available to save selected rate');
+            return;
+        }
+
+        try {
+            console.log('Saving selected rate to Firestore:', rateData);
+            const shipmentDocRef = doc(db, 'shipments', activeDraftId);
+            await updateDoc(shipmentDocRef, {
+                selectedRate: rateData,
+                updatedAt: serverTimestamp()
+            });
+            console.log('Selected rate saved successfully to draft shipment');
+        } catch (error) {
+            console.error('Error saving selected rate to Firestore:', error);
+        }
+    };
+
     if (isLoading) {
         return (
             <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -800,6 +837,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                     <Button
                         variant="outlined"
                         onClick={onPrevious}
+                        type="button"
                     >
                         Previous
                     </Button>
@@ -808,6 +846,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                         color="primary"
                         onClick={onNext}
                         disabled={true}
+                        type="button"
                     >
                         Next
                     </Button>
@@ -880,6 +919,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                                 <Button
                                     variant="outlined"
                                     onClick={toggleAllRateDetails}
+                                    type="button"
                                     sx={{ mr: 1 }}
                                 >
                                     {showRateDetails ? 'Hide Details' : 'Rate Details'}
@@ -889,6 +929,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                                     onClick={handleAnalyzeRates}
                                     disabled={isAnalyzing || rates.length === 0}
                                     startIcon={<SmartToyIcon />}
+                                    type="button"
                                 >
                                     {isAnalyzing ? 'Analyzing...' : 'AI Analysis'}
                                 </Button>
@@ -1054,6 +1095,7 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                                         <Button
                                             variant={selectedRate?.id === rate.id ? 'contained' : 'outlined'}
                                             onClick={() => handleRateSelect(rate)}
+                                            type="button"
                                             fullWidth
                                             sx={{ mt: 2 }}
                                         >
@@ -1079,14 +1121,16 @@ const Rates = ({ formData, onPrevious, onNext }) => {
                     <Button
                         variant="outlined"
                         onClick={onPrevious}
+                        type="button"
                     >
                         Previous
                     </Button>
                     <Button
                         variant="contained"
                         color="primary"
-                        onClick={onNext}
+                        onClick={handleSubmit}
                         disabled={!selectedRate}
+                        type="button"
                     >
                         Next
                     </Button>
