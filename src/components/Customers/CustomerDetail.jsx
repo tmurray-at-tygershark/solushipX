@@ -378,7 +378,7 @@ const CustomerDetail = () => {
                                         <TableRow
                                             key={shipment.id}
                                             hover
-                                            onClick={() => handleShipmentClick(shipment.id)}
+                                            onClick={() => handleShipmentClick(shipment.shipmentID || shipment.id)}
                                             sx={{
                                                 cursor: 'pointer',
                                                 '&:hover': {
@@ -408,7 +408,7 @@ const CustomerDetail = () => {
                                                     size="small"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleShipmentClick(shipment.id);
+                                                        handleShipmentClick(shipment.shipmentID || shipment.id);
                                                     }}
                                                 >
                                                     <VisibilityIcon />

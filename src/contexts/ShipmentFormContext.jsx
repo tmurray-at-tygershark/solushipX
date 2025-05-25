@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 // Initial empty state for the shipment form
 export const initialFormState = {
     draftFirestoreDocId: null,
-    readableShipmentID: null,
     // ShipFrom data
     shipFrom: {
         company: '',
@@ -65,9 +64,7 @@ export const initialFormState = {
     // Selected rate reference (instead of full rate data)
     selectedRateRef: null,
     // Legacy selectedRate for backward compatibility during transition
-    selectedRate: null,
-    // Rate details
-    rateDetails: {}
+    selectedRate: null
 };
 
 const STORAGE_KEY = 'shipmentFormData';
@@ -156,11 +153,10 @@ export const ShipmentFormProvider = ({ children }) => {
         });
     }, []);
 
-    const setDraftShipmentIdentifiers = useCallback((firestoreDocId, shipmentID) => {
+    const setDraftShipmentIdentifiers = useCallback((firestoreDocId) => {
         setFormData(prevData => ({
             ...prevData,
-            draftFirestoreDocId: firestoreDocId,
-            readableShipmentID: shipmentID
+            draftFirestoreDocId: firestoreDocId
         }));
     }, []);
 

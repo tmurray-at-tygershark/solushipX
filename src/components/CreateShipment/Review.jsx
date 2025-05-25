@@ -407,22 +407,17 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         }
 
         try {
-            // Extract and clean the form data, excluding the full selectedRate
-            const { selectedRate, ...cleanFormData } = formData;
+            // Extract and clean the form data, excluding the full selectedRate and rateDetails
+            const { selectedRate, rateDetails, ...cleanFormData } = formData;
 
             const draftDataToUpdate = {
                 ...cleanFormData,
                 status: 'draft',
-                updatedAt: serverTimestamp(),
-                shipmentId: docIdToSave // Ensure shipmentId field also reflects the main doc ID
+                updatedAt: serverTimestamp()
             };
 
-            // If there's a selectedRate, ensure only the reference is kept (it should already be in selectedRateRef)
-            if (selectedRate && formData.selectedRateRef) {
-                console.log('Draft has selectedRateRef:', formData.selectedRateRef);
-                // The selectedRateRef should already be saved from the Rates component
-                // We don't include the full selectedRate object
-            }
+            // The selectedRateRef should already be saved from the Rates component
+            // We don't include the full selectedRate object or rateDetails
 
             // Remove undefined fields to prevent Firestore errors
             Object.keys(draftDataToUpdate).forEach(key => {
@@ -487,8 +482,8 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         }
 
         try {
-            // Extract clean form data without the full selectedRate
-            const { status, id, draftFirestoreDocId, selectedRate, selectedRateRef, ...restOfFormData } = formData;
+            // Extract clean form data without the full selectedRate and rateDetails
+            const { status, id, draftFirestoreDocId, selectedRate, selectedRateRef, rateDetails, ...restOfFormData } = formData;
 
             console.log(`Attempting to book existing draft. docIdToProcess: ${docIdToProcess}`);
             const shipmentDocRef = doc(db, 'shipments', docIdToProcess);
@@ -503,6 +498,11 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
 
             let bookedRateDocId = null;
 
+            // Use rate reference for confirmation number generation
+            const rateCarrier = selectedRateRef?.carrier || rateToBook?.carrier || 'CARRIER';
+            const mockConfirmationNumber = `${rateCarrier.toUpperCase()}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substr(2, 3).toUpperCase()}`;
+            setConfirmationNumber(mockConfirmationNumber);
+
             // Instead of creating a new rate record, update the existing one to 'booked' status
             if (selectedRateRef?.rateDocumentId) {
                 console.log('Updating existing rate document to booked status:', selectedRateRef.rateDocumentId);
@@ -510,20 +510,39 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                     const rateDocRef = doc(db, 'shipmentRates', selectedRateRef.rateDocumentId);
                     await updateDoc(rateDocRef, {
                         status: 'booked',
+                        confirmationNumber: mockConfirmationNumber,
                         bookedAt: serverTimestamp(),
                         updatedAt: serverTimestamp()
                     });
                     bookedRateDocId = selectedRateRef.rateDocumentId;
-                    console.log('Successfully updated rate status to booked');
+                    console.log('Successfully updated rate status to booked with confirmation number');
                 } catch (updateError) {
                     console.error('Error updating existing rate, creating new one:', updateError);
                     // Fallback: create new rate record
                     bookedRateDocId = await saveRateToShipmentRates(rateToBook, docIdToProcess, 'booked');
+
+                    // Update the new rate document with confirmation number
+                    if (bookedRateDocId) {
+                        const newRateDocRef = doc(db, 'shipmentRates', bookedRateDocId);
+                        await updateDoc(newRateDocRef, {
+                            confirmationNumber: mockConfirmationNumber,
+                            bookedAt: serverTimestamp()
+                        });
+                    }
                 }
             } else {
                 console.log('No existing rate document found, creating new booked rate');
                 // Create new rate record for booking
                 bookedRateDocId = await saveRateToShipmentRates(rateToBook, docIdToProcess, 'booked');
+
+                // Update the new rate document with confirmation number
+                if (bookedRateDocId) {
+                    const newRateDocRef = doc(db, 'shipmentRates', bookedRateDocId);
+                    await updateDoc(newRateDocRef, {
+                        confirmationNumber: mockConfirmationNumber,
+                        bookedAt: serverTimestamp()
+                    });
+                }
             }
 
             // Update shipment to pending status (exclude full selectedRate)
@@ -531,7 +550,6 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                 ...restOfFormData,
                 status: 'pending',
                 updatedAt: serverTimestamp(),
-                shipmentId: docIdToProcess,
                 // Keep the rate reference but update it if we created a new booked rate record
                 ...(bookedRateDocId && {
                     selectedRateRef: {
@@ -545,16 +563,18 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
 
             await new Promise(resolve => setTimeout(resolve, 3000));
 
-            // Use rate reference for confirmation number generation
-            const rateCarrier = selectedRateRef?.carrier || rateToBook?.carrier || 'CARRIER';
-            const mockConfirmationNumber = `${rateCarrier.toUpperCase()}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substr(2, 3).toUpperCase()}`;
-            setConfirmationNumber(mockConfirmationNumber);
-
-            // Final booking completion - update to booked status
+            // Final booking completion - update to booked status and save confirmation number in selectedRateRef
             await updateDoc(shipmentDocRef, {
                 status: 'booked',
-                confirmationNumber: mockConfirmationNumber,
-                updatedAt: serverTimestamp()
+                updatedAt: serverTimestamp(),
+                // Save confirmation number in the selectedRateRef map, not at root level
+                selectedRateRef: {
+                    ...selectedRateRef,
+                    rateDocumentId: bookedRateDocId || selectedRateRef?.rateDocumentId,
+                    status: 'booked',
+                    confirmationNumber: mockConfirmationNumber,
+                    bookedAt: serverTimestamp()
+                }
             });
             console.log(`Shipment ${docIdToProcess} booked successfully with confirmation: ${mockConfirmationNumber}`);
             setBookingStep('completed');

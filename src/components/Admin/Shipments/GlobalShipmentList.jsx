@@ -272,7 +272,8 @@ const GlobalShipmentList = () => {
     };
 
     const handleShipmentClick = (shipment) => {
-        navigate(`/admin/shipment/${shipment.id}`);
+        const shipmentId = shipment.shipmentID || shipment.id;
+        navigate(`/admin/shipment/${shipmentId}`);
     };
 
     const handleActionMenuOpen = (event, shipment) => {
@@ -354,15 +355,6 @@ const GlobalShipmentList = () => {
                                     sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
                                 >
                                     Export
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<AddIcon />}
-                                    component={Link}
-                                    to="/admin/create-shipment"
-                                    sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
-                                >
-                                    Create shipment
                                 </Button>
                             </Box>
                         </Box>
@@ -528,8 +520,8 @@ const GlobalShipmentList = () => {
                                                             />
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            <Link to={`/admin/shipment/${shipment.id}`} className="shipment-link">
-                                                                {shipment.shipmentId || shipment.id}
+                                                            <Link to={`/admin/shipment/${shipment.shipmentID || shipment.id}`} className="shipment-link">
+                                                                {shipment.shipmentID || shipment.id}
                                                             </Link>
                                                         </TableCell>
                                                         <TableCell sx={{ verticalAlign: 'top' }}>
@@ -618,7 +610,8 @@ const GlobalShipmentList = () => {
                             <MenuItem onClick={() => {
                                 handleActionMenuClose();
                                 if (selectedShipment) {
-                                    navigate(`/admin/shipment/${selectedShipment.id}`);
+                                    const shipmentId = selectedShipment.shipmentID || selectedShipment.id;
+                                    navigate(`/admin/shipment/${shipmentId}`);
                                 }
                             }}>
                                 <ListItemIcon>

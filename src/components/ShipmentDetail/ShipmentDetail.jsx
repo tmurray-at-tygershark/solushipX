@@ -56,7 +56,7 @@ import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google
 import './ShipmentDetail.css';
 import { Link } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
 import { getRateDetailsByDocumentId, getRatesForShipment, getSelectedRateForShipment } from '../../utils/rateUtils';
@@ -649,12 +649,22 @@ const ShipmentDetail = () => {
         const fetchShipment = async () => {
             try {
                 setLoading(true);
-                // Fetch by document ID
-                const docRef = doc(db, 'shipments', id);
-                const docSnap = await getDoc(docRef);
 
-                if (docSnap.exists()) {
+                // Query by shipmentID instead of document ID
+                console.log('ShipmentDetail: Fetching shipment by shipmentID:', id);
+
+                const shipmentsRef = collection(db, 'shipments');
+                const q = query(shipmentsRef, where('shipmentID', '==', id), limit(1));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const docSnap = querySnapshot.docs[0];
                     const shipmentData = { id: docSnap.id, ...docSnap.data() };
+
+                    console.log('ShipmentDetail: Found shipment by shipmentID:', {
+                        shipmentID: shipmentData.shipmentID,
+                        firestoreDocId: docSnap.id
+                    });
 
                     // Fetch tracking data only if shipmentId exists
                     if (shipmentData.shipmentId) {
@@ -812,7 +822,8 @@ const ShipmentDetail = () => {
                     setShipment(shipmentData);
                     console.log('ShipmentDetail: Final shipmentData object before setLoading(false):', JSON.parse(JSON.stringify(shipmentData))); // ADDED LOG
                 } else {
-                    setError('Shipment not found');
+                    console.error('ShipmentDetail: No shipment found with shipmentID:', id);
+                    setError(`Shipment not found with ID: ${id}`);
                 }
             } catch (err) {
                 console.error('Error fetching shipment:', err);
@@ -1398,36 +1409,42 @@ const ShipmentDetail = () => {
                                     </Typography>
                                 </Box>
                             </Box>
-                            {/* Add a summary grid for top-level fields */}
-                            <Grid container spacing={2} sx={{ mb: 2 }}>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Typography variant="caption" color="text.secondary">Customer</Typography>
-                                    {/* Access customerID from shipFrom object */}
-                                    <Typography variant="body2">{customers[shipment?.shipTo?.customerID]}</Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Typography variant="caption" color="text.secondary">Company ID</Typography>
-                                    <Typography variant="body2">{shipment?.companyID || 'N/A'}</Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Typography variant="caption" color="text.secondary">Carrier</Typography>
-                                    <Typography variant="body2">{getBestRateInfo?.carrier || 'N/A'}</Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Typography variant="caption" color="text.secondary">Status</Typography>
-                                    <Typography variant="body2">{shipment?.status || 'N/A'}</Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Typography variant="caption" color="text.secondary">Created At</Typography>
-                                    <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Typography variant="caption" color="text.secondary">Notes</Typography>
-                                    <Typography variant="body2">{shipment?.notes || 'N/A'}</Typography>
-                                </Grid>
-                            </Grid>
                             {/* Add id to the main content container */}
                             <Box id="shipment-detail-content">
+                                {/* Customer and Shipment Summary Section */}
+                                <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                                        <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                        <Typography variant="h6">Shipment Summary</Typography>
+                                    </Box>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Typography variant="caption" color="text.secondary">Customer</Typography>
+                                            <Typography variant="body2">{customers[shipment?.shipTo?.customerID] || 'N/A'}</Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Typography variant="caption" color="text.secondary">Company ID</Typography>
+                                            <Typography variant="body2">{shipment?.companyID || 'N/A'}</Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Typography variant="caption" color="text.secondary">Carrier</Typography>
+                                            <Typography variant="body2">{getBestRateInfo?.carrier || 'N/A'}</Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Typography variant="caption" color="text.secondary">Status</Typography>
+                                            <Typography variant="body2">{shipment?.status || 'N/A'}</Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Typography variant="caption" color="text.secondary">Created At</Typography>
+                                            <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Typography variant="caption" color="text.secondary">Notes</Typography>
+                                            <Typography variant="body2">{shipment?.notes || 'N/A'}</Typography>
+                                        </Grid>
+                                    </Grid>
+                                </Paper>
+
                                 {/* Shipment Information Section */}
                                 <Grid item xs={12}>
                                     <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
@@ -1572,7 +1589,7 @@ const ShipmentDetail = () => {
                                                 }}>
                                                     <Grid container spacing={3}>
                                                         {/* Left Column - Status and Carrier */}
-                                                        <Grid item xs={12} md={4}>
+                                                        <Grid item xs={12} md={6}>
                                                             <Box sx={{
                                                                 display: 'flex',
                                                                 flexDirection: 'column',
@@ -1603,7 +1620,7 @@ const ShipmentDetail = () => {
                                                         </Grid>
 
                                                         {/* Middle Column - Tracking and Dates */}
-                                                        <Grid item xs={12} md={4}>
+                                                        <Grid item xs={12} md={6}>
                                                             <Box sx={{
                                                                 display: 'flex',
                                                                 flexDirection: 'column',
@@ -1658,39 +1675,19 @@ const ShipmentDetail = () => {
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                         <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '1.2rem' }} />
                                                                         <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                                            {shipment?.tracking?.estimatedDeliveryDate ?
-                                                                                formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available'}
+                                                                            {getBestRateInfo?.estimatedDeliveryDate ?
+                                                                                new Date(getBestRateInfo.estimatedDeliveryDate).toLocaleDateString('en-US', {
+                                                                                    weekday: 'short',
+                                                                                    year: 'numeric',
+                                                                                    month: 'short',
+                                                                                    day: 'numeric'
+                                                                                }) :
+                                                                                (shipment?.tracking?.estimatedDeliveryDate ?
+                                                                                    formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available')}
                                                                         </Typography>
                                                                     </Box>
                                                                 </Box>
                                                             </Box>
-                                                        </Grid>
-
-                                                        {/* Right Column - Estimated Delivery */}
-                                                        <Grid item xs={12} md={4}>
-                                                            <Paper
-                                                                elevation={0}
-                                                                sx={{
-                                                                    p: 2,
-                                                                    height: '100%',
-                                                                    bgcolor: 'primary.main',
-                                                                    color: 'primary.contrastText',
-                                                                    borderRadius: 2,
-                                                                    display: 'flex',
-                                                                    flexDirection: 'column',
-                                                                    justifyContent: 'center'
-                                                                }}
-                                                            >
-                                                                <Typography variant="caption" sx={{ mb: 1, opacity: 0.9 }}>
-                                                                    Estimated Delivery
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                    <LocalShipping sx={{ fontSize: '1.5rem' }} />
-                                                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                                        {getBestRateInfo?.deliveryDate || getBestRateInfo?.estimatedDeliveryDate || 'N/A'}
-                                                                    </Typography>
-                                                                </Box>
-                                                            </Paper>
                                                         </Grid>
                                                     </Grid>
                                                 </Box>
@@ -1834,7 +1831,13 @@ const ShipmentDetail = () => {
                                                                         Delivery Date
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        {shipment?.selectedRate?.deliveryDate || 'N/A'}
+                                                                        {getBestRateInfo?.estimatedDeliveryDate ?
+                                                                            new Date(getBestRateInfo.estimatedDeliveryDate).toLocaleDateString('en-US', {
+                                                                                weekday: 'short',
+                                                                                year: 'numeric',
+                                                                                month: 'short',
+                                                                                day: 'numeric'
+                                                                            }) : 'N/A'}
                                                                     </Typography>
                                                                 </Box>
                                                             </Box>

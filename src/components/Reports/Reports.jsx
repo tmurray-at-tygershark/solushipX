@@ -73,6 +73,20 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Link as RouterLink } from 'react-router-dom';
 
+// Characters used for encoding (excludes confusing characters like 0, O, I, 1)
+const ENCODING_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+/**
+ * Generate a random short code for dummy data
+ */
+const generateRandomCode = () => {
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += ENCODING_CHARS[Math.floor(Math.random() * ENCODING_CHARS.length)];
+    }
+    return result;
+};
+
 // Generate dummy data for the last 7 days
 const generateDummyData = () => {
     const data = [];
@@ -122,7 +136,7 @@ const generateDummyData = () => {
         const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
 
         data.push({
-            id: `SHP${String(287587 + i).padStart(6, '0')}`,
+            id: `IC-CUSTOMER${(i % 4) + 1}-${generateRandomCode()}`,
             customer: randomCustomer,
             origin: randomOrigin,
             destination: randomDestination,
@@ -153,6 +167,10 @@ const generateDummyData = () => {
 
     return {
         rawData: data,
+        metrics: {
+            totalShipments: 50,
+            totalValue: 25000
+        },
         visualizations: {
             shipmentTrends: {
                 dataset: formattedData
@@ -1214,7 +1232,7 @@ const Reports = () => {
                                                             <TableRow
                                                                 hover
                                                                 key={row.id}
-                                                                onClick={() => navigate(`/shipment/${row.id}`)}
+                                                                onClick={() => navigate(`/shipment/${row.shipmentID || row.id}`)}
                                                                 sx={{ cursor: 'pointer' }}
                                                             >
                                                                 <TableCell>

@@ -17,6 +17,7 @@ import './CreateShipment.css';
 import { Paper, Box, Typography, Button, CircularProgress } from '@mui/material';
 import ShipmentAgent from '../ShipmentAgent/ShipmentAgent';
 import { CheckCircle, Error } from '@mui/icons-material';
+import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 
 // API key should be loaded from environment variables with a fallback
 // Ensure the API key is properly formatted and has no whitespace
@@ -65,7 +66,7 @@ const SLUG_TO_FORMDATA_KEY_MAP = {
     'ship-from': 'shipFrom',
     'ship-to': 'shipTo',
     'packages': 'packages',
-    'rates': 'selectedRate', // Assuming the rates step primarily saves/updates the selectedRate
+    'rates': 'selectedRateRef', // Use selectedRateRef instead of selectedRate to avoid saving full rate object
     // 'review': 'reviewData' // If review step needs to save something specific
 };
 
@@ -165,7 +166,9 @@ const CreateShipmentContent = () => {
             return null;
         }
         try {
-            const newShipmentID = `${companyIdForAddress}-DRAFT-${Date.now()}`;
+            // Generate a simple draft ID with short timestamp
+            const shortTimestamp = Date.now().toString().slice(-6); // Last 6 digits
+            const newShipmentID = `${companyIdForAddress}-DRAFT-${shortTimestamp}`;
 
             // Check if a shipment with this ID already exists
             const existingShipment = await checkShipmentExists(newShipmentID);
@@ -177,30 +180,28 @@ const CreateShipmentContent = () => {
             }
 
             const initialShipmentData = {
-                shipmentID: newShipmentID,
-                companyID: companyIdForAddress,
                 status: 'draft',
-                creatorUid: currentUser.uid,
+                companyID: companyIdForAddress,
+                shipmentID: newShipmentID,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-                shipFrom: { ...emptyAddress(), company: companyData?.name || '' },
+                shipFrom: emptyAddress(),
                 shipTo: emptyAddress(),
                 packages: [{}],
-                shipmentInfo: { shipmentDate: new Date().toISOString().split('T')[0] },
-                rateDetails: {},
+                shipmentInfo: { shipmentDate: new Date().toISOString().split('T')[0] }
             };
             const docRef = await addDoc(collection(db, 'shipments'), initialShipmentData);
-            setDraftShipmentIdentifiers(docRef.id, newShipmentID);
+            setDraftShipmentIdentifiers(docRef.id);
             setActiveDraftId(docRef.id);
             updateFormSection('shipFrom', initialShipmentData.shipFrom);
             updateFormSection('shipTo', initialShipmentData.shipTo);
             updateFormSection('packages', initialShipmentData.packages);
             updateFormSection('shipmentInfo', initialShipmentData.shipmentInfo);
-            console.log("CreateShipment: New draft created:", { firestoreDocId: docRef.id, readableShipmentID: newShipmentID });
+            console.log("CreateShipment: New draft created:", { firestoreDocId: docRef.id, shipmentID: newShipmentID });
             return docRef.id;
         } catch (err) {
             console.error("CreateShipment: Error creating new draft:", err);
-            setError(err.message || 'Error creating new draft shipment.');
+            setError(`Failed to create new draft: ${err.message}`);
             setIsDraftProcessing(false);
             return null;
         }
@@ -255,7 +256,6 @@ const CreateShipmentContent = () => {
                             // Enhanced draft data processing with proper fallbacks
                             const processedDraftData = {
                                 draftFirestoreDocId: urlDraftId,
-                                readableShipmentID: draftData.shipmentID,
 
                                 // ShipmentInfo with proper fallbacks
                                 shipmentInfo: {
@@ -296,15 +296,14 @@ const CreateShipmentContent = () => {
                                     : [{}],
 
                                 // Rate data
-                                selectedRate: draftData.selectedRate || null,
-                                rateDetails: draftData.rateDetails || {}
+                                selectedRateRef: draftData.selectedRateRef || null
                             };
 
                             console.log("CreateShipment: Processed draft data with fallbacks:", processedDraftData);
 
                             // Use the enhanced setFormData that properly merges with initial state
                             setFormData(processedDraftData);
-                            setDraftShipmentIdentifiers(urlDraftId, draftData.shipmentID);
+                            setDraftShipmentIdentifiers(urlDraftId);
                             setActiveDraftId(urlDraftId);
                             console.log("CreateShipment: Draft loading completed successfully");
                         } else {
@@ -446,64 +445,58 @@ const CreateShipmentContent = () => {
             // Only regenerate if we have all required data and current ID is still a draft
             if (activeDraftId &&
                 companyIdForAddress &&
-                formData.shipTo?.customerID &&
-                formData.readableShipmentID &&
-                formData.readableShipmentID.includes('-DRAFT-')) {
+                formData.shipTo?.customerID) {
 
-                console.log("CreateShipment: Customer selected, regenerating shipmentID from draft format", {
+                console.log("CreateShipment: Customer selected, generating new short shipmentID", {
                     companyId: companyIdForAddress,
                     customerId: formData.shipTo.customerID,
-                    currentReadableId: formData.readableShipmentID
                 });
 
-                // Generate timestamp components for unique ID
-                const now = new Date();
-                const MM = String(now.getMonth() + 1).padStart(2, '0');
-                const DD = String(now.getDate()).padStart(2, '0');
-                const YY = String(now.getFullYear()).slice(-2);
-                const HH = String(now.getHours()).padStart(2, '0');
-                const MIN = String(now.getMinutes()).padStart(2, '0');
-                const SS = String(now.getSeconds()).padStart(2, '0');
-                const MMM = String(now.getMilliseconds()).padStart(3, '0');
-
-                // Create new shipment ID with customer-based format
-                const newShipmentID = `${companyIdForAddress}-${formData.shipTo.customerID}-${MM}${DD}${YY}${HH}${MIN}${SS}${MMM}`;
-
                 try {
-                    // Check if this new ID already exists (very unlikely but good to check)
-                    const existingShipment = await checkShipmentExists(newShipmentID);
-                    if (existingShipment) {
-                        console.warn(`CreateShipment: Generated shipment ID ${newShipmentID} already exists. Using fallback.`);
-                        // Add additional milliseconds as fallback
-                        const fallbackId = `${newShipmentID}-${Date.now()}`;
+                    // Generate new short, airline-style shipment ID
+                    const newShipmentID = await generateShipmentId(
+                        companyIdForAddress,
+                        formData.shipTo.customerID
+                    );
+
+                    // Update Firestore with new shipment ID
+                    const shipmentDocRef = doc(db, 'shipments', activeDraftId);
+                    await updateDoc(shipmentDocRef, {
+                        shipmentID: newShipmentID,
+                        updatedAt: serverTimestamp()
+                    });
+
+                    // Update context with new identifiers
+                    setDraftShipmentIdentifiers(activeDraftId);
+                    console.log(`CreateShipment: Successfully generated short shipmentID: ${newShipmentID} for draft ${activeDraftId}`);
+
+                } catch (err) {
+                    console.error("CreateShipment: Error generating shipmentID:", err);
+
+                    // Fallback to timestamp-based ID if the new generator fails
+                    console.warn("CreateShipment: Falling back to timestamp-based ID generation");
+                    const now = new Date();
+                    const timestamp = now.getTime().toString().slice(-8); // Last 8 digits
+                    const fallbackId = `${companyIdForAddress}-${formData.shipTo.customerID}-${timestamp}`;
+
+                    try {
                         const shipmentDocRef = doc(db, 'shipments', activeDraftId);
                         await updateDoc(shipmentDocRef, {
                             shipmentID: fallbackId,
                             updatedAt: serverTimestamp()
                         });
-                        setDraftShipmentIdentifiers(activeDraftId, fallbackId);
+                        setDraftShipmentIdentifiers(activeDraftId);
                         console.log(`CreateShipment: Used fallback shipmentID: ${fallbackId}`);
-                    } else {
-                        // Update Firestore with new shipment ID
-                        const shipmentDocRef = doc(db, 'shipments', activeDraftId);
-                        await updateDoc(shipmentDocRef, {
-                            shipmentID: newShipmentID,
-                            updatedAt: serverTimestamp()
-                        });
-
-                        // Update context with new identifiers
-                        setDraftShipmentIdentifiers(activeDraftId, newShipmentID);
-                        console.log(`CreateShipment: Successfully regenerated shipmentID to ${newShipmentID} for draft ${activeDraftId}`);
+                    } catch (fallbackErr) {
+                        console.error("CreateShipment: Even fallback ID generation failed:", fallbackErr);
+                        setError(`Failed to update shipment ID: ${fallbackErr.message}`);
                     }
-                } catch (err) {
-                    console.error("CreateShipment: Error regenerating shipmentID:", err);
-                    setError(`Failed to update shipment ID: ${err.message}`);
                 }
             }
         };
 
         updateShipmentIdWithCustomer();
-    }, [formData.shipTo?.customerID, activeDraftId, companyIdForAddress, formData.readableShipmentID, setDraftShipmentIdentifiers, checkShipmentExists]);
+    }, [formData.shipTo?.customerID, activeDraftId, companyIdForAddress, setDraftShipmentIdentifiers]);
 
     useEffect(() => {
         const targetStep = urlStep ? STEPS[urlStep] : 1;
@@ -709,10 +702,10 @@ const CreateShipmentContent = () => {
         };
 
         // Validate Rates
-        const selectedRate = formData.selectedRate;
+        const selectedRateRef = formData.selectedRateRef;
         completeness.rates = {
-            complete: !!selectedRate,
-            missing: selectedRate ? [] : ['Rate selection required']
+            complete: !!selectedRateRef,
+            missing: selectedRateRef ? [] : ['Rate selection required']
         };
 
         setDataCompleteness(completeness);

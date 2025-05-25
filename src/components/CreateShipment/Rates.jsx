@@ -631,8 +631,18 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             alert('Please select a rate before submitting');
             return;
         }
-        // Pass the selected rate data to the parent
-        onNext(selectedRate);
+        // Pass only the rate reference, not the full rate object
+        const rateRef = formData.selectedRateRef || {
+            rateId: selectedRate.id,
+            carrier: selectedRate.carrier,
+            service: selectedRate.service,
+            totalCharges: selectedRate.totalCharges || selectedRate.price,
+            transitDays: selectedRate.transitDays,
+            estimatedDeliveryDate: selectedRate.estimatedDeliveryDate,
+            currency: selectedRate.currency || 'USD',
+            guaranteed: selectedRate.guaranteed || false
+        };
+        onNext(rateRef);
     };
 
     const handleGuaranteeChange = (rate, checked) => {
@@ -697,7 +707,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         if (selectedRate?.id === rate.id) {
             const newSelectedRate = null;
             setSelectedRate(newSelectedRate);
-            updateFormSection('selectedRate', newSelectedRate);
             updateFormSection('selectedRateRef', null);
             // Save the deselection to Firestore (non-blocking)
             saveSelectedRateToFirestore(newSelectedRate).catch(error => {
@@ -705,7 +714,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             });
         } else {
             setSelectedRate(rate);
-            updateFormSection('selectedRate', rate);
 
             // Create rate reference for form context
             const rateRef = {
@@ -729,7 +737,8 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             });
 
             // Navigate immediately without waiting for Firestore save
-            onNext(rate);
+            // Pass only the rate reference, not the full rate object
+            onNext(rateRef);
         }
     };
 
@@ -855,11 +864,11 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             console.log('Saving selected rate with detailed breakdown:', {
                 carrier: rateData?.carrier,
                 totalCharges: rateData?.totalCharges,
-                shipmentId: activeDraftId
+                shipmentId: activeDraftId,
+                existingRateDocId: formData.selectedRateRef?.rateDocumentId
             });
 
-            // Save full rate details to shipmentRates collection
-            const shipmentRatesRef = collection(db, 'shipmentRates');
+            // Prepare rate document data
             const rateDocument = {
                 shipmentId: activeDraftId,
                 rateId: rateData.id,
@@ -883,22 +892,43 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 packageCounts: rateData.packageCounts || {},
                 originalRate: rateData.originalRate,
                 status: 'selected',
-                createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
 
-            // Add to shipmentRates collection
-            const rateDocRef = await addDoc(shipmentRatesRef, rateDocument);
-            console.log('Rate details saved to shipmentRates collection with ID:', rateDocRef.id);
+            let rateDocId;
+            const existingRateDocId = formData.selectedRateRef?.rateDocumentId;
+
+            if (existingRateDocId) {
+                // Update existing rate document
+                console.log('Updating existing rate document:', existingRateDocId);
+                const existingRateDocRef = doc(db, 'shipmentRates', existingRateDocId);
+                await updateDoc(existingRateDocRef, rateDocument);
+                rateDocId = existingRateDocId;
+                console.log('Existing rate document updated successfully');
+            } else {
+                // Create new rate document
+                console.log('Creating new rate document');
+                rateDocument.createdAt = serverTimestamp();
+                const shipmentRatesRef = collection(db, 'shipmentRates');
+                const rateDocRef = await addDoc(shipmentRatesRef, rateDocument);
+                rateDocId = rateDocRef.id;
+                console.log('New rate document created with ID:', rateDocId);
+            }
 
             // Save only a reference to the shipment document
             const shipmentRef = doc(db, 'shipments', activeDraftId);
             const selectedRateRef = {
-                rateDocumentId: rateDocRef.id,
+                rateDocumentId: rateDocId,
                 rateId: rateData.id,
                 carrier: rateData.carrier,
                 service: rateData.service,
                 totalCharges: rateData.totalCharges || rateData.price,
+                // Add detailed charge breakdown for high-level visibility
+                accessorialCharges: rateData.accessorialCharges || rateData.originalRate?.accessorialCharges || 0,
+                freightCharge: rateData.freightCharge || rateData.originalRate?.freightCharges || 0,
+                fuelCharge: rateData.fuelCharge || rateData.originalRate?.fuelCharges || 0,
+                guaranteeCharge: rateData.guaranteeCharge || 0,
+                serviceCharges: rateData.serviceCharges || rateData.originalRate?.serviceCharges || 0,
                 transitDays: rateData.transitDays,
                 estimatedDeliveryDate: rateData.estimatedDeliveryDate,
                 currency: rateData.currency || 'USD',
@@ -913,7 +943,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             // Update the form context with the rate reference including the document ID
             const formRateRef = {
                 ...selectedRateRef,
-                rateDocumentId: rateDocRef.id
+                rateDocumentId: rateDocId
             };
             updateFormSection('selectedRateRef', formRateRef);
 

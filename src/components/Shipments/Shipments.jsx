@@ -115,6 +115,11 @@ const Shipments = () => {
     const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
     const navigate = useNavigate();
 
+    // Scroll to top when component mounts
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, []);
+
     // Calculate stats from filtered data
     const stats = {
         total: totalCount,
@@ -188,7 +193,7 @@ const Shipments = () => {
             // Apply carrier filter (client-side to check both carrier and selectedRate.carrier)
             if (filters.carrier !== 'all') {
                 shipmentsData = shipmentsData.filter(shipment => {
-                    const shipmentCarrier = shipment.selectedRate?.carrier || shipment.carrier;
+                    const shipmentCarrier = shipment.selectedRateRef?.carrier || shipment.selectedRate?.carrier || shipment.carrier;
                     return shipmentCarrier === filters.carrier;
                 });
             }
@@ -232,8 +237,8 @@ const Shipments = () => {
                         return false;
                     }) ||
                     // Also search in selectedRate.carrier
-                    (shipment.selectedRate?.carrier &&
-                        String(shipment.selectedRate.carrier).toLowerCase().includes(searchTerm.toLowerCase()))
+                    (shipment.selectedRateRef?.carrier &&
+                        String(shipment.selectedRateRef.carrier).toLowerCase().includes(searchTerm.toLowerCase()))
                 );
             }
 
@@ -324,7 +329,7 @@ const Shipments = () => {
             'Origin': shipment.origin,
             'Destination': shipment.destination,
             'Status': shipment.status,
-            'Carrier': shipment.selectedRate?.carrier || shipment.carrier || 'N/A',
+            'Carrier': shipment.selectedRateRef?.carrier || shipment.selectedRate?.carrier || shipment.carrier || 'N/A',
             'Items': shipment.items,
             'Cost': `$${shipment.cost.toFixed(2)}`
         }));
@@ -384,7 +389,8 @@ const Shipments = () => {
         if (shipment.status === 'draft') {
             navigate(`/create-shipment/shipment-info/${shipment.id}`);
         } else {
-            navigate(`/shipment/${shipment.id}`, { state: { from: '/shipments' } });
+            const shipmentId = shipment.shipmentID || shipment.id;
+            navigate(`/shipment/${shipmentId}`, { state: { from: '/shipments' } });
         }
     };
 
@@ -696,7 +702,7 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        <Link to={`/shipment/${shipment.id}`} className="shipment-link">
+                                                        <Link to={`/shipment/${shipment.shipmentID || shipment.id}`} className="shipment-link">
                                                             {shipment.shipmentID || shipment.id}
                                                         </Link>
                                                     </TableCell>
@@ -718,7 +724,7 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {shipment.selectedRate?.carrier || shipment.carrier || 'N/A'}
+                                                        {shipment.selectedRateRef?.carrier || shipment.selectedRate?.carrier || shipment.carrier || 'N/A'}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
@@ -808,7 +814,8 @@ const Shipments = () => {
                             <MenuItem onClick={() => {
                                 handleActionMenuClose();
                                 if (selectedShipment) {
-                                    navigate(`/shipment/${selectedShipment.id}`);
+                                    const shipmentId = selectedShipment.shipmentID || selectedShipment.id;
+                                    navigate(`/shipment/${shipmentId}`);
                                 }
                             }}>
                                 <ListItemIcon>
