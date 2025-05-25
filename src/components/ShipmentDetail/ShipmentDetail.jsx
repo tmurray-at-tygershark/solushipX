@@ -59,21 +59,31 @@ import html2pdf from 'html2pdf.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
+import { getRateDetailsByDocumentId, getRatesForShipment, getSelectedRateForShipment } from '../../utils/rateUtils';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry", "routes"];
 
 // Add at the top with other helper functions
 const formatTimestamp = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-    });
+    if (!timestamp) return 'N/A';
+
+    try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return 'Invalid Date';
+
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    } catch (error) {
+        console.error('Error formatting timestamp:', error);
+        return 'Invalid Date';
+    }
 };
 
 // Add ErrorBoundary component at the top
@@ -520,6 +530,11 @@ const ShipmentDetail = () => {
     const [isMapReady, setIsMapReady] = useState(false);
     const [customers, setCustomers] = useState({});
 
+    // Rate-related state for new data structure
+    const [detailedRateInfo, setDetailedRateInfo] = useState(null);
+    const [rateLoading, setRateLoading] = useState(false);
+    const [allShipmentRates, setAllShipmentRates] = useState([]);
+
     const mapStyles = [
         {
             "elementType": "geometry",
@@ -641,67 +656,161 @@ const ShipmentDetail = () => {
                 if (docSnap.exists()) {
                     const shipmentData = { id: docSnap.id, ...docSnap.data() };
 
-                    // Fetch tracking data
-                    const trackingRef = collection(db, 'tracking');
-                    const trackingQuery = query(trackingRef, where('shipmentId', '==', shipmentData.shipmentId));
-                    const trackingSnapshot = await getDocs(trackingQuery);
+                    // Fetch tracking data only if shipmentId exists
+                    if (shipmentData.shipmentId) {
+                        try {
+                            const trackingRef = collection(db, 'tracking');
+                            const trackingQuery = query(trackingRef, where('shipmentId', '==', shipmentData.shipmentId));
+                            const trackingSnapshot = await getDocs(trackingQuery);
 
-                    if (!trackingSnapshot.empty) {
-                        const trackingDoc = trackingSnapshot.docs[0];
-                        const trackingData = trackingDoc.data();
+                            if (!trackingSnapshot.empty) {
+                                const trackingDoc = trackingSnapshot.docs[0];
+                                const trackingData = trackingDoc.data();
 
-                        // Process tracking events and sort by timestamp
-                        const processedEvents = trackingData.events
-                            .map(event => ({
-                                id: Math.random().toString(36).substr(2, 9),
-                                status: event.status,
-                                description: event.description,
-                                location: event.location,
-                                timestamp: event.timestamp?.toDate() || new Date(),
-                                color: getStatusColor(event.status),
-                                icon: getStatusIcon(event.status)
-                            }))
-                            .sort((a, b) => b.timestamp - a.timestamp);
+                                // Ensure events array exists and is valid
+                                if (trackingData.events && Array.isArray(trackingData.events)) {
+                                    // Process tracking events and sort by timestamp
+                                    const processedEvents = trackingData.events
+                                        .map(event => ({
+                                            id: Math.random().toString(36).substr(2, 9),
+                                            status: event.status,
+                                            description: event.description,
+                                            location: event.location,
+                                            timestamp: event.timestamp?.toDate() || new Date(),
+                                            color: getStatusColor(event.status),
+                                            icon: getStatusIcon(event.status)
+                                        }))
+                                        .sort((a, b) => b.timestamp - a.timestamp);
 
-                        setTrackingRecords(processedEvents);
+                                    setTrackingRecords(processedEvents);
+                                }
 
-                        // Update shipment data with tracking info
-                        shipmentData.tracking = {
-                            carrier: trackingData.carrier,
-                            trackingNumber: trackingData.trackingNumber,
-                            estimatedDeliveryDate: trackingData.estimatedDeliveryDate?.toDate(),
-                            status: trackingData.status,
-                            lastUpdated: trackingData.lastUpdated?.toDate()
-                        };
+                                // Update shipment data with tracking info
+                                shipmentData.tracking = {
+                                    carrier: trackingData.carrier,
+                                    trackingNumber: trackingData.trackingNumber,
+                                    estimatedDeliveryDate: trackingData.estimatedDeliveryDate?.toDate(),
+                                    status: trackingData.status,
+                                    lastUpdated: trackingData.lastUpdated?.toDate()
+                                };
+                            }
+                        } catch (trackingError) {
+                            console.error('Error fetching tracking data:', trackingError);
+                            // Continue without tracking data if fetch fails
+                            setTrackingRecords([]);
+                        }
+                    } else {
+                        console.warn('No shipmentId found for tracking lookup');
+                        setTrackingRecords([]);
                     }
 
-                    // Fetch rates from the subcollection
-                    const ratesRef = collection(db, 'shipments', docSnap.id, 'rates');
-                    const ratesSnapshot = await getDocs(ratesRef);
+                    // Fetch rates using new data structure
+                    console.log('Fetching rates with new structure for shipment:', docSnap.id);
 
-                    if (!ratesSnapshot.empty) {
-                        const rates = ratesSnapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data()
-                        }));
-                        shipmentData.rates = rates;
-                        shipmentData.selectedRate = rates[0];
+                    // Check if we have selectedRateRef (new structure)
+                    if (shipmentData.selectedRateRef?.rateDocumentId) {
+                        console.log('Found selectedRateRef, fetching detailed rate info:', shipmentData.selectedRateRef);
+                        try {
+                            const detailedRate = await getRateDetailsByDocumentId(shipmentData.selectedRateRef.rateDocumentId);
+                            if (detailedRate) {
+                                // Merge the detailed rate info with the reference
+                                shipmentData.selectedRate = {
+                                    ...shipmentData.selectedRateRef,
+                                    ...detailedRate
+                                };
+                                console.log('Successfully merged detailed rate info:', shipmentData.selectedRate);
+                            } else {
+                                console.warn('No detailed rate found, using reference only');
+                                shipmentData.selectedRate = shipmentData.selectedRateRef;
+                            }
+                        } catch (error) {
+                            console.error('Error fetching detailed rate info:', error);
+                            // Fallback to using just the reference
+                            shipmentData.selectedRate = shipmentData.selectedRateRef;
+                        }
+                    }
+
+                    // Fetch all rates for this shipment (for potential future use)
+                    try {
+                        const allRates = await getRatesForShipment(docSnap.id);
+                        shipmentData.allRates = allRates;
+                        console.log(`Found ${allRates.length} total rates for shipment:`, allRates);
+
+                        // If we don't have a selectedRate from selectedRateRef, try to find a booked/selected rate
+                        if (!shipmentData.selectedRate && allRates.length > 0) {
+                            console.log('No selectedRateRef found, looking for booked/selected rate in collection');
+                            const bookedRate = allRates.find(rate => rate.status === 'booked') ||
+                                allRates.find(rate => rate.status === 'selected') ||
+                                allRates[0]; // Fallback to first rate
+                            if (bookedRate) {
+                                shipmentData.selectedRate = bookedRate;
+                                console.log('Using rate from collection:', bookedRate);
+                            }
+                        }
+                    } catch (ratesError) {
+                        console.error('Error fetching rates from shipmentRates collection:', ratesError);
+                        // Continue without rates data if fetch fails
+                    }
+
+                    // Legacy support: Also check for old subcollection structure
+                    if (!shipmentData.selectedRate) {
+                        try {
+                            console.log('No rate found with new structure, checking legacy subcollection');
+                            const ratesRef = collection(db, 'shipments', docSnap.id, 'rates');
+                            const ratesSnapshot = await getDocs(ratesRef);
+
+                            if (!ratesSnapshot.empty) {
+                                const rates = ratesSnapshot.docs.map(doc => ({
+                                    id: doc.id,
+                                    ...doc.data()
+                                }));
+                                shipmentData.rates = rates;
+                                shipmentData.selectedRate = rates[0];
+                                console.log('Using legacy rate structure:', rates[0]);
+                            }
+                        } catch (legacyRatesError) {
+                            console.error('Error fetching legacy rates:', legacyRatesError);
+                        }
                     }
 
                     // Fetch packages from the subcollection
-                    const packagesRef = collection(db, 'shipments', docSnap.id, 'packages');
-                    const packagesSnapshot = await getDocs(packagesRef);
+                    try {
+                        const packagesRef = collection(db, 'shipments', docSnap.id, 'packages');
+                        const packagesSnapshot = await getDocs(packagesRef);
 
-                    if (!packagesSnapshot.empty) {
-                        const packages = packagesSnapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data()
-                        }));
-                        shipmentData.packages = packages;
+                        if (!packagesSnapshot.empty) {
+                            const packages = packagesSnapshot.docs.map(doc => ({
+                                id: doc.id,
+                                ...doc.data()
+                            }));
+                            shipmentData.packages = packages;
+                        }
+                    } catch (packagesError) {
+                        console.error('Error fetching packages:', packagesError);
+                        // Continue without packages data if fetch fails
                     }
 
                     console.log('Processed shipment data:', shipmentData);
+
+                    // Log selectedRate data structure for debugging
+                    if (shipmentData.selectedRate) {
+                        console.log('Selected Rate charge breakdown:', {
+                            carrier: shipmentData.selectedRate.carrier,
+                            totalCharges: shipmentData.selectedRate.totalCharges,
+                            freightCharge: shipmentData.selectedRate.freightCharge,
+                            fuelCharge: shipmentData.selectedRate.fuelCharge,
+                            serviceCharges: shipmentData.selectedRate.serviceCharges,
+                            accessorialCharges: shipmentData.selectedRate.accessorialCharges,
+                            guaranteeCharge: shipmentData.selectedRate.guaranteeCharge,
+                            guaranteed: shipmentData.selectedRate.guaranteed,
+                            // Also check legacy field names
+                            legacyFreightCharges: shipmentData.selectedRate.freightCharges,
+                            legacyFuelCharges: shipmentData.selectedRate.fuelCharges
+                        });
+                    }
+
                     setShipment(shipmentData);
+                    console.log('ShipmentDetail: Final shipmentData object before setLoading(false):', JSON.parse(JSON.stringify(shipmentData))); // ADDED LOG
                 } else {
                     setError('Shipment not found');
                 }
@@ -1141,6 +1250,92 @@ const ShipmentDetail = () => {
         return shipment?.[type] || shipment?.[type.toLowerCase()] || null;
     };
 
+    // Separate effect to fetch detailed rate information when needed
+    useEffect(() => {
+        const fetchDetailedRateInfo = async () => {
+            if (!shipment?.selectedRateRef?.rateDocumentId) {
+                return;
+            }
+
+            // Check if we're already loading to prevent duplicate calls
+            if (rateLoading) {
+                return;
+            }
+
+            setRateLoading(true);
+            try {
+                console.log('Fetching detailed rate info for document ID:', shipment.selectedRateRef.rateDocumentId);
+                const detailedRate = await getRateDetailsByDocumentId(shipment.selectedRateRef.rateDocumentId);
+
+                if (detailedRate) {
+                    setDetailedRateInfo(detailedRate);
+                    console.log('Detailed rate info fetched successfully:', detailedRate);
+                } else {
+                    console.warn('No detailed rate information found');
+                }
+            } catch (error) {
+                console.error('Error fetching detailed rate info in useEffect:', error);
+            } finally {
+                setRateLoading(false);
+            }
+        };
+
+        fetchDetailedRateInfo();
+    }, [shipment?.selectedRateRef?.rateDocumentId]); // Removed rateLoading dependency
+
+    // Effect to fetch all shipment rates
+    useEffect(() => {
+        const fetchAllRates = async () => {
+            if (!shipment?.id) return;
+
+            try {
+                const rates = await getRatesForShipment(shipment.id);
+                setAllShipmentRates(rates);
+                console.log(`Fetched ${rates.length} rates for shipment ${shipment.id}`);
+            } catch (error) {
+                console.error('Error fetching all shipment rates:', error);
+            }
+        };
+
+        fetchAllRates();
+    }, [shipment?.id]);
+
+    // Helper function to get the best available rate information
+    const getBestRateInfo = useMemo(() => {
+        // Priority order:
+        // 1. detailedRateInfo (from shipmentRates collection via selectedRateRef)
+        // 2. shipment.selectedRate (merged or legacy)
+        // 3. selectedRateRef (basic reference)
+        // 4. First booked/selected rate from allShipmentRates
+
+        if (detailedRateInfo) {
+            console.log('Using detailedRateInfo for rate display');
+            return detailedRateInfo;
+        }
+
+        if (shipment?.selectedRate) {
+            console.log('Using shipment.selectedRate for rate display');
+            return shipment.selectedRate;
+        }
+
+        if (shipment?.selectedRateRef) {
+            console.log('Using shipment.selectedRateRef for rate display');
+            return shipment.selectedRateRef;
+        }
+
+        // Fallback to allShipmentRates
+        if (allShipmentRates.length > 0) {
+            const bookedRate = allShipmentRates.find(rate => rate.status === 'booked') ||
+                allShipmentRates.find(rate => rate.status === 'selected') ||
+                allShipmentRates[0];
+            console.log('Using rate from allShipmentRates for rate display:', bookedRate);
+            return bookedRate;
+        }
+
+        console.log('No rate information available');
+        return null;
+    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, allShipmentRates]);
+
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -1199,7 +1394,7 @@ const ShipmentDetail = () => {
                                     </Typography>
                                     <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
                                     <Typography color="text.primary" sx={{ fontWeight: 600 }}>
-                                        {shipment?.shipmentId || 'Shipment'}
+                                        {shipment?.shipmentID || 'Shipment'}
                                     </Typography>
                                 </Box>
                             </Box>
@@ -1207,15 +1402,16 @@ const ShipmentDetail = () => {
                             <Grid container spacing={2} sx={{ mb: 2 }}>
                                 <Grid item xs={12} sm={6} md={3}>
                                     <Typography variant="caption" color="text.secondary">Customer</Typography>
-                                    <Typography variant="body2">{customers[shipment?.customerId] || shipment?.companyName || shipment?.customerId || 'N/A'}</Typography>
+                                    {/* Access customerID from shipFrom object */}
+                                    <Typography variant="body2">{customers[shipment?.shipTo?.customerID]}</Typography>
                                 </Grid>
                                 <Grid item xs={12} sm={6} md={3}>
                                     <Typography variant="caption" color="text.secondary">Company ID</Typography>
-                                    <Typography variant="body2">{shipment?.companyId || 'N/A'}</Typography>
+                                    <Typography variant="body2">{shipment?.companyID || 'N/A'}</Typography>
                                 </Grid>
                                 <Grid item xs={12} sm={6} md={3}>
                                     <Typography variant="caption" color="text.secondary">Carrier</Typography>
-                                    <Typography variant="body2">{shipment?.carrier || 'N/A'}</Typography>
+                                    <Typography variant="body2">{getBestRateInfo?.carrier || 'N/A'}</Typography>
                                 </Grid>
                                 <Grid item xs={12} sm={6} md={3}>
                                     <Typography variant="caption" color="text.secondary">Status</Typography>
@@ -1399,7 +1595,7 @@ const ShipmentDetail = () => {
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                         <LocalShipping sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
                                                                         <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                            {shipment?.selectedRate?.carrier || 'N/A'}
+                                                                            {getBestRateInfo?.carrier || 'N/A'}
                                                                         </Typography>
                                                                     </Box>
                                                                 </Box>
@@ -1455,6 +1651,18 @@ const ShipmentDetail = () => {
                                                                         </Typography>
                                                                     </Box>
                                                                 </Box>
+                                                                <Box>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                                                                        Estimated Delivery
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '1.2rem' }} />
+                                                                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                                                            {shipment?.tracking?.estimatedDeliveryDate ?
+                                                                                formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Box>
                                                             </Box>
                                                         </Grid>
 
@@ -1479,8 +1687,7 @@ const ShipmentDetail = () => {
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                     <LocalShipping sx={{ fontSize: '1.5rem' }} />
                                                                     <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                                        {shipment?.tracking?.estimatedDeliveryDate ?
-                                                                            formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available'}
+                                                                        {getBestRateInfo?.deliveryDate || getBestRateInfo?.estimatedDeliveryDate || 'N/A'}
                                                                     </Typography>
                                                                 </Box>
                                                             </Paper>
@@ -1601,6 +1808,7 @@ const ShipmentDetail = () => {
                                             </Box>
                                             <Collapse in={expandedSections.rate}>
                                                 <Box sx={{ p: 3 }}>
+                                                    {console.log('ShipmentDetail Rate Details bestRateInfo:', JSON.stringify(getBestRateInfo))} {/* UPDATED LOGGING */}
                                                     <Grid container spacing={3}>
                                                         {/* Left Column - Service Details */}
                                                         <Grid item xs={12} md={4}>
@@ -1610,7 +1818,7 @@ const ShipmentDetail = () => {
                                                                         Carrier & Service
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        {shipment?.selectedRate?.carrier || 'N/A'} - {shipment?.selectedRate?.service || 'N/A'}
+                                                                        {getBestRateInfo?.carrier || 'N/A'} - {getBestRateInfo?.service || 'N/A'}
                                                                     </Typography>
                                                                 </Box>
                                                                 <Box>
@@ -1618,7 +1826,7 @@ const ShipmentDetail = () => {
                                                                         Transit Time
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        {shipment?.selectedRate?.transitDays || 0} {shipment?.selectedRate?.transitDays === 1 ? 'day' : 'days'}
+                                                                        {getBestRateInfo?.transitDays || 0} {getBestRateInfo?.transitDays === 1 ? 'day' : 'days'}
                                                                     </Typography>
                                                                 </Box>
                                                                 <Box>
@@ -1640,7 +1848,7 @@ const ShipmentDetail = () => {
                                                                         Freight Charges
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        ${(shipment?.selectedRate?.freightCharges || 0).toFixed(2)}
+                                                                        ${(getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges || 0).toFixed(2)}
                                                                     </Typography>
                                                                 </Box>
                                                                 <Box>
@@ -1648,7 +1856,7 @@ const ShipmentDetail = () => {
                                                                         Fuel Charges
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        ${(shipment?.selectedRate?.fuelCharges || 0).toFixed(2)}
+                                                                        ${(getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges || 0).toFixed(2)}
                                                                     </Typography>
                                                                 </Box>
                                                                 <Box>
@@ -1656,16 +1864,26 @@ const ShipmentDetail = () => {
                                                                         Service Charges
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        ${(shipment?.selectedRate?.serviceCharges || 0).toFixed(2)}
+                                                                        ${(getBestRateInfo?.serviceCharges || 0).toFixed(2)}
                                                                     </Typography>
                                                                 </Box>
-                                                                {shipment?.selectedRate?.guaranteed && (
+                                                                {(getBestRateInfo?.accessorialCharges > 0) && (
+                                                                    <Box>
+                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                            Accessorial Charges
+                                                                        </Typography>
+                                                                        <Typography variant="body1">
+                                                                            ${(getBestRateInfo?.accessorialCharges || 0).toFixed(2)}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                )}
+                                                                {getBestRateInfo?.guaranteed && (
                                                                     <Box>
                                                                         <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                             Guarantee Charge
                                                                         </Typography>
                                                                         <Typography variant="body1">
-                                                                            ${(shipment?.selectedRate?.guaranteeCharge || 0).toFixed(2)}
+                                                                            ${(getBestRateInfo?.guaranteeCharge || 0).toFixed(2)}
                                                                         </Typography>
                                                                     </Box>
                                                                 )}
@@ -1691,10 +1909,10 @@ const ShipmentDetail = () => {
                                                                     Total Charges
                                                                 </Typography>
                                                                 <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
-                                                                    ${(shipment?.selectedRate?.totalCharges || 0).toFixed(2)}
+                                                                    ${(getBestRateInfo?.totalCharges || 0).toFixed(2)}
                                                                 </Typography>
                                                                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                                                                    {shipment?.selectedRate?.currency || 'USD'}
+                                                                    {getBestRateInfo?.currency || 'USD'}
                                                                 </Typography>
                                                             </Paper>
                                                         </Grid>

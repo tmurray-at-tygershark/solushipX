@@ -7,7 +7,7 @@ import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
@@ -547,7 +547,15 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                             originalRate: rate,
                             carrierCode: rate.carrierCode || '',
                             serviceCode: rate.serviceCode || '',
-                            packageCounts: rate.packageCounts || {}
+                            packageCounts: rate.packageCounts || {},
+
+                            // Enhanced charge breakdown fields - using the correct field names from originalRate
+                            totalCharges: parseFloat(rate.totalCharges) || 0,
+                            freightCharge: parseFloat(rate.originalRate?.freightCharges || 0),
+                            fuelCharge: parseFloat(rate.originalRate?.fuelCharges || 0),
+                            serviceCharges: parseFloat(rate.originalRate?.serviceCharges || 0),
+                            accessorialCharges: parseFloat(rate.originalRate?.accessorialCharges || 0),
+                            guaranteeCharge: 0 // Will be updated when guarantee is selected
                         };
                     });
 
@@ -628,22 +636,47 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     };
 
     const handleGuaranteeChange = (rate, checked) => {
+        const guaranteeAmount = rate.guaranteedPrice || 0;
         let updatedRateData;
+
         if (checked) {
             updatedRateData = {
                 ...rate,
-                rate: rate.rate + (rate.guaranteeCharge || 0),
-                guaranteed: true
+                price: rate.price + guaranteeAmount,
+                totalCharges: (rate.totalCharges || rate.price) + guaranteeAmount,
+                guaranteed: true,
+                guaranteeCharge: guaranteeAmount,
+                // Preserve all other charge breakdown fields
+                freightCharge: rate.freightCharge || 0,
+                fuelCharge: rate.fuelCharge || 0,
+                serviceCharges: rate.serviceCharges || 0,
+                accessorialCharges: rate.accessorialCharges || 0
             };
         } else {
             updatedRateData = {
                 ...rate,
-                rate: rate.rate - (rate.guaranteeCharge || 0),
-                guaranteed: false
+                price: rate.price - guaranteeAmount,
+                totalCharges: (rate.totalCharges || rate.price) - guaranteeAmount,
+                guaranteed: false,
+                guaranteeCharge: 0,
+                // Preserve all other charge breakdown fields
+                freightCharge: rate.freightCharge || 0,
+                fuelCharge: rate.fuelCharge || 0,
+                serviceCharges: rate.serviceCharges || 0,
+                accessorialCharges: rate.accessorialCharges || 0
             };
         }
-        setSelectedRate(updatedRateData);
-        updateFormSection('selectedRate', updatedRateData);
+
+        // Update the rates array with the modified rate
+        const updatedRates = rates.map(r => r.id === rate.id ? updatedRateData : r);
+        setRates(updatedRates);
+        setFilteredRates(updatedRates);
+
+        // If this rate is currently selected, update it and save to Firestore
+        if (selectedRate?.id === rate.id) {
+            setSelectedRate(updatedRateData);
+            saveSelectedRateToFirestore(updatedRateData);
+        }
     };
 
     const toggleAllRateDetails = () => {
@@ -665,6 +698,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             const newSelectedRate = null;
             setSelectedRate(newSelectedRate);
             updateFormSection('selectedRate', newSelectedRate);
+            updateFormSection('selectedRateRef', null);
             // Save the deselection to Firestore (non-blocking)
             saveSelectedRateToFirestore(newSelectedRate).catch(error => {
                 console.error('Error saving rate deselection:', error);
@@ -672,6 +706,20 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         } else {
             setSelectedRate(rate);
             updateFormSection('selectedRate', rate);
+
+            // Create rate reference for form context
+            const rateRef = {
+                rateId: rate.id,
+                carrier: rate.carrier,
+                service: rate.service,
+                totalCharges: rate.totalCharges || rate.price,
+                transitDays: rate.transitDays,
+                estimatedDeliveryDate: rate.estimatedDeliveryDate,
+                currency: rate.currency || 'USD',
+                guaranteed: rate.guaranteed || false
+            };
+            updateFormSection('selectedRateRef', rateRef);
+
             console.log('Rate selected:', rate.carrier, rate.price);
 
             // Save to Firestore in background (non-blocking)
@@ -789,15 +837,91 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         }
 
         try {
-            console.log('Saving selected rate to Firestore:', rateData);
-            const shipmentDocRef = doc(db, 'shipments', activeDraftId);
-            await updateDoc(shipmentDocRef, {
-                selectedRate: rateData,
+            if (rateData === null) {
+                // Handle rate deselection
+                console.log('Deselecting rate for shipment:', activeDraftId);
+
+                const shipmentRef = doc(db, 'shipments', activeDraftId);
+                await updateDoc(shipmentRef, {
+                    selectedRateRef: null,
+                    updatedAt: serverTimestamp()
+                });
+
+                console.log('Rate deselection saved to Firestore');
+                return;
+            }
+
+            // Enhanced logging of rate data being saved
+            console.log('Saving selected rate with detailed breakdown:', {
+                carrier: rateData?.carrier,
+                totalCharges: rateData?.totalCharges,
+                shipmentId: activeDraftId
+            });
+
+            // Save full rate details to shipmentRates collection
+            const shipmentRatesRef = collection(db, 'shipmentRates');
+            const rateDocument = {
+                shipmentId: activeDraftId,
+                rateId: rateData.id,
+                carrier: rateData.carrier,
+                service: rateData.service,
+                carrierCode: rateData.carrierCode || '',
+                serviceCode: rateData.serviceCode || '',
+                totalCharges: rateData.totalCharges || rateData.price,
+                freightCharge: rateData.freightCharge || rateData.originalRate?.freightCharges || 0,
+                fuelCharge: rateData.fuelCharge || rateData.originalRate?.fuelCharges || 0,
+                serviceCharges: rateData.serviceCharges || rateData.originalRate?.serviceCharges || 0,
+                accessorialCharges: rateData.accessorialCharges || rateData.originalRate?.accessorialCharges || 0,
+                guaranteeCharge: rateData.guaranteeCharge || 0,
+                currency: rateData.currency || 'USD',
+                transitDays: rateData.transitDays,
+                transitTime: rateData.transitTime,
+                estimatedDeliveryDate: rateData.estimatedDeliveryDate,
+                guaranteed: rateData.guaranteed || false,
+                guaranteedOptionAvailable: rateData.guaranteedOptionAvailable || false,
+                guaranteedPrice: rateData.guaranteedPrice || null,
+                packageCounts: rateData.packageCounts || {},
+                originalRate: rateData.originalRate,
+                status: 'selected',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+
+            // Add to shipmentRates collection
+            const rateDocRef = await addDoc(shipmentRatesRef, rateDocument);
+            console.log('Rate details saved to shipmentRates collection with ID:', rateDocRef.id);
+
+            // Save only a reference to the shipment document
+            const shipmentRef = doc(db, 'shipments', activeDraftId);
+            const selectedRateRef = {
+                rateDocumentId: rateDocRef.id,
+                rateId: rateData.id,
+                carrier: rateData.carrier,
+                service: rateData.service,
+                totalCharges: rateData.totalCharges || rateData.price,
+                transitDays: rateData.transitDays,
+                estimatedDeliveryDate: rateData.estimatedDeliveryDate,
+                currency: rateData.currency || 'USD',
+                guaranteed: rateData.guaranteed || false
+            };
+
+            await updateDoc(shipmentRef, {
+                selectedRateRef: selectedRateRef,
                 updatedAt: serverTimestamp()
             });
-            console.log('Selected rate saved successfully to draft shipment');
+
+            // Update the form context with the rate reference including the document ID
+            const formRateRef = {
+                ...selectedRateRef,
+                rateDocumentId: rateDocRef.id
+            };
+            updateFormSection('selectedRateRef', formRateRef);
+
+            console.log('Rate reference saved to shipment document:', activeDraftId);
+
         } catch (error) {
-            console.error('Error saving selected rate to Firestore:', error);
+            console.error('Error saving selected rate:', error);
+            throw error;
         }
     };
 

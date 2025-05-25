@@ -62,7 +62,9 @@ export const initialFormState = {
     },
     // Packages data
     packages: [],
-    // Selected rate
+    // Selected rate reference (instead of full rate data)
+    selectedRateRef: null,
+    // Legacy selectedRate for backward compatibility during transition
     selectedRate: null,
     // Rate details
     rateDetails: {}
