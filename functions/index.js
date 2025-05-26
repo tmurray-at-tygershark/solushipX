@@ -31,6 +31,7 @@ const db = admin.firestore();
 
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
+const { bookRateEShipPlus } = require('./src/carrier-api/eshipplus/bookRate');
 const ediProcessing = require('./src/edi-processing');
 const { checkEdiUploads } = require('./src/check-edi-uploads');
 const { generateEdiMapping } = require('./src/mapping_functions');
@@ -39,6 +40,7 @@ const { adminResetUserPassword, checkUserCompanyOwnership, adminDeleteUser, admi
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
+exports.bookRateEShipPlus = bookRateEShipPlus;
 exports.onFileUploaded = ediProcessing.onFileUploaded;
 exports.processEdiFile = ediProcessing.processEdiFile;
 exports.processEdiHttp = ediProcessing.processEdiHttp;

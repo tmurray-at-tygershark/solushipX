@@ -15,5 +15,5 @@ firebase functions:config:set \
     openai.api_url="https://api.openai.com/v1/chat/completions"
 
 # After setting config, you can view it with:
-echo "Configuration set! You can view it with: firebase functions:config:get"
+echo "Configuration set! You can view it with: firebase functions:config:get" 
 echo "IMPORTANT: Re-deploy your functions (e.g., npm run deploy:functions) for changes to take effect." 

@@ -369,23 +369,15 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         };
     }, [styles]);
 
-    const fetchRates = useCallback(async () => {
+    const fetchRatesInternal = useCallback(async (currentFormDataForRateRequest) => {
+        console.log('fetchRatesInternal triggered');
         setIsLoading(true);
         setError(null);
         setRatesLoaded(false);
 
         try {
-            // Use the EShipPlus translator to build the request
-            const rateRequestData = toEShipPlusRequest(formData);
+            const rateRequestData = toEShipPlusRequest(currentFormDataForRateRequest);
 
-            // Debug booking reference number
-            console.log('DEBUG - Booking Reference:', {
-                'shipmentInfo': formData.shipmentInfo,
-                'shipperReferenceNumber': formData.shipmentInfo?.shipperReferenceNumber,
-                'BookingReferenceNumber (final)': rateRequestData.BookingReferenceNumber
-            });
-
-            // Auto-fix missing Contact fields before validation
             if (!rateRequestData.Origin.Contact || rateRequestData.Origin.Contact.trim() === '') {
                 console.log("Auto-fixing missing origin Contact");
                 rateRequestData.Origin.Contact =
@@ -404,7 +396,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                     "Receiving Department";
             }
 
-            // Auto-fix missing SpecialInstructions fields
             if (!rateRequestData.Origin.SpecialInstructions ||
                 rateRequestData.Origin.SpecialInstructions.trim() === '') {
                 rateRequestData.Origin.SpecialInstructions = 'none';
@@ -415,7 +406,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 rateRequestData.Destination.SpecialInstructions = 'none';
             }
 
-            // Basic validation for required fields on rateRequestData
             if (!rateRequestData.Origin.City || rateRequestData.Origin.City.trim() === '') {
                 throw new Error('Missing or invalid city in origin address');
             }
@@ -426,7 +416,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             if (!rateRequestData.Origin.Country?.Code || rateRequestData.Origin.Country.Code.trim() === '') {
                 throw new Error('Missing or invalid country code in origin address');
             }
-
 
             if (!rateRequestData.Destination.City || rateRequestData.Destination.City.trim() === '') {
                 throw new Error('Missing or invalid city in destination address');
@@ -439,7 +428,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 throw new Error('Missing or invalid country code in destination address');
             }
 
-            // Validate Contact fields before making the API call
             if (!rateRequestData.Origin.Contact || rateRequestData.Origin.Contact.trim() === '') {
                 throw new Error('Missing or invalid contact name in origin address');
             }
@@ -448,149 +436,78 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 throw new Error('Missing or invalid contact name in destination address');
             }
 
-            // Log the complete validated request
-            console.group('🚢 Rate Request Data (POST TRANSLATION):');
-            console.log('📅 Shipment Details:', {
-                BookingReferenceNumber: rateRequestData.BookingReferenceNumber,
-                BookingReferenceNumberType: rateRequestData.BookingReferenceNumberType,
-                ShipmentBillType: rateRequestData.ShipmentBillType,
-                ShipmentDate: rateRequestData.ShipmentDate,
-                EarliestPickup: rateRequestData.EarliestPickup,
-                LatestPickup: rateRequestData.LatestPickup,
-                EarliestDelivery: rateRequestData.EarliestDelivery,
-                LatestDelivery: rateRequestData.LatestDelivery
-            });
-
-            console.log('📍 Origin Address:', rateRequestData.Origin);
-            console.log('📍 Destination Address:', rateRequestData.Destination);
-
-            console.log('📦 Items:', rateRequestData.Items.map(item => ({
-                Name: item.Name,
-                Type: item.Type,
-                Quantity: item.Quantity,
-                Weight: item.Weight,
-                Length: item.Length,
-                Width: item.Width,
-                Height: item.Height,
-                FreightClass: item.FreightClass,
-                Value: item.Value,
-                Currency: item.Currency,
-                CommodityDescription: item.CommodityDescription,
-                Stackable: item.Stackable
-            })));
+            console.group('🚢 Rate Request Data (POST TRANSLATION - fetchRatesInternal):');
+            console.log('Full request used:', currentFormDataForRateRequest);
+            console.log('Translated request:', rateRequestData);
             console.groupEnd();
 
-            // Initialize Firebase Functions and get the callable function
             const functions = getFunctions();
             const getRatesFunction = httpsCallable(functions, 'getRatesEShipPlus');
-
-            // Call the function
             const result = await getRatesFunction(rateRequestData);
             const data = result.data;
 
-            // --- BEGIN LOG --- 
-            console.log("Raw Rate Response Object:", data);
-            // --- END LOG --- 
+            console.log("Raw Rate Response Object (fetchRatesInternal):", data);
 
-            // Process the response data
             if (data.success && data.data) {
-                // Add detailed logging
-                console.log('Response structure:', {
-                    hasData: !!data.data,
-                    dataKeys: Object.keys(data.data),
-                    dataType: typeof data.data,
-                    isString: typeof data.data === 'string',
-                    isObject: typeof data.data === 'object'
-                });
-
-                try {
-                    // The response is already parsed JSON from the backend
-                    const rateData = data.data;
-                    console.log('Rate Data:', rateData);
-
-                    // Get available rates from the transformed response
-                    const availableRates = rateData?.availableRates || [];
-
-                    if (availableRates.length === 0) {
-                        setError('No rates available for this shipment. Please check your shipment details and try again.');
-                        setIsLoading(false);
-                        return;
-                    }
-
-                    console.log('Available Rates:', availableRates);
-
-                    // Transform the rate data
-                    const transformedRates = availableRates.map(rate => {
-                        // Calculate the total days for delivery
-                        const transitTimeDisplay = String(rate.transitTime || '1-2 business days');
-                        const transitDays = transitTimeDisplay.match(/\d+/)?.[0] || '1';
-
-                        // Access EstimatedDeliveryDate - use exact case from sample, provide fallback
-                        const rawDeliveryDate = rate.EstimatedDeliveryDate || rate.estimatedDeliveryDate; // Check both cases
-                        const formattedDeliveryDate = rawDeliveryDate ? rawDeliveryDate.split('T')[0] : 'N/A';
-                        console.log(`Rate Quote ID ${rate.id}, Raw Date: ${rawDeliveryDate}, Formatted Date: ${formattedDeliveryDate}`); // Add log for debugging
-
-                        // Create a standardized object for each rate
-                        return {
-                            id: rate.id || `rate-${Math.random().toString(36).substring(2, 9)}`,
-                            carrier: rate.carrierName || rate.originalRate?.carrierName || 'Unknown',
-                            service: rate.service || 'Standard',
-                            transitDays: parseInt(transitDays),
-                            transitTime: transitTimeDisplay,
-                            estimatedDeliveryDate: formattedDeliveryDate,
-                            price: parseFloat(rate.totalCharges) || 0,
-                            currency: rate.currency || 'USD',
-                            guaranteeOption: rate.guaranteed || false,
-                            guaranteedOptionAvailable: rate.guaranteedOptionAvailable || false,
-                            guaranteedPrice: rate.guaranteedPrice || null,
-                            charges: rate.charges || [],
-                            originalRate: rate,
-                            carrierCode: rate.carrierCode || '',
-                            serviceCode: rate.serviceCode || '',
-                            packageCounts: rate.packageCounts || {},
-
-                            // Enhanced charge breakdown fields - using the correct field names from originalRate
-                            totalCharges: parseFloat(rate.totalCharges) || 0,
-                            freightCharge: parseFloat(rate.originalRate?.freightCharges || 0),
-                            fuelCharge: parseFloat(rate.originalRate?.fuelCharges || 0),
-                            serviceCharges: parseFloat(rate.originalRate?.serviceCharges || 0),
-                            accessorialCharges: parseFloat(rate.originalRate?.accessorialCharges || 0),
-                            guaranteeCharge: 0 // Will be updated when guarantee is selected
-                        };
-                    });
-
-                    console.log('Transformed Rates:', transformedRates);
-
-                    setRates(transformedRates);
-                    setFilteredRates(transformedRates);
-                    setRatesLoaded(true);
-                } catch (parseError) {
-                    console.error('Error parsing rate data:', parseError);
-                    setError(`Error parsing rate data: ${parseError.message}`);
+                const availableRates = data.data.availableRates || [];
+                if (!Array.isArray(availableRates)) {
+                    console.error('availableRates is not an array:', availableRates);
+                    setError('Received invalid rate data format from server.');
+                    setRates([]);
+                    setFilteredRates([]);
+                } else {
+                    setRates(availableRates);
+                    setFilteredRates(availableRates);
+                    updateFormSection('originalRateRequestData', rateRequestData);
                 }
+                setRatesLoaded(true);
             } else {
-                const errorMessage = data.error || 'Failed to retrieve shipping rates. Please try again.';
-                console.error('API Error:', errorMessage);
+                const errorMessage = data.error || data?.data?.messages?.map(m => m.Text).join('; ') || 'Failed to fetch rates due to an unknown API error.';
+                console.error("Error fetching rates from API (fetchRatesInternal):", errorMessage, data);
                 setError(errorMessage);
+                setRates([]);
+                setFilteredRates([]);
             }
         } catch (error) {
-            console.error('Error fetching rates:', error);
-            setError(`Error fetching rates: ${error.message}`);
+            console.error("Network or function invocation error fetching rates (fetchRatesInternal):", error);
+            let detailedMessage = error.message;
+            if (error.details) {
+                detailedMessage += ` Details: ${JSON.stringify(error.details)}`;
+            }
+            setError(`Failed to fetch rates. ${detailedMessage}`);
+            setRates([]);
+            setFilteredRates([]);
         } finally {
             setIsLoading(false);
         }
-    }, [formData]);
+    }, [updateFormSection]);
 
     useEffect(() => {
-        if (formData && Object.keys(formData.shipFrom || {}).length > 0 && Object.keys(formData.shipTo || {}).length > 0) {
-            fetchRates();
+        console.log('useEffect for calling fetchRatesInternal triggered. Checking conditions...');
+        const { shipFrom, shipTo, packages, shipmentInfo } = formData;
+
+        if (
+            shipFrom?.postalCode &&
+            shipTo?.postalCode &&
+            packages?.length > 0
+        ) {
+            console.log('Conditions met, calling fetchRatesInternal with current formData snapshot.');
+            fetchRatesInternal({ shipFrom, shipTo, packages, shipmentInfo });
+        } else {
+            console.log('Conditions for fetchRatesInternal not met, or crucial formData parts not ready.');
+            if (isLoading) setIsLoading(false);
         }
-    }, [formData, fetchRates]);
+    }, [
+        formData.shipFrom?.postalCode,
+        formData.shipTo?.postalCode,
+        JSON.stringify(formData.packages),
+        formData.shipmentInfo?.shipmentDate,
+        fetchRatesInternal
+    ]);
 
     useEffect(() => {
         let filtered = [...rates];
 
-        // Apply service filter
         if (serviceFilter !== 'all') {
             filtered = filtered.filter(rate => {
                 switch (serviceFilter) {
@@ -608,7 +525,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             });
         }
 
-        // Apply sorting
         filtered.sort((a, b) => {
             switch (sortBy) {
                 case 'price':
@@ -631,7 +547,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             alert('Please select a rate before submitting');
             return;
         }
-        // Pass only the rate reference, not the full rate object
         const rateRef = formData.selectedRateRef || {
             rateId: selectedRate.id,
             carrier: selectedRate.carrier,
@@ -646,43 +561,36 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     };
 
     const handleGuaranteeChange = (rate, checked) => {
-        const guaranteeAmount = rate.guaranteedPrice || 0;
+        const guaranteeAmount = rate.guaranteeCharge || 0;
+        const currentPrice = typeof rate.totalCharges === 'number' ? rate.totalCharges : 0;
         let updatedRateData;
 
         if (checked) {
             updatedRateData = {
                 ...rate,
-                price: rate.price + guaranteeAmount,
-                totalCharges: (rate.totalCharges || rate.price) + guaranteeAmount,
+                totalCharges: currentPrice + guaranteeAmount,
                 guaranteed: true,
-                guaranteeCharge: guaranteeAmount,
-                // Preserve all other charge breakdown fields
-                freightCharge: rate.freightCharge || 0,
-                fuelCharge: rate.fuelCharge || 0,
+                freightCharges: rate.freightCharges || 0,
+                fuelCharges: rate.fuelCharges || 0,
                 serviceCharges: rate.serviceCharges || 0,
                 accessorialCharges: rate.accessorialCharges || 0
             };
         } else {
             updatedRateData = {
                 ...rate,
-                price: rate.price - guaranteeAmount,
-                totalCharges: (rate.totalCharges || rate.price) - guaranteeAmount,
+                totalCharges: currentPrice - guaranteeAmount,
                 guaranteed: false,
-                guaranteeCharge: 0,
-                // Preserve all other charge breakdown fields
-                freightCharge: rate.freightCharge || 0,
-                fuelCharge: rate.fuelCharge || 0,
+                freightCharges: rate.freightCharges || 0,
+                fuelCharges: rate.fuelCharges || 0,
                 serviceCharges: rate.serviceCharges || 0,
                 accessorialCharges: rate.accessorialCharges || 0
             };
         }
 
-        // Update the rates array with the modified rate
         const updatedRates = rates.map(r => r.id === rate.id ? updatedRateData : r);
         setRates(updatedRates);
         setFilteredRates(updatedRates);
 
-        // If this rate is currently selected, update it and save to Firestore
         if (selectedRate?.id === rate.id) {
             setSelectedRate(updatedRateData);
             saveSelectedRateToFirestore(updatedRateData);
@@ -704,41 +612,50 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     }, [isLoading]);
 
     const handleRateSelect = async (rate) => {
-        if (selectedRate?.id === rate.id) {
+        const rateIdentifier = rate.quoteId;
+
+        if (selectedRate?.rateId === rateIdentifier) {
             const newSelectedRate = null;
             setSelectedRate(newSelectedRate);
             updateFormSection('selectedRateRef', null);
-            // Save the deselection to Firestore (non-blocking)
             saveSelectedRateToFirestore(newSelectedRate).catch(error => {
                 console.error('Error saving rate deselection:', error);
             });
         } else {
             setSelectedRate(rate);
 
-            // Create rate reference for form context
-            const rateRef = {
-                rateId: rate.id,
-                carrier: rate.carrier,
-                service: rate.service,
-                totalCharges: rate.totalCharges || rate.price,
-                transitDays: rate.transitDays,
+            const rateRefForFormAndFirestore = {
+                rateId: rateIdentifier,
+                carrier: rate.carrierName,
+                service: rate.serviceType || rate.carrierName,
+                totalCharges: rate.totalCharges || 0,
+                transitDays: rate.transitTime,
                 estimatedDeliveryDate: rate.estimatedDeliveryDate,
                 currency: rate.currency || 'USD',
-                guaranteed: rate.guaranteed || false
+                guaranteed: rate.guaranteed || false,
+                accessorialCharges: rate.accessorialCharges || 0,
+                freightCharge: rate.freightCharges || 0,
+                fuelCharge: rate.fuelCharges || 0,
+                guaranteeActualCharge: rate.guaranteeCharge || 0,
+                serviceCharges: rate.serviceCharges || 0,
+                carrierScac: rate.carrierScac,
+                carrierKey: rate.carrierKey,
+                billingDetails: rate.billingDetails || [],
+                guarOptions: rate.guarOptions || [],
+                serviceMode: rate.serviceMode,
+                billedWeight: rate.billedWeight,
+                ratedWeight: rate.ratedWeight,
+                guaranteedService: rate.guaranteedService
             };
-            updateFormSection('selectedRateRef', rateRef);
+            updateFormSection('selectedRateRef', rateRefForFormAndFirestore);
 
-            console.log('Rate selected:', rate.carrier, rate.price);
+            console.log('Rate selected (to be saved):', rateRefForFormAndFirestore);
 
-            // Save to Firestore in background (non-blocking)
-            saveSelectedRateToFirestore(rate).catch(error => {
+            saveSelectedRateToFirestore(rate, rateRefForFormAndFirestore).catch(error => {
                 console.error('Error saving selected rate:', error);
-                // Could show a toast notification here if needed
             });
 
-            // Navigate immediately without waiting for Firestore save
-            // Pass only the rate reference, not the full rate object
-            onNext(rateRef);
+            onNext(rateRefForFormAndFirestore);
         }
     };
 
@@ -782,13 +699,12 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                         try {
                             const data = JSON.parse(line.slice(5));
 
-                            if (!data.success && data.message) { // Check for specific error message from function
+                            if (!data.success && data.message) {
                                 throw new Error(data.message || 'AI Analysis stream reported an error');
                             }
                             if (!data.success && !data.message) {
                                 throw new Error('AI Analysis stream failed without a specific message.');
                             }
-
 
                             if (data.chunk) {
                                 streamedResult += data.chunk;
@@ -797,160 +713,114 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
                             if (data.done) {
                                 console.log("AI Analysis stream finished.");
-                                setIsAnalysisExpanded(true); // Expand fully only when done and successful
-                                break; // Break from inner loop
+                                setIsAnalysisExpanded(true);
+                                break;
                             }
                         } catch (e) {
                             console.error('Error parsing stream data:', e);
                             setAnalysisError('Error processing AI analysis response: ' + e.message);
                             setIsAnalyzing(false);
-                            setIsAnalysisExpanded(false); // Keep it closed on error
-                            return; // Exit handleAnalyzeRates due to parsing error
+                            setIsAnalysisExpanded(false);
+                            return;
                         }
                     }
                 }
                 if (lines.some(line => line.startsWith('data: ') && JSON.parse(line.slice(5)).done)) {
-                    break; // Break from while loop if done
+                    break;
                 }
             }
         } catch (error) {
             console.error('AI Analysis Error:', error);
             setAnalysisError(error.message);
-            setIsAnalysisExpanded(false); // Keep it closed on error
+            setIsAnalysisExpanded(false);
         } finally {
             setIsAnalyzing(false);
-            // If there was a result, ensure it's expanded. If error, it remains closed (or previous state).
             if (analysisResult && !analysisError) {
                 setIsAnalysisExpanded(true);
             }
         }
     };
 
-    // --- Helper to calculate total packages ---
     const totalPackages = useMemo(() => {
         return formData.packages?.reduce((sum, pkg) => sum + (Number(pkg.packagingQuantity) || 0), 0) || 0;
     }, [formData.packages]);
 
-    // --- Helper to calculate total weight ---
     const totalWeight = useMemo(() => {
         const weight = formData.packages?.reduce((sum, pkg) => sum + (Number(pkg.weight) || 0), 0) || 0;
-        // Assuming imperial units for display here, adjust if unitSystem is tracked
         return `${weight.toFixed(2)} lbs`;
     }, [formData.packages]);
 
-    // Function to save selected rate immediately to Firestore
-    const saveSelectedRateToFirestore = async (rateData) => {
+    const saveSelectedRateToFirestore = async (originalRateData, rateRefToStore) => {
         if (!activeDraftId) {
             console.warn('No activeDraftId available to save selected rate');
             return;
         }
 
         try {
-            if (rateData === null) {
-                // Handle rate deselection
+            if (originalRateData === null) {
                 console.log('Deselecting rate for shipment:', activeDraftId);
-
                 const shipmentRef = doc(db, 'shipments', activeDraftId);
-                await updateDoc(shipmentRef, {
-                    selectedRateRef: null,
-                    updatedAt: serverTimestamp()
-                });
-
+                await updateDoc(shipmentRef, { selectedRateRef: null, updatedAt: serverTimestamp() });
                 console.log('Rate deselection saved to Firestore');
                 return;
             }
 
-            // Enhanced logging of rate data being saved
-            console.log('Saving selected rate with detailed breakdown:', {
-                carrier: rateData?.carrier,
-                totalCharges: rateData?.totalCharges,
-                shipmentId: activeDraftId,
-                existingRateDocId: formData.selectedRateRef?.rateDocumentId
-            });
+            console.log('Saving selected rate to Firestore. Rate Ref to Store:', rateRefToStore);
 
-            // Prepare rate document data
-            const rateDocument = {
+            const rateDocumentForCollection = {
                 shipmentId: activeDraftId,
-                rateId: rateData.id,
-                carrier: rateData.carrier,
-                service: rateData.service,
-                carrierCode: rateData.carrierCode || '',
-                serviceCode: rateData.serviceCode || '',
-                totalCharges: rateData.totalCharges || rateData.price,
-                freightCharge: rateData.freightCharge || rateData.originalRate?.freightCharges || 0,
-                fuelCharge: rateData.fuelCharge || rateData.originalRate?.fuelCharges || 0,
-                serviceCharges: rateData.serviceCharges || rateData.originalRate?.serviceCharges || 0,
-                accessorialCharges: rateData.accessorialCharges || rateData.originalRate?.accessorialCharges || 0,
-                guaranteeCharge: rateData.guaranteeCharge || 0,
-                currency: rateData.currency || 'USD',
-                transitDays: rateData.transitDays,
-                transitTime: rateData.transitTime,
-                estimatedDeliveryDate: rateData.estimatedDeliveryDate,
-                guaranteed: rateData.guaranteed || false,
-                guaranteedOptionAvailable: rateData.guaranteedOptionAvailable || false,
-                guaranteedPrice: rateData.guaranteedPrice || null,
-                packageCounts: rateData.packageCounts || {},
-                originalRate: rateData.originalRate,
+                rateId: rateRefToStore.rateId,
+                carrier: rateRefToStore.carrier,
+                service: rateRefToStore.service,
+                carrierCode: rateRefToStore.carrierScac || '',
+                carrierKey: rateRefToStore.carrierKey || originalRateData.carrierKey,
+                serviceCode: originalRateData.serviceCode || '',
+                totalCharges: rateRefToStore.totalCharges,
+                freightCharge: rateRefToStore.freightCharge,
+                fuelCharge: rateRefToStore.fuelCharge,
+                serviceCharges: rateRefToStore.serviceCharges,
+                accessorialCharges: rateRefToStore.accessorialCharges,
+                guaranteeCharge: rateRefToStore.guaranteeActualCharge,
+                currency: rateRefToStore.currency,
+                transitDays: rateRefToStore.transitDays,
+                transitTime: rateRefToStore.transitDays,
+                estimatedDeliveryDate: rateRefToStore.estimatedDeliveryDate,
+                guaranteed: rateRefToStore.guaranteed,
+                guaranteedService: originalRateData.guaranteedService,
+                packageCounts: originalRateData.packageCounts || {},
+                billingDetails: rateRefToStore.billingDetails || [],
+                guarOptions: rateRefToStore.guarOptions || [],
                 status: 'selected',
                 updatedAt: serverTimestamp()
             };
 
-            let rateDocId;
-            const existingRateDocId = formData.selectedRateRef?.rateDocumentId;
+            let rateDocId = formData.selectedRateRef?.rateDocumentId;
 
-            if (existingRateDocId) {
-                // Update existing rate document
-                console.log('Updating existing rate document:', existingRateDocId);
-                const existingRateDocRef = doc(db, 'shipmentRates', existingRateDocId);
-                await updateDoc(existingRateDocRef, rateDocument);
-                rateDocId = existingRateDocId;
-                console.log('Existing rate document updated successfully');
+            if (rateDocId) {
+                console.log('Updating existing rate document in shipmentRates:', rateDocId);
+                const existingRateDocRef = doc(db, 'shipmentRates', rateDocId);
+                await updateDoc(existingRateDocRef, rateDocumentForCollection);
             } else {
-                // Create new rate document
-                console.log('Creating new rate document');
-                rateDocument.createdAt = serverTimestamp();
+                console.log('Creating new rate document in shipmentRates');
+                rateDocumentForCollection.createdAt = serverTimestamp();
                 const shipmentRatesRef = collection(db, 'shipmentRates');
-                const rateDocRef = await addDoc(shipmentRatesRef, rateDocument);
+                const rateDocRef = await addDoc(shipmentRatesRef, rateDocumentForCollection);
                 rateDocId = rateDocRef.id;
-                console.log('New rate document created with ID:', rateDocId);
             }
+            console.log('Rate document saved/updated in shipmentRates with ID:', rateDocId);
 
-            // Save only a reference to the shipment document
-            const shipmentRef = doc(db, 'shipments', activeDraftId);
-            const selectedRateRef = {
-                rateDocumentId: rateDocId,
-                rateId: rateData.id,
-                carrier: rateData.carrier,
-                service: rateData.service,
-                totalCharges: rateData.totalCharges || rateData.price,
-                // Add detailed charge breakdown for high-level visibility
-                accessorialCharges: rateData.accessorialCharges || rateData.originalRate?.accessorialCharges || 0,
-                freightCharge: rateData.freightCharge || rateData.originalRate?.freightCharges || 0,
-                fuelCharge: rateData.fuelCharge || rateData.originalRate?.fuelCharges || 0,
-                guaranteeCharge: rateData.guaranteeCharge || 0,
-                serviceCharges: rateData.serviceCharges || rateData.originalRate?.serviceCharges || 0,
-                transitDays: rateData.transitDays,
-                estimatedDeliveryDate: rateData.estimatedDeliveryDate,
-                currency: rateData.currency || 'USD',
-                guaranteed: rateData.guaranteed || false
-            };
-
-            await updateDoc(shipmentRef, {
-                selectedRateRef: selectedRateRef,
-                updatedAt: serverTimestamp()
-            });
-
-            // Update the form context with the rate reference including the document ID
-            const formRateRef = {
-                ...selectedRateRef,
+            const shipmentUpdateRef = {
+                ...rateRefToStore,
                 rateDocumentId: rateDocId
             };
-            updateFormSection('selectedRateRef', formRateRef);
 
-            console.log('Rate reference saved to shipment document:', activeDraftId);
+            const shipmentRef = doc(db, 'shipments', activeDraftId);
+            await updateDoc(shipmentRef, { selectedRateRef: shipmentUpdateRef, updatedAt: serverTimestamp() });
+
+            console.log('selectedRateRef updated in shipment document and form context.');
 
         } catch (error) {
-            console.error('Error saving selected rate:', error);
+            console.error('Error saving selected rate to Firestore:', error);
             throw error;
         }
     };
@@ -1186,36 +1056,36 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
                     <Grid container spacing={3}>
                         {filteredRates.map((rate) => (
-                            <Grid item xs={12} md={6} lg={4} key={rate.id}>
+                            <Grid item xs={12} md={6} lg={4} key={rate.quoteId}>
                                 <Card className="card mb-4" elevation={2}>
-                                    <CardHeader title={<Typography variant="h6" component="div">{rate.carrier}</Typography>} sx={{ pb: 0 }} />
+                                    <CardHeader title={<Typography variant="h6" component="div">{rate.carrierName || 'N/A'}</Typography>} sx={{ pb: 0 }} />
                                     <CardContent>
                                         <div className="days-container">
                                             <i className="fa-light fa-truck"></i>
                                             <div>
-                                                <span className="days-number">{rate.transitDays}</span>
+                                                <span className="days-number">{rate.transitTime !== undefined ? rate.transitTime : 'N/A'}</span>
                                                 <span className="days-text">days</span>
                                             </div>
                                         </div>
                                         <div className="mb-3">
-                                            <div className="text-muted small">Est. Delivery: {rate.estimatedDeliveryDate}</div>
+                                            <div className="text-muted small">Est. Delivery: {rate.estimatedDeliveryDate || 'N/A'}</div>
                                         </div>
                                         <div className="total-charges">
                                             <div className="label">Total Charges</div>
-                                            <div className="amount">${rate.price.toFixed(2)} <span className="currency-code">{rate.currency}</span></div>
+                                            <div className="amount">${(rate.totalCharges || 0).toFixed(2)} <span className="currency-code">{rate.currency || 'USD'}</span></div>
                                         </div>
-                                        {rate.guaranteedOptionAvailable && (
+                                        {rate.guaranteedService && (rate.guaranteeCharge !== undefined) && (
                                             <div className="guarantee-option">
                                                 <div className="form-check">
                                                     <input
                                                         type="checkbox"
                                                         className="form-check-input"
-                                                        id={`guarantee-${rate.id}`}
-                                                        checked={selectedRate?.id === rate.id && selectedRate.guaranteed}
+                                                        id={`guarantee-${rate.quoteId}`}
+                                                        checked={selectedRate?.quoteId === rate.quoteId && selectedRate.guaranteed}
                                                         onChange={(e) => handleGuaranteeChange(rate, e.target.checked)}
                                                     />
-                                                    <label className="form-check-label" htmlFor={`guarantee-${rate.id}`}>
-                                                        Add Guarantee (+${rate.guaranteedPrice?.toFixed(2) || '0.00'})
+                                                    <label className="form-check-label" htmlFor={`guarantee-${rate.quoteId}`}>
+                                                        Add Guarantee (+${(rate.guaranteeCharge || 0).toFixed(2)})
                                                     </label>
                                                 </div>
                                             </div>
@@ -1224,36 +1094,36 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                             <ul className="rate-details-list">
                                                 <li>
                                                     <span className="charge-name">Service Mode</span>
-                                                    <span className="charge-amount">{rate.originalRate?.serviceMode || 'Standard'}</span>
+                                                    <span className="charge-amount">{rate.serviceMode !== undefined ? rate.serviceMode : 'N/A'}</span>
                                                 </li>
                                                 <li>
                                                     <span className="charge-name">Freight Charges</span>
-                                                    <span className="charge-amount">${rate.originalRate?.freightCharges?.toFixed(2) || '0.00'}</span>
+                                                    <span className="charge-amount">${(rate.freightCharges || 0).toFixed(2)}</span>
                                                 </li>
                                                 <li>
                                                     <span className="charge-name">Fuel Charges</span>
-                                                    <span className="charge-amount">${rate.originalRate?.fuelCharges?.toFixed(2) || '0.00'}</span>
+                                                    <span className="charge-amount">${(rate.fuelCharges || 0).toFixed(2)}</span>
                                                 </li>
                                                 <li>
                                                     <span className="charge-name">Service Charges</span>
-                                                    <span className="charge-amount">${rate.originalRate?.serviceCharges?.toFixed(2) || '0.00'}</span>
+                                                    <span className="charge-amount">${(rate.serviceCharges || 0).toFixed(2)}</span>
                                                 </li>
-                                                {rate.originalRate?.accessorialCharges > 0 && (
+                                                {(rate.accessorialCharges || 0) > 0 && (
                                                     <li>
                                                         <span className="charge-name">Accessorial Charges</span>
-                                                        <span className="charge-amount">${rate.originalRate.accessorialCharges.toFixed(2)}</span>
+                                                        <span className="charge-amount">${(rate.accessorialCharges || 0).toFixed(2)}</span>
                                                     </li>
                                                 )}
                                             </ul>
                                         </div>
                                         <Button
-                                            variant={selectedRate?.id === rate.id ? 'contained' : 'outlined'}
+                                            variant={selectedRate?.quoteId === rate.quoteId ? 'contained' : 'outlined'}
                                             onClick={() => handleRateSelect(rate)}
                                             type="button"
                                             fullWidth
                                             sx={{ mt: 2 }}
                                         >
-                                            {selectedRate?.id === rate.id ? 'Selected' : 'Select'}
+                                            {selectedRate?.quoteId === rate.quoteId ? 'Selected' : 'Select'}
                                         </Button>
                                     </CardContent>
                                 </Card>

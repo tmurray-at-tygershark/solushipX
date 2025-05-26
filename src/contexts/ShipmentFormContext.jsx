@@ -64,7 +64,9 @@ export const initialFormState = {
     // Selected rate reference (instead of full rate data)
     selectedRateRef: null,
     // Legacy selectedRate for backward compatibility during transition
-    selectedRate: null
+    selectedRate: null,
+    // The full request object used to get rates, needed for booking
+    originalRateRequestData: null
 };
 
 const STORAGE_KEY = 'shipmentFormData';

@@ -74,6 +74,13 @@ if (carrierApiFunctions && carrierApiFunctions.getRatesEShipPlus) {
     console.warn('LOG-MAIN-INDEX: getRatesEShipPlus not found in carrierApiFunctions module.');
 }
 
+if (carrierApiFunctions && carrierApiFunctions.bookRateEShipPlus) {
+    exports.bookRateEShipPlus = carrierApiFunctions.bookRateEShipPlus;
+    console.log('LOG-MAIN-INDEX: exports.bookRateEShipPlus defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: bookRateEShipPlus not found in carrierApiFunctions module.');
+}
+
 // Functions from edi-processing.js
 if (ediProcessingFunctions && ediProcessingFunctions.onFileUploaded) {
     exports.onFileUploaded = ediProcessingFunctions.onFileUploaded;

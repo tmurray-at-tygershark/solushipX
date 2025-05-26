@@ -33,8 +33,8 @@ function transformRestResponseToInternalFormat(apiResponse) {
 
     const transformed = {
         bookingReference: apiResponse.BookingReferenceNumber,
-        bookingReferenceType: apiResponse.BookingReferenceNumberType === 2 ? "Shipment" : String(apiResponse.BookingReferenceNumberType), // Map 2 to "Shipment" or keep as is
-        shipmentBillType: apiResponse.ShipmentBillType === 0 ? "DefaultLogisticsPlus" : String(apiResponse.ShipmentBillType), // Example mapping, adjust as needed
+        bookingReferenceType: apiResponse.BookingReferenceNumberType === 2 ? "Shipment" : String(apiResponse.BookingReferenceNumberType),
+        shipmentBillType: apiResponse.ShipmentBillType === 0 ? "DefaultLogisticsPlus" : String(apiResponse.ShipmentBillType),
         shipmentDate: apiResponse.ShipmentDate ? dayjs(apiResponse.ShipmentDate).format('YYYY-MM-DD') : null,
         pickupWindow: {
             earliest: safeAccess(apiResponse, 'EarliestPickup.Time'),
@@ -87,35 +87,23 @@ function transformRestResponseToInternalFormat(apiResponse) {
             quoteId: rate.QuoteId,
             carrierName: rate.CarrierName,
             carrierScac: rate.CarrierScac,
-            serviceMode: rate.ServiceMode, // Assuming 0 might mean LTL, etc. Needs mapping if string is expected
-            serviceType: rate.CarrierName, // Placeholder, might need better logic for Service Type String from ServiceMode or CarrierName
+            carrierKey: rate.CarrierKey,
+            serviceMode: rate.ServiceMode,
+            serviceType: rate.CarrierName,
             transitTime: parseInt(rate.TransitTime || '0'),
             estimatedDeliveryDate: rate.EstimatedDeliveryDate ? dayjs(rate.EstimatedDeliveryDate).format('YYYY-MM-DD') : null,
-            // Direct charges from the rate object
-            freightCharges: parseFloat(rate.FreightCharges || '0'),
-            fuelCharges: parseFloat(rate.FuelCharges || '0'),
-            serviceCharges: parseFloat(rate.ServiceCharges || '0'),
-            accessorialCharges: parseFloat(rate.AccessorialCharges || '0'),
-            totalCharges: parseFloat(rate.TotalCharges || '0'),
+            freightCharges: parseFloat(rate.FreightCharges || safeAccess(rate, 'Costs.FreightCharges') || '0'),
+            fuelCharges: parseFloat(rate.FuelCharges || safeAccess(rate, 'Costs.FuelCharges') || '0'),
+            serviceCharges: parseFloat(rate.ServiceCharges || safeAccess(rate, 'Costs.ServiceCharges') || '0'),
+            accessorialCharges: parseFloat(rate.AccessorialCharges || safeAccess(rate, 'Costs.AccessorialCharges') || '0'),
+            totalCharges: parseFloat(rate.TotalCharges || safeAccess(rate, 'Costs.TotalCharges') || '0'),
             currency: rate.Currency || 'USD',
             guaranteedService: rate.GuaranteedService === true,
-            guaranteeCharge: parseFloat(rate.GuaranteeCharge || '0'),
-            // Map BillingDetails to a simpler accessorials array or a structured costs object
-            // For now, let's keep it simple and just pass BillingDetails as is, or create a basic costs object
-            billingDetails: rate.BillingDetails, // Pass through for now, can be refined
-            costs: {
-                 // Attempt to map common charges from BillingDetails or direct fields
-                freight: parseFloat(rate.FreightCharges || '0'),
-                fuel: parseFloat(rate.FuelCharges || '0'),
-                // You might iterate through BillingDetails to populate more specific costs if needed
-            },
-            accessorials: (rate.BillingDetails || []).filter(bd => bd.Category !== 0 && bd.Category !== 1) // Filter out freight and fuel if already direct
-                .map(acc => ({
-                    description: acc.Description,
-                    amount: parseFloat(acc.AmountDue || '0'),
-                    category: acc.Category, // Or map to a string like "Accessorial", "Tax", etc.
-                    code: acc.BillingCode
-                }))
+            guaranteeCharge: parseFloat(rate.GuaranteeCharge || safeAccess(rate, 'Costs.GuaranteeCharge') || '0'),
+            billingDetails: rate.BillingDetails || [],
+            guarOptions: rate.GuarOptions || [],
+            billedWeight: parseFloat(rate.BilledWeight || '0'),
+            ratedWeight: parseFloat(rate.RatedWeight || '0')
         }))
     };
     return transformed;

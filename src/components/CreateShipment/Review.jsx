@@ -54,7 +54,7 @@ const saveRateToShipmentRates = async (rate, shipmentId, status = 'selected') =>
             rateId: rate.id,
             carrier: rate.carrier,
             service: rate.service,
-            carrierCode: rate.carrierCode || '',
+            carrierCode: rate.carrierScac || rate.carrierCode || '',
             serviceCode: rate.serviceCode || '',
             totalCharges: rate.totalCharges || rate.price,
             freightCharge: rate.freightCharge || rate.originalRate?.freightCharges || 0,
@@ -70,11 +70,21 @@ const saveRateToShipmentRates = async (rate, shipmentId, status = 'selected') =>
             guaranteedOptionAvailable: rate.guaranteedOptionAvailable || false,
             guaranteedPrice: rate.guaranteedPrice || null,
             packageCounts: rate.packageCounts || {},
-            originalRate: rate.originalRate,
+            originalRate: rate.originalRate || rate,
             status: status,
             createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            updatedAt: serverTimestamp(),
+            ...(status === 'booked' && rate.carrierBookingData && {
+                confirmationNumber: rate.confirmationNumber || rate.carrierBookingData.confirmationNumber,
+                carrierBookingData: rate.carrierBookingData
+            })
         };
+
+        Object.keys(rateData).forEach(key => {
+            if (rateData[key] === undefined) {
+                delete rateData[key];
+            }
+        });
 
         const shipmentRatesRef = collection(db, 'shipmentRates');
         const rateDocRef = await addDoc(shipmentRatesRef, rateData);
@@ -465,123 +475,133 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         setShowBookingDialog(true);
         console.log('showBookingDialog set to true by handleConfirmBooking');
         setBookingStep('booking');
-        console.log('Starting carrier booking simulation...');
-        simulateCarrierBooking();
+        console.log('Starting actual carrier booking...');
+        bookCarrierShipment();
     };
 
-    const simulateCarrierBooking = async () => {
-        console.log('simulateCarrierBooking started. Initial formData:', JSON.parse(JSON.stringify(formData)));
+    const bookCarrierShipment = async () => {
+        console.log('bookCarrierShipment started. Initial formData (full):', JSON.stringify(formData, null, 2));
+        console.log('bookCarrierShipment - specifically logging formData.originalRateRequestData at start:', JSON.stringify(formData.originalRateRequestData, null, 2));
+
         const docIdToProcess = formData.draftFirestoreDocId;
-        console.log('Current Draft ID from formData.draftFirestoreDocId within simulateCarrierBooking:', docIdToProcess);
+        console.log('Current Draft ID from formData.draftFirestoreDocId within bookCarrierShipment:', docIdToProcess);
 
         if (!docIdToProcess) {
-            console.error('CRITICAL: simulateCarrierBooking called without formData.draftFirestoreDocId. A draft record should always exist with its ID in context.');
-            setError('Cannot book shipment: No shipment ID found in form data. Please try saving as a draft first or restart the process.');
+            console.error('CRITICAL: bookCarrierShipment called without formData.draftFirestoreDocId.');
+            setError('Cannot book shipment: No shipment ID. Please restart process.');
             setShowBookingDialog(false);
             return;
         }
 
         try {
-            // Extract clean form data without the full selectedRate and rateDetails
-            const { status, id, draftFirestoreDocId, selectedRate, selectedRateRef, rateDetails, ...restOfFormData } = formData;
-
+            const { status, id, draftFirestoreDocId, selectedRate, selectedRateRef, rateDetails, originalRateRequestData, ...restOfFormData } = formData;
             console.log(`Attempting to book existing draft. docIdToProcess: ${docIdToProcess}`);
             const shipmentDocRef = doc(db, 'shipments', docIdToProcess);
 
-            // Use the selected rate data to book
             const rateToBook = fullRateDetails || selectedRate || selectedRateRef;
-            if (!rateToBook) {
-                throw new Error('No rate selected for booking');
+            if (!rateToBook) throw new Error('No rate selected for booking');
+            console.log('Booking with rate:', rateToBook);
+
+            // Before calling the Firebase function
+            console.log('bookCarrierShipment - CHECKING formData.originalRateRequestData RIGHT BEFORE VALIDATION:', JSON.stringify(formData.originalRateRequestData, null, 2));
+            if (!formData.originalRateRequestData || Object.keys(formData.originalRateRequestData).length === 0) {
+                console.error('Missing originalRateRequestData in formData. This is required for booking.');
+                throw new Error('Original rate request data is missing. Cannot proceed with booking.');
             }
 
-            console.log('Booking rate:', rateToBook);
+            console.log('Calling bookRateEShipPlus Firebase function...');
+            const functionsInstance = getFunctions();
+            const bookRateFunction = httpsCallable(functionsInstance, 'bookRateEShipPlus');
 
-            let bookedRateDocId = null;
+            const bookingPayload = {
+                apiKey: 'development-api-key', // Replace with your actual API key logic
+                rateRequestData: originalRateRequestData, // This is the full request used for rating
+                selectedRate: rateToBook.originalRate || rateToBook, // Pass the specific selected rate object
+                // Add additional booking parameters if necessary, like PO, BOL from shipmentInfo
+                ReferenceNumber: formData.shipmentInfo?.referenceNumber,
+                PurchaseOrder: formData.shipmentInfo?.purchaseOrder,
+                ShipperBOL: formData.shipmentInfo?.shipperBOL
+            };
 
-            // Use rate reference for confirmation number generation
-            const rateCarrier = selectedRateRef?.carrier || rateToBook?.carrier || 'CARRIER';
-            const mockConfirmationNumber = `${rateCarrier.toUpperCase()}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substr(2, 3).toUpperCase()}`;
-            setConfirmationNumber(mockConfirmationNumber);
+            console.log('Booking payload for bookRateEShipPlus:', JSON.stringify(bookingPayload, null, 2));
 
-            // Instead of creating a new rate record, update the existing one to 'booked' status
-            if (selectedRateRef?.rateDocumentId) {
-                console.log('Updating existing rate document to booked status:', selectedRateRef.rateDocumentId);
-                try {
-                    const rateDocRef = doc(db, 'shipmentRates', selectedRateRef.rateDocumentId);
-                    await updateDoc(rateDocRef, {
-                        status: 'booked',
-                        confirmationNumber: mockConfirmationNumber,
-                        bookedAt: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
-                    bookedRateDocId = selectedRateRef.rateDocumentId;
-                    console.log('Successfully updated rate status to booked with confirmation number');
-                } catch (updateError) {
-                    console.error('Error updating existing rate, creating new one:', updateError);
-                    // Fallback: create new rate record
-                    bookedRateDocId = await saveRateToShipmentRates(rateToBook, docIdToProcess, 'booked');
+            const bookingCallResult = await bookRateFunction(bookingPayload);
+            console.log('Raw bookRateEShipPlus result:', bookingCallResult);
 
-                    // Update the new rate document with confirmation number
-                    if (bookedRateDocId) {
-                        const newRateDocRef = doc(db, 'shipmentRates', bookedRateDocId);
-                        await updateDoc(newRateDocRef, {
-                            confirmationNumber: mockConfirmationNumber,
-                            bookedAt: serverTimestamp()
-                        });
-                    }
-                }
+            if (!bookingCallResult.data?.success || bookingCallResult.data?.data?.containsErrorMessage) {
+                const apiMessages = bookingCallResult.data?.data?.messages?.map(m => m.Text).join('; ') || 'Unknown API error';
+                throw new Error(`Booking failed: ${bookingCallResult.data?.data?.error || apiMessages}`);
+            }
+
+            const bookingConfirmationData = bookingCallResult.data.data;
+            console.log('Processed bookingConfirmationData from function:', bookingConfirmationData);
+
+            const actualConfirmationNumber = bookingConfirmationData.confirmationNumber || bookingConfirmationData.bookingReference;
+            setConfirmationNumber(actualConfirmationNumber);
+
+            let bookedRateDocId = selectedRateRef?.rateDocumentId;
+
+            const rateUpdateData = {
+                status: 'booked',
+                confirmationNumber: actualConfirmationNumber,
+                // Store the detailed carrier booking response
+                carrierBookingData: bookingConfirmationData, // Contains BookedRate, documents, etc.
+                bookedAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+
+            if (bookedRateDocId) {
+                console.log('Updating existing rate document to booked status:', bookedRateDocId);
+                const rateDocRef = doc(db, 'shipmentRates', bookedRateDocId);
+                await updateDoc(rateDocRef, rateUpdateData);
+                console.log('Successfully updated rate status to booked with confirmation number');
             } else {
                 console.log('No existing rate document found, creating new booked rate');
-                // Create new rate record for booking
-                bookedRateDocId = await saveRateToShipmentRates(rateToBook, docIdToProcess, 'booked');
-
-                // Update the new rate document with confirmation number
-                if (bookedRateDocId) {
-                    const newRateDocRef = doc(db, 'shipmentRates', bookedRateDocId);
-                    await updateDoc(newRateDocRef, {
-                        confirmationNumber: mockConfirmationNumber,
-                        bookedAt: serverTimestamp()
-                    });
-                }
+                const newRateDataForDb = {
+                    ...rateToBook, // Spread the original selected rate data
+                    shipmentId: docIdToProcess,
+                    ...rateUpdateData // Add booking specific updates
+                };
+                bookedRateDocId = await saveRateToShipmentRates(newRateDataForDb, docIdToProcess, 'booked');
+                console.log('Created and updated new rate document with booking info:', bookedRateDocId);
             }
 
-            // Update shipment to pending status (exclude full selectedRate)
-            await updateDoc(shipmentDocRef, {
+            // Update the main shipment document
+            const shipmentUpdateData = {
                 ...restOfFormData,
-                status: 'pending',
-                updatedAt: serverTimestamp(),
-                // Keep the rate reference but update it if we created a new booked rate record
-                ...(bookedRateDocId && {
-                    selectedRateRef: {
-                        ...selectedRateRef,
-                        rateDocumentId: bookedRateDocId,
-                        status: 'booked'
-                    }
-                })
-            });
-            console.log(`Shipment ${docIdToProcess} status updated to pending.`);
-
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            // Final booking completion - update to booked status and save confirmation number in selectedRateRef
-            await updateDoc(shipmentDocRef, {
                 status: 'booked',
                 updatedAt: serverTimestamp(),
-                // Save confirmation number in the selectedRateRef map, not at root level
+                confirmationNumber: actualConfirmationNumber, // Also store top-level for quick access
+                proNumber: bookingConfirmationData.proNumber, // Store proNumber if available
+                bolNumber: bookingConfirmationData.bolNumber, // Store bolNumber if available
                 selectedRateRef: {
-                    ...selectedRateRef,
-                    rateDocumentId: bookedRateDocId || selectedRateRef?.rateDocumentId,
+                    ...(selectedRateRef || {}),
+                    rateDocumentId: bookedRateDocId,
                     status: 'booked',
-                    confirmationNumber: mockConfirmationNumber,
+                    confirmationNumber: actualConfirmationNumber,
+                    // Update selectedRateRef with key details from bookedRate
+                    carrierName: bookingConfirmationData.carrierName,
+                    service: bookingConfirmationData.bookedRateDetails?.ServiceMode !== undefined ? String(bookingConfirmationData.bookedRateDetails.ServiceMode) : selectedRateRef?.service,
+                    totalCharges: bookingConfirmationData.charges?.totalCharges !== undefined ? bookingConfirmationData.charges.totalCharges : selectedRateRef?.totalCharges,
+                    freightCharge: bookingConfirmationData.charges?.freightCharges,
+                    fuelCharge: bookingConfirmationData.charges?.fuelCharges,
+                    accessorialCharges: bookingConfirmationData.charges?.accessorialCharges,
+                    serviceCharges: bookingConfirmationData.charges?.serviceCharges,
+                    // Store the carrier-specific booking data
+                    carrierBookingData: bookingConfirmationData,
                     bookedAt: serverTimestamp()
-                }
-            });
-            console.log(`Shipment ${docIdToProcess} booked successfully with confirmation: ${mockConfirmationNumber}`);
+                },
+                // Store all returned documents at the shipment level for easier access
+                shippingDocuments: bookingConfirmationData.documents || []
+            };
+
+            await updateDoc(shipmentDocRef, shipmentUpdateData);
+            console.log(`Shipment ${docIdToProcess} booked successfully with confirmation: ${actualConfirmationNumber}. Full data:`, shipmentUpdateData);
             setBookingStep('completed');
 
         } catch (error) {
             console.error(`Error booking shipment ${docIdToProcess}:`, error);
-            setError(`Failed to book shipment (ID: ${docIdToProcess}). Please try again.`);
+            setError(`Failed to book shipment. Error: ${error.message || 'Unknown error'}`);
             setShowBookingDialog(false);
         }
     };
@@ -592,8 +612,9 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         setShowBookingDialog(false);
         clearFormData();
         // Navigate directly to shipments instead of using onNext prop
+        // Use replace to ensure we don't have navigation history issues
         console.log('Navigating to /shipments');
-        navigate('/shipments');
+        navigate('/shipments', { replace: true });
     };
 
     // Fetch full rate details when selectedRateRef has a document ID
@@ -603,15 +624,28 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                 try {
                     const rateDetails = await getRateDetailsByDocumentId(selectedRateRef.rateDocumentId);
                     if (rateDetails) {
+                        // Assume rateDetails from Firestore has:
+                        // freightCharge, fuelCharge, accessorialCharges, serviceCharges
                         setFullRateDetails(rateDetails);
-                        console.log('Fetched full rate details:', rateDetails);
+                        console.log('Fetched full rate details from Firestore:', rateDetails);
+                    } else {
+                        setFullRateDetails(null); // Handle case where rateDetails might be null
                     }
                 } catch (error) {
                     console.error('Error fetching full rate details:', error);
+                    setFullRateDetails(null); // Clear on error or if not found
                 }
-            } else if (selectedRate) {
-                // Fallback to selectedRate for backward compatibility
-                setFullRateDetails(selectedRate);
+            } else if (selectedRate) { // selectedRate is the raw transformed rate from context
+                console.log('Using selectedRate as fallback for fullRateDetails:', selectedRate);
+                // Shape selectedRate to match the structure expected from Firestore/selectedRateRef
+                const shapedFallback = {
+                    ...selectedRate, // Spread all properties from selectedRate
+                    freightCharge: selectedRate.freightCharges,    // Map from plural to singular
+                    fuelCharge: selectedRate.fuelSurcharge,       // Map from specific (fuelSurcharge) to generic (fuelCharge)
+                    // accessorialCharges and serviceCharges are assumed to be already correctly named (plural)
+                    // in selectedRate and match the Firestore structure for these two fields.
+                };
+                setFullRateDetails(shapedFallback);
             } else {
                 setFullRateDetails(null);
             }
@@ -1002,7 +1036,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Freight Charges
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(fullRateDetails?.freightCharge || selectedRate?.originalRate?.freightCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.freightCharge || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -1010,7 +1044,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Fuel Surcharge
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(fullRateDetails?.fuelCharge || selectedRate?.originalRate?.fuelCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.fuelCharge || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -1018,7 +1052,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Accessorial Charges
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(fullRateDetails?.accessorialCharges || selectedRate?.originalRate?.accessorialCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.accessorialCharges || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -1026,7 +1060,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Service Charges
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(fullRateDetails?.serviceCharges || selectedRate?.originalRate?.serviceCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.serviceCharges || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                         </Grid>
