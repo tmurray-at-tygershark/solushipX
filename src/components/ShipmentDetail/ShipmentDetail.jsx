@@ -1639,7 +1639,7 @@ const ShipmentDetail = () => {
                                                                         Tracking Number
                                                                     </Typography>
                                                                     <Link
-                                                                        to={`/tracking/${shipment?.trackingNumber || shipment?.id}`}
+                                                                        to={`/tracking/${shipment?.carrierBookingConfirmation?.proNumber || shipment?.trackingNumber || shipment?.id}`}
                                                                         style={{ textDecoration: 'none' }}
                                                                     >
                                                                         <Box sx={{
@@ -1657,7 +1657,10 @@ const ShipmentDetail = () => {
                                                                                     '&:hover': { textDecoration: 'underline' }
                                                                                 }}
                                                                             >
-                                                                                {shipment?.trackingNumber || shipment?.id || 'N/A'}
+                                                                                {shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                                    shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                                    shipment?.trackingNumber ||
+                                                                                    shipment?.id || 'N/A'}
                                                                             </Typography>
                                                                         </Box>
                                                                     </Link>
@@ -1681,15 +1684,28 @@ const ShipmentDetail = () => {
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                         <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '1.2rem' }} />
                                                                         <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                                                            {getBestRateInfo?.estimatedDeliveryDate ?
-                                                                                new Date(getBestRateInfo.estimatedDeliveryDate).toLocaleDateString('en-US', {
-                                                                                    weekday: 'short',
-                                                                                    year: 'numeric',
-                                                                                    month: 'short',
-                                                                                    day: 'numeric'
-                                                                                }) :
-                                                                                (shipment?.tracking?.estimatedDeliveryDate ?
-                                                                                    formatTimestamp(shipment.tracking.estimatedDeliveryDate) : 'Not Available')}
+                                                                            {(() => {
+                                                                                // Check multiple sources for estimated delivery date
+                                                                                const deliveryDate =
+                                                                                    shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                                                    getBestRateInfo?.estimatedDeliveryDate;
+
+                                                                                if (deliveryDate) {
+                                                                                    try {
+                                                                                        const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                                                                                        return date.toLocaleDateString('en-US', {
+                                                                                            weekday: 'short',
+                                                                                            year: 'numeric',
+                                                                                            month: 'short',
+                                                                                            day: 'numeric'
+                                                                                        });
+                                                                                    } catch (error) {
+                                                                                        console.error('Error formatting delivery date:', error);
+                                                                                        return 'Invalid Date';
+                                                                                    }
+                                                                                }
+                                                                                return 'N/A';
+                                                                            })()}
                                                                         </Typography>
                                                                     </Box>
                                                                 </Box>
@@ -1837,13 +1853,28 @@ const ShipmentDetail = () => {
                                                                         Delivery Date
                                                                     </Typography>
                                                                     <Typography variant="body1">
-                                                                        {getBestRateInfo?.estimatedDeliveryDate ?
-                                                                            new Date(getBestRateInfo.estimatedDeliveryDate).toLocaleDateString('en-US', {
-                                                                                weekday: 'short',
-                                                                                year: 'numeric',
-                                                                                month: 'short',
-                                                                                day: 'numeric'
-                                                                            }) : 'N/A'}
+                                                                        {(() => {
+                                                                            // Check multiple sources for estimated delivery date
+                                                                            const deliveryDate =
+                                                                                shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                                                getBestRateInfo?.estimatedDeliveryDate;
+
+                                                                            if (deliveryDate) {
+                                                                                try {
+                                                                                    const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                                                                                    return date.toLocaleDateString('en-US', {
+                                                                                        weekday: 'short',
+                                                                                        year: 'numeric',
+                                                                                        month: 'short',
+                                                                                        day: 'numeric'
+                                                                                    });
+                                                                                } catch (error) {
+                                                                                    console.error('Error formatting delivery date:', error);
+                                                                                    return 'Invalid Date';
+                                                                                }
+                                                                            }
+                                                                            return 'N/A';
+                                                                        })()}
                                                                     </Typography>
                                                                 </Box>
                                                             </Box>
