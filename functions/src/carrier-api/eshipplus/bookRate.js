@@ -5,12 +5,15 @@ const logger = require("firebase-functions/logger");
 const axios = require('axios');
 const admin = require('firebase-admin');
 const dayjs = require('dayjs');
+const { getCarrierApiConfig, createEShipPlusAuthHeader, validateCarrierEndpoints } = require('../../utils');
 console.log('LOG: bookRate.js - Basic imports complete.');
+
+// Remove hardcoded URL - now dynamically built from carrier credentials
+// const ESHIPPLUS_BOOK_URL = "https://cloudstaging.eshipplus.com/services/rest/BookShipment.aspx";
+console.log('LOG: bookRate.js - Dynamic API URL configuration enabled.');
 
 // Constants
 console.log('LOG: bookRate.js - Defining constants.');
-const ESHIPPLUS_BOOK_URL = "https://cloudstaging.eshipplus.com/services/rest/BookShipment.aspx";
-console.log(`LOG: bookRate.js - ESHIPPLUS_BOOK_URL: ${ESHIPPLUS_BOOK_URL}`);
 
 // Helper to safely access nested properties
 console.log('LOG: bookRate.js - safeAccess helper defined.');
@@ -322,26 +325,22 @@ async function processBookingRequest(data) {
 
         logger.info('eShipPlus Booking request payload (to be sent):', JSON.stringify(eShipPlusBookingPayload, null, 2));
 
-        const esAccessCode = process.env.ESHIPPLUS_ACCESS_CODE;
-        const esUserName = process.env.ESHIPPLUS_USERNAME;
-        const esPassword = process.env.ESHIPPLUS_PASSWORD;
-        const esAccessKey = process.env.ESHIPPLUS_ACCESS_KEY;
-
-        if (!esUserName || !esPassword || !esAccessKey || !esAccessCode) {
-            logger.error('eShipPlus API credentials (ESHIPPLUS_USERNAME, ESHIPPLUS_PASSWORD, ESHIPPLUS_ACCESS_KEY, ESHIPPLUS_ACCESS_CODE) missing in environment variables.');
-            throw new functions.https.HttpsError('internal', 'Server configuration error for eShipPlus credentials.');
-        }
-
-        const authPayload = {
-            UserName: esUserName,
-            Password: esPassword,
-            AccessKey: esAccessKey,
-            AccessCode: esAccessCode
-        };
-        const eShipPlusAuthHeader = Buffer.from(JSON.stringify(authPayload)).toString('base64');
-        logger.info('eShipPlusAuth Header generated for booking.');
+        // Get carrier API configuration
+        const carrierConfig = await getCarrierApiConfig('ESHIPPLUS', 'booking');
+        const { apiUrl, credentials } = carrierConfig;
         
-        const response = await axios.post(ESHIPPLUS_BOOK_URL, eShipPlusBookingPayload, { 
+        // Validate that the carrier has the required endpoints
+        if (!validateCarrierEndpoints(credentials, ['booking'])) {
+            throw new functions.https.HttpsError('internal', 'eShipPlus carrier missing required booking endpoint configuration');
+        }
+        
+        logger.info(`Using eShipPlus Booking API URL: ${apiUrl}`);
+
+        // Create auth header using dynamic credentials
+        const eShipPlusAuthHeader = createEShipPlusAuthHeader(credentials);
+        logger.info('eShipPlusAuth Header generated from Firestore credentials for booking.');
+        
+        const response = await axios.post(apiUrl, eShipPlusBookingPayload, { 
             headers: {
                 'Content-Type': 'application/json',
                 'eShipPlusAuth': eShipPlusAuthHeader,

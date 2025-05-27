@@ -56,7 +56,7 @@ import dayjs from 'dayjs';
 import './Shipments.css';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
-import { collection, getDocs, query, where, orderBy, limit, startAfter } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, limit, startAfter, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 // Add formatAddress function (copied from admin view)
@@ -86,6 +86,7 @@ const Shipments = () => {
     const { companyIdForAddress, loading: companyCtxLoading } = useCompany();
     const [shipments, setShipments] = useState([]);
     const [customers, setCustomers] = useState({});
+    const [carrierData, setCarrierData] = useState({});
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
     const [totalCount, setTotalCount] = useState(0);
@@ -144,6 +145,41 @@ const Shipments = () => {
         }
     };
 
+    // Fetch carrier information from shipmentRates collection
+    const fetchCarrierData = async (shipmentIds) => {
+        if (!shipmentIds || shipmentIds.length === 0) return;
+
+        try {
+            const carrierMap = {};
+
+            // Fetch carrier data for shipments that have selectedRateDocumentId
+            for (const shipmentId of shipmentIds) {
+                const shipmentRatesRef = collection(db, 'shipmentRates');
+                const q = query(shipmentRatesRef, where('shipmentId', '==', shipmentId));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    // Get the most recent rate (or selected rate)
+                    const rates = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const selectedRate = rates.find(rate => rate.status === 'selected_in_ui' || rate.status === 'booked') || rates[0];
+
+                    if (selectedRate) {
+                        carrierMap[shipmentId] = {
+                            carrier: selectedRate.carrier,
+                            service: selectedRate.service,
+                            totalCharges: selectedRate.totalCharges,
+                            transitDays: selectedRate.transitDays
+                        };
+                    }
+                }
+            }
+
+            setCarrierData(carrierMap);
+        } catch (error) {
+            console.error('Error fetching carrier data:', error);
+        }
+    };
+
     // Remove generateMockShipments and replace loadShipments with Firestore logic
     const loadShipments = async () => {
         if (!companyIdForAddress && !companyCtxLoading) {
@@ -193,7 +229,10 @@ const Shipments = () => {
             // Apply carrier filter (client-side to check both carrier and selectedRate.carrier)
             if (filters.carrier !== 'all') {
                 shipmentsData = shipmentsData.filter(shipment => {
-                    const shipmentCarrier = shipment.selectedRateRef?.carrier || shipment.selectedRate?.carrier || shipment.carrier;
+                    const shipmentCarrier = carrierData[shipment.id]?.carrier ||
+                        shipment.selectedRateRef?.carrier ||
+                        shipment.selectedRate?.carrier ||
+                        shipment.carrier;
                     return shipmentCarrier === filters.carrier;
                 });
             }
@@ -238,7 +277,10 @@ const Shipments = () => {
                     }) ||
                     // Also search in selectedRate.carrier
                     (shipment.selectedRateRef?.carrier &&
-                        String(shipment.selectedRateRef.carrier).toLowerCase().includes(searchTerm.toLowerCase()))
+                        String(shipment.selectedRateRef.carrier).toLowerCase().includes(searchTerm.toLowerCase())) ||
+                    // Also search in fetched carrier data
+                    (carrierData[shipment.id]?.carrier &&
+                        String(carrierData[shipment.id].carrier).toLowerCase().includes(searchTerm.toLowerCase()))
                 );
             }
 
@@ -267,6 +309,10 @@ const Shipments = () => {
             const endIndex = startIndex + rowsPerPage;
             const paginatedData = shipmentsData.slice(startIndex, endIndex);
             setShipments(paginatedData);
+
+            // Fetch carrier data for the loaded shipments
+            const shipmentIds = paginatedData.map(shipment => shipment.id);
+            await fetchCarrierData(shipmentIds);
         } catch (error) {
             console.error('Error loading shipments:', error);
             setShipments([]);
@@ -329,7 +375,10 @@ const Shipments = () => {
             'Origin': shipment.origin,
             'Destination': shipment.destination,
             'Status': shipment.status,
-            'Carrier': shipment.selectedRateRef?.carrier || shipment.selectedRate?.carrier || shipment.carrier || 'N/A',
+            'Carrier': carrierData[shipment.id]?.carrier ||
+                shipment.selectedRateRef?.carrier ||
+                shipment.selectedRate?.carrier ||
+                shipment.carrier || 'N/A',
             'Items': shipment.items,
             'Cost': `$${shipment.cost.toFixed(2)}`
         }));
@@ -724,7 +773,10 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {shipment.selectedRateRef?.carrier || shipment.selectedRate?.carrier || shipment.carrier || 'N/A'}
+                                                        {carrierData[shipment.id]?.carrier ||
+                                                            shipment.selectedRateRef?.carrier ||
+                                                            shipment.selectedRate?.carrier ||
+                                                            shipment.carrier || 'N/A'}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}

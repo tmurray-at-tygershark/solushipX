@@ -6,12 +6,12 @@ const axios = require('axios');
 // const { parseStringPromise } = require("xml2js"); // No longer needed for JSON API
 const admin = require('firebase-admin');
 const dayjs = require('dayjs');
+const { getCarrierApiConfig, createEShipPlusAuthHeader, validateCarrierEndpoints } = require('../../utils');
 console.log('LOG: getRates.js - Basic imports complete.');
 
-// Constants
-console.log('LOG: getRates.js - Defining constants.');
-const ESHIPPLUS_API_URL = "https://cloudstaging.eshipplus.com/services/rest/RateShipment.aspx";
-console.log(`LOG: getRates.js - ESHIPPLUS_API_URL: ${ESHIPPLUS_API_URL}`);
+// Remove hardcoded URL - now dynamically built from carrier credentials
+// const ESHIPPLUS_API_URL = "https://cloudstaging.eshipplus.com/services/rest/RateShipment.aspx";
+console.log('LOG: getRates.js - Dynamic API URL configuration enabled.');
 
 // Helper to safely access nested properties, especially for arrays that might be missing or empty
 console.log('LOG: getRates.js - safeAccess helper defined.');
@@ -163,28 +163,23 @@ async function processRateRequest(data) {
 
     logger.info('eShipPlus JSON Rate request payload:', eShipPlusRequestData);
 
-    // Prepare eShipPlusAuth Header
-    const esAccessCode = process.env.ESHIPPLUS_ACCESS_CODE || functions.config().eshipplus?.access_code;
-    const esUserName = process.env.ESHIPPLUS_USERNAME || functions.config().eshipplus?.username;
-    const esPassword = process.env.ESHIPPLUS_PASSWORD || functions.config().eshipplus?.password;
-    const esAccessKey = process.env.ESHIPPLUS_ACCESS_KEY || functions.config().eshipplus?.access_key;
-
-    if (!esUserName || !esPassword || !esAccessKey || !esAccessCode) {
-        logger.error('eShipPlus API credentials missing in environment/config.');
-        throw new functions.https.HttpsError('internal', 'Server configuration error for eShipPlus credentials.');
+    // Get carrier API configuration
+    const carrierConfig = await getCarrierApiConfig('ESHIPPLUS', 'rate');
+    const { apiUrl, credentials } = carrierConfig;
+    
+    // Validate that the carrier has the required endpoints
+    if (!validateCarrierEndpoints(credentials, ['rate'])) {
+      throw new functions.https.HttpsError('internal', 'eShipPlus carrier missing required rate endpoint configuration');
     }
+    
+    logger.info(`Using eShipPlus Rate API URL: ${apiUrl}`);
 
-    const authPayload = {
-        UserName: esUserName,
-        Password: esPassword,
-        AccessKey: esAccessKey,
-        AccessCode: esAccessCode
-    };
-    const eShipPlusAuthHeader = Buffer.from(JSON.stringify(authPayload)).toString('base64');
-    logger.info('eShipPlusAuth Header generated.');
+    // Create auth header using dynamic credentials
+    const eShipPlusAuthHeader = createEShipPlusAuthHeader(credentials);
+    logger.info('eShipPlusAuth Header generated from Firestore credentials.');
 
     // Make the JSON request to eShipPlus REST API
-    const response = await axios.post(ESHIPPLUS_API_URL, eShipPlusRequestData, {
+    const response = await axios.post(apiUrl, eShipPlusRequestData, {
       headers: {
         'Content-Type': 'application/json',
         'eShipPlusAuth': eShipPlusAuthHeader,

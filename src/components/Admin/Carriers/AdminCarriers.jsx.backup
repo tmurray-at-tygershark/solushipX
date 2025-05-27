@@ -270,7 +270,6 @@ const AdminCarriers = () => {
                     username: formData.username,
                     password: formData.password,
                     secret: formData.secret,
-                    endpoints: endpoints,
                     ...formData.apiCredentials // Preserve any existing apiCredentials
                 },
                 updatedAt: serverTimestamp(),
@@ -530,70 +529,7 @@ const AdminCarriers = () => {
                                     </Typography>
                                 </Box>
                             </Grid>
-                            {/* API Endpoints Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ mt: 2, mb: 1, color: 'primary.main' }}>
-                                    API Endpoints
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                    Configure the API endpoints for this carrier. These will be appended to the Host URL.
-                                </Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Rate Endpoint"
-                                    name="rate"
-                                    value={endpoints.rate}
-                                    onChange={handleEndpointChange}
-                                    placeholder="e.g., RateShipment.aspx"
-                                    helperText="Endpoint for getting shipping rates"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Booking Endpoint"
-                                    name="booking"
-                                    value={endpoints.booking}
-                                    onChange={handleEndpointChange}
-                                    placeholder="e.g., BookShipment.aspx"
-                                    helperText="Endpoint for booking shipments"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Tracking Endpoint"
-                                    name="tracking"
-                                    value={endpoints.tracking}
-                                    onChange={handleEndpointChange}
-                                    placeholder="e.g., TrackShipment.aspx"
-                                    helperText="Endpoint for tracking shipments"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Cancel Endpoint"
-                                    name="cancel"
-                                    value={endpoints.cancel}
-                                    onChange={handleEndpointChange}
-                                    placeholder="e.g., CancelShipment.aspx"
-                                    helperText="Endpoint for canceling shipments"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Labels Endpoint"
-                                    name="labels"
-                                    value={endpoints.labels}
-                                    onChange={handleEndpointChange}
-                                    placeholder="e.g., GetLabels.aspx"
-                                    helperText="Endpoint for retrieving shipping labels"
-                                />
-                            </Grid>                         </Grid>
+                        </Grid>
                     </DialogContent>
                     <DialogActions>
                         {selectedCarrier && (

@@ -40,7 +40,6 @@ console.log('LOG-MAIN-INDEX: shipmentManagementFunctions imported.');
 // Import initiateDraftShipment directly
 const { initiateDraftShipment } = require('./shipment-management');
 
-
 // Initialize Express app
 const app = express();
 app.use(cors({ origin: true }));
