@@ -83,15 +83,15 @@ const AdminCarriers = () => {
             setFormData({
                 name: carrier.name || '',
                 carrierID: carrier.carrierID || '',
-                accountNumber: carrier.accountNumber || '',
+                accountNumber: carrier.apiCredentials?.accountNumber || carrier.accountNumber || '',
                 type: carrier.type || 'courier',
                 enabled: carrier.enabled ?? true,
                 status: carrier.status || 'enabled',
-                hostURL: carrier.hostURL || '',
+                hostURL: carrier.apiCredentials?.hostURL || carrier.hostURL || '',
                 apiCredentials: carrier.apiCredentials || {},
-                username: carrier.username || '',
-                password: carrier.password || '',
-                secret: carrier.secret || '',
+                username: carrier.apiCredentials?.username || carrier.username || '',
+                password: carrier.apiCredentials?.password || carrier.password || '',
+                secret: carrier.apiCredentials?.secret || carrier.secret || '',
                 logoFileName: carrier.logoFileName || '',
             });
             setLogoPreview(carrier.logoFileName ? `/images/carrier-badges/${carrier.logoFileName}` : '');
@@ -224,8 +224,19 @@ const AdminCarriers = () => {
                 logoFileName = logoFile.name;
             }
             const carrierData = {
-                ...formData,
+                name: formData.name,
+                carrierID: formData.carrierID,
+                type: formData.type,
+                enabled: formData.enabled,
                 logoFileName,
+                apiCredentials: {
+                    accountNumber: formData.accountNumber,
+                    hostURL: formData.hostURL,
+                    username: formData.username,
+                    password: formData.password,
+                    secret: formData.secret,
+                    ...formData.apiCredentials // Preserve any existing apiCredentials
+                },
                 updatedAt: serverTimestamp(),
             };
             if (!selectedCarrier) {
@@ -394,7 +405,7 @@ const AdminCarriers = () => {
                                     Carrier ID: {carrier.carrierID || 'N/A'}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Account #: {carrier.accountNumber || 'N/A'}
+                                    Account #: {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
                                 </Typography>
                             </CardContent>
                         </Card>

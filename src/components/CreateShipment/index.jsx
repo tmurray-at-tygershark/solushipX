@@ -702,10 +702,10 @@ const CreateShipmentContent = () => {
         };
 
         // Validate Rates
-        const selectedRateRef = formData.selectedRateRef;
+        const selectedRateDocumentId = formData.selectedRateDocumentId;
         completeness.rates = {
-            complete: !!selectedRateRef,
-            missing: selectedRateRef ? [] : ['Rate selection required']
+            complete: !!selectedRateDocumentId,
+            missing: selectedRateDocumentId ? [] : ['Rate selection required']
         };
 
         setDataCompleteness(completeness);

@@ -13,7 +13,7 @@ import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
 
 const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
-    const { updateFormSection } = useShipmentForm();
+    const { updateFormSection, formData: contextFormData } = useShipmentForm();
     const [isLoading, setIsLoading] = useState(true);
     const [rates, setRates] = useState([]);
     const [filteredRates, setFilteredRates] = useState([]);
@@ -29,6 +29,9 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     const [analysisError, setAnalysisError] = useState(null);
     const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
     const navigate = useNavigate();
+
+    // New state for storing the raw API response from the rating function
+    const [rawRateApiResponseData, setRawRateApiResponseData] = useState(null);
 
     useEffect(() => {
         setSelectedRate(formData.selectedRate || null);
@@ -455,10 +458,12 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                     setError('Received invalid rate data format from server.');
                     setRates([]);
                     setFilteredRates([]);
+                    setRawRateApiResponseData(null); // Clear if error
                 } else {
                     setRates(availableRates);
                     setFilteredRates(availableRates);
                     updateFormSection('originalRateRequestData', rateRequestData);
+                    setRawRateApiResponseData(data.data); // Store the full raw response data part
                 }
                 setRatesLoaded(true);
             } else {
@@ -467,6 +472,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 setError(errorMessage);
                 setRates([]);
                 setFilteredRates([]);
+                setRawRateApiResponseData(null); // Clear on error
             }
         } catch (error) {
             console.error("Network or function invocation error fetching rates (fetchRatesInternal):", error);
@@ -477,6 +483,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             setError(`Failed to fetch rates. ${detailedMessage}`);
             setRates([]);
             setFilteredRates([]);
+            setRawRateApiResponseData(null); // Clear on error
         } finally {
             setIsLoading(false);
         }
@@ -593,7 +600,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
         if (selectedRate?.id === rate.id) {
             setSelectedRate(updatedRateData);
-            saveSelectedRateToFirestore(updatedRateData);
         }
     };
 
@@ -611,51 +617,84 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         return () => clearInterval(interval);
     }, [isLoading]);
 
-    const handleRateSelect = async (rate) => {
-        const rateIdentifier = rate.quoteId;
+    // New function to save selected rate to shipmentRates and get its ID
+    const saveRateToShipmentRatesCollection = async (rateObject, originalRateRequestForApi, rawFullRateApiResponse) => {
+        const currentShipmentId = activeDraftId || contextFormData.draftFirestoreDocId;
+        if (!currentShipmentId) {
+            console.warn('No activeDraftId or draftFirestoreDocId available to save selected rate to shipmentRates');
+            throw new Error('Shipment ID is missing, cannot save rate.');
+        }
 
-        if (selectedRate?.rateId === rateIdentifier) {
-            const newSelectedRate = null;
-            setSelectedRate(newSelectedRate);
-            updateFormSection('selectedRateRef', null);
-            saveSelectedRateToFirestore(newSelectedRate).catch(error => {
-                console.error('Error saving rate deselection:', error);
-            });
-        } else {
-            setSelectedRate(rate);
-
-            const rateRefForFormAndFirestore = {
-                rateId: rateIdentifier,
-                carrier: rate.carrierName,
-                service: rate.serviceType || rate.carrierName,
-                totalCharges: rate.totalCharges || 0,
-                transitDays: rate.transitTime,
-                estimatedDeliveryDate: rate.estimatedDeliveryDate,
-                currency: rate.currency || 'USD',
-                guaranteed: rate.guaranteed || false,
-                accessorialCharges: rate.accessorialCharges || 0,
-                freightCharge: rate.freightCharges || 0,
-                fuelCharge: rate.fuelCharges || 0,
-                guaranteeActualCharge: rate.guaranteeCharge || 0,
-                serviceCharges: rate.serviceCharges || 0,
-                carrierScac: rate.carrierScac,
-                carrierKey: rate.carrierKey,
-                billingDetails: rate.billingDetails || [],
-                guarOptions: rate.guarOptions || [],
-                serviceMode: rate.serviceMode,
-                billedWeight: rate.billedWeight,
-                ratedWeight: rate.ratedWeight,
-                guaranteedService: rate.guaranteedService
+        try {
+            console.log('Saving selected rate to shipmentRates collection:', rateObject);
+            const rateDocumentForCollection = {
+                shipmentId: currentShipmentId,
+                rateId: rateObject.rateId || rateObject.quoteId, // Ensure consistent rateId
+                carrier: rateObject.carrierName || rateObject.carrier,
+                service: rateObject.serviceType || rateObject.service,
+                carrierCode: rateObject.carrierScac,
+                carrierKey: rateObject.carrierKey,
+                serviceCode: rateObject.serviceCode || '',
+                totalCharges: rateObject.totalCharges || 0,
+                freightCharge: rateObject.freightCharges || 0,
+                fuelCharge: rateObject.fuelCharges || 0,
+                serviceCharges: rateObject.serviceCharges || 0,
+                accessorialCharges: rateObject.accessorialCharges || 0,
+                guaranteeCharge: rateObject.guaranteeCharge || 0,
+                currency: rateObject.currency || 'USD',
+                transitDays: rateObject.transitTime || rateObject.transitDays,
+                transitTime: rateObject.transitTime || rateObject.transitDays, // Duplicate for compatibility if needed
+                estimatedDeliveryDate: rateObject.estimatedDeliveryDate,
+                guaranteed: rateObject.guaranteed || false,
+                guaranteedService: rateObject.guaranteedService,
+                billingDetails: rateObject.billingDetails || [],
+                guarOptions: rateObject.guarOptions || [],
+                serviceMode: rateObject.serviceMode,
+                billedWeight: rateObject.billedWeight,
+                ratedWeight: rateObject.ratedWeight,
+                rawRateDetails: rateObject, // Store the full original selected rate object
+                status: 'selected_in_ui', // New status
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                // Add raw request and response for rating
+                rawRateRequestPayload: originalRateRequestForApi || null,
+                rawRateAPIResponse: rawFullRateApiResponse || null,
             };
-            updateFormSection('selectedRateRef', rateRefForFormAndFirestore);
 
-            console.log('Rate selected (to be saved):', rateRefForFormAndFirestore);
+            const shipmentRatesRef = collection(db, 'shipmentRates');
+            const rateDocRef = await addDoc(shipmentRatesRef, rateDocumentForCollection);
+            console.log('Rate saved to shipmentRates with ID:', rateDocRef.id);
+            return rateDocRef.id;
+        } catch (error) {
+            console.error('Error saving rate to shipmentRates collection:', error);
+            throw error; // Re-throw to be caught by handleRateSelect
+        }
+    };
 
-            saveSelectedRateToFirestore(rate, rateRefForFormAndFirestore).catch(error => {
-                console.error('Error saving selected rate:', error);
-            });
+    const handleRateSelect = async (rate) => {
+        // rate here is the full object from the API (e.g., rates[i])
+        const newRateId = rate.rateId || rate.quoteId;
 
-            onNext(rateRefForFormAndFirestore);
+        if (selectedRate?.quoteId === newRateId) { // Deselect if clicking the same rate
+            console.log('Deselecting rate.');
+            setSelectedRate(null);
+            updateFormSection('selectedRateDocumentId', null);
+            updateFormSection('selectedRate', null);
+        } else {
+            console.log('New rate selected:', rate);
+            setSelectedRate(rate); // Update local UI state
+            updateFormSection('selectedRate', rate); // Update context with the full rate object for immediate use
+
+            try {
+                const newRateDocId = await saveRateToShipmentRatesCollection(rate, contextFormData.originalRateRequestData, rawRateApiResponseData);
+                updateFormSection('selectedRateDocumentId', newRateDocId);
+                console.log(`Selected rate document ID ${newRateDocId} set in context.`);
+                onNext(); // Navigate to next step, Review will use selectedRateDocumentId from context
+            } catch (error) {
+                console.error('Error saving selected rate and getting ID:', error);
+                // Handle error appropriately, maybe show a message to the user
+                setError('Failed to save selected rate. Please try again.');
+            }
         }
     };
 
@@ -749,81 +788,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         const weight = formData.packages?.reduce((sum, pkg) => sum + (Number(pkg.weight) || 0), 0) || 0;
         return `${weight.toFixed(2)} lbs`;
     }, [formData.packages]);
-
-    const saveSelectedRateToFirestore = async (originalRateData, rateRefToStore) => {
-        if (!activeDraftId) {
-            console.warn('No activeDraftId available to save selected rate');
-            return;
-        }
-
-        try {
-            if (originalRateData === null) {
-                console.log('Deselecting rate for shipment:', activeDraftId);
-                const shipmentRef = doc(db, 'shipments', activeDraftId);
-                await updateDoc(shipmentRef, { selectedRateRef: null, updatedAt: serverTimestamp() });
-                console.log('Rate deselection saved to Firestore');
-                return;
-            }
-
-            console.log('Saving selected rate to Firestore. Rate Ref to Store:', rateRefToStore);
-
-            const rateDocumentForCollection = {
-                shipmentId: activeDraftId,
-                rateId: rateRefToStore.rateId,
-                carrier: rateRefToStore.carrier,
-                service: rateRefToStore.service,
-                carrierCode: rateRefToStore.carrierScac || '',
-                carrierKey: rateRefToStore.carrierKey || originalRateData.carrierKey,
-                serviceCode: originalRateData.serviceCode || '',
-                totalCharges: rateRefToStore.totalCharges,
-                freightCharge: rateRefToStore.freightCharge,
-                fuelCharge: rateRefToStore.fuelCharge,
-                serviceCharges: rateRefToStore.serviceCharges,
-                accessorialCharges: rateRefToStore.accessorialCharges,
-                guaranteeCharge: rateRefToStore.guaranteeActualCharge,
-                currency: rateRefToStore.currency,
-                transitDays: rateRefToStore.transitDays,
-                transitTime: rateRefToStore.transitDays,
-                estimatedDeliveryDate: rateRefToStore.estimatedDeliveryDate,
-                guaranteed: rateRefToStore.guaranteed,
-                guaranteedService: originalRateData.guaranteedService,
-                packageCounts: originalRateData.packageCounts || {},
-                billingDetails: rateRefToStore.billingDetails || [],
-                guarOptions: rateRefToStore.guarOptions || [],
-                status: 'selected',
-                updatedAt: serverTimestamp()
-            };
-
-            let rateDocId = formData.selectedRateRef?.rateDocumentId;
-
-            if (rateDocId) {
-                console.log('Updating existing rate document in shipmentRates:', rateDocId);
-                const existingRateDocRef = doc(db, 'shipmentRates', rateDocId);
-                await updateDoc(existingRateDocRef, rateDocumentForCollection);
-            } else {
-                console.log('Creating new rate document in shipmentRates');
-                rateDocumentForCollection.createdAt = serverTimestamp();
-                const shipmentRatesRef = collection(db, 'shipmentRates');
-                const rateDocRef = await addDoc(shipmentRatesRef, rateDocumentForCollection);
-                rateDocId = rateDocRef.id;
-            }
-            console.log('Rate document saved/updated in shipmentRates with ID:', rateDocId);
-
-            const shipmentUpdateRef = {
-                ...rateRefToStore,
-                rateDocumentId: rateDocId
-            };
-
-            const shipmentRef = doc(db, 'shipments', activeDraftId);
-            await updateDoc(shipmentRef, { selectedRateRef: shipmentUpdateRef, updatedAt: serverTimestamp() });
-
-            console.log('selectedRateRef updated in shipment document and form context.');
-
-        } catch (error) {
-            console.error('Error saving selected rate to Firestore:', error);
-            throw error;
-        }
-    };
 
     if (isLoading) {
         return (

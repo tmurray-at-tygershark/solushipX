@@ -30,47 +30,45 @@ const safeAccess = (obj, path, defaultValue = null) => {
 function transformBookingResponseToInternalFormat(apiResponse) {
     if (!apiResponse) return null;
 
-    const bookedRate = apiResponse.BookedRate || {}; // Use BookedRate if available
+    const bookedRateDetails = apiResponse.BookedRate || {}; // Use BookedRate if available or main response parts
+    const selectedRateDetails = apiResponse.SelectedRate || {}; // Fallback if BookedRate is minimal
+
+    // Determine the best confirmation number
+    let confirmationNumber = apiResponse.ProNumber || apiResponse.BolNumber || apiResponse.BookingReferenceNumber || bookedRateDetails.ProNumber || bookedRateDetails.BolNumber;
 
     const transformed = {
-        success: !apiResponse.ContainsErrorMessage, // Success if no error message
+        success: !apiResponse.ContainsErrorMessage,
         bookingReference: apiResponse.BookingReferenceNumber,
-        // Key confirmation details from the main response or BookedRate
-        confirmationNumber: apiResponse.ProNumber || apiResponse.BolNumber || apiResponse.BookingReferenceNumber, // Prefer ProNumber or BOL if available
-        proNumber: apiResponse.ProNumber,
-        bolNumber: apiResponse.BolNumber,
-        carrierName: bookedRate.CarrierName || safeAccess(apiResponse, 'SelectedRate.CarrierName'),
-        carrierScac: bookedRate.CarrierScac || safeAccess(apiResponse, 'SelectedRate.CarrierScac'),
-        totalCharges: bookedRate.TotalCharges !== undefined ? parseFloat(bookedRate.TotalCharges) : safeAccess(apiResponse, 'SelectedRate.TotalCharges', 0),
-        transitTime: bookedRate.TransitTime !== undefined ? parseInt(bookedRate.TransitTime) : safeAccess(apiResponse, 'SelectedRate.TransitTime', 0),
-        estimatedDeliveryDate: bookedRate.EstimatedDeliveryDate || safeAccess(apiResponse, 'SelectedRate.EstimatedDeliveryDate'),
+        confirmationNumber: confirmationNumber,
+        proNumber: apiResponse.ProNumber || bookedRateDetails.ProNumber || null,
+        bolNumber: apiResponse.BolNumber || bookedRateDetails.BolNumber || null,
+        carrierName: bookedRateDetails.CarrierName || selectedRateDetails.CarrierName || apiResponse.CarrierName || null,
+        carrierScac: bookedRateDetails.CarrierScac || selectedRateDetails.CarrierScac || apiResponse.CarrierScac || null,
         
-        // Full BookedRate object from the response
-        bookedRateDetails: bookedRate,
-
-        // Charge breakdown from BookedRate
-        charges: {
-            freightCharges: parseFloat(bookedRate.FreightCharges || 0),
-            fuelCharges: parseFloat(bookedRate.FuelCharges || 0),
-            accessorialCharges: parseFloat(bookedRate.AccessorialCharges || 0),
-            serviceCharges: parseFloat(bookedRate.ServiceCharges || 0),
-            totalCharges: parseFloat(bookedRate.TotalCharges || 0),
-        },
-
+        // Use BookedRate for financial details if available, otherwise SelectedRate from response
+        totalCharges: bookedRateDetails.TotalCharges !== undefined ? parseFloat(bookedRateDetails.TotalCharges) : parseFloat(selectedRateDetails.TotalCharges || 0),
+        freightCharges: parseFloat(bookedRateDetails.FreightCharges || selectedRateDetails.FreightCharges || 0),
+        fuelCharges: parseFloat(bookedRateDetails.FuelCharges || selectedRateDetails.FuelCharges || 0),
+        accessorialCharges: parseFloat(bookedRateDetails.AccessorialCharges || selectedRateDetails.AccessorialCharges || 0),
+        serviceCharges: parseFloat(bookedRateDetails.ServiceCharges || selectedRateDetails.ServiceCharges || 0),
+        
+        transitTime: bookedRateDetails.TransitTime !== undefined ? parseInt(bookedRateDetails.TransitTime) : parseInt(selectedRateDetails.TransitTime || 0),
+        estimatedDeliveryDate: bookedRateDetails.EstimatedDeliveryDate || selectedRateDetails.EstimatedDeliveryDate || null,
+        
         // Shipping documents
-        documents: (apiResponse.ReturnConfirmations || []).map(doc => ({
-            docType: doc.DocType, // 0 seems to be a common type, might need mapping
+        shippingDocuments: (apiResponse.ReturnConfirmations || []).map(doc => ({
+            docType: doc.DocType, 
             name: doc.Name,
-            // docImage is Base64 encoded PDF data, handle appropriately on client-side
-            // For now, just indicate its presence or a snippet if it's too long
             hasImage: !!doc.DocImage, 
-            imagePreview: doc.DocImage ? doc.DocImage.substring(0, 50) + '...' : null
+            imagePreview: doc.DocImage ? doc.DocImage.substring(0, 50) + '...' : null,
+            // Consider adding the full DocImage if it's not excessively large and is needed client-side directly,
+            // otherwise, client might need a separate function to fetch full documents by name/ID if necessary.
+            // docImageBase64: doc.DocImage // Potentially large
         })),
         
-        // Raw response for debugging or further use
-        rawResponse: apiResponse,
         messages: apiResponse.Messages || [],
         containsErrorMessage: apiResponse.ContainsErrorMessage || false,
+        rawBookingResponse: apiResponse // Store the full raw response for auditing/debugging
     };
     return transformed;
 }
@@ -252,18 +250,21 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
 console.log('LOG: bookRate.js - processBookingRequest defined.');
 async function processBookingRequest(data) {
     console.log('LOG: processBookingRequest - Function invoked.');
-    logger.info('LOG: processBookingRequest - INFO: Function invoked with data:', data ? Object.keys(data) : 'No data');
+    logger.info('LOG: processBookingRequest - INFO: Function invoked with data keys:', data ? Object.keys(data) : 'No data');
+    // logger.info('LOG: processBookingRequest - Full incoming data:', JSON.stringify(data, null, 2)); // Be cautious with logging full PII
     
+    const db = admin.firestore(); // Ensure Firestore admin is initialized if not already global
+
     try {
         const skipApiKeyValidation = process.env.NODE_ENV === 'development' || process.env.SKIP_API_KEY_VALIDATION === 'true';
-        const apiKey = data.apiKey; // This is the SolushipX client API key
+        const clientApiKey = data.apiKey; // This is the SolushipX client API key for calling this function
         
         if (!skipApiKeyValidation) {
-            if (!apiKey) {
+            if (!clientApiKey) {
                 logger.warn('API key validation: No API key provided for SolushipX function call');
                 throw new functions.https.HttpsError('unauthenticated', 'SolushipX API key is required');
             }
-            const isValidApiKey = await validateApiKey(apiKey); // Validates SolushipX client API key
+            const isValidApiKey = await validateApiKey(clientApiKey); 
             if (!isValidApiKey) {
                 logger.warn('API key validation: Invalid SolushipX API key provided');
                 throw new functions.https.HttpsError('unauthenticated', 'Invalid SolushipX API key');
@@ -273,20 +274,47 @@ async function processBookingRequest(data) {
             logger.info('API key validation for SolushipX function call: Skipped');
         }
 
-        // Extract the booking data
-        const { apiKey: clientApiKey, rateRequestData, selectedRate, ...additionalData } = data;
+        // Extract the booking data and necessary IDs
+        const { 
+            // apiKey is handled above
+            rateRequestData, 
+            draftFirestoreDocId, 
+            selectedRateDocumentId 
+            // Removed selectedRate and ...additionalData as they are no longer sent from client for this
+        } = data;
 
-        if (!rateRequestData || !selectedRate) {
-            logger.error('processBookingRequest: Missing rateRequestData or selectedRate in input data.', { hasRateRequestData: !!rateRequestData, hasSelectedRate: !!selectedRate });
-            throw new functions.https.HttpsError('invalid-argument', 'Both rateRequestData and selectedRate are required for booking');
+        // Validate required fields
+        if (!rateRequestData || !draftFirestoreDocId || !selectedRateDocumentId) {
+            logger.error('processBookingRequest: Missing one or more required fields.', { 
+                hasRateRequestData: !!rateRequestData, 
+                hasDraftFirestoreDocId: !!draftFirestoreDocId,
+                hasSelectedRateDocumentId: !!selectedRateDocumentId
+            });
+            throw new functions.https.HttpsError('invalid-argument', 'rateRequestData, draftFirestoreDocId, and selectedRateDocumentId are all required for booking.');
         }
-        
-        // Transform the rate request data into the new booking request format
-        // The transformRateDataToBookingRequest now produces the entire payload
-        const eShipPlusBookingPayload = transformRateDataToBookingRequest(rateRequestData, { ...selectedRate, ...additionalData });
+        logger.info('processBookingRequest: All required IDs present.', { draftFirestoreDocId, selectedRateDocumentId });
 
-        // Validate required fields for booking against the new structure
-        const validationError = validateBookingRequest(eShipPlusBookingPayload); // Pass the whole payload
+        // Fetch the selected rate details from Firestore
+        const rateDocRef = db.collection('shipmentRates').doc(selectedRateDocumentId);
+        const rateDocSnapshot = await rateDocRef.get();
+
+        if (!rateDocSnapshot.exists) {
+            logger.error(`Selected rate document ${selectedRateDocumentId} not found in shipmentRates.`);
+            throw new functions.https.HttpsError('not-found', `Selected rate details (ID: ${selectedRateDocumentId}) not found.`);
+        }
+        const selectedRateDataFromFirestore = rateDocSnapshot.data();
+        // Expecting rawRateDetails to contain the object structure previously sent as 'selectedRate' from client
+        const rateObjectForTransformer = selectedRateDataFromFirestore.rawRateDetails || selectedRateDataFromFirestore; 
+
+        if (!rateObjectForTransformer || typeof rateObjectForTransformer !== 'object' || Object.keys(rateObjectForTransformer).length === 0) {
+            logger.error(`Fetched rate document ${selectedRateDocumentId} does not contain valid rate details (e.g., in rawRateDetails or at root).`, { fetchedDataStructure: Object.keys(selectedRateDataFromFirestore) });
+            throw new functions.https.HttpsError('internal', `Fetched rate data (ID: ${selectedRateDocumentId}) is incomplete or invalid. Ensure 'rawRateDetails' or equivalent is populated in the shipmentRates document.`);
+        }
+        logger.info('Successfully fetched selected rate details from Firestore for transformation.');
+            
+        const eShipPlusBookingPayload = transformRateDataToBookingRequest(rateRequestData, rateObjectForTransformer);
+
+        const validationError = validateBookingRequest(eShipPlusBookingPayload); 
         if (validationError) {
             logger.error('Booking Payload Validation Error:', validationError, { payload: eShipPlusBookingPayload });
             throw new functions.https.HttpsError('invalid-argument', validationError);
@@ -294,7 +322,6 @@ async function processBookingRequest(data) {
 
         logger.info('eShipPlus Booking request payload (to be sent):', JSON.stringify(eShipPlusBookingPayload, null, 2));
 
-        // Prepare eShipPlusAuth Header using environment variables
         const esAccessCode = process.env.ESHIPPLUS_ACCESS_CODE;
         const esUserName = process.env.ESHIPPLUS_USERNAME;
         const esPassword = process.env.ESHIPPLUS_PASSWORD;
@@ -314,8 +341,7 @@ async function processBookingRequest(data) {
         const eShipPlusAuthHeader = Buffer.from(JSON.stringify(authPayload)).toString('base64');
         logger.info('eShipPlusAuth Header generated for booking.');
         
-        // Make the booking request to eShipPlus REST API
-        const response = await axios.post(ESHIPPLUS_BOOK_URL, eShipPlusBookingPayload, { // Send the new payload directly
+        const response = await axios.post(ESHIPPLUS_BOOK_URL, eShipPlusBookingPayload, { 
             headers: {
                 'Content-Type': 'application/json',
                 'eShipPlusAuth': eShipPlusAuthHeader,
@@ -328,9 +354,9 @@ async function processBookingRequest(data) {
         logger.info(`eShipPlus Booking API Response Status: ${response.status}`);
         
         if (response.status >= 300) {
-            logger.warn('eShipPlus Booking API Raw Response Data (Status >= 300):', response.data);
+            logger.warn('eShipPlus Booking API Raw Response Data (Status >= 300):' , typeof response.data === 'object' ? JSON.stringify(response.data, null, 2) : response.data);
         } else {
-            logger.debug('eShipPlus Booking API Raw Response Data (Status 2xx):', response.data);
+            logger.debug('eShipPlus Booking API Raw Response Data (Status 2xx):' , typeof response.data === 'object' ? JSON.stringify(response.data, null, 2) : response.data);
         }
 
         if (response.status >= 400) {
@@ -361,7 +387,6 @@ async function processBookingRequest(data) {
             throw new functions.https.HttpsError(f_error_code, errorMessage, errorDetailsForClient);
         }
 
-        // Check for business logic errors even on 2xx status
         if (response.data && response.data.ContainsErrorMessage === true) {
             let errorMessage = `EShipPlus Booking API indicated an error in the response despite HTTP ${response.status} status.`;
             if (response.data.Messages && Array.isArray(response.data.Messages) && response.data.Messages.length > 0) {
@@ -371,18 +396,80 @@ async function processBookingRequest(data) {
             throw new functions.https.HttpsError('failed-precondition', errorMessage, response.data);
         }
 
-        const transformedData = transformBookingResponseToInternalFormat(response.data);
+        const bookingConfirmationResult = transformBookingResponseToInternalFormat(response.data);
         
-        if (!transformedData) {
-            logger.error('Failed to transform eShipPlus booking response:', response.data);
-            throw new functions.https.HttpsError('internal', 'Failed to process booking response from eShipPlus API.');
+        if (!bookingConfirmationResult || !bookingConfirmationResult.success) {
+            logger.error('Failed to transform eShipPlus booking response or booking indicated failure:', { bookingConfirmationResult, rawResponse: response.data });
+            throw new functions.https.HttpsError('internal', 'Failed to process booking confirmation from eShipPlus API.', bookingConfirmationResult);
         }
 
-        logger.info('Successfully processed booking with eShipPlus REST API.');
+        logger.info('Successfully processed booking with eShipPlus REST API. Transformed Confirmation:', JSON.stringify(bookingConfirmationResult, null, 2));
+
+        // Firestore updates
+        const batch = db.batch();
+
+        // 1. Update the main shipment document
+        const shipmentDocRef = db.collection('shipments').doc(draftFirestoreDocId);
+        const shipmentUpdateData = {
+            status: 'booked',
+            carrierBookingConfirmation: {
+                confirmationNumber: bookingConfirmationResult.confirmationNumber,
+                proNumber: bookingConfirmationResult.proNumber,
+                bolNumber: bookingConfirmationResult.bolNumber,
+                carrierName: bookingConfirmationResult.carrierName,
+                carrierScac: bookingConfirmationResult.carrierScac,
+                totalCharges: bookingConfirmationResult.totalCharges, 
+                freightCharges: bookingConfirmationResult.freightCharges,
+                fuelCharges: bookingConfirmationResult.fuelCharges,
+                accessorialCharges: bookingConfirmationResult.accessorialCharges,
+                serviceCharges: bookingConfirmationResult.serviceCharges,
+                currency: bookingConfirmationResult.currency,
+                estimatedDeliveryDate: bookingConfirmationResult.estimatedDeliveryDate,
+                shippingDocuments: bookingConfirmationResult.shippingDocuments || null, 
+            },
+            shipmentStatus: admin.firestore.FieldValue.delete(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        logger.info(`LOG: Updating shipment document ${draftFirestoreDocId} with:`, shipmentUpdateData);
+        await shipmentDocRef.update(shipmentUpdateData);
+        logger.info(`LOG: Shipment document ${draftFirestoreDocId} successfully updated.`);
+
+        // 2. Update the selected rate document in shipmentRates collection
+        if (selectedRateDocumentId) { // Should always be true due to earlier validation
+            const rateDocRefToUpdate = db.collection('shipmentRates').doc(selectedRateDocumentId);
+            const rateUpdateData = {
+                status: 'booked',
+                bookingConfirmation: {
+                    confirmationNumber: bookingConfirmationResult.confirmationNumber,
+                    proNumber: bookingConfirmationResult.proNumber,
+                    bolNumber: bookingConfirmationResult.bolNumber,
+                    carrierName: bookingConfirmationResult.carrierName,
+                    totalCharges: bookingConfirmationResult.totalCharges,
+                    shippingDocuments: bookingConfirmationResult.shippingDocuments || null,
+                    estimatedDeliveryDate: bookingConfirmationResult.estimatedDeliveryDate,
+                    currency: bookingConfirmationResult.currency,
+                    bookedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    // Storing the full raw response here might be too much if already in shipmentDoc.
+                    // rawBookingResponseSnippet: JSON.stringify(bookingConfirmationResult.rawBookingResponse).substring(0, 500) + '...'
+                },
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                // Add raw request and response for booking - top level in shipmentRates doc
+                rawBookingRequestPayload: eShipPlusBookingPayload || null,
+                rawBookingAPIResponse: response.data || null,
+            };
+            batch.update(rateDocRefToUpdate, rateUpdateData);
+            logger.info('Prepared update for shipmentRates document with booking confirmation:', selectedRateDocumentId, JSON.stringify(rateUpdateData, null, 2));
+        } else {
+            // This case should ideally not be reached if validation is correct
+            logger.warn('selectedRateDocumentId was missing during Firestore update phase, cannot update status in shipmentRates collection. This indicates an issue with control flow.');
+        }
+
+        await batch.commit();
+        logger.info('Successfully committed Firestore updates for booking confirmation.');
 
         return {
             success: true,
-            data: transformedData
+            data: bookingConfirmationResult // Return the transformed booking confirmation to the client
         };
     } catch (error) {
         logger.error('Error in processBookingRequest:', error.message, error.stack, error.details);

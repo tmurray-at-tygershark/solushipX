@@ -61,9 +61,9 @@ export const initialFormState = {
     },
     // Packages data
     packages: [],
-    // Selected rate reference (instead of full rate data)
-    selectedRateRef: null,
-    // Legacy selectedRate for backward compatibility during transition
+    // ID of the selected rate document in shipmentRates collection
+    selectedRateDocumentId: null,
+    // Legacy selectedRate for backward compatibility during transition OR for immediate UI use after selection
     selectedRate: null,
     // The full request object used to get rates, needed for booking
     originalRateRequestData: null
@@ -107,14 +107,25 @@ export const ShipmentFormProvider = ({ children }) => {
             let updatedSectionData;
             if (section === 'packages') {
                 updatedSectionData = Array.isArray(data) ? data : [];
-            } else if (section === 'selectedRate') {
+            } else if (section === 'selectedRate' || section === 'selectedRateDocumentId' || section === 'originalRateRequestData') {
+                // For selectedRate (full object), selectedRateDocumentId (string),
+                // or originalRateRequestData (object), set the data directly.
                 updatedSectionData = data;
             } else {
+                // For other sections (like shipFrom, shipTo, shipmentInfo which are objects)
                 updatedSectionData = {
                     ...(prevData[section] || {}),
                     ...data
                 };
             }
+
+            // Log specifically for originalRateRequestData changes
+            if (section === 'originalRateRequestData') {
+                console.log('ShipmentFormContext: Updating originalRateRequestData directly.', { section, data, newSectionData: updatedSectionData });
+            } else if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'originalRateRequestData')) {
+                console.log('ShipmentFormContext: originalRateRequestData is part of a larger update.', { section, data, newSectionData: updatedSectionData });
+            }
+
             return { ...prevData, [section]: updatedSectionData };
         });
     }, []); // No dependencies needed as it only uses setFormData
@@ -127,8 +138,22 @@ export const ShipmentFormProvider = ({ children }) => {
                 const result = { ...target };
 
                 for (const key in source) {
-                    if (source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-                        // For nested objects, recursively merge
+                    if (key === 'selectedRateDocumentId' && source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                        const obj = source[key];
+                        const objKeys = Object.keys(obj);
+                        // Check if keys are "0", "1", "2", ... and values are single characters
+                        const isNumericSequentialKeys = objKeys.length > 0 && objKeys.every((k, i) => String(i) === k);
+                        const areCharValues = objKeys.length > 0 && Object.values(obj).every(v => typeof v === 'string' && v.length === 1);
+
+                        if (isNumericSequentialKeys && areCharValues) {
+                            result[key] = Object.values(obj).join('');
+                            console.warn(`ShipmentFormContext (deepMerge): Converted object-like selectedRateDocumentId for key '${key}' back to string:`, result[key]);
+                        } else {
+                            // If not the specific problematic structure, merge as a standard object
+                            result[key] = deepMerge(target[key] || {}, source[key]);
+                        }
+                    } else if (source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                        // For other nested objects, recursively merge
                         result[key] = deepMerge(target[key] || {}, source[key]);
                     } else if (Array.isArray(source[key])) {
                         // For arrays, use the source array directly

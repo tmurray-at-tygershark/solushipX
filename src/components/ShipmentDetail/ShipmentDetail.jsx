@@ -819,6 +819,12 @@ const ShipmentDetail = () => {
                         });
                     }
 
+                    // Set the tracking number from carrierBookingConfirmation if available
+                    if (shipmentData.carrierBookingConfirmation?.proNumber) {
+                        shipmentData.trackingNumber = shipmentData.carrierBookingConfirmation.proNumber;
+                        console.log('ShipmentDetail: Set shipment.trackingNumber from carrierBookingConfirmation.proNumber:', shipmentData.trackingNumber);
+                    }
+
                     setShipment(shipmentData);
                     console.log('ShipmentDetail: Final shipmentData object before setLoading(false):', JSON.parse(JSON.stringify(shipmentData))); // ADDED LOG
                 } else {

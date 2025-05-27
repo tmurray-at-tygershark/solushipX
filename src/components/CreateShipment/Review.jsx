@@ -215,7 +215,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
     const theme = useTheme();
     const navigate = useNavigate();
     const { formData, clearFormData } = useShipmentForm();
-    const { selectedRate, selectedRateRef } = formData;
+    const { selectedRate } = formData;
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -461,7 +461,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
 
     const handleBookShipment = () => {
         console.log('handleBookShipment called');
-        if (!selectedRateRef && !selectedRate) {
+        if (!selectedRate) {
             alert('Please select a rate before proceeding');
             return;
         }
@@ -484,125 +484,76 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         console.log('bookCarrierShipment - specifically logging formData.originalRateRequestData at start:', JSON.stringify(formData.originalRateRequestData, null, 2));
 
         const docIdToProcess = formData.draftFirestoreDocId;
-        console.log('Current Draft ID from formData.draftFirestoreDocId within bookCarrierShipment:', docIdToProcess);
 
         if (!docIdToProcess) {
-            console.error('CRITICAL: bookCarrierShipment called without formData.draftFirestoreDocId.');
-            setError('Cannot book shipment: No shipment ID. Please restart process.');
-            setShowBookingDialog(false);
+            console.error("No draftFirestoreDocId found in formData. Cannot proceed with booking.");
+            setError('Draft shipment ID is missing. Cannot proceed.');
+            setBookingStep('error');
             return;
         }
 
+        console.log('Current Draft ID from formData.draftFirestoreDocId within bookCarrierShipment:', docIdToProcess);
+        setIsLoading(true);
+        setBookingStep('booking');
+        setError(null); // Clear previous errors
+        console.log('Attempting to book existing draft. docIdToProcess:', docIdToProcess);
+
+        // Before calling the Firebase function
+        console.log('bookCarrierShipment - CHECKING formData.originalRateRequestData RIGHT BEFORE VALIDATION:', JSON.stringify(formData.originalRateRequestData, null, 2));
+        if (!formData.originalRateRequestData || Object.keys(formData.originalRateRequestData).length === 0) {
+            console.error('Missing originalRateRequestData in formData. This is required for booking.');
+            throw new Error('Original rate request data is missing. Cannot proceed with booking.');
+        }
+
+        // Prepare the payload for the Firebase function
+        const payload = {
+            apiKey: "development-api-key",
+            rateRequestData: formData.originalRateRequestData,
+            draftFirestoreDocId: docIdToProcess,
+            selectedRateDocumentId: formData.selectedRateDocumentId
+        };
+        console.log('Payload for bookRateEShipPlus:', JSON.stringify(payload, null, 2));
+
         try {
-            const { status, id, draftFirestoreDocId, selectedRate, selectedRateRef, rateDetails, originalRateRequestData, ...restOfFormData } = formData;
-            console.log(`Attempting to book existing draft. docIdToProcess: ${docIdToProcess}`);
-            const shipmentDocRef = doc(db, 'shipments', docIdToProcess);
-
-            const rateToBook = fullRateDetails || selectedRate || selectedRateRef;
-            if (!rateToBook) throw new Error('No rate selected for booking');
-            console.log('Booking with rate:', rateToBook);
-
-            // Before calling the Firebase function
-            console.log('bookCarrierShipment - CHECKING formData.originalRateRequestData RIGHT BEFORE VALIDATION:', JSON.stringify(formData.originalRateRequestData, null, 2));
-            if (!formData.originalRateRequestData || Object.keys(formData.originalRateRequestData).length === 0) {
-                console.error('Missing originalRateRequestData in formData. This is required for booking.');
-                throw new Error('Original rate request data is missing. Cannot proceed with booking.');
-            }
-
-            console.log('Calling bookRateEShipPlus Firebase function...');
             const functionsInstance = getFunctions();
-            const bookRateFunction = httpsCallable(functionsInstance, 'bookRateEShipPlus');
+            const bookFunction = httpsCallable(functionsInstance, 'bookRateEShipPlus');
+            console.log('Calling bookRateEShipPlus Firebase function...');
+            const result = await bookFunction(payload);
+            console.log('Firebase function bookRateEShipPlus raw result:', result);
 
-            const bookingPayload = {
-                apiKey: 'development-api-key', // Replace with your actual API key logic
-                rateRequestData: originalRateRequestData, // This is the full request used for rating
-                selectedRate: rateToBook.originalRate || rateToBook, // Pass the specific selected rate object
-                // Add additional booking parameters if necessary, like PO, BOL from shipmentInfo
-                ReferenceNumber: formData.shipmentInfo?.referenceNumber,
-                PurchaseOrder: formData.shipmentInfo?.purchaseOrder,
-                ShipperBOL: formData.shipmentInfo?.shipperBOL
-            };
+            if (result.data && result.data.success && result.data.data) {
+                const bookingDetails = result.data.data;
+                console.log('Successfully booked shipment:', bookingDetails);
 
-            console.log('Booking payload for bookRateEShipPlus:', JSON.stringify(bookingPayload, null, 2));
+                // Set the confirmation number for display in the success dialog
+                setConfirmationNumber(bookingDetails.confirmationNumber);
 
-            const bookingCallResult = await bookRateFunction(bookingPayload);
-            console.log('Raw bookRateEShipPlus result:', bookingCallResult);
+                setError(null); // Clear previous errors
+                setBookingStep('completed'); // Move to completed step in dialog
 
-            if (!bookingCallResult.data?.success || bookingCallResult.data?.data?.containsErrorMessage) {
-                const apiMessages = bookingCallResult.data?.data?.messages?.map(m => m.Text).join('; ') || 'Unknown API error';
-                throw new Error(`Booking failed: ${bookingCallResult.data?.data?.error || apiMessages}`);
-            }
+                // Optionally, call onNext to move to the next step in the main stepper
+                if (onNext) {
+                    // We might want to pass some confirmation data to the next step
+                    // onNext({ bookingConfirmation: bookingDetails }); 
+                }
 
-            const bookingConfirmationData = bookingCallResult.data.data;
-            console.log('Processed bookingConfirmationData from function:', bookingConfirmationData);
-
-            const actualConfirmationNumber = bookingConfirmationData.confirmationNumber || bookingConfirmationData.bookingReference;
-            setConfirmationNumber(actualConfirmationNumber);
-
-            let bookedRateDocId = selectedRateRef?.rateDocumentId;
-
-            const rateUpdateData = {
-                status: 'booked',
-                confirmationNumber: actualConfirmationNumber,
-                // Store the detailed carrier booking response
-                carrierBookingData: bookingConfirmationData, // Contains BookedRate, documents, etc.
-                bookedAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            };
-
-            if (bookedRateDocId) {
-                console.log('Updating existing rate document to booked status:', bookedRateDocId);
-                const rateDocRef = doc(db, 'shipmentRates', bookedRateDocId);
-                await updateDoc(rateDocRef, rateUpdateData);
-                console.log('Successfully updated rate status to booked with confirmation number');
             } else {
-                console.log('No existing rate document found, creating new booked rate');
-                const newRateDataForDb = {
-                    ...rateToBook, // Spread the original selected rate data
-                    shipmentId: docIdToProcess,
-                    ...rateUpdateData // Add booking specific updates
-                };
-                bookedRateDocId = await saveRateToShipmentRates(newRateDataForDb, docIdToProcess, 'booked');
-                console.log('Created and updated new rate document with booking info:', bookedRateDocId);
+                const errorMessage = result.data?.data?.messages?.map(m => m.text).join('; ') || result.data?.error || 'Failed to book shipment. Unknown error from function.';
+                console.error('Error from bookRateEShipPlus function:', errorMessage, result.data);
+                setError(errorMessage);
+                setBookingStep('error');
             }
-
-            // Update the main shipment document
-            const shipmentUpdateData = {
-                ...restOfFormData,
-                status: 'booked',
-                updatedAt: serverTimestamp(),
-                confirmationNumber: actualConfirmationNumber, // Also store top-level for quick access
-                proNumber: bookingConfirmationData.proNumber, // Store proNumber if available
-                bolNumber: bookingConfirmationData.bolNumber, // Store bolNumber if available
-                selectedRateRef: {
-                    ...(selectedRateRef || {}),
-                    rateDocumentId: bookedRateDocId,
-                    status: 'booked',
-                    confirmationNumber: actualConfirmationNumber,
-                    // Update selectedRateRef with key details from bookedRate
-                    carrierName: bookingConfirmationData.carrierName,
-                    service: bookingConfirmationData.bookedRateDetails?.ServiceMode !== undefined ? String(bookingConfirmationData.bookedRateDetails.ServiceMode) : selectedRateRef?.service,
-                    totalCharges: bookingConfirmationData.charges?.totalCharges !== undefined ? bookingConfirmationData.charges.totalCharges : selectedRateRef?.totalCharges,
-                    freightCharge: bookingConfirmationData.charges?.freightCharges,
-                    fuelCharge: bookingConfirmationData.charges?.fuelCharges,
-                    accessorialCharges: bookingConfirmationData.charges?.accessorialCharges,
-                    serviceCharges: bookingConfirmationData.charges?.serviceCharges,
-                    // Store the carrier-specific booking data
-                    carrierBookingData: bookingConfirmationData,
-                    bookedAt: serverTimestamp()
-                },
-                // Store all returned documents at the shipment level for easier access
-                shippingDocuments: bookingConfirmationData.documents || []
-            };
-
-            await updateDoc(shipmentDocRef, shipmentUpdateData);
-            console.log(`Shipment ${docIdToProcess} booked successfully with confirmation: ${actualConfirmationNumber}. Full data:`, shipmentUpdateData);
-            setBookingStep('completed');
-
         } catch (error) {
-            console.error(`Error booking shipment ${docIdToProcess}:`, error);
-            setError(`Failed to book shipment. Error: ${error.message || 'Unknown error'}`);
-            setShowBookingDialog(false);
+            console.error('Error calling bookRateEShipPlus or processing its response:', error);
+            let detailedMessage = error.message;
+            if (error.details) {
+                detailedMessage += ` Details: ${JSON.stringify(error.details)}`;
+            }
+            setError(`Error booking shipment ${docIdToProcess}: ${detailedMessage}`);
+            setBookingStep('error');
+        } finally {
+            setIsLoading(false); // Ensure isLoading is set to false if it was used for the dialog
+            // setShowBookingDialog will be controlled by the dialog's own close/complete buttons now
         }
     };
 
@@ -617,42 +568,58 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         navigate('/shipments', { replace: true });
     };
 
-    // Fetch full rate details when selectedRateRef has a document ID
+    // Fetch full rate details when selectedRateDocumentId or selectedRate changes
     useEffect(() => {
         const fetchFullRateDetails = async () => {
-            if (selectedRateRef?.rateDocumentId) {
+            if (formData.selectedRateDocumentId) {
+                console.log('Review: Attempting to fetch full rate details using document ID:', formData.selectedRateDocumentId);
                 try {
-                    const rateDetails = await getRateDetailsByDocumentId(selectedRateRef.rateDocumentId);
+                    const rateDetails = await getRateDetailsByDocumentId(formData.selectedRateDocumentId);
                     if (rateDetails) {
-                        // Assume rateDetails from Firestore has:
-                        // freightCharge, fuelCharge, accessorialCharges, serviceCharges
                         setFullRateDetails(rateDetails);
-                        console.log('Fetched full rate details from Firestore:', rateDetails);
+                        console.log('Review: Fetched full rate details from Firestore:', rateDetails);
                     } else {
-                        setFullRateDetails(null); // Handle case where rateDetails might be null
+                        console.warn('Review: getRateDetailsByDocumentId returned null for ID:', formData.selectedRateDocumentId);
+                        setFullRateDetails(null); // Clear if not found
                     }
                 } catch (error) {
-                    console.error('Error fetching full rate details:', error);
-                    setFullRateDetails(null); // Clear on error or if not found
+                    console.error('Review: Error fetching full rate details by ID:', error);
+                    setFullRateDetails(null); // Clear on error
                 }
-            } else if (selectedRate) { // selectedRate is the raw transformed rate from context
-                console.log('Using selectedRate as fallback for fullRateDetails:', selectedRate);
+            } else if (formData.selectedRate) {
+                console.log('Review: Using selectedRate from context as fallback for fullRateDetails:', formData.selectedRate);
                 // Shape selectedRate to match the structure expected from Firestore/selectedRateRef
                 const shapedFallback = {
-                    ...selectedRate, // Spread all properties from selectedRate
-                    freightCharge: selectedRate.freightCharges,    // Map from plural to singular
-                    fuelCharge: selectedRate.fuelSurcharge,       // Map from specific (fuelSurcharge) to generic (fuelCharge)
-                    // accessorialCharges and serviceCharges are assumed to be already correctly named (plural)
-                    // in selectedRate and match the Firestore structure for these two fields.
+                    ...formData.selectedRate,
+                    // Ensure crucial fields for display are present, mapping if necessary
+                    // The original logic for shaping had freightCharge, fuelCharge, etc.
+                    // We assume selectedRate from context now contains these directly or they are mapped in Rates.jsx
+                    // For example, if selectedRate has totalCharges, carrier, service, transitDays, estimatedDeliveryDate
+                    // and the detailed breakdown (freightCharges, fuelCharges etc.)
+                    // This shaping might need adjustment based on what's in formData.selectedRate
+                    // For now, we'll assume formData.selectedRate has the necessary fields like:
+                    // freightCharges, fuelCharges, accessorialCharges, serviceCharges, etc.
+                    // If not, this part needs to be more robust.
+                    id: formData.selectedRate.quoteId || formData.selectedRate.rateId, // ensure an id field for consistency if needed elsewhere
+                    // Example mapping (adjust if formData.selectedRate structure is different):
+                    freightCharge: formData.selectedRate.freightCharges,
+                    fuelCharge: formData.selectedRate.fuelCharges,
+                    accessorialCharges: formData.selectedRate.accessorialCharges,
+                    serviceCharges: formData.selectedRate.serviceCharges,
+                    totalCharges: formData.selectedRate.totalCharges || formData.selectedRate.price,
+                    carrier: formData.selectedRate.carrierName || formData.selectedRate.carrier,
+                    service: formData.selectedRate.serviceType || formData.selectedRate.service,
+                    transitDays: formData.selectedRate.transitTime || formData.selectedRate.transitDays,
                 };
                 setFullRateDetails(shapedFallback);
             } else {
+                console.log('Review: No selectedRateDocumentId or selectedRate in context to fetch/display details.');
                 setFullRateDetails(null);
             }
         };
 
         fetchFullRateDetails();
-    }, [selectedRateRef, selectedRate]);
+    }, [formData.selectedRateDocumentId, formData.selectedRate]);
 
     const { shipmentInfo = {}, shipFrom = {}, shipTo = {}, packages = [] } = formData;
 
@@ -998,73 +965,82 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                 </Box>
                             </Paper>
 
-                            {(selectedRateRef || selectedRate) ? (
+                            {/* Rate Details Section */}
+                            {(formData.selectedRateDocumentId || formData.selectedRate) ? (
                                 <Paper sx={{ mb: 4 }}>
-                                    <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
-                                        <Typography variant="h6">Rate Details</Typography>
+                                    <Box
+                                        sx={{
+                                            p: 2,
+                                            bgcolor: '#000000',
+                                            color: 'white',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between'
+                                        }}
+                                        onClick={() => toggleSection('rate')}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <MoneyIcon />
+                                            <Typography variant="h6">Selected Rate</Typography>
+                                        </Box>
+                                        <IconButton sx={{ color: 'white' }}>
+                                            <ExpandMoreIcon
+                                                sx={{
+                                                    transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
+                                                    transition: 'transform 0.3s'
+                                                }}
+                                            />
+                                        </IconButton>
                                     </Box>
-                                    <Box sx={{ p: 3 }}>
-                                        <Grid container spacing={3}>
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="h5" gutterBottom>
-                                                    {selectedRateRef?.carrier || selectedRate?.carrier}
-                                                </Typography>
-                                                <Chip
-                                                    label={selectedRateRef?.service || selectedRate?.service}
-                                                    color="primary"
-                                                    sx={{ mb: 2 }}
-                                                />
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Transit Time: {selectedRateRef?.transitDays || selectedRate?.transitDays} days
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ textAlign: 'right' }}>
-                                                    <Typography variant="h4" color="primary" gutterBottom>
-                                                        ${(selectedRateRef?.totalCharges || selectedRate?.price || 0).toFixed(2)}
+                                    <Collapse in={expandedSections.rate}>
+                                        <Box sx={{ p: 3 }}>
+                                            <Grid container spacing={3}>
+                                                <Grid item xs={12} md={6}>
+                                                    <Typography variant="h5" gutterBottom>
+                                                        {fullRateDetails?.carrier || formData.selectedRate?.carrierName || formData.selectedRate?.carrier || 'N/A'}
                                                     </Typography>
+                                                    <Chip
+                                                        label={fullRateDetails?.service || formData.selectedRate?.serviceType || formData.selectedRate?.service || 'N/A'}
+                                                        color="primary"
+                                                        sx={{ mb: 2 }}
+                                                    />
                                                     <Typography variant="body2" color="text.secondary">
-                                                        Total Charges
+                                                        Transit Time: {fullRateDetails?.transitDays ?? (formData.selectedRate?.transitTime ?? formData.selectedRate?.transitDays)} days
                                                     </Typography>
+                                                    {(fullRateDetails?.guaranteed || formData.selectedRate?.guaranteed) &&
+                                                        <Chip label="Guaranteed" color="success" size="small" sx={{ ml: 1 }} />
+                                                    }
+                                                </Grid>
+                                                <Grid item xs={12} md={6}>
+                                                    <Box sx={{ textAlign: 'right' }}>
+                                                        <Typography variant="h4" color="primary" gutterBottom>
+                                                            ${(fullRateDetails?.totalCharges ?? formData.selectedRate?.totalCharges ?? formData.selectedRate?.price ?? 0).toFixed(2)}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            Currency: {fullRateDetails?.currency || formData.selectedRate?.currency || 'USD'}
+                                                        </Typography>
+                                                        {fullRateDetails?.estimatedDeliveryDate || formData.selectedRate?.estimatedDeliveryDate ? (
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                Est. Delivery: {fullRateDetails?.estimatedDeliveryDate || formData.selectedRate?.estimatedDeliveryDate}
+                                                            </Typography>
+                                                        ) : null}
+                                                    </Box>
+                                                </Grid>
+                                            </Grid>
+                                            {/* Detailed breakdown if available in fullRateDetails */}
+                                            {(fullRateDetails && (fullRateDetails.freightCharge || fullRateDetails.fuelCharge || fullRateDetails.accessorialCharges || fullRateDetails.serviceCharges)) && (
+                                                <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
+                                                    <Typography variant="subtitle1" gutterBottom>Rate Breakdown:</Typography>
+                                                    <Grid container spacing={1}>
+                                                        {fullRateDetails.freightCharge !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Freight: ${fullRateDetails.freightCharge.toFixed(2)}</Typography></Grid>}
+                                                        {fullRateDetails.fuelCharge !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Fuel: ${fullRateDetails.fuelCharge.toFixed(2)}</Typography></Grid>}
+                                                        {fullRateDetails.accessorialCharges !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Accessorials: ${fullRateDetails.accessorialCharges.toFixed(2)}</Typography></Grid>}
+                                                        {fullRateDetails.serviceCharges !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Service: ${fullRateDetails.serviceCharges.toFixed(2)}</Typography></Grid>}
+                                                    </Grid>
                                                 </Box>
-                                            </Grid>
-                                        </Grid>
-                                        <Divider sx={{ my: 2 }} />
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Freight Charges
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.freightCharge || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Fuel Surcharge
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.fuelCharge || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Accessorial Charges
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.accessorialCharges || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Service Charges
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.serviceCharges || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                        </Grid>
-                                    </Box>
+                                            )}
+                                        </Box>
+                                    </Collapse>
                                 </Paper>
                             ) : (
                                 <Paper sx={{ mb: 4, p: 3, textAlign: 'center' }}>
@@ -1133,14 +1109,14 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                         whileTap={{ scale: 0.98 }}
                                         onClick={handleBookShipment}
                                         type="button"
-                                        disabled={!selectedRateRef && !selectedRate}
+                                        disabled={!selectedRate}
                                         style={{
                                             padding: '12px 24px',
                                             borderRadius: '8px',
                                             border: 'none',
-                                            background: (!selectedRateRef && !selectedRate) ? '#cccccc' : '#1a237e',
+                                            background: !selectedRate ? '#cccccc' : '#1a237e',
                                             color: 'white',
-                                            cursor: (!selectedRateRef && !selectedRate) ? 'not-allowed' : 'pointer',
+                                            cursor: !selectedRate ? 'not-allowed' : 'pointer',
                                             fontSize: '16px',
                                             fontWeight: 500,
                                             display: 'flex',
@@ -1166,10 +1142,10 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                 </DialogTitle>
                                 <DialogContent sx={{ textAlign: 'center', py: 3 }}>
                                     <Typography variant="body1" sx={{ mb: 2 }}>
-                                        Are you sure you want to book this shipment with <strong>{selectedRateRef?.carrier || selectedRate?.carrier}</strong>?
+                                        Are you sure you want to book this shipment with <strong>{fullRateDetails?.carrier || selectedRate?.carrier || 'N/A'}</strong>?
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Total cost: <strong>${(selectedRateRef?.totalCharges || selectedRate?.price || 0).toFixed(2)}</strong>
+                                        Total cost: <strong>${((fullRateDetails?.totalCharges ?? selectedRate?.totalCharges ?? selectedRate?.price) || 0).toFixed(2)}</strong>
                                     </Typography>
                                 </DialogContent>
                                 <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
@@ -1206,7 +1182,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                         <>
                                             <CircularProgress size={60} sx={{ mb: 3, color: '#1a237e' }} />
                                             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                                Booking shipment with {selectedRateRef?.carrier || selectedRate?.carrier}...
+                                                Booking shipment with {selectedRate?.carrier}...
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
                                                 Please wait while we process your shipment booking.
@@ -1587,7 +1563,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Freight Charges
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(selectedRate.originalRate?.freightCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.freightCharge || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -1595,7 +1571,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Fuel Surcharge
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(selectedRate.originalRate?.fuelCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.fuelCharge || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -1603,7 +1579,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Accessorial Charges
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(selectedRate.originalRate?.accessorialCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.accessorialCharges || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -1611,7 +1587,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Service Charges
                                                 </Typography>
                                                 <Typography variant="body1">
-                                                    ${(selectedRate.originalRate?.serviceCharges || 0).toFixed(2)}
+                                                    ${(fullRateDetails?.serviceCharges || 0).toFixed(2)}
                                                 </Typography>
                                             </Grid>
                                         </Grid>
@@ -1717,10 +1693,10 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                 </DialogTitle>
                                 <DialogContent sx={{ textAlign: 'center', py: 3 }}>
                                     <Typography variant="body1" sx={{ mb: 2 }}>
-                                        Are you sure you want to book this shipment with <strong>{selectedRate?.carrier}</strong>?
+                                        Are you sure you want to book this shipment with <strong>{fullRateDetails?.carrier || selectedRate?.carrier || 'N/A'}</strong>?
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Total cost: <strong>${(selectedRate?.price || 0).toFixed(2)}</strong>
+                                        Total cost: <strong>${((fullRateDetails?.totalCharges ?? selectedRate?.totalCharges ?? selectedRate?.price) || 0).toFixed(2)}</strong>
                                     </Typography>
                                 </DialogContent>
                                 <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
