@@ -7,7 +7,7 @@ import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { doc, updateDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, collection, addDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
@@ -827,12 +827,29 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 // Raw request and response for auditing
                 rawRateRequestPayload: originalRateRequestForApi || null,
                 rawRateAPIResponse: rawFullRateApiResponse || null,
+
+                // Unified structure flags
+                _isUnifiedStructure: true,
+                migrationNote: 'Created with unified ID structure'
             };
 
-            const shipmentRatesRef = collection(db, 'shipmentRates');
-            const rateDocRef = await addDoc(shipmentRatesRef, removeUndefinedValues(rateDocumentForCollection));
-            console.log('Universal rate saved to shipmentRates with ID:', rateDocRef.id);
-            return rateDocRef.id;
+            // UNIFIED ID STRUCTURE: Use shipment ID as the rate document ID
+            // Store in main collection using shipment ID as document ID
+            const shipmentRatesRef = doc(db, 'shipmentRates', currentShipmentId);
+            await setDoc(shipmentRatesRef, removeUndefinedValues(rateDocumentForCollection));
+
+            // Also store in subcollection for unified structure
+            const unifiedRateRef = doc(db, 'shipments', currentShipmentId, 'rates', currentShipmentId);
+            await setDoc(unifiedRateRef, removeUndefinedValues(rateDocumentForCollection));
+
+            console.log('Universal rate saved to shipmentRates with unified ID structure:', {
+                shipmentId: currentShipmentId,
+                rateId: currentShipmentId, // Now using shipment ID as rate ID
+                unifiedPath: `shipments/${currentShipmentId}/rates/${currentShipmentId}`,
+                legacyPath: `shipmentRates/${currentShipmentId}`
+            });
+
+            return currentShipmentId; // Return the unified ID (same as shipment ID)
         } catch (error) {
             console.error('Error saving universal rate to shipmentRates collection:', error);
             throw error; // Re-throw to be caught by handleRateSelect

@@ -16,8 +16,8 @@ import {
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import InventoryIcon from '@mui/icons-material/Inventory';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import AddCircleIcon from '@mui/icons-material/AddCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import './ShipmentInfo.css';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext'; // Import the context hook
@@ -46,6 +46,11 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
         // and if shipmentInfo itself exists to avoid errors on initial context load
         if (formData.shipmentInfo && !formData.shipmentInfo.shipmentDate) {
             updateFormSection('shipmentInfo', { ...formData.shipmentInfo, shipmentDate: formatDateForInput(new Date()) });
+        }
+
+        // Set default shipment type to 'courier' if not already set
+        if (formData.shipmentInfo && !formData.shipmentInfo.shipmentType) {
+            updateFormSection('shipmentInfo', { ...formData.shipmentInfo, shipmentType: 'courier' });
         }
     }, [formData.shipmentInfo, updateFormSection]); // Rerun if shipmentInfo object changes or updateFormSection changes
 
@@ -240,7 +245,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 role="button"
                                 tabIndex={0}
                             >
-                                <LocalShippingIcon sx={{ fontSize: 40, mb: 1 }} />
+                                <InventoryIcon sx={{ fontSize: 40, mb: 1 }} />
                                 <Typography variant="subtitle1">Courier</Typography>
                                 <Typography variant="body2" color="text.secondary">
                                     Fast delivery for smaller packages
@@ -260,7 +265,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 role="button"
                                 tabIndex={0}
                             >
-                                <AddCircleIcon sx={{ fontSize: 40, mb: 1 }} />
+                                <LocalShippingIcon sx={{ fontSize: 40, mb: 1 }} />
                                 <Typography variant="subtitle1">Freight</Typography>
                                 <Typography variant="body2" color="text.secondary">
                                     For larger or bulk shipments

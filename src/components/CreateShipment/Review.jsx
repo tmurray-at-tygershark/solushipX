@@ -35,7 +35,7 @@ import {
     CheckCircle as CheckCircleIcon,
     Save as SaveIcon
 } from '@mui/icons-material';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs, setDoc, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase';
 import { getMapsApiKey } from '../../utils/maps';
@@ -181,12 +181,33 @@ const saveRateToShipmentRates = async (rate, shipmentId, status = 'selected') =>
         // Remove undefined values from the rateData object
         const cleanedRateData = removeUndefinedValues(rateData);
 
-        const shipmentRatesRef = collection(db, 'shipmentRates');
-        const rateDocRef = await addDoc(shipmentRatesRef, cleanedRateData);
-        console.log(`Rate saved to shipmentRates collection with status '${status}' and ID:`, rateDocRef.id);
-        return rateDocRef.id;
+        // UNIFIED ID STRUCTURE: Use shipment ID as the rate document ID
+        // Store in unified structure: shipments/{shipmentId}/rates/{shipmentId}
+        const unifiedRateRef = doc(db, 'shipments', shipmentId, 'rates', shipmentId);
+        await setDoc(unifiedRateRef, cleanedRateData);
+
+        // UNIFIED ID STRUCTURE: Use shipment ID as the main collection document ID
+        // Store in main collection using shipment ID as document ID
+        const legacyRateRef = doc(db, 'shipmentRates', shipmentId);
+        await setDoc(legacyRateRef, {
+            ...cleanedRateData,
+            unifiedRateId: shipmentId, // Reference to the unified structure
+            migrationNote: 'Created with unified ID structure',
+            _isUnifiedStructure: true // Flag to identify unified structure documents
+        });
+
+        console.log(`Rate saved with unified ID structure:`, {
+            shipmentId,
+            rateId: shipmentId, // Now using shipment ID as rate ID
+            status,
+            carrier: cleanedRateData.carrier,
+            unifiedPath: `shipments/${shipmentId}/rates/${shipmentId}`,
+            legacyPath: `shipmentRates/${shipmentId}`
+        });
+
+        return shipmentId; // Return the unified ID (same as shipment ID)
     } catch (error) {
-        console.error('Error saving rate to shipmentRates:', error);
+        console.error('Error saving rate to unified structure:', error);
         throw error;
     }
 };
@@ -336,7 +357,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [showBookingDialog, setShowBookingDialog] = useState(false);
     const [bookingStep, setBookingStep] = useState('booking'); // 'booking', 'generating_label', or 'completed'
-    const [confirmationNumber, setConfirmationNumber] = useState('');
+    const [shipmentId, setShipmentId] = useState('');
     const [isDraftSaving, setIsDraftSaving] = useState(false);
     const [draftSaveSuccess, setDraftSaveSuccess] = useState(false);
     // NEW: Canpar label generation states
@@ -653,8 +674,25 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                 const bookingDetails = result.data.data;
                 console.log('Successfully booked shipment:', bookingDetails);
 
-                // Set the confirmation number for display in the success dialog
-                setConfirmationNumber(bookingDetails.confirmationNumber);
+                // Fetch the shipment document to get the actual shipmentID
+                try {
+                    const shipmentDocRef = doc(db, 'shipments', docIdToProcess);
+                    const shipmentDoc = await getDoc(shipmentDocRef);
+
+                    if (shipmentDoc.exists()) {
+                        const shipmentData = shipmentDoc.data();
+                        const actualShipmentId = shipmentData.shipmentID || docIdToProcess;
+                        console.log('Fetched shipment ID from document:', actualShipmentId);
+                        setShipmentId(actualShipmentId);
+                    } else {
+                        console.warn('Shipment document not found, using fallback ID');
+                        setShipmentId(docIdToProcess);
+                    }
+                } catch (error) {
+                    console.error('Error fetching shipment document for ID:', error);
+                    // Fallback to the document ID if fetch fails
+                    setShipmentId(docIdToProcess);
+                }
 
                 setError(null); // Clear previous errors
 
@@ -747,7 +785,8 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
             const payload = {
                 shipmentId: canparShipmentId,
                 firebaseDocId: docIdToProcess,
-                carrier: carrierName
+                carrier: carrierName,
+                thermalFormat: true // Always use thermal format for Canpar labels
             };
 
             console.log('Label generation payload:', payload);
@@ -756,7 +795,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
 
             if (result.data && result.data.success) {
                 console.log('Label generated successfully:', result.data);
-                setLabelGenerationStatus('Label generated successfully!');
+                setLabelGenerationStatus('Shipping label generated successfully!');
                 setBookingStep('completed');
             } else {
                 const errorMessage = result.data?.error || 'Failed to generate label';
@@ -1536,10 +1575,10 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                 Shipment Booked Successfully!
                                             </Typography>
                                             <Typography variant="body1" sx={{ mb: 1 }}>
-                                                Confirmation Number:
+                                                Shipment ID:
                                             </Typography>
                                             <Typography variant="h6" sx={{ fontWeight: 600, color: '#1a237e', mb: 2 }}>
-                                                {confirmationNumber}
+                                                {shipmentId}
                                             </Typography>
                                             {/* Show label generation status if applicable */}
                                             {labelGenerationStatus && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
     Box,
     Paper,
@@ -658,16 +658,25 @@ const ShipmentDetail = () => {
             setActionLoading(actionType, true);
 
             const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
-            const result = await getDocumentDownloadUrlFunction({ documentId });
+            const result = await getDocumentDownloadUrlFunction({
+                documentId: documentId,
+                shipmentId: shipment?.id // Pass shipmentId for unified structure support
+            });
 
-            if (result.data.success) {
+            if (result.data && result.data.success) {
                 setCurrentPdfUrl(result.data.downloadUrl);
-                setCurrentPdfTitle(title || filename);
+                setCurrentPdfTitle(title || filename || 'Document');
                 setPdfViewerOpen(true);
-                showSnackbar('Document loaded successfully', 'success');
+                console.log('PDF viewer opened for document:', {
+                    documentId,
+                    title,
+                    foundInUnified: result.data.metadata?.foundInUnified,
+                    storagePath: result.data.metadata?.storagePath
+                });
             } else {
-                throw new Error('Failed to get download URL');
+                throw new Error(result.data?.error || 'Failed to get document URL');
             }
+
         } catch (error) {
             console.error('Error viewing document:', error);
             showSnackbar('Failed to load document: ' + error.message, 'error');
@@ -707,15 +716,52 @@ const ShipmentDetail = () => {
             setActionLoading('printLabel', true);
             showSnackbar(`Generating ${quantity} label(s)...`, 'info');
 
-            const labels = shipmentDocuments.labels || [];
+            let labels = shipmentDocuments.labels || [];
+
+            // Fallback: If no labels but we have other documents, try to find shipping documents
             if (labels.length === 0) {
-                throw new Error('No labels available for this shipment');
+                console.log('No labels found, searching all documents for shipping documents...');
+                const allDocs = Object.values(shipmentDocuments).flat();
+
+                const potentialLabels = allDocs.filter(doc => {
+                    const filename = (doc.filename || '').toLowerCase();
+                    const documentType = (doc.documentType || '').toLowerCase();
+
+                    // Look for shipping-related documents
+                    return filename.includes('label') ||
+                        filename.includes('shipping') ||
+                        filename.includes('ship') ||
+                        filename.includes('print') ||
+                        // Specific eShipPlus ProLabel patterns
+                        filename.includes('prolabel') ||
+                        filename.includes('pro-label') ||
+                        filename.includes('prolabel4x6') ||
+                        filename.includes('prolabelavery') ||
+                        filename.includes('4x6inch') ||
+                        filename.includes('3x4inch') ||
+                        documentType.includes('label') ||
+                        documentType.includes('shipping') ||
+                        // For freight shipments, any PDF might be a label
+                        (shipment?.shipmentInfo?.shipmentType === 'freight' &&
+                            filename.includes('.pdf') &&
+                            !filename.includes('bol') &&
+                            !filename.includes('billoflading') &&  // eShipPlus BOL pattern
+                            !filename.includes('invoice'));
+                });
+
+                if (potentialLabels.length > 0) {
+                    console.log('Found potential shipping labels:', potentialLabels);
+                    labels = potentialLabels;
+                    showSnackbar('Found shipping documents to print', 'info');
+                } else {
+                    throw new Error('No shipping labels or documents available for this shipment');
+                }
             }
 
             let selectedLabel = labels[0];
 
             // For eShipPlus, select based on label type if multiple are available
-            if (isEShipPlusCarrier && labels.length > 1) { // Restored isEShipPlusCarrier
+            if (isEShipPlusCarrier && labels.length > 1) {
                 const typeToSearch = labelType === 'Thermal' ? 'avery3x4' : labelType;
                 const typeBasedLabel = labels.find(label => {
                     const isAvery = label.filename?.toLowerCase().includes('avery') ||
@@ -728,13 +774,19 @@ const ShipmentDetail = () => {
 
             const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
             const result = await getDocumentDownloadUrlFunction({
-                documentId: selectedLabel.id
+                documentId: selectedLabel.id,
+                shipmentId: shipment?.id // Pass shipmentId for unified structure support
             });
 
             if (result.data.success) {
                 if (quantity === 1) {
                     // Single label - view in modal
-                    await viewPdfInModal(selectedLabel.id, selectedLabel.filename, `${labelType.toUpperCase()} Label - ${shipment?.shipmentID}`, 'printLabel');
+                    await viewPdfInModal(
+                        selectedLabel.id,
+                        selectedLabel.filename,
+                        `${labelType.toUpperCase()} ${labels.length > 0 ? 'Label' : 'Document'} - ${shipment?.shipmentID}`,
+                        'printLabel'
+                    );
                 } else {
                     // Multiple labels - fetch PDF, multiply, and show in modal
                     const response = await fetch(result.data.downloadUrl);
@@ -746,17 +798,17 @@ const ShipmentDetail = () => {
                     const multipliedPdfUrl = URL.createObjectURL(blob);
 
                     setCurrentPdfUrl(multipliedPdfUrl);
-                    setCurrentPdfTitle(`${quantity}x ${labelType.toUpperCase()} Labels - ${shipment?.shipmentID}`);
+                    setCurrentPdfTitle(`${quantity}x ${labelType.toUpperCase()} ${labels.length > 0 ? 'Labels' : 'Documents'} - ${shipment?.shipmentID}`);
                     setPdfViewerOpen(true);
                 }
 
-                showSnackbar(`${quantity} label(s) ready for printing`, 'success');
+                showSnackbar(`${quantity} ${labels.length > 0 ? 'label(s)' : 'document(s)'} ready for printing`, 'success');
             } else {
                 throw new Error('Failed to get download URL');
             }
         } catch (error) {
             console.error('Error printing label:', error);
-            showSnackbar('Failed to print label: ' + error.message, 'error');
+            showSnackbar('Failed to print document: ' + error.message, 'error');
         } finally {
             setActionLoading('printLabel', false);
             handlePrintLabelClose();
@@ -826,35 +878,103 @@ const ShipmentDetail = () => {
         setLabelConfig(prev => ({ ...prev, labelType: newType }));
     };
 
-    // Document management functions
-    const fetchShipmentDocuments = async () => {
-        if (!shipment?.id) return;
-
-        setDocumentsLoading(true);
-        setDocumentsError(null);
+    // Enhanced function to fetch shipment documents
+    const fetchShipmentDocuments = useCallback(async () => {
+        if (!shipment?.id) {
+            console.log('No shipment ID available for document fetch');
+            return;
+        }
 
         try {
+            setDocumentsLoading(true);
+            setDocumentsError(null);
             console.log('Fetching documents for shipment:', shipment.id);
 
             const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
             const result = await getShipmentDocumentsFunction({
                 shipmentId: shipment.id,
-                organized: true
+                organized: true // Request organized structure
             });
 
-            if (result.data.success) {
-                setShipmentDocuments(result.data.data);
-                console.log('Documents fetched successfully:', result.data.data);
+            if (result.data && result.data.success) {
+                const documents = result.data.data;
+
+                // Enhanced debugging for document categorization
+                console.log('Raw documents fetched:', result.data.metadata?.documentDetails);
+                console.log('Categorized documents:', {
+                    labels: documents.labels?.length || 0,
+                    bol: documents.bol?.length || 0,
+                    invoice: documents.invoice?.length || 0,
+                    other: documents.other?.length || 0,
+                    allDocuments: Object.values(documents).flat().length
+                });
+
+                // Fallback: If no labels detected but we have "other" documents that might be labels
+                if (documents.labels?.length === 0 && documents.other?.length > 0) {
+                    console.log('No labels detected, checking "other" documents for potential labels...');
+
+                    // Check if any "other" documents might be labels based on filename or metadata
+                    const potentialLabels = documents.other.filter(doc => {
+                        const filename = (doc.filename || '').toLowerCase();
+                        const documentType = (doc.documentType || '').toLowerCase();
+
+                        return filename.includes('label') ||
+                            filename.includes('shipping') ||
+                            filename.includes('ship') ||
+                            filename.includes('print') ||
+                            // Specific eShipPlus ProLabel patterns
+                            filename.includes('prolabel') ||
+                            filename.includes('pro-label') ||
+                            filename.includes('prolabel4x6') ||
+                            filename.includes('prolabelavery') ||
+                            filename.includes('4x6inch') ||
+                            filename.includes('3x4inch') ||
+                            documentType.includes('label') ||
+                            documentType.includes('shipping');
+                    });
+
+                    if (potentialLabels.length > 0) {
+                        console.log('Found potential labels in "other" category:', potentialLabels);
+                        // Move potential labels to the labels array
+                        documents.labels = [...(documents.labels || []), ...potentialLabels];
+                        // Remove them from other
+                        documents.other = documents.other.filter(doc =>
+                            !potentialLabels.some(label => label.id === doc.id)
+                        );
+                        console.log('Moved potential labels to labels category. New counts:', {
+                            labels: documents.labels.length,
+                            other: documents.other.length
+                        });
+                    }
+                }
+
+                setShipmentDocuments(documents);
+
+                console.log('Documents fetched successfully with fallback processing:', {
+                    labels: documents.labels?.length || 0,
+                    bol: documents.bol?.length || 0,
+                    invoice: documents.invoice?.length || 0,
+                    other: documents.other?.length || 0,
+                    metadata: result.data.metadata
+                });
             } else {
-                throw new Error('Failed to fetch documents');
+                throw new Error(result.data?.error || 'Failed to fetch documents');
             }
+
         } catch (error) {
             console.error('Error fetching shipment documents:', error);
-            setDocumentsError(error.message || 'Failed to fetch documents');
+            setDocumentsError(error.message);
+            // Set empty structure on error
+            setShipmentDocuments({
+                labels: [],
+                bol: [],
+                invoice: [],
+                other: []
+            });
         } finally {
             setDocumentsLoading(false);
         }
-    };
+    }, [shipment?.id]);
 
     const downloadDocument = async (documentId, filename) => {
         try {
@@ -1910,28 +2030,35 @@ const ShipmentDetail = () => {
                                         {/* The TextField and FormControl previously here are removed. */}
 
                                         <ButtonGroup variant="outlined" size="small">
-                                            {/* Enhanced Print Label Button - Only show if labels are available */}
-                                            {(shipmentDocuments.labels?.length > 0 || documentsLoading) && (
-                                                <Button
-                                                    onClick={handlePrintLabelClick} // Reverted to open dialog
-                                                    startIcon={actionStates.printLabel.loading ?
-                                                        <CircularProgress size={16} /> : <PrintIcon />}
-                                                    disabled={actionStates.printLabel.loading ||
-                                                        documentsLoading ||
-                                                        shipmentDocuments.labels?.length === 0}
-                                                    sx={{
-                                                        textTransform: 'none',
-                                                        fontWeight: 500,
-                                                        px: 2,
-                                                        minWidth: 140 // Slightly increased width for new text
-                                                    }}
-                                                >
-                                                    {actionStates.printLabel.loading ?
-                                                        'Loading...' :
-                                                        'Print / Configure Labels' // Updated text
-                                                    }
-                                                </Button>
-                                            )}
+                                            {/* Enhanced Print Label Button - Show if labels are available OR if any documents exist for freight shipments */}
+                                            {((shipmentDocuments.labels?.length > 0) ||
+                                                (documentsLoading) ||
+                                                (shipment?.shipmentInfo?.shipmentType === 'freight' &&
+                                                    Object.values(shipmentDocuments).flat().length > 0)) && (
+                                                    <Button
+                                                        onClick={handlePrintLabelClick}
+                                                        startIcon={actionStates.printLabel.loading ?
+                                                            <CircularProgress size={16} /> : <PrintIcon />}
+                                                        disabled={actionStates.printLabel.loading ||
+                                                            documentsLoading ||
+                                                            (shipmentDocuments.labels?.length === 0 &&
+                                                                Object.values(shipmentDocuments).flat().length === 0)}
+                                                        sx={{
+                                                            textTransform: 'none',
+                                                            fontWeight: 500,
+                                                            px: 2,
+                                                            minWidth: 140
+                                                        }}
+                                                        color={shipmentDocuments.labels?.length > 0 ? 'primary' : 'secondary'}
+                                                    >
+                                                        {actionStates.printLabel.loading ?
+                                                            'Loading...' :
+                                                            (shipmentDocuments.labels?.length > 0 ?
+                                                                'Print Labels' :
+                                                                'Print Documents')
+                                                        }
+                                                    </Button>
+                                                )}
 
                                             {/* Enhanced BOL Button - Only for Freight and if BOL is available */}
                                             {isFreightShipment && (shipmentDocuments.bol?.length > 0 || documentsLoading) && (
