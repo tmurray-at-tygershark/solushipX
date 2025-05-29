@@ -643,11 +643,31 @@ const ShipmentAgent = ({
 
                 console.log(`Using actualCompanyId: ${actualCompanyId} for shipment creation`);
 
-                const fn = httpsCallable(getFunctions(), 'createShipment');
-                const res = await fn({
+                // Prepare shipment data with universal format support
+                const shipmentData = {
                     ...data,
                     companyId: actualCompanyId // Use the actual company ID, not the document ID
-                });
+                };
+
+                // If selectedRate is provided and in universal format, ensure it's properly structured
+                if (data.selectedRate && data.selectedRate.carrier && data.selectedRate.pricing && data.selectedRate.transit) {
+                    // Rate is already in universal format, keep as-is
+                    shipmentData.selectedRate = data.selectedRate;
+                } else if (data.selectedRate) {
+                    // Convert legacy rate format to ensure compatibility
+                    shipmentData.selectedRate = {
+                        ...data.selectedRate,
+                        // Ensure basic fields are available for backward compatibility
+                        carrier: data.selectedRate.carrier || data.selectedRate.carrierName,
+                        service: data.selectedRate.service || data.selectedRate.serviceType,
+                        totalCharges: data.selectedRate.totalCharges || data.selectedRate.price,
+                        transitDays: data.selectedRate.transitDays || data.selectedRate.transitTime,
+                        currency: data.selectedRate.currency || 'USD'
+                    };
+                }
+
+                const fn = httpsCallable(getFunctions(), 'createShipment');
+                const res = await fn(shipmentData);
                 return { result: res.data };
             } catch (e) {
                 return { error: e.message };
@@ -935,6 +955,26 @@ const ShipmentAgent = ({
                 const result = await handleFunctionCall({ name: call.name, args });
                 console.log(`Function ${call.name} returned:`, result);
 
+                // Process rate results to ensure universal format compatibility
+                if (call.name === 'getRatesEShipPlus' && result.result && result.result.data && result.result.data.availableRates) {
+                    // Import universal data model functions
+                    const { mapEShipPlusToUniversal } = await import('../../utils/universalDataModel');
+
+                    // Convert rates to universal format for consistent handling
+                    const universalRates = result.result.data.availableRates.map(rate => {
+                        try {
+                            return mapEShipPlusToUniversal(rate);
+                        } catch (error) {
+                            console.warn('Failed to convert rate to universal format:', error, rate);
+                            return rate; // Return original if conversion fails
+                        }
+                    });
+
+                    // Update the result with universal format rates
+                    result.result.data.availableRates = universalRates;
+                    console.log('Converted rates to universal format for AI processing');
+                }
+
                 // Send the raw function result back to Gemini to let it parse and interpret the data
                 try {
                     const functionResponseText = JSON.stringify({
@@ -1214,112 +1254,43 @@ const ShipmentAgent = ({
                 if (!args.companyId) args.companyId = companyIdProp;
                 console.log(`Calling function ${call.name} with args:`, args);
 
-                // Show progressive loading messages for rate requests
-                if (call.name === 'getRatesEShipPlus') {
-                    // Always show loading messages for rate calls, even if flag wasn't set
-                    console.log('Rate function called - showing loading messages');
+                const result = await handleFunctionCall({ name: call.name, args });
+                console.log(`Function ${call.name} returned:`, result);
 
-                    // Add initial "searching" message immediately
-                    setMessages(prev => {
-                        console.log('Adding first loading message: Searching for carriers...');
-                        return [...prev, {
-                            role: 'agent',
-                            content: "Searching for carriers...",
-                            timestamp: new Date().toISOString(),
-                            isLoading: true
-                        }];
+                // Process rate results to ensure universal format compatibility
+                if (call.name === 'getRatesEShipPlus' && result.result && result.result.data && result.result.data.availableRates) {
+                    // Import universal data model functions
+                    const { mapEShipPlusToUniversal } = await import('../../utils/universalDataModel');
+
+                    // Convert rates to universal format for consistent handling
+                    const universalRates = result.result.data.availableRates.map(rate => {
+                        try {
+                            return mapEShipPlusToUniversal(rate);
+                        } catch (error) {
+                            console.warn('Failed to convert rate to universal format:', error, rate);
+                            return rate; // Return original if conversion fails
+                        }
                     });
 
-                    // Store the rate call details for delayed execution
-                    setPendingRateCall({ name: call.name, args });
-
-                    // Ensure all messages are rendered before proceeding
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Simulate progress with timed messages - ensure these run before API call
-                    const timer1 = setTimeout(() => {
-                        setMessages(prev => {
-                            console.log('Adding second loading message: Getting rates from carriers...');
-                            // Replace the last message if it was our loading message
-                            const lastMsg = prev[prev.length - 1];
-                            if (lastMsg && lastMsg.isLoading) {
-                                return [...prev.slice(0, -1), {
-                                    role: 'agent',
-                                    content: "Getting rates from carriers...",
-                                    timestamp: new Date().toISOString(),
-                                    isLoading: true
-                                }];
-                            }
-                            return prev;
-                        });
-                    }, 3000);
-
-                    // Update with third message
-                    const timer2 = setTimeout(() => {
-                        setMessages(prev => {
-                            console.log('Adding third loading message: Reviewing best shipping options...');
-                            // Replace the last message if it was our loading message
-                            const lastMsg = prev[prev.length - 1];
-                            if (lastMsg && lastMsg.isLoading) {
-                                return [...prev.slice(0, -1), {
-                                    role: 'agent',
-                                    content: "Reviewing best shipping options...",
-                                    timestamp: new Date().toISOString(),
-                                    isLoading: true
-                                }];
-                            }
-                            return prev;
-                        });
-                    }, 7000);
-
-                    // Force a long enough delay to show all loading messages before API call
-                    const delayedResult = await new Promise(resolve => {
-                        setTimeout(async () => {
-                            try {
-                                console.log('Executing actual API call after delay');
-                                const result = await handleFunctionCall({ name: call.name, args });
-                                resolve(result);
-                            } catch (err) {
-                                console.error("Error in delayed function call:", err);
-                                resolve({ error: err.message });
-                            } finally {
-                                clearTimeout(timer1);
-                                clearTimeout(timer2);
-                                setPendingRateCall(null);
-                            }
-                        }, 12000); // Increased delay to ensure messages are visible
-                    });
-
-                    // Reset the flag after handling this request
-                    console.log('Resetting showRateLoadingMessages flag');
-                    setShowRateLoadingMessages(false);
-
-                    return processApiResult(delayedResult, call.name);
-                } else {
-                    // For non-rate requests or when loading messages aren't needed, execute normally
-                    const result = await handleFunctionCall({ name: call.name, args });
-                    return processApiResult(result, call.name);
+                    // Update the result with universal format rates
+                    result.result.data.availableRates = universalRates;
+                    console.log('Converted rates to universal format for AI processing');
                 }
 
-                // Helper function to process API results and get response
-                async function processApiResult(result, functionName) {
-                    console.log(`Function ${functionName} returned:`, result);
+                // Send the raw function result back to Gemini to let it parse and interpret the data
+                try {
+                    const functionResponseText = JSON.stringify({
+                        name: call.name,
+                        response: result.error || result.result
+                    });
+                    console.log("Sending function response:", functionResponseText);
 
-                    // Send the raw function result back to Gemini to let it parse and interpret the data
-                    try {
-                        const functionResponseText = JSON.stringify({
-                            name: functionName,
-                            response: result.error || result.result
-                        });
-                        console.log("Sending function response:", functionResponseText);
-
-                        // Try a simpler format for function response
-                        const followUp = await chatRef.current.sendMessage(functionResponseText);
-                        return followUp.response;
-                    } catch (functionResponseError) {
-                        console.error("Error sending function response:", functionResponseError);
-                        throw new Error(`Error processing function response: ${functionResponseError.message}`);
-                    }
+                    // Try a simpler format for function response
+                    const followUp = await chatRef.current.sendMessage(functionResponseText);
+                    response = followUp.response;
+                } catch (functionResponseError) {
+                    console.error("Error sending function response:", functionResponseError);
+                    throw new Error(`Error processing function response: ${functionResponseError.message}`);
                 }
             } else {
                 console.log("No function calls detected in response");

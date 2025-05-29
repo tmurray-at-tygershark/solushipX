@@ -46,48 +46,143 @@ import { getRateDetailsByDocumentId, formatRateReference } from '../../utils/rat
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry"];
 
+// Function to recursively remove undefined values from objects
+const removeUndefinedValues = (obj) => {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+
+    if (Array.isArray(obj)) {
+        return obj.map(removeUndefinedValues).filter(item => item !== undefined);
+    }
+
+    const cleaned = {};
+    for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+            cleaned[key] = removeUndefinedValues(value);
+        }
+    }
+    return cleaned;
+};
+
 // Function to save rate to Firebase
 const saveRateToShipmentRates = async (rate, shipmentId, status = 'selected') => {
     try {
-        const rateData = {
-            shipmentId,
-            rateId: rate.id,
-            carrier: rate.carrier,
-            service: rate.service,
-            carrierCode: rate.carrierScac || rate.carrierCode || '',
-            serviceCode: rate.serviceCode || '',
-            totalCharges: rate.totalCharges || rate.price,
-            freightCharge: rate.freightCharge || rate.originalRate?.freightCharges || 0,
-            fuelCharge: rate.fuelCharge || rate.originalRate?.fuelCharges || 0,
-            serviceCharges: rate.serviceCharges || rate.originalRate?.serviceCharges || 0,
-            accessorialCharges: rate.accessorialCharges || rate.originalRate?.accessorialCharges || 0,
-            guaranteeCharge: rate.guaranteeCharge || 0,
-            currency: rate.currency || 'USD',
-            transitDays: rate.transitDays,
-            transitTime: rate.transitTime,
-            estimatedDeliveryDate: rate.estimatedDeliveryDate,
-            guaranteed: rate.guaranteed || false,
-            guaranteedOptionAvailable: rate.guaranteedOptionAvailable || false,
-            guaranteedPrice: rate.guaranteedPrice || null,
-            packageCounts: rate.packageCounts || {},
-            originalRate: rate.originalRate || rate,
-            status: status,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            ...(status === 'booked' && rate.carrierBookingData && {
-                confirmationNumber: rate.confirmationNumber || rate.carrierBookingData.confirmationNumber,
-                carrierBookingData: rate.carrierBookingData
-            })
-        };
+        let rateData;
 
-        Object.keys(rateData).forEach(key => {
-            if (rateData[key] === undefined) {
-                delete rateData[key];
-            }
-        });
+        // Check if rate is in universal format
+        if (rate.carrier && rate.pricing && rate.transit) {
+            // Universal format - map to collection structure
+            rateData = {
+                shipmentId,
+                rateId: rate.id,
+                quoteId: rate.quoteId,
+
+                // Carrier information
+                carrier: rate.carrier.name,
+                carrierId: rate.carrier.id,
+                carrierScac: rate.carrier.scac,
+                carrierKey: rate.carrier.key,
+
+                // Service information
+                service: rate.service.name,
+                serviceCode: rate.service.code,
+                serviceType: rate.service.type,
+                serviceMode: rate.service.mode,
+
+                // Pricing information
+                totalCharges: rate.pricing.total,
+                freightCharges: rate.pricing.freight,
+                fuelCharges: rate.pricing.fuel,
+                serviceCharges: rate.pricing.service,
+                accessorialCharges: rate.pricing.accessorial,
+                insuranceCharges: rate.pricing.insurance,
+                taxCharges: rate.pricing.tax,
+                discountAmount: rate.pricing.discount,
+                guaranteeCharge: rate.pricing.guarantee,
+                currency: rate.pricing.currency,
+
+                // Transit information
+                transitTime: rate.transit.days,
+                transitDays: rate.transit.days,
+                transitHours: rate.transit.hours,
+                businessDays: rate.transit.businessDays,
+                estimatedDeliveryDate: rate.transit.estimatedDelivery,
+                guaranteed: rate.transit.guaranteed,
+
+                // Weight and dimensions
+                billedWeight: rate.weight.billed,
+                ratedWeight: rate.weight.rated,
+                actualWeight: rate.weight.actual,
+                dimensionalWeight: rate.weight.dimensional,
+                weightUnit: rate.weight.unit,
+
+                length: rate.dimensions.length,
+                width: rate.dimensions.width,
+                height: rate.dimensions.height,
+                cubicFeet: rate.dimensions.cubicFeet,
+                dimensionUnit: rate.dimensions.unit,
+
+                // Service features
+                residential: rate.features.residential,
+                liftgate: rate.features.liftgate,
+                insideDelivery: rate.features.insideDelivery,
+                appointmentDelivery: rate.features.appointmentDelivery,
+                signatureRequired: rate.features.signatureRequired,
+                hazmat: rate.features.hazmat,
+                freezable: rate.features.freezable,
+
+                // Additional data
+                billingDetails: rate.pricing.breakdown,
+                guaranteeOptions: rate.transit.guaranteeOptions,
+
+                // Store the complete universal rate object
+                universalRateData: rate,
+                rawRateDetails: rate, // For booking function compatibility
+
+                status: status,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            };
+        } else {
+            // Legacy format - maintain backward compatibility
+            rateData = {
+                shipmentId,
+                rateId: rate.id,
+                carrier: rate.carrier,
+                service: rate.service,
+                carrierCode: rate.carrierScac || rate.carrierCode || '',
+                serviceCode: rate.serviceCode || '',
+                totalCharges: rate.totalCharges || rate.price,
+                freightCharge: rate.freightCharge || rate.originalRate?.freightCharges || 0,
+                fuelCharge: rate.fuelCharge || rate.originalRate?.fuelCharges || 0,
+                serviceCharges: rate.serviceCharges || rate.originalRate?.serviceCharges || 0,
+                accessorialCharges: rate.accessorialCharges || rate.originalRate?.accessorialCharges || 0,
+                guaranteeCharge: rate.guaranteeCharge || 0,
+                currency: rate.currency || 'USD',
+                transitDays: rate.transitDays,
+                transitTime: rate.transitTime,
+                estimatedDeliveryDate: rate.estimatedDeliveryDate,
+                guaranteed: rate.guaranteed || false,
+                guaranteedOptionAvailable: rate.guaranteedOptionAvailable || false,
+                guaranteedPrice: rate.guaranteedPrice || null,
+                packageCounts: rate.packageCounts || {},
+                originalRate: rate.originalRate || rate,
+                status: status,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                ...(status === 'booked' && rate.carrierBookingData && {
+                    confirmationNumber: rate.confirmationNumber || rate.carrierBookingData.confirmationNumber,
+                    carrierBookingData: rate.carrierBookingData
+                })
+            };
+        }
+
+        // Remove undefined values from the rateData object
+        const cleanedRateData = removeUndefinedValues(rateData);
 
         const shipmentRatesRef = collection(db, 'shipmentRates');
-        const rateDocRef = await addDoc(shipmentRatesRef, rateData);
+        const rateDocRef = await addDoc(shipmentRatesRef, cleanedRateData);
         console.log(`Rate saved to shipmentRates collection with status '${status}' and ID:`, rateDocRef.id);
         return rateDocRef.id;
     } catch (error) {
@@ -505,21 +600,51 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
             throw new Error('Original rate request data is missing. Cannot proceed with booking.');
         }
 
+        // Check if we need to save the selected rate first
+        let selectedRateDocumentId = formData.selectedRateDocumentId;
+
+        if (!selectedRateDocumentId && formData.selectedRate) {
+            console.log('selectedRateDocumentId is null but selectedRate exists. Saving rate to database first...');
+            try {
+                // Save the selected rate to the database first
+                selectedRateDocumentId = await saveRateToShipmentRates(
+                    formData.selectedRate,
+                    docIdToProcess,
+                    'selected_for_booking'
+                );
+                console.log('Rate saved to database with ID:', selectedRateDocumentId);
+            } catch (saveError) {
+                console.error('Error saving rate before booking:', saveError);
+                setError('Failed to prepare rate for booking. Please try again.');
+                setBookingStep('error');
+                setIsLoading(false);
+                return;
+            }
+        }
+
+        if (!selectedRateDocumentId) {
+            console.error('No selectedRateDocumentId available after attempting to save rate.');
+            setError('No rate selected for booking. Please go back and select a rate.');
+            setBookingStep('error');
+            setIsLoading(false);
+            return;
+        }
+
         // Prepare the payload for the Firebase function
         const payload = {
             apiKey: "development-api-key",
             rateRequestData: formData.originalRateRequestData,
             draftFirestoreDocId: docIdToProcess,
-            selectedRateDocumentId: formData.selectedRateDocumentId
+            selectedRateDocumentId: selectedRateDocumentId
         };
-        console.log('Payload for bookRateEShipPlus:', JSON.stringify(payload, null, 2));
+        console.log('Payload for bookRateUniversal:', JSON.stringify(payload, null, 2));
 
         try {
             const functionsInstance = getFunctions();
-            const bookFunction = httpsCallable(functionsInstance, 'bookRateEShipPlus');
-            console.log('Calling bookRateEShipPlus Firebase function...');
+            const bookFunction = httpsCallable(functionsInstance, 'bookRateUniversal');
+            console.log('Calling bookRateUniversal Firebase function...');
             const result = await bookFunction(payload);
-            console.log('Firebase function bookRateEShipPlus raw result:', result);
+            console.log('Firebase function bookRateUniversal raw result:', result);
 
             if (result.data && result.data.success && result.data.data) {
                 const bookingDetails = result.data.data;
@@ -539,12 +664,12 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
 
             } else {
                 const errorMessage = result.data?.data?.messages?.map(m => m.text).join('; ') || result.data?.error || 'Failed to book shipment. Unknown error from function.';
-                console.error('Error from bookRateEShipPlus function:', errorMessage, result.data);
+                console.error('Error from bookRateUniversal function:', errorMessage, result.data);
                 setError(errorMessage);
                 setBookingStep('error');
             }
         } catch (error) {
-            console.error('Error calling bookRateEShipPlus or processing its response:', error);
+            console.error('Error calling bookRateUniversal or processing its response:', error);
             let detailedMessage = error.message;
             if (error.details) {
                 detailedMessage += ` Details: ${JSON.stringify(error.details)}`;
@@ -997,48 +1122,158 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                             <Grid container spacing={3}>
                                                 <Grid item xs={12} md={6}>
                                                     <Typography variant="h5" gutterBottom>
-                                                        {fullRateDetails?.carrier || formData.selectedRate?.carrierName || formData.selectedRate?.carrier || 'N/A'}
+                                                        {/* Handle both universal and legacy formats */}
+                                                        {fullRateDetails?.carrier?.name ||
+                                                            fullRateDetails?.carrier ||
+                                                            formData.selectedRate?.carrier?.name ||
+                                                            formData.selectedRate?.carrierName ||
+                                                            formData.selectedRate?.carrier || 'N/A'}
                                                     </Typography>
                                                     <Chip
-                                                        label={fullRateDetails?.service || formData.selectedRate?.serviceType || formData.selectedRate?.service || 'N/A'}
+                                                        label={fullRateDetails?.service?.name ||
+                                                            fullRateDetails?.service ||
+                                                            formData.selectedRate?.service?.name ||
+                                                            formData.selectedRate?.serviceType ||
+                                                            formData.selectedRate?.service || 'N/A'}
                                                         color="primary"
                                                         sx={{ mb: 2 }}
                                                     />
                                                     <Typography variant="body2" color="text.secondary">
-                                                        Transit Time: {fullRateDetails?.transitDays ?? (formData.selectedRate?.transitTime ?? formData.selectedRate?.transitDays)} days
+                                                        Transit Time: {fullRateDetails?.transit?.days ??
+                                                            fullRateDetails?.transitDays ??
+                                                            (formData.selectedRate?.transit?.days ??
+                                                                formData.selectedRate?.transitTime ??
+                                                                formData.selectedRate?.transitDays)} days
                                                     </Typography>
-                                                    {(fullRateDetails?.guaranteed || formData.selectedRate?.guaranteed) &&
+                                                    {(fullRateDetails?.transit?.guaranteed ||
+                                                        fullRateDetails?.guaranteed ||
+                                                        formData.selectedRate?.transit?.guaranteed ||
+                                                        formData.selectedRate?.guaranteed) &&
                                                         <Chip label="Guaranteed" color="success" size="small" sx={{ ml: 1 }} />
                                                     }
                                                 </Grid>
                                                 <Grid item xs={12} md={6}>
                                                     <Box sx={{ textAlign: 'right' }}>
                                                         <Typography variant="h4" color="primary" gutterBottom>
-                                                            ${(fullRateDetails?.totalCharges ?? formData.selectedRate?.totalCharges ?? formData.selectedRate?.price ?? 0).toFixed(2)}
+                                                            ${(fullRateDetails?.pricing?.total ??
+                                                                fullRateDetails?.totalCharges ??
+                                                                formData.selectedRate?.pricing?.total ??
+                                                                formData.selectedRate?.totalCharges ??
+                                                                formData.selectedRate?.price ?? 0).toFixed(2)}
                                                         </Typography>
                                                         <Typography variant="body2" color="text.secondary">
-                                                            Currency: {fullRateDetails?.currency || formData.selectedRate?.currency || 'USD'}
+                                                            Currency: {fullRateDetails?.pricing?.currency ||
+                                                                fullRateDetails?.currency ||
+                                                                formData.selectedRate?.pricing?.currency ||
+                                                                formData.selectedRate?.currency || 'USD'}
                                                         </Typography>
-                                                        {fullRateDetails?.estimatedDeliveryDate || formData.selectedRate?.estimatedDeliveryDate ? (
+                                                        {(fullRateDetails?.transit?.estimatedDelivery ||
+                                                            fullRateDetails?.estimatedDeliveryDate ||
+                                                            formData.selectedRate?.transit?.estimatedDelivery ||
+                                                            formData.selectedRate?.estimatedDeliveryDate) ? (
                                                             <Typography variant="body2" color="text.secondary">
-                                                                Est. Delivery: {fullRateDetails?.estimatedDeliveryDate || formData.selectedRate?.estimatedDeliveryDate}
+                                                                Est. Delivery: {fullRateDetails?.transit?.estimatedDelivery ||
+                                                                    fullRateDetails?.estimatedDeliveryDate ||
+                                                                    formData.selectedRate?.transit?.estimatedDelivery ||
+                                                                    formData.selectedRate?.estimatedDeliveryDate}
                                                             </Typography>
                                                         ) : null}
                                                     </Box>
                                                 </Grid>
                                             </Grid>
-                                            {/* Detailed breakdown if available in fullRateDetails */}
-                                            {(fullRateDetails && (fullRateDetails.freightCharge || fullRateDetails.fuelCharge || fullRateDetails.accessorialCharges || fullRateDetails.serviceCharges)) && (
-                                                <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
-                                                    <Typography variant="subtitle1" gutterBottom>Rate Breakdown:</Typography>
-                                                    <Grid container spacing={1}>
-                                                        {fullRateDetails.freightCharge !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Freight: ${fullRateDetails.freightCharge.toFixed(2)}</Typography></Grid>}
-                                                        {fullRateDetails.fuelCharge !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Fuel: ${fullRateDetails.fuelCharge.toFixed(2)}</Typography></Grid>}
-                                                        {fullRateDetails.accessorialCharges !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Accessorials: ${fullRateDetails.accessorialCharges.toFixed(2)}</Typography></Grid>}
-                                                        {fullRateDetails.serviceCharges !== undefined && <Grid item xs={6} sm={3}><Typography variant="body2">Service: ${fullRateDetails.serviceCharges.toFixed(2)}</Typography></Grid>}
-                                                    </Grid>
-                                                </Box>
-                                            )}
+                                            {/* Detailed breakdown - unified approach for all carriers */}
+                                            {(() => {
+                                                // Helper function to safely get a numeric value
+                                                const safeNumber = (value) => {
+                                                    const num = parseFloat(value);
+                                                    return isNaN(num) ? 0 : num;
+                                                };
+
+                                                // Try to build breakdown from enhanced billing details first (Canpar style)
+                                                if (fullRateDetails?.billingDetails && Array.isArray(fullRateDetails.billingDetails) && fullRateDetails.billingDetails.length > 0) {
+                                                    const validDetails = fullRateDetails.billingDetails.filter(detail =>
+                                                        detail &&
+                                                        detail.name &&
+                                                        (detail.amount !== undefined && detail.amount !== null)
+                                                    );
+
+                                                    if (validDetails.length > 0) {
+                                                        return (
+                                                            <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
+                                                                <Typography variant="subtitle1" gutterBottom>Rate Breakdown:</Typography>
+                                                                <Grid container spacing={1}>
+                                                                    {validDetails.map((detail, index) => (
+                                                                        <Grid item xs={6} sm={3} key={index}>
+                                                                            <Typography variant="body2">
+                                                                                {detail.name}: ${safeNumber(detail.amount).toFixed(2)}
+                                                                            </Typography>
+                                                                        </Grid>
+                                                                    ))}
+                                                                </Grid>
+                                                            </Box>
+                                                        );
+                                                    }
+                                                }
+
+                                                // Fallback to standard breakdown (eShipPlus and other carriers)
+                                                const breakdownItems = [];
+
+                                                // Check for freight charges
+                                                const freight = safeNumber(fullRateDetails?.pricing?.freight || fullRateDetails?.freightCharge || fullRateDetails?.freightCharges);
+                                                if (freight > 0) {
+                                                    breakdownItems.push({ name: 'Freight', amount: freight });
+                                                }
+
+                                                // Check for fuel charges
+                                                const fuel = safeNumber(fullRateDetails?.pricing?.fuel || fullRateDetails?.fuelCharge || fullRateDetails?.fuelCharges);
+                                                if (fuel > 0) {
+                                                    breakdownItems.push({ name: 'Fuel', amount: fuel });
+                                                }
+
+                                                // Check for accessorial charges
+                                                const accessorial = safeNumber(fullRateDetails?.pricing?.accessorial || fullRateDetails?.accessorialCharges);
+                                                if (accessorial > 0) {
+                                                    breakdownItems.push({ name: 'Accessorials', amount: accessorial });
+                                                }
+
+                                                // Check for service charges
+                                                const service = safeNumber(fullRateDetails?.pricing?.service || fullRateDetails?.serviceCharges);
+                                                if (service > 0) {
+                                                    breakdownItems.push({ name: 'Service', amount: service });
+                                                }
+
+                                                // Check for tax charges
+                                                const tax = safeNumber(fullRateDetails?.pricing?.tax || fullRateDetails?.taxCharges);
+                                                if (tax > 0) {
+                                                    breakdownItems.push({ name: 'Tax', amount: tax });
+                                                }
+
+                                                // Check for insurance charges
+                                                const insurance = safeNumber(fullRateDetails?.pricing?.insurance || fullRateDetails?.insuranceCharges);
+                                                if (insurance > 0) {
+                                                    breakdownItems.push({ name: 'Insurance', amount: insurance });
+                                                }
+
+                                                if (breakdownItems.length > 0) {
+                                                    return (
+                                                        <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
+                                                            <Typography variant="subtitle1" gutterBottom>Rate Breakdown:</Typography>
+                                                            <Grid container spacing={1}>
+                                                                {breakdownItems.map((item, index) => (
+                                                                    <Grid item xs={6} sm={3} key={index}>
+                                                                        <Typography variant="body2">
+                                                                            {item.name}: ${item.amount.toFixed(2)}
+                                                                        </Typography>
+                                                                    </Grid>
+                                                                ))}
+                                                            </Grid>
+                                                        </Box>
+                                                    );
+                                                }
+
+                                                // No breakdown available
+                                                return null;
+                                            })()}
                                         </Box>
                                     </Collapse>
                                 </Paper>
@@ -1142,10 +1377,21 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                 </DialogTitle>
                                 <DialogContent sx={{ textAlign: 'center', py: 3 }}>
                                     <Typography variant="body1" sx={{ mb: 2 }}>
-                                        Are you sure you want to book this shipment with <strong>{fullRateDetails?.carrier || selectedRate?.carrier || 'N/A'}</strong>?
+                                        Are you sure you want to book this shipment with <strong>
+                                            {fullRateDetails?.carrier?.name ||
+                                                fullRateDetails?.carrier ||
+                                                selectedRate?.carrier?.name ||
+                                                selectedRate?.carrier || 'N/A'}
+                                        </strong>?
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Total cost: <strong>${((fullRateDetails?.totalCharges ?? selectedRate?.totalCharges ?? selectedRate?.price) || 0).toFixed(2)}</strong>
+                                        Total cost: <strong>
+                                            ${((fullRateDetails?.pricing?.total ??
+                                                fullRateDetails?.totalCharges ??
+                                                selectedRate?.pricing?.total ??
+                                                selectedRate?.totalCharges ??
+                                                selectedRate?.price) || 0).toFixed(2)}
+                                        </strong>
                                     </Typography>
                                 </DialogContent>
                                 <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
@@ -1182,7 +1428,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                         <>
                                             <CircularProgress size={60} sx={{ mb: 3, color: '#1a237e' }} />
                                             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                                Booking shipment with {selectedRate?.carrier}...
+                                                Booking shipment with {selectedRate?.carrier?.name || selectedRate?.carrier || 'carrier'}...
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
                                                 Please wait while we process your shipment booking.
@@ -1223,555 +1469,11 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                     )}
                 </LoadScript>
             ) : (
-                <Box sx={{ py: 4 }}>
-                    {mapError ? (
-                        <>
-                            <Alert severity="warning" sx={{ mb: 3 }}>
-                                {mapError} - Maps functionality will be disabled, but you can still book shipments.
-                            </Alert>
-
-                            <Box sx={{ mb: 4 }}>
-                                <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
-                                    Review Shipment Details
-                                </Typography>
-                            </Box>
-
-                            {error && (
-                                <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
-                            )}
-
-                            {/* Render shipment details without maps */}
-                            <Paper sx={{ mb: 3, overflow: 'hidden' }}>
-                                <Box
-                                    sx={{
-                                        p: 2,
-                                        bgcolor: '#000000',
-                                        color: 'white',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between'
-                                    }}
-                                >
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <ShippingIcon />
-                                        <Typography variant="h6">Shipment Information</Typography>
-                                    </Box>
-                                    <IconButton
-                                        onClick={() => toggleSection('shipment')}
-                                        sx={{ color: 'white' }}
-                                    >
-                                        <ExpandMoreIcon
-                                            sx={{
-                                                transform: expandedSections.shipment ? 'rotate(180deg)' : 'none',
-                                                transition: 'transform 0.3s'
-                                            }}
-                                        />
-                                    </IconButton>
-                                </Box>
-                                <Collapse in={expandedSections.shipment}>
-                                    <Box sx={{ p: 3 }}>
-                                        <Grid container spacing={3}>
-                                            <Grid item xs={12} md={4}>
-                                                <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
-                                                    <Typography variant="h6" gutterBottom color="black" sx={{
-                                                        pb: 1,
-                                                        mb: 2
-                                                    }}>
-                                                        Basic Information
-                                                    </Typography>
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Shipment Type
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {shipmentInfo.shipmentType || 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Reference Number
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {shipmentInfo.referenceNumber || 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Bill Type
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {shipmentInfo.billType || 'Prepaid'}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                </Paper>
-                                            </Grid>
-                                            <Grid item xs={12} md={4}>
-                                                <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
-                                                    <Typography variant="h6" gutterBottom color="black" sx={{
-                                                        pb: 1,
-                                                        mb: 2
-                                                    }}>
-                                                        Timing Information
-                                                    </Typography>
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Shipment Date
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {shipmentInfo.shipmentDate || 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Pickup Window
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {shipmentInfo.earliestPickup || '09:00'} - {shipmentInfo.latestPickup || '17:00'}
-                                                            </Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Delivery Window
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {shipmentInfo.earliestDelivery || '09:00'} - {shipmentInfo.latestDelivery || '17:00'}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                </Paper>
-                                            </Grid>
-                                            <Grid item xs={12} md={4}>
-                                                <Paper elevation={2} sx={{ height: '100%', p: 2, bgcolor: 'background.paper' }}>
-                                                    <Typography variant="h6" gutterBottom color="black" sx={{
-                                                        pb: 1,
-                                                        mb: 2
-                                                    }}>
-                                                        Service Options
-                                                    </Typography>
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Hold for Pickup
-                                                            </Typography>
-                                                            <Chip
-                                                                label={shipmentInfo.holdForPickup ? "Yes" : "No"}
-                                                                color={shipmentInfo.holdForPickup ? "primary" : "default"}
-                                                                size="small"
-                                                                sx={{ minWidth: 60 }}
-                                                            />
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                International
-                                                            </Typography>
-                                                            <Chip
-                                                                label={shipmentInfo.international ? "Yes" : "No"}
-                                                                color={shipmentInfo.international ? "primary" : "default"}
-                                                                size="small"
-                                                                sx={{ minWidth: 60 }}
-                                                            />
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Saturday Delivery
-                                                            </Typography>
-                                                            <Chip
-                                                                label={shipmentInfo.saturdayDelivery ? "Yes" : "No"}
-                                                                color={shipmentInfo.saturdayDelivery ? "primary" : "default"}
-                                                                size="small"
-                                                                sx={{ minWidth: 60 }}
-                                                            />
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="subtitle2" color="text.secondary">
-                                                                Signature Required
-                                                            </Typography>
-                                                            <Chip
-                                                                label={shipmentInfo.signatureRequired ? "Yes" : "No"}
-                                                                color={shipmentInfo.signatureRequired ? "primary" : "default"}
-                                                                size="small"
-                                                                sx={{ minWidth: 60 }}
-                                                            />
-                                                        </Box>
-                                                    </Box>
-                                                </Paper>
-                                            </Grid>
-                                        </Grid>
-                                    </Box>
-                                </Collapse>
-                            </Paper>
-
-                            <Grid container spacing={3} sx={{ mb: 3 }}>
-                                <Grid item xs={12} md={6}>
-                                    <Paper sx={{ height: '100%' }}>
-                                        <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
-                                            <Typography variant="h6">
-                                                <LocationIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                                Ship From
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ p: 2 }}>
-                                            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                                                {shipFrom.company}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                                {formatAddress(shipFrom)}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Contact: {shipFrom.contactName}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Phone: {formatPhone(shipFrom.contactPhone)}
-                                            </Typography>
-                                            <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1, textAlign: 'center' }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Map unavailable
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    </Paper>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Paper sx={{ height: '100%' }}>
-                                        <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
-                                            <Typography variant="h6">
-                                                <LocationIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                                Ship To
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ p: 2 }}>
-                                            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                                                {shipTo.company}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                                {formatAddress(shipTo)}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Contact: {shipTo.contactName}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Phone: {formatPhone(shipTo.contactPhone)}
-                                            </Typography>
-                                            <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1, textAlign: 'center' }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Map unavailable
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    </Paper>
-                                </Grid>
-                            </Grid>
-
-                            <Paper sx={{ mb: 3 }}>
-                                <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
-                                    <Typography variant="h6">Package Details</Typography>
-                                </Box>
-                                <Box sx={{ p: 2 }}>
-                                    <Grid container spacing={3}>
-                                        {packages.map((pkg, index) => (
-                                            <Grid item xs={12} md={6} key={pkg.id || index}>
-                                                <Paper
-                                                    elevation={0}
-                                                    sx={{
-                                                        p: 2,
-                                                        border: '1px solid #e0e0e0',
-                                                        borderRadius: 1
-                                                    }}
-                                                >
-                                                    <Typography variant="subtitle1" gutterBottom>
-                                                        Package {index + 1}
-                                                    </Typography>
-                                                    <Grid container spacing={2}>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Description
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {pkg.itemDescription || 'N/A'}
-                                                            </Typography>
-                                                        </Grid>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Weight
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {pkg.weight} lbs
-                                                            </Typography>
-                                                        </Grid>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Dimensions
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {pkg.length}" × {pkg.width}" × {pkg.height}"
-                                                            </Typography>
-                                                        </Grid>
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Freight Class
-                                                            </Typography>
-                                                            <Typography variant="body1">
-                                                                {pkg.freightClass || 'N/A'}
-                                                            </Typography>
-                                                        </Grid>
-                                                    </Grid>
-                                                </Paper>
-                                            </Grid>
-                                        ))}
-                                    </Grid>
-                                </Box>
-                            </Paper>
-
-                            {selectedRate ? (
-                                <Paper sx={{ mb: 4 }}>
-                                    <Box sx={{ p: 2, bgcolor: '#000000', color: 'white' }}>
-                                        <Typography variant="h6">Rate Details</Typography>
-                                    </Box>
-                                    <Box sx={{ p: 3 }}>
-                                        <Grid container spacing={3}>
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="h5" gutterBottom>
-                                                    {selectedRate.carrier}
-                                                </Typography>
-                                                <Chip
-                                                    label={selectedRate.service}
-                                                    color="primary"
-                                                    sx={{ mb: 2 }}
-                                                />
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Transit Time: {selectedRate.transitDays} days
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ textAlign: 'right' }}>
-                                                    <Typography variant="h4" color="primary" gutterBottom>
-                                                        ${(selectedRate.price || 0).toFixed(2)}
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        Total Charges
-                                                    </Typography>
-                                                </Box>
-                                            </Grid>
-                                        </Grid>
-                                        <Divider sx={{ my: 2 }} />
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Freight Charges
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.freightCharge || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Fuel Surcharge
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.fuelCharge || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Accessorial Charges
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.accessorialCharges || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={6} md={3}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Service Charges
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    ${(fullRateDetails?.serviceCharges || 0).toFixed(2)}
-                                                </Typography>
-                                            </Grid>
-                                        </Grid>
-                                    </Box>
-                                </Paper>
-                            ) : (
-                                <Paper sx={{ mb: 4, p: 3, textAlign: 'center' }}>
-                                    <Typography variant="h6" color="error">
-                                        No rate selected. Please go back and select a rate.
-                                    </Typography>
-                                </Paper>
-                            )}
-
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-                                <motion.button
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    onClick={onPrevious}
-                                    type="button"
-                                    style={{
-                                        padding: '12px 24px',
-                                        borderRadius: '8px',
-                                        border: '2px solid #1a237e',
-                                        background: 'transparent',
-                                        color: '#1a237e',
-                                        cursor: 'pointer',
-                                        fontSize: '16px',
-                                        fontWeight: 500,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px'
-                                    }}
-                                >
-                                    ← Previous
-                                </motion.button>
-
-                                <Box sx={{ display: 'flex', gap: 2 }}>
-                                    <motion.button
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        onClick={saveDraft}
-                                        type="button"
-                                        disabled={isDraftSaving || draftSaveSuccess}
-                                        style={{
-                                            padding: '12px 24px',
-                                            borderRadius: '8px',
-                                            border: '2px solid #666',
-                                            background: draftSaveSuccess ? '#4caf50' : 'transparent',
-                                            color: draftSaveSuccess ? 'white' : '#666',
-                                            cursor: (isDraftSaving || draftSaveSuccess) ? 'not-allowed' : 'pointer',
-                                            fontSize: '16px',
-                                            fontWeight: 500,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        {isDraftSaving ? (
-                                            <CircularProgress size={20} color="inherit" />
-                                        ) : draftSaveSuccess ? (
-                                            <CheckCircleIcon sx={{ fontSize: 20 }} />
-                                        ) : (
-                                            <SaveIcon sx={{ fontSize: 20 }} />
-                                        )}
-                                        {isDraftSaving ? 'Saving...' : draftSaveSuccess ? 'Saved!' : 'Save Draft'}
-                                    </motion.button>
-
-                                    <motion.button
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        onClick={handleBookShipment}
-                                        type="button"
-                                        disabled={!selectedRate}
-                                        style={{
-                                            padding: '12px 24px',
-                                            borderRadius: '8px',
-                                            border: 'none',
-                                            background: !selectedRate ? '#cccccc' : '#1a237e',
-                                            color: 'white',
-                                            cursor: !selectedRate ? 'not-allowed' : 'pointer',
-                                            fontSize: '16px',
-                                            fontWeight: 500,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        <CheckCircleIcon sx={{ fontSize: 20 }} />
-                                        Book Shipment
-                                    </motion.button>
-                                </Box>
-                            </Box>
-
-                            {/* Confirmation Dialog */}
-                            <Dialog
-                                open={showConfirmDialog}
-                                onClose={() => setShowConfirmDialog(false)}
-                                maxWidth="sm"
-                                fullWidth
-                            >
-                                <DialogTitle sx={{ textAlign: 'center', fontWeight: 600, fontSize: '1.5rem' }}>
-                                    CONFIRM SHIPMENT BOOKING
-                                </DialogTitle>
-                                <DialogContent sx={{ textAlign: 'center', py: 3 }}>
-                                    <Typography variant="body1" sx={{ mb: 2 }}>
-                                        Are you sure you want to book this shipment with <strong>{fullRateDetails?.carrier || selectedRate?.carrier || 'N/A'}</strong>?
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Total cost: <strong>${((fullRateDetails?.totalCharges ?? selectedRate?.totalCharges ?? selectedRate?.price) || 0).toFixed(2)}</strong>
-                                    </Typography>
-                                </DialogContent>
-                                <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
-                                    <Button
-                                        onClick={() => setShowConfirmDialog(false)}
-                                        variant="outlined"
-                                        size="large"
-                                        sx={{ minWidth: 100 }}
-                                    >
-                                        NO
-                                    </Button>
-                                    <Button
-                                        onClick={handleConfirmBooking}
-                                        variant="contained"
-                                        size="large"
-                                        sx={{ minWidth: 100, bgcolor: '#1a237e' }}
-                                    >
-                                        YES
-                                    </Button>
-                                </DialogActions>
-                            </Dialog>
-
-                            {/* Booking Progress Dialog */}
-                            <Dialog
-                                open={showBookingDialog}
-                                onClose={() => { /* Intentionally empty to prevent closing by click outside/Esc */ }}
-                                maxWidth="sm"
-                                fullWidth
-                                disableEscapeKeyDown // Explicitly prevent Esc key from closing
-                            >
-                                <DialogContent sx={{ textAlign: 'center', py: 4 }}>
-                                    {console.log('Rendering Booking Progress Dialog. showBookingDialog:', showBookingDialog, 'bookingStep:', bookingStep)}
-                                    {bookingStep === 'booking' ? (
-                                        <>
-                                            <CircularProgress size={60} sx={{ mb: 3, color: '#1a237e' }} />
-                                            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                                Booking shipment with {selectedRate?.carrier}...
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Please wait while we process your shipment booking.
-                                            </Typography>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <CheckCircleIcon sx={{ fontSize: 80, color: '#4caf50', mb: 2 }} />
-                                            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                                Shipment Booked Successfully!
-                                            </Typography>
-                                            <Typography variant="body1" sx={{ mb: 1 }}>
-                                                Confirmation Number:
-                                            </Typography>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1a237e', mb: 3 }}>
-                                                {confirmationNumber}
-                                            </Typography>
-                                            <Button
-                                                onClick={handleBookingComplete}
-                                                variant="contained"
-                                                size="large"
-                                                sx={{ bgcolor: '#1a237e' }}
-                                            >
-                                                Complete & Return to Shipments
-                                            </Button>
-                                        </>
-                                    )}
-                                </DialogContent>
-                            </Dialog>
-                        </>
-                    ) : (
-                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                            <CircularProgress />
-                            <Typography variant="body2" sx={{ mt: 2 }}>
-                                Loading Google Maps API...
-                            </Typography>
-                        </Box>
-                    )}
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <CircularProgress />
+                    <Typography variant="body2" sx={{ mt: 2 }}>
+                        Loading Google Maps API...
+                    </Typography>
                 </Box>
             )}
         </Container>

@@ -1,0 +1,360 @@
+const { onCall } = require('firebase-functions/v2/https');
+const logger = require("firebase-functions/logger");
+const axios = require('axios');
+const { parseStringPromise } = require('xml2js');
+const dayjs = require('dayjs');
+const { getCarrierApiConfig, validateCarrierEndpoints } = require('../../utils');
+
+// Helper function for safe property access
+const safeAccess = (obj, path, defaultValue = null) => {
+    const keys = path.split('.');
+    let current = obj;
+    for (const key of keys) {
+        if (current && typeof current === 'object' && key in current) {
+            current = current[key];
+        } else {
+            return defaultValue;
+        }
+    }
+    return current;
+};
+
+// Transform Canpar SOAP response to internal format
+function transformCanparResponseToInternalFormat(canparResponse) {
+    if (!canparResponse) return null;
+
+    // Extract shipment data from the nested response structure
+    const shipment = safeAccess(canparResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0.ax25:processShipmentResult.0.ax27:shipment.0');
+    
+    if (!shipment) {
+        logger.error('No shipment data found in Canpar response');
+        return null;
+    }
+
+    // Extract rate information
+    const freightCharge = parseFloat(safeAccess(shipment, 'ax27:freight_charge.0', '0'));
+    const fuelSurcharge = parseFloat(safeAccess(shipment, 'ax27:fuel_surcharge.0', '0'));
+    const taxCharge1 = parseFloat(safeAccess(shipment, 'ax27:tax_charge_1.0', '0'));
+    const taxCharge2 = parseFloat(safeAccess(shipment, 'ax27:tax_charge_2.0', '0'));
+    const total = parseFloat(safeAccess(shipment, 'ax27:total.0', '0'));
+    
+    const transitTime = parseInt(safeAccess(shipment, 'ax27:transit_time.0', '0'));
+    const estimatedDeliveryDate = safeAccess(shipment, 'ax27:estimated_delivery_date.0');
+    const serviceType = parseInt(safeAccess(shipment, 'ax27:service_type.0', '5'));
+    const billedWeight = parseFloat(safeAccess(shipment, 'ax27:billed_weight.0', '0'));
+    const isGuaranteed = safeAccess(shipment, 'ax27:transit_time_guaranteed.0') === 'true';
+
+    // Map service type to service name
+    const getServiceName = (serviceType) => {
+        const serviceMap = {
+            1: 'Canpar Ground',
+            2: 'Canpar Select', 
+            3: 'Canpar Overnight',
+            4: 'Canpar USA',
+            5: 'Canpar Ground',
+            6: 'Canpar International'
+        };
+        return serviceMap[serviceType] || `Service ${serviceType}`;
+    };
+
+    // Create a single rate object (Canpar typically returns one rate per service type)
+    const rate = {
+        quoteId: `CANPAR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        carrierName: 'Canpar Express',
+        carrierScac: 'CANP',
+        carrierKey: 'CANPAR',
+        serviceMode: getServiceName(serviceType),
+        serviceType: getServiceName(serviceType),
+        transitTime: transitTime,
+        estimatedDeliveryDate: estimatedDeliveryDate ? dayjs(estimatedDeliveryDate).format('YYYY-MM-DD') : null,
+        freightCharges: freightCharge,
+        fuelCharges: fuelSurcharge,
+        serviceCharges: 0, // Canpar doesn't separate service charges
+        accessorialCharges: 0, // Additional charges would be calculated separately
+        totalCharges: total,
+        currency: 'CAD', // Canpar is Canadian, typically CAD
+        guaranteedService: isGuaranteed,
+        guaranteeCharge: 0, // Would need separate calculation if guarantee is selected
+        billingDetails: [],
+        guarOptions: [],
+        billedWeight: billedWeight,
+        ratedWeight: billedWeight,
+        // Store raw Canpar response data for reference
+        canparServiceType: serviceType,
+        canparZone: safeAccess(shipment, 'ax27:zone.0'),
+        canparTaxCode1: safeAccess(shipment, 'ax27:tax_code_1.0'),
+        canparTaxCode2: safeAccess(shipment, 'ax27:tax_code_2.0')
+    };
+
+    const transformed = {
+        bookingReference: `CANPAR_${Date.now()}`,
+        bookingReferenceType: "Shipment",
+        shipmentBillType: "Prepaid",
+        shipmentDate: safeAccess(shipment, 'ax27:shipping_date.0') ? dayjs(safeAccess(shipment, 'ax27:shipping_date.0')).format('YYYY-MM-DD') : null,
+        pickupWindow: {
+            earliest: "09:00",
+            latest: "17:00"
+        },
+        deliveryWindow: {
+            earliest: "09:00", 
+            latest: "17:00"
+        },
+        origin: {
+            company: safeAccess(shipment, 'ax27:pickup_address.0.ax27:name.0'),
+            street: safeAccess(shipment, 'ax27:pickup_address.0.ax27:address_line_1.0'),
+            street2: safeAccess(shipment, 'ax27:pickup_address.0.ax27:address_line_2.0'),
+            postalCode: safeAccess(shipment, 'ax27:pickup_address.0.ax27:postal_code.0'),
+            city: safeAccess(shipment, 'ax27:pickup_address.0.ax27:city.0'),
+            state: safeAccess(shipment, 'ax27:pickup_address.0.ax27:province.0'),
+            country: safeAccess(shipment, 'ax27:pickup_address.0.ax27:country.0'),
+            contact: safeAccess(shipment, 'ax27:pickup_address.0.ax27:name.0'),
+            phone: safeAccess(shipment, 'ax27:pickup_address.0.ax27:phone.0'),
+            email: '',
+            specialInstructions: 'none'
+        },
+        destination: {
+            company: safeAccess(shipment, 'ax27:delivery_address.0.ax27:name.0'),
+            street: safeAccess(shipment, 'ax27:delivery_address.0.ax27:address_line_1.0'),
+            street2: safeAccess(shipment, 'ax27:delivery_address.0.ax27:address_line_2.0'),
+            postalCode: safeAccess(shipment, 'ax27:delivery_address.0.ax27:postal_code.0'),
+            city: safeAccess(shipment, 'ax27:delivery_address.0.ax27:city.0'),
+            state: safeAccess(shipment, 'ax27:delivery_address.0.ax27:province.0'),
+            country: safeAccess(shipment, 'ax27:delivery_address.0.ax27:country.0'),
+            contact: safeAccess(shipment, 'ax27:delivery_address.0.ax27:name.0'),
+            phone: safeAccess(shipment, 'ax27:delivery_address.0.ax27:phone.0'),
+            email: '',
+            specialInstructions: 'none'
+        },
+        items: [], // Would need to extract package information if needed
+        availableRates: [rate] // Canpar typically returns one rate per request
+    };
+
+    return transformed;
+}
+
+// Build SOAP envelope for Canpar API
+function buildCanparSoapEnvelope(requestData, credentials) {
+    const packages = requestData.shipment.packages.map(pkg => `
+        <xsd:packages>
+            <xsd:reported_weight>${pkg.reported_weight}</xsd:reported_weight>
+            <xsd:length>${pkg.length}</xsd:length>
+            <xsd:width>${pkg.width}</xsd:width>
+            <xsd:height>${pkg.height}</xsd:height>
+            <xsd:declared_value>${pkg.declared_value}</xsd:declared_value>
+            <xsd:dim_weight>${pkg.dim_weight}</xsd:dim_weight>
+            <xsd:dim_weight_flag>${pkg.dim_weight_flag}</xsd:dim_weight_flag>
+            <xsd:min_weight_flag>${pkg.min_weight_flag}</xsd:min_weight_flag>
+            <xsd:package_num>${pkg.package_num}</xsd:package_num>
+            <xsd:package_reference>${pkg.package_reference}</xsd:package_reference>
+            <xsd:xc>${pkg.xc}</xsd:xc>
+        </xsd:packages>
+    `).join('');
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:ws="http://ws.onlinerating.canshipws.canpar.com"
+                  xmlns:xsd="http://ws.dto.canshipws.canpar.com/xsd">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ws:rateShipment>
+      <ws:request>
+        <xsd:user_id>${credentials.username}</xsd:user_id>
+        <xsd:password>${credentials.password}</xsd:password>
+        <xsd:apply_association_discount>${requestData.apply_association_discount}</xsd:apply_association_discount>
+        <xsd:apply_individual_discount>${requestData.apply_individual_discount}</xsd:apply_individual_discount>
+        <xsd:apply_invoice_discount>${requestData.apply_invoice_discount}</xsd:apply_invoice_discount>
+
+        <xsd:shipment>
+          <xsd:shipper_num>${credentials.accountNumber}</xsd:shipper_num>
+          <xsd:shipping_date>${requestData.shipment.shipping_date}</xsd:shipping_date>
+          <xsd:service_type>${requestData.shipment.service_type}</xsd:service_type>
+          <xsd:shipment_status>${requestData.shipment.shipment_status}</xsd:shipment_status>
+          <xsd:reported_weight_unit>${requestData.shipment.reported_weight_unit}</xsd:reported_weight_unit>
+
+          ${packages}
+
+          <xsd:pickup_address>
+            <xsd:name>${requestData.shipment.pickup_address.name}</xsd:name>
+            <xsd:address_line_1>${requestData.shipment.pickup_address.address_line_1}</xsd:address_line_1>
+            <xsd:address_line_2>${requestData.shipment.pickup_address.address_line_2}</xsd:address_line_2>
+            <xsd:city>${requestData.shipment.pickup_address.city}</xsd:city>
+            <xsd:province>${requestData.shipment.pickup_address.province}</xsd:province>
+            <xsd:country>${requestData.shipment.pickup_address.country}</xsd:country>
+            <xsd:postal_code>${requestData.shipment.pickup_address.postal_code}</xsd:postal_code>
+            <xsd:phone>${requestData.shipment.pickup_address.phone}</xsd:phone>
+            <xsd:residential>${requestData.shipment.pickup_address.residential}</xsd:residential>
+          </xsd:pickup_address>
+
+          <xsd:delivery_address>
+            <xsd:name>${requestData.shipment.delivery_address.name}</xsd:name>
+            <xsd:address_line_1>${requestData.shipment.delivery_address.address_line_1}</xsd:address_line_1>
+            <xsd:address_line_2>${requestData.shipment.delivery_address.address_line_2}</xsd:address_line_2>
+            <xsd:city>${requestData.shipment.delivery_address.city}</xsd:city>
+            <xsd:province>${requestData.shipment.delivery_address.province}</xsd:province>
+            <xsd:country>${requestData.shipment.delivery_address.country}</xsd:country>
+            <xsd:postal_code>${requestData.shipment.delivery_address.postal_code}</xsd:postal_code>
+            <xsd:phone>${requestData.shipment.delivery_address.phone}</xsd:phone>
+            <xsd:residential>${requestData.shipment.delivery_address.residential}</xsd:residential>
+          </xsd:delivery_address>
+        </xsd:shipment>
+      </ws:request>
+    </ws:rateShipment>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+}
+
+// Validate Canpar rate request
+function validateCanparRateRequest(data) {
+    if (!data) return 'Request body is required';
+    if (!data.shipment) return 'Shipment data is required';
+    
+    const shipment = data.shipment;
+    if (!shipment.shipping_date) return 'Shipping date is required';
+    if (!shipment.packages || !Array.isArray(shipment.packages) || shipment.packages.length === 0) {
+        return 'At least one package is required';
+    }
+    
+    // Validate addresses
+    if (!shipment.pickup_address) return 'Pickup address is required';
+    if (!shipment.delivery_address) return 'Delivery address is required';
+    
+    const validateAddress = (address, type) => {
+        if (!address.name) return `${type} name is required`;
+        if (!address.address_line_1) return `${type} address is required`;
+        if (!address.city) return `${type} city is required`;
+        if (!address.province) return `${type} province is required`;
+        if (!address.postal_code) return `${type} postal code is required`;
+        if (!address.country) return `${type} country is required`;
+        return null;
+    };
+    
+    let error = validateAddress(shipment.pickup_address, 'Pickup');
+    if (error) return error;
+    
+    error = validateAddress(shipment.delivery_address, 'Delivery');
+    if (error) return error;
+    
+    // Validate packages
+    for (const [index, pkg] of shipment.packages.entries()) {
+        if (!pkg.reported_weight || pkg.reported_weight <= 0) {
+            return `Package ${index + 1} must have a valid weight`;
+        }
+        if (!pkg.length || pkg.length <= 0) return `Package ${index + 1} must have a valid length`;
+        if (!pkg.width || pkg.width <= 0) return `Package ${index + 1} must have a valid width`;
+        if (!pkg.height || pkg.height <= 0) return `Package ${index + 1} must have a valid height`;
+    }
+    
+    return null;
+}
+
+// Main rate processing function
+async function processCanparRateRequest(data) {
+    logger.info('Processing Canpar rate request');
+    
+    try {
+        // Validate the request
+        const validationError = validateCanparRateRequest(data);
+        if (validationError) {
+            logger.error('Canpar validation error:', validationError);
+            throw new Error(validationError);
+        }
+        
+        logger.info('Canpar rate request data:', JSON.stringify(data, null, 2));
+        
+        // Get carrier API configuration
+        const carrierConfig = await getCarrierApiConfig('CANPAR', 'rate');
+        const { apiUrl, credentials } = carrierConfig;
+        
+        // Validate that the carrier has the required endpoints
+        if (!validateCarrierEndpoints(credentials, ['rate'])) {
+            throw new Error('Canpar carrier missing required rate endpoint configuration');
+        }
+        
+        logger.info(`Using Canpar Rate API URL: ${apiUrl}`);
+        logger.info(`Canpar credentials retrieved:`, {
+            username: credentials.username,
+            accountNumber: credentials.accountNumber,
+            hasPassword: !!credentials.password
+        });
+        
+        // Build SOAP envelope
+        const soapEnvelope = buildCanparSoapEnvelope(data, credentials);
+        logger.info('Canpar SOAP request envelope built');
+        logger.info('SOAP Envelope (first 1000 chars):', soapEnvelope.substring(0, 1000));
+        
+        // Make SOAP request to Canpar
+        const response = await axios.post(apiUrl, soapEnvelope, {
+            headers: {
+                'Content-Type': 'text/xml; charset=utf-8',
+                'SOAPAction': 'rateShipment'
+            },
+            validateStatus: function (status) {
+                return status >= 200 && status < 600; // Accept all statuses to inspect body
+            }
+        });
+        
+        logger.info(`Canpar API Response Status: ${response.status}`);
+        
+        if (response.status >= 400) {
+            logger.error('Canpar API Error Response:', response.data);
+            throw new Error(`Canpar API Error: HTTP Status ${response.status}`);
+        }
+        
+        // Parse XML response
+        const parsedResponse = await parseStringPromise(response.data, {
+            explicitArray: true,
+            ignoreAttrs: false
+        });
+        
+        logger.info('Canpar XML response parsed successfully');
+        
+        // Check for SOAP faults or errors
+        const soapFault = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.soapenv:Fault');
+        if (soapFault) {
+            const faultString = safeAccess(soapFault, '0.faultstring.0', 'Unknown SOAP fault');
+            logger.error('Canpar SOAP Fault:', faultString);
+            throw new Error(`Canpar SOAP Fault: ${faultString}`);
+        }
+        
+        // Check for application errors
+        const error = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0.ax25:error.0');
+        if (error && error !== null) {
+            logger.error('Canpar application error:', JSON.stringify(error, null, 2));
+            throw new Error(`Canpar application error: ${JSON.stringify(error, null, 2)}`);
+        }
+        
+        // Transform response to internal format
+        const transformedData = transformCanparResponseToInternalFormat(parsedResponse);
+        
+        if (!transformedData || !transformedData.availableRates || transformedData.availableRates.length === 0) {
+            logger.error('Failed to transform Canpar response or no rates available');
+            throw new Error('Failed to process rates from Canpar API or no rates available');
+        }
+        
+        logger.info('Successfully transformed rates from Canpar SOAP API');
+        
+        return {
+            success: true,
+            data: transformedData
+        };
+        
+    } catch (error) {
+        logger.error('Error in processCanparRateRequest:', error.message, error.stack);
+        throw error;
+    }
+}
+
+// Export the Cloud Function
+// Force deployment update
+exports.getRatesCanpar = onCall(async (request) => {
+    try {
+        const data = request.data;
+        logger.info('getRatesCanpar function called');
+        
+        return await processCanparRateRequest(data);
+        
+    } catch (error) {
+        logger.error('Error in getRatesCanpar function:', error);
+        throw new Error(error.message || 'An internal error occurred while processing the Canpar rate request.');
+    }
+}); 

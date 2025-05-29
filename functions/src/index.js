@@ -5,8 +5,11 @@ const admin = require('firebase-admin');
 
 // Initialize Firebase Admin SDK ONCE
 if (!admin.apps.length) {
-    admin.initializeApp();
-    console.log('Firebase Admin initialized in main index.js');
+    admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        storageBucket: 'solushipx.firebasestorage.app'
+    });
+    console.log('Firebase Admin initialized in main index.js with correct storage bucket');
 } else {
     console.log('Firebase Admin already initialized.');
 }
@@ -22,6 +25,8 @@ console.log('LOG-MAIN-INDEX: mappingTestRouter imported.');
 
 const carrierApiFunctions = require('./carrier-api'); 
 console.log('LOG-MAIN-INDEX: carrierApiFunctions imported.');
+console.log('LOG-MAIN-INDEX: Available carrier functions:', Object.keys(carrierApiFunctions));
+console.log('LOG-MAIN-INDEX: getRatesCanpar available:', !!carrierApiFunctions.getRatesCanpar);
 
 const ediProcessingFunctions = require('./edi-processing');
 console.log('LOG-MAIN-INDEX: ediProcessingFunctions imported.');
@@ -35,10 +40,12 @@ console.log('LOG-MAIN-INDEX: adminUserManagementFunctions imported.');
 const adminCreateUserFunctions = require('./admin-create-user'); 
 console.log('LOG-MAIN-INDEX: adminCreateUserFunctions imported.');
 
-const shipmentManagementFunctions = require('./shipment-management');
-console.log('LOG-MAIN-INDEX: shipmentManagementFunctions imported.');
-// Import initiateDraftShipment directly
-const { initiateDraftShipment } = require('./shipment-management');
+// Import carrier API functions
+const eshipPlusFunctions = require('./carrier-api/eshipplus');
+const canparFunctions = require('./carrier-api/canpar');
+
+// Import universal booking function
+const { bookRateUniversal } = require('./bookRateUniversal');
 
 // Initialize Express app
 const app = express();
@@ -79,6 +86,17 @@ if (carrierApiFunctions && carrierApiFunctions.bookRateEShipPlus) {
 } else {
     console.warn('LOG-MAIN-INDEX: bookRateEShipPlus not found in carrierApiFunctions module.');
 }
+
+if (carrierApiFunctions && carrierApiFunctions.getRatesCanpar) {
+    exports.getRatesCanpar = carrierApiFunctions.getRatesCanpar;
+    console.log('LOG-MAIN-INDEX: exports.getRatesCanpar defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: getRatesCanpar not found in carrierApiFunctions module.');
+}
+
+// Universal booking function
+exports.bookRateUniversal = bookRateUniversal;
+console.log('LOG-MAIN-INDEX: exports.bookRateUniversal defined.');
 
 // Functions from edi-processing.js
 if (ediProcessingFunctions && ediProcessingFunctions.onFileUploaded) {
@@ -147,16 +165,5 @@ if (adminCreateUserFunctions && adminCreateUserFunctions.adminCreateUser) {
 } else {
     console.warn('LOG-MAIN-INDEX: adminCreateUser not found in adminCreateUserFunctions.');
 }
-
-// Functions from shipment-management.js
-if (shipmentManagementFunctions && shipmentManagementFunctions.initiateDraftShipment) {
-    exports.initiateDraftShipment = shipmentManagementFunctions.initiateDraftShipment;
-    console.log('LOG-MAIN-INDEX: exports.initiateDraftShipment defined.');
-} else {
-    console.warn('LOG-MAIN-INDEX: initiateDraftShipment not found in shipmentManagementFunctions module.');
-}
-
-// Direct export of initiateDraftShipment
-exports.initiateDraftShipment = initiateDraftShipment;
 
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

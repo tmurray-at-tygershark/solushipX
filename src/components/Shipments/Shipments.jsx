@@ -81,6 +81,95 @@ const formatAddress = (address, label = '') => {
     );
 };
 
+// Extract StatusChip component for reusability (from Dashboard)
+const StatusChip = React.memo(({ status }) => {
+    const getStatusConfig = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'pending':
+            case 'created':
+                return {
+                    color: '#F59E0B',
+                    bgcolor: '#FEF3C7',
+                    label: 'Pending'
+                };
+            case 'booked':
+                return {
+                    color: '#10B981',
+                    bgcolor: '#ECFDF5',
+                    label: 'Booked'
+                };
+            case 'awaiting pickup':
+                return {
+                    color: '#F59E0B',
+                    bgcolor: '#FEF3C7',
+                    label: 'Awaiting Pickup'
+                };
+            case 'awaiting shipment':
+                return {
+                    color: '#3B82F6',
+                    bgcolor: '#EFF6FF',
+                    label: 'Awaiting Shipment'
+                };
+            case 'in transit':
+                return {
+                    color: '#6366F1',
+                    bgcolor: '#EEF2FF',
+                    label: 'In Transit'
+                };
+            case 'on hold':
+                return {
+                    color: '#7C3AED',
+                    bgcolor: '#F5F3FF',
+                    label: 'On Hold'
+                };
+            case 'delivered':
+                return {
+                    color: '#10B981',
+                    bgcolor: '#ECFDF5',
+                    label: 'Delivered'
+                };
+            case 'cancelled':
+                return {
+                    color: '#EF4444',
+                    bgcolor: '#FEE2E2',
+                    label: 'Cancelled'
+                };
+            default:
+                return {
+                    color: '#6B7280',
+                    bgcolor: '#F3F4F6',
+                    label: status || 'Unknown'
+                };
+        }
+    };
+
+    const { color, bgcolor, label } = getStatusConfig(status);
+
+    return (
+        <Chip
+            label={label}
+            sx={{
+                color: color,
+                bgcolor: bgcolor,
+                borderRadius: '16px',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                height: '24px',
+                '& .MuiChip-label': {
+                    px: 2
+                }
+            }}
+            size="small"
+        />
+    );
+});
+
+// Helper function to capitalize shipment type
+const capitalizeShipmentType = (type) => {
+    if (!type) return 'N/A';
+    return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+};
+
 const Shipments = () => {
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading } = useCompany();
@@ -781,20 +870,12 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {shipment.shipmentInfo?.shipmentType || 'N/A'}
+                                                        {capitalizeShipmentType(shipment.shipmentInfo?.shipmentType)}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        <Chip
-                                                            label={shipment.status}
-                                                            color={
-                                                                shipment.status === 'Delivered' ? 'success' :
-                                                                    shipment.status === 'In Transit' ? 'primary' :
-                                                                        'default'
-                                                            }
-                                                            size="small"
-                                                        />
+                                                        <StatusChip status={shipment.status} />
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}

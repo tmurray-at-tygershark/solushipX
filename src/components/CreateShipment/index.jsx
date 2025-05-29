@@ -703,9 +703,16 @@ const CreateShipmentContent = () => {
 
         // Validate Rates
         const selectedRateDocumentId = formData.selectedRateDocumentId;
+        const selectedRate = formData.selectedRate;
+
+        // A rate is considered selected if either:
+        // 1. selectedRateDocumentId exists (rate saved to database)
+        // 2. selectedRate exists (rate selected in UI, may still be saving)
+        const rateSelected = !!(selectedRateDocumentId || selectedRate);
+
         completeness.rates = {
-            complete: !!selectedRateDocumentId,
-            missing: selectedRateDocumentId ? [] : ['Rate selection required']
+            complete: rateSelected,
+            missing: rateSelected ? [] : ['Rate selection required']
         };
 
         setDataCompleteness(completeness);

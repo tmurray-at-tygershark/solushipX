@@ -266,6 +266,16 @@ async function getCarrierEndpoints(carrierID) {
   }
 }
 
+/**
+ * Sanitize postal code by removing spaces (required for Canpar API)
+ * @param {string} postalCode - Raw postal code
+ * @returns {string} - Sanitized postal code without spaces
+ */
+function sanitizePostalCode(postalCode) {
+  if (!postalCode) return '';
+  return postalCode.replace(/\s+/g, '');
+}
+
 const db = admin.firestore(admin.app(), 'admin');
 
 module.exports = {
@@ -280,5 +290,6 @@ module.exports = {
     getCarrierApiConfig,
     validateCarrierEndpoints,
     getCarrierEndpoints,
+    sanitizePostalCode,
     db
 }; 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Box,
@@ -22,7 +22,10 @@ import {
     FormLabel,
     IconButton,
     Tooltip,
-    Chip
+    Chip,
+    CircularProgress,
+    Alert,
+    Snackbar
 } from '@mui/material';
 import {
     Home as HomeIcon,
@@ -31,42 +34,39 @@ import {
     CheckCircle as CheckCircleIcon,
     Cancel as CancelIcon
 } from '@mui/icons-material';
+import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { useCompany } from '../../contexts/CompanyContext';
 import './Carriers.css';
 
-const carriers = [
+// Default carrier templates for initialization
+const defaultCarriers = [
     {
         id: 'fedex',
         name: 'FedEx',
         logo: '/images/carrier-badges/fedex.png',
         description: 'Global shipping and logistics services',
-        enabled: true,
-        connected: true,
-        credentials: {
-            type: 'soluship',
-            accountNumber: '****1234'
-        }
+        enabled: false,
+        connected: false,
+        carrierKey: 'FEDEX'
     },
     {
         id: 'ups',
         name: 'UPS',
         logo: '/images/carrier-badges/ups.png',
         description: 'Connect your UPS account to enable shipping with UPS services.',
-        enabled: true,
+        enabled: false,
         connected: false,
-        credentials: {
-            accountNumber: '',
-            apiKey: '',
-            apiSecret: ''
-        }
+        carrierKey: 'UPS'
     },
     {
-        id: 'eship',
+        id: 'eshipplus',
         name: 'eShip Plus',
         logo: '/images/carrier-badges/eship.png',
         description: 'Canadian shipping and logistics solutions',
         enabled: false,
         connected: false,
-        credentials: null
+        carrierKey: 'ESHIPPLUS'
     },
     {
         id: 'purolator',
@@ -75,7 +75,7 @@ const carriers = [
         description: 'Canadian courier and freight services',
         enabled: false,
         connected: false,
-        credentials: null
+        carrierKey: 'PUROLATOR'
     },
     {
         id: 'dhl',
@@ -84,7 +84,7 @@ const carriers = [
         description: 'International shipping and logistics',
         enabled: false,
         connected: false,
-        credentials: null
+        carrierKey: 'DHL'
     },
     {
         id: 'canadapost',
@@ -93,7 +93,7 @@ const carriers = [
         description: 'Canadian postal service',
         enabled: false,
         connected: false,
-        credentials: null
+        carrierKey: 'CANADAPOST'
     },
     {
         id: 'canpar',
@@ -102,7 +102,7 @@ const carriers = [
         description: 'Canadian parcel delivery service',
         enabled: false,
         connected: false,
-        credentials: null
+        carrierKey: 'CANPAR'
     },
     {
         id: 'usps',
@@ -111,59 +111,266 @@ const carriers = [
         description: 'United States Postal Service',
         enabled: false,
         connected: false,
-        credentials: null
+        carrierKey: 'USPS'
     }
 ];
 
 const Carriers = () => {
-    const [carrierList, setCarrierList] = useState(carriers);
+    const [carrierList, setCarrierList] = useState([]);
     const [selectedCarrier, setSelectedCarrier] = useState(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [successMessage, setSuccessMessage] = useState('');
     const [credentials, setCredentials] = useState({
-        type: 'soluship',
+        type: 'custom',
+        username: '',
+        password: '',
         accountNumber: '',
         apiKey: '',
-        apiSecret: ''
+        apiSecret: '',
+        hostURL: '',
+        shipperNumber: '',
+        endpoints: {
+            rate: '',
+            booking: '',
+            tracking: '',
+            cancel: '',
+            labels: ''
+        }
     });
 
-    const handleToggleCarrier = (carrierId) => {
-        setCarrierList(prevList =>
-            prevList.map(carrier =>
-                carrier.id === carrierId
-                    ? { ...carrier, enabled: !carrier.enabled }
-                    : carrier
-            )
-        );
+    const { companyData, companyIdForAddress } = useCompany();
+
+    // Load carriers from Firebase
+    useEffect(() => {
+        const loadCarriers = async () => {
+            try {
+                setLoading(true);
+                const carriersRef = collection(db, 'carriers');
+                const snapshot = await getDocs(carriersRef);
+
+                const firebaseCarriers = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    firebaseCarriers.push({
+                        ...data,
+                        id: doc.id,
+                        firestoreId: doc.id
+                    });
+                });
+
+                // Merge with default carriers, prioritizing Firebase data
+                const mergedCarriers = defaultCarriers.map(defaultCarrier => {
+                    const firebaseCarrier = firebaseCarriers.find(fc =>
+                        fc.carrierKey === defaultCarrier.carrierKey ||
+                        fc.name === defaultCarrier.name ||
+                        fc.id === defaultCarrier.id
+                    );
+
+                    if (firebaseCarrier) {
+                        return {
+                            ...defaultCarrier,
+                            ...firebaseCarrier,
+                            connected: !!(firebaseCarrier.apiCredentials &&
+                                (firebaseCarrier.apiCredentials.username || firebaseCarrier.apiCredentials.apiKey)),
+                            enabled: firebaseCarrier.enabled || false
+                        };
+                    }
+
+                    return defaultCarrier;
+                });
+
+                setCarrierList(mergedCarriers);
+            } catch (error) {
+                console.error('Error loading carriers:', error);
+                setError('Failed to load carriers. Please try again.');
+                // Fallback to default carriers
+                setCarrierList(defaultCarriers);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadCarriers();
+    }, []);
+
+    const handleToggleCarrier = async (carrierId) => {
+        try {
+            const carrier = carrierList.find(c => c.id === carrierId);
+            if (!carrier || !carrier.firestoreId) {
+                setError('Cannot update carrier: Carrier not found in database');
+                return;
+            }
+
+            const newEnabledState = !carrier.enabled;
+
+            // Update Firebase
+            const carrierRef = doc(db, 'carriers', carrier.firestoreId);
+            await updateDoc(carrierRef, {
+                enabled: newEnabledState,
+                updatedAt: serverTimestamp()
+            });
+
+            // Update local state
+            setCarrierList(prevList =>
+                prevList.map(c =>
+                    c.id === carrierId
+                        ? { ...c, enabled: newEnabledState }
+                        : c
+                )
+            );
+
+            setSuccessMessage(`${carrier.name} ${newEnabledState ? 'enabled' : 'disabled'} successfully`);
+        } catch (error) {
+            console.error('Error toggling carrier:', error);
+            setError('Failed to update carrier status. Please try again.');
+        }
     };
 
     const handleEditCarrier = (carrier) => {
+        console.log('=== DEBUGGING EDIT CARRIER ===');
+        console.log('Editing carrier:', carrier);
+        console.log('Carrier apiCredentials:', carrier.apiCredentials);
+
         setSelectedCarrier(carrier);
-        setCredentials({
-            type: carrier.credentials?.type || 'soluship',
-            accountNumber: carrier.credentials?.accountNumber || '',
-            apiKey: carrier.credentials?.apiKey || '',
-            apiSecret: carrier.credentials?.apiSecret || ''
-        });
+
+        // Load existing credentials
+        const existingCredentials = carrier.apiCredentials || {};
+        console.log('Existing credentials found:', existingCredentials);
+
+        const newCredentials = {
+            type: existingCredentials.type || 'custom',
+            username: existingCredentials.username || '',
+            password: existingCredentials.password || '',
+            accountNumber: existingCredentials.accountNumber || '',
+            apiKey: existingCredentials.apiKey || '',
+            apiSecret: existingCredentials.apiSecret || '',
+            hostURL: existingCredentials.hostURL || '',
+            shipperNumber: existingCredentials.shipperNumber || '',
+            endpoints: {
+                rate: existingCredentials.endpoints?.rate || '',
+                booking: existingCredentials.endpoints?.booking || '',
+                tracking: existingCredentials.endpoints?.tracking || '',
+                cancel: existingCredentials.endpoints?.cancel || '',
+                labels: existingCredentials.endpoints?.labels || ''
+            }
+        };
+
+        console.log('Setting credentials state to:', newCredentials);
+        setCredentials(newCredentials);
+
         setIsDialogOpen(true);
     };
 
-    const handleSaveCredentials = () => {
-        setCarrierList(prevList =>
-            prevList.map(carrier =>
-                carrier.id === selectedCarrier.id
-                    ? {
-                        ...carrier,
-                        connected: true,
-                        credentials: {
-                            ...credentials,
-                            accountNumber: credentials.type === 'soluship' ? '****1234' : credentials.accountNumber
+    const handleSaveCredentials = async () => {
+        try {
+            setSaving(true);
+            setError(null);
+
+            console.log('=== DEBUGGING SAVE CREDENTIALS ===');
+            console.log('selectedCarrier:', selectedCarrier);
+            console.log('selectedCarrier.firestoreId:', selectedCarrier?.firestoreId);
+            console.log('credentials state:', credentials);
+
+            if (!selectedCarrier) {
+                throw new Error('No carrier selected');
+            }
+
+            if (!selectedCarrier.firestoreId) {
+                console.error('No firestoreId found for carrier:', selectedCarrier);
+                throw new Error('Cannot save credentials: Carrier not found in database. Please contact support.');
+            }
+
+            // Prepare the complete API credentials object
+            const completeApiCredentials = {
+                type: credentials.type,
+                username: credentials.username,
+                password: credentials.password || selectedCarrier.apiCredentials?.password || '',
+                accountNumber: credentials.accountNumber,
+                apiKey: credentials.apiKey,
+                apiSecret: credentials.apiSecret,
+                hostURL: credentials.hostURL,
+                shipperNumber: credentials.shipperNumber,
+                endpoints: {
+                    rate: credentials.endpoints.rate,
+                    booking: credentials.endpoints.booking,
+                    tracking: credentials.endpoints.tracking,
+                    cancel: credentials.endpoints.cancel,
+                    labels: credentials.endpoints.labels
+                }
+            };
+
+            console.log('completeApiCredentials to save:', completeApiCredentials);
+
+            // Prepare the update data
+            const updateData = {
+                apiCredentials: completeApiCredentials,
+                enabled: true,
+                connected: true,
+                updatedAt: serverTimestamp()
+            };
+
+            console.log('updateData to send to Firebase:', updateData);
+            console.log('Updating Firebase document:', `carriers/${selectedCarrier.firestoreId}`);
+
+            // Update existing carrier
+            const carrierRef = doc(db, 'carriers', selectedCarrier.firestoreId);
+
+            // Add more detailed error catching
+            try {
+                await updateDoc(carrierRef, updateData);
+                console.log('✅ Firebase updateDoc completed successfully');
+            } catch (firebaseError) {
+                console.error('❌ Firebase updateDoc failed:', firebaseError);
+                console.error('Firebase error code:', firebaseError.code);
+                console.error('Firebase error message:', firebaseError.message);
+                throw new Error(`Firebase update failed: ${firebaseError.message}`);
+            }
+
+            // Update local state with the complete updated carrier object
+            setCarrierList(prevList => {
+                const updatedList = prevList.map(carrier =>
+                    carrier.id === selectedCarrier.id
+                        ? {
+                            ...carrier,
+                            apiCredentials: completeApiCredentials,
+                            connected: true,
+                            enabled: true,
+                            updatedAt: new Date()
                         }
-                    }
-                    : carrier
-            )
-        );
-        setIsDialogOpen(false);
+                        : carrier
+                );
+                console.log('Updated carrierList:', updatedList);
+                return updatedList;
+            });
+
+            setSuccessMessage(`${selectedCarrier.name} credentials saved successfully`);
+            setIsDialogOpen(false);
+            console.log('✅ Save operation completed successfully');
+
+        } catch (error) {
+            console.error('❌ Error in handleSaveCredentials:', error);
+            console.error('Error stack:', error.stack);
+            setError(error.message || 'Failed to save credentials. Please try again.');
+        } finally {
+            setSaving(false);
+        }
     };
+
+    const handleCloseSnackbar = () => {
+        setError(null);
+        setSuccessMessage('');
+    };
+
+    if (loading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <div className="carriers-container">
@@ -226,9 +433,17 @@ const Carriers = () => {
                                                     color={carrier.connected ? 'success' : 'default'}
                                                     size="small"
                                                 />
-                                                {carrier.connected && (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {carrier.credentials?.type === 'soluship' ? 'Using Soluship Connect' : 'Using custom credentials'}
+                                                {carrier.connected && carrier.apiCredentials && (
+                                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                                        {carrier.apiCredentials.username ?
+                                                            `Username: ${carrier.apiCredentials.username}` :
+                                                            'Custom credentials configured'
+                                                        }
+                                                    </Typography>
+                                                )}
+                                                {!carrier.connected && (
+                                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                                        Configure credentials to enable
                                                     </Typography>
                                                 )}
                                             </Box>
@@ -252,47 +467,85 @@ const Carriers = () => {
             </Paper>
 
             {/* Credentials Dialog */}
-            <Dialog open={isDialogOpen} onClose={() => setIsDialogOpen(false)} maxWidth="sm" fullWidth>
+            <Dialog open={isDialogOpen} onClose={() => setIsDialogOpen(false)} maxWidth="md" fullWidth>
                 <DialogTitle>
                     {selectedCarrier?.name} Connection
                 </DialogTitle>
                 <DialogContent>
-                    <Box className="credentials-form">
-                        <FormControl component="fieldset" sx={{ mb: 3 }}>
-                            <FormLabel>Credentials Type</FormLabel>
-                            <RadioGroup
-                                value={credentials.type}
-                                onChange={(e) => setCredentials(prev => ({ ...prev, type: e.target.value }))}
-                            >
-                                <FormControlLabel
-                                    value="soluship"
-                                    control={<Radio />}
-                                    label="Auto-Connect with Soluship"
-                                />
-                                <FormControlLabel
-                                    value="custom"
-                                    control={<Radio />}
-                                    label="Use Custom Credentials"
-                                />
-                            </RadioGroup>
-                        </FormControl>
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {error}
+                        </Alert>
+                    )}
 
-                        {credentials.type === 'custom' && (
-                            <>
+                    <Box className="credentials-form">
+                        <Typography variant="h6" sx={{ mb: 2 }}>
+                            API Credentials
+                        </Typography>
+
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Username"
+                                    value={credentials.username}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, username: e.target.value }))}
+                                    margin="normal"
+                                    helperText="API username or user ID"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Password"
+                                    type="password"
+                                    value={credentials.password}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
+                                    margin="normal"
+                                    helperText="API password"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
                                     label="Account Number"
                                     value={credentials.accountNumber}
                                     onChange={(e) => setCredentials(prev => ({ ...prev, accountNumber: e.target.value }))}
                                     margin="normal"
+                                    helperText="Carrier account number"
                                 />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Shipper Number"
+                                    value={credentials.shipperNumber}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, shipperNumber: e.target.value }))}
+                                    margin="normal"
+                                    helperText="Shipper number (if applicable)"
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    label="Host URL"
+                                    value={credentials.hostURL}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, hostURL: e.target.value }))}
+                                    margin="normal"
+                                    helperText="Base API URL (e.g., https://api.carrier.com)"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
                                     label="API Key"
                                     value={credentials.apiKey}
                                     onChange={(e) => setCredentials(prev => ({ ...prev, apiKey: e.target.value }))}
                                     margin="normal"
+                                    helperText="API key (if applicable)"
                                 />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
                                     label="API Secret"
@@ -300,29 +553,136 @@ const Carriers = () => {
                                     value={credentials.apiSecret}
                                     onChange={(e) => setCredentials(prev => ({ ...prev, apiSecret: e.target.value }))}
                                     margin="normal"
+                                    helperText="API secret (if applicable)"
                                 />
-                            </>
-                        )}
+                            </Grid>
+                        </Grid>
 
-                        {credentials.type === 'soluship' && (
-                            <Box className="credentials-info">
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Auto-Connect with Soluship
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    Using Soluship Connect
-                                </Typography>
-                            </Box>
-                        )}
+                        <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
+                            API Endpoints
+                        </Typography>
+
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Rate Endpoint"
+                                    value={credentials.endpoints.rate}
+                                    onChange={(e) => {
+                                        console.log('Rate endpoint changed to:', e.target.value);
+                                        setCredentials(prev => ({
+                                            ...prev,
+                                            endpoints: { ...prev.endpoints, rate: e.target.value }
+                                        }));
+                                    }}
+                                    margin="normal"
+                                    helperText="Endpoint for rate quotes"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Booking Endpoint"
+                                    value={credentials.endpoints.booking}
+                                    onChange={(e) => {
+                                        console.log('Booking endpoint changed to:', e.target.value);
+                                        setCredentials(prev => ({
+                                            ...prev,
+                                            endpoints: { ...prev.endpoints, booking: e.target.value }
+                                        }));
+                                    }}
+                                    margin="normal"
+                                    helperText="Endpoint for booking shipments"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Tracking Endpoint"
+                                    value={credentials.endpoints.tracking}
+                                    onChange={(e) => {
+                                        console.log('Tracking endpoint changed to:', e.target.value);
+                                        setCredentials(prev => ({
+                                            ...prev,
+                                            endpoints: { ...prev.endpoints, tracking: e.target.value }
+                                        }));
+                                    }}
+                                    margin="normal"
+                                    helperText="Endpoint for tracking shipments"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Cancel Endpoint"
+                                    value={credentials.endpoints.cancel}
+                                    onChange={(e) => {
+                                        console.log('Cancel endpoint changed to:', e.target.value);
+                                        setCredentials(prev => ({
+                                            ...prev,
+                                            endpoints: { ...prev.endpoints, cancel: e.target.value }
+                                        }));
+                                    }}
+                                    margin="normal"
+                                    helperText="Endpoint for canceling shipments"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Labels Endpoint"
+                                    value={credentials.endpoints.labels}
+                                    onChange={(e) => {
+                                        console.log('Labels endpoint changed to:', e.target.value);
+                                        setCredentials(prev => ({
+                                            ...prev,
+                                            endpoints: { ...prev.endpoints, labels: e.target.value }
+                                        }));
+                                    }}
+                                    margin="normal"
+                                    helperText="Endpoint for retrieving labels"
+                                />
+                            </Grid>
+                        </Grid>
                     </Box>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSaveCredentials} variant="contained" color="primary">
-                        Save
+                    <Button onClick={() => setIsDialogOpen(false)} disabled={saving}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSaveCredentials}
+                        variant="contained"
+                        color="primary"
+                        disabled={saving}
+                        startIcon={saving ? <CircularProgress size={20} /> : null}
+                    >
+                        {saving ? 'Saving...' : 'Save'}
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Snackbar for error messages */}
+            <Snackbar
+                open={!!error}
+                autoHideDuration={6000}
+                onClose={handleCloseSnackbar}
+            >
+                <Alert onClose={handleCloseSnackbar} severity="error">
+                    {error}
+                </Alert>
+            </Snackbar>
+
+            {/* Snackbar for success messages */}
+            <Snackbar
+                open={!!successMessage}
+                autoHideDuration={6000}
+                onClose={handleCloseSnackbar}
+            >
+                <Alert onClose={handleCloseSnackbar} severity="success">
+                    {successMessage}
+                </Alert>
+            </Snackbar>
         </div>
     );
 };

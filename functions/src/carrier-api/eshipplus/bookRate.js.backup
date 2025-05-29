@@ -5,11 +5,7 @@ const logger = require("firebase-functions/logger");
 const axios = require('axios');
 const admin = require('firebase-admin');
 const dayjs = require('dayjs');
-const utc = require('dayjs/plugin/utc');
-const timezone = require('dayjs/plugin/timezone');
-const advancedFormat = require('dayjs/plugin/advancedFormat');
-const customParseFormat = require('dayjs/plugin/customParseFormat');
-const { getCarrierApiConfig, createEShipPlusAuthHeader, validateCarrierEndpoints, sanitizePostalCode } = require('../../utils');
+const { getCarrierApiConfig, createEShipPlusAuthHeader, validateCarrierEndpoints } = require('../../utils');
 console.log('LOG: bookRate.js - Basic imports complete.');
 
 // Remove hardcoded URL - now dynamically built from carrier credentials
@@ -34,17 +30,6 @@ const safeAccess = (obj, path, defaultValue = null) => {
     return current;
 };
 
-// Import document manager
-const { processCarrierDocuments } = require('../../shipment-documents/documentManager');
-
-// Initialize dayjs plugins
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.extend(advancedFormat);
-dayjs.extend(customParseFormat);
-
-const db = admin.firestore();
-
 function transformBookingResponseToInternalFormat(apiResponse) {
     if (!apiResponse) return null;
 
@@ -58,7 +43,6 @@ function transformBookingResponseToInternalFormat(apiResponse) {
     logger.info('BolNumber field:', apiResponse.BolNumber);
     logger.info('CarrierName field:', apiResponse.CarrierName);
     logger.info('CarrierScac field:', apiResponse.CarrierScac);
-    logger.info('ReturnConfirmations count:', (apiResponse.ReturnConfirmations || []).length);
     logger.info('=== END DEBUGGING ===');
 
     const bookedRateDetails = apiResponse.BookedRate || {}; // Use BookedRate if available or main response parts
@@ -83,22 +67,18 @@ function transformBookingResponseToInternalFormat(apiResponse) {
         accessorialCharges: parseFloat(bookedRateDetails.AccessorialCharges || selectedRateDetails.AccessorialCharges || 0),
         serviceCharges: parseFloat(bookedRateDetails.ServiceCharges || selectedRateDetails.ServiceCharges || 0),
         
-        // Add currency field with fallback to prevent undefined values
-        currency: bookedRateDetails.Currency || selectedRateDetails.Currency || apiResponse.Currency || 'USD',
-        
         transitTime: bookedRateDetails.TransitTime !== undefined ? parseInt(bookedRateDetails.TransitTime) : parseInt(selectedRateDetails.TransitTime || 0),
         estimatedDeliveryDate: bookedRateDetails.EstimatedDeliveryDate || selectedRateDetails.EstimatedDeliveryDate || null,
         
-        // Keep raw documents for document manager processing
-        rawShippingDocuments: apiResponse.ReturnConfirmations || [],
-        
-        // Legacy shipping documents structure (for backward compatibility)
+        // Shipping documents
         shippingDocuments: (apiResponse.ReturnConfirmations || []).map(doc => ({
             docType: doc.DocType, 
             name: doc.Name,
             hasImage: !!doc.DocImage, 
             imagePreview: doc.DocImage ? doc.DocImage.substring(0, 50) + '...' : null,
-            // Note: Full DocImage is preserved in rawShippingDocuments
+            // Consider adding the full DocImage if it's not excessively large and is needed client-side directly,
+            // otherwise, client might need a separate function to fetch full documents by name/ID if necessary.
+            // docImageBase64: doc.DocImage // Potentially large
         })),
         
         messages: apiResponse.Messages || [],
@@ -138,7 +118,7 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
     // The example shows "-04:00". If the input dates have timezone, dayjs should preserve it.
     // Otherwise, we format to ISO string, and the API might handle it or expect UTC.
     const shipmentDate = safeAccess(rateRequestData, 'ShipmentDate');
-    const formattedShipmentDate = shipmentDate ? dayjs(shipmentDate).format('YYYY-MM-DDTHH:mm:ss-04:00').replace(/T\d{2}:\d{2}:\d{2}/, 'T00:00:00') : dayjs().format('YYYY-MM-DDTHH:mm:ss-04:00').replace(/T\d{2}:\d{2}:\d{2}/, 'T00:00:00');
+    const formattedShipmentDate = shipmentDate ? dayjs(shipmentDate).format('YYYY-MM-DDTHH:mm:ss-04:00') : dayjs().format('YYYY-MM-DDTHH:mm:ss-04:00');
 
     const estDeliveryDate = selectedRateFromFrontend.estimatedDeliveryDate;
     const formattedEstDeliveryDate = estDeliveryDate ? dayjs(estDeliveryDate).format('YYYY-MM-DDTHH:mm:ss') : null;
@@ -152,37 +132,37 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
             Description: safeAccess(rateRequestData, 'Origin.Description') || safeAccess(rateRequestData, 'Origin.company') || "",
             Street: safeAccess(rateRequestData, 'Origin.Street') || safeAccess(rateRequestData, 'Origin.street') || "",
             StreetExtra: safeAccess(rateRequestData, 'Origin.StreetExtra') || safeAccess(rateRequestData, 'Origin.street2') || "",
-            PostalCode: sanitizePostalCode(safeAccess(rateRequestData, 'Origin.PostalCode') || safeAccess(rateRequestData, 'Origin.postalCode') || ""),
+            PostalCode: safeAccess(rateRequestData, 'Origin.PostalCode') || safeAccess(rateRequestData, 'Origin.postalCode') || "",
             City: safeAccess(rateRequestData, 'Origin.City') || safeAccess(rateRequestData, 'Origin.city') || "",
             State: safeAccess(rateRequestData, 'Origin.State') || safeAccess(rateRequestData, 'Origin.state') || "",
             Country: getCountryDetails(safeAccess(rateRequestData, 'Origin.Country.Code') || safeAccess(rateRequestData, 'Origin.country') || "US"),
             SpecialInstructions: safeAccess(rateRequestData, 'Origin.SpecialInstructions') || safeAccess(rateRequestData, 'Origin.specialInstructions') || "none",
-            
-            
+            GeneralInfo: null, // Example: null
+            Direction: null,   // Example: null
             Email: safeAccess(rateRequestData, 'Origin.Email') || safeAccess(rateRequestData, 'Origin.contactEmail') || "",
             Contact: safeAccess(rateRequestData, 'Origin.Contact') || safeAccess(rateRequestData, 'Origin.contactName') || "Shipping Dept",
             Phone: safeAccess(rateRequestData, 'Origin.Phone') || safeAccess(rateRequestData, 'Origin.contactPhone') || "",
             Fax: "", // Example: ""
             Mobile: "", // Example: ""
-            
+            ContactComment: null // Example: null
         },
         Destination: {
             Description: safeAccess(rateRequestData, 'Destination.Description') || safeAccess(rateRequestData, 'Destination.company') || "",
             Street: safeAccess(rateRequestData, 'Destination.Street') || safeAccess(rateRequestData, 'Destination.street') || "",
             StreetExtra: safeAccess(rateRequestData, 'Destination.StreetExtra') || safeAccess(rateRequestData, 'Destination.street2') || "",
-            PostalCode: sanitizePostalCode(safeAccess(rateRequestData, 'Destination.PostalCode') || safeAccess(rateRequestData, 'Destination.postalCode') || ""),
+            PostalCode: safeAccess(rateRequestData, 'Destination.PostalCode') || safeAccess(rateRequestData, 'Destination.postalCode') || "",
             City: safeAccess(rateRequestData, 'Destination.City') || safeAccess(rateRequestData, 'Destination.city') || "",
             State: safeAccess(rateRequestData, 'Destination.State') || safeAccess(rateRequestData, 'Destination.state') || "",
             Country: getCountryDetails(safeAccess(rateRequestData, 'Destination.Country.Code') || safeAccess(rateRequestData, 'Destination.country') || "US"),
             SpecialInstructions: safeAccess(rateRequestData, 'Destination.SpecialInstructions') || safeAccess(rateRequestData, 'Destination.specialInstructions') || "None",
-            
-            
+            GeneralInfo: null, // Example: null
+            Direction: null,   // Example: null
             Email: safeAccess(rateRequestData, 'Destination.Email') || safeAccess(rateRequestData, 'Destination.contactEmail') || "",
             Contact: safeAccess(rateRequestData, 'Destination.Contact') || safeAccess(rateRequestData, 'Destination.contactName') || "Receiving Dept",
             Phone: safeAccess(rateRequestData, 'Destination.Phone') || safeAccess(rateRequestData, 'Destination.contactPhone') || "",
             Fax: "", // Example: ""
             Mobile: "", // Example: ""
-            
+            ContactComment: null // Example: null
         },
         ReferenceNumber: safeAccess(rateRequestData, 'ReferenceNumber') || safeAccess(rateRequestData, 'Request.ReferenceNumber') || safeAccess(rateRequestData, 'BookingReferenceNumber') || "REF" + Date.now(),
         PurchaseOrder: safeAccess(rateRequestData, 'PurchaseOrder') || safeAccess(rateRequestData, 'Request.PurchaseOrder') || safeAccess(rateRequestData, 'BookingReferenceNumber') || "PO" + Date.now(),
@@ -212,9 +192,9 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
                 HazardousMaterial: false, // Example: false
                 DeclaredValue: parseFloat(parseFloat(item.DeclaredValue || '0').toFixed(1)),
                 Description: item.Description || "Goods",
-                
-                
-                
+                Comment: "", // Example: ""
+                NationalMotorFreightClassification: "", // Example: ""
+                HarmonizedTariffSchedule: "", // Example: ""
                 Packaging: {
                     Key: parseInt(item.Packaging?.Key || item.Packaging?.PackagingType || '258'), // Example: 258
                     PackageName: item.Packaging?.PackageName || "Pallets", // Example: "Pallets"
@@ -247,7 +227,7 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
             RatedCubicFeet: parseFloat(parseFloat(selectedRateFromFrontend.ratedCubicFeet || '0').toFixed(4)),
             TransitTime: parseInt(selectedRateFromFrontend.transitTime || selectedRateFromFrontend.transitDays || '0'),
             EstimatedDeliveryDate: formattedEstDeliveryDate, // Example: "2025-06-03T00:00:00"
-            ServiceMode: 0, // CRITICAL: eShipPlus requires 0, not null
+            ServiceMode: selectedRateFromFrontend.serviceMode !== undefined ? parseInt(selectedRateFromFrontend.serviceMode) : 0, // Ensure it's 0, not null
             FreightCharges: parseFloat(parseFloat(selectedRateFromFrontend.freightCharges || selectedRateFromFrontend.freightCharge || '0').toFixed(4)),
             FuelCharges: parseFloat(parseFloat(selectedRateFromFrontend.fuelCharges || selectedRateFromFrontend.fuelCharge || '0').toFixed(4)),
             AccessorialCharges: parseFloat(parseFloat(selectedRateFromFrontend.accessorialCharges || '0').toFixed(4)),
@@ -256,8 +236,8 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
             Mileage: parseFloat(parseFloat(selectedRateFromFrontend.mileage || '0').toFixed(1)), // Example: 0.0
             MileageSourceKey: parseInt(selectedRateFromFrontend.mileageSourceKey || '0'), // Example: 0
             MileageSourceDescription: selectedRateFromFrontend.mileageSourceDescription || null, // Example: null
-            BillingDetails: (selectedRateFromFrontend.billingDetails || []).map(detail => ({ ReferenceNumber: detail.ReferenceNumber || "", ReferenceType: detail.ReferenceType || 2, BillingCode: detail.BillingCode || "", Description: detail.Description || "", Category: detail.Category || 0, AmountDue: parseFloat(detail.AmountDue || 0) })),
-            
+            BillingDetails: selectedRateFromFrontend.billingDetails || [],
+            GuarOptions: selectedRateFromFrontend.guarOptions || [],
             SelectedGuarOption: selectedRateFromFrontend.selectedGuarOption || null, // Example: null
             // Fields from user example not directly in current selectedRateFromFrontend structure - need to ensure these are sourced if available
             // For now, adding them as null or default if not found.
@@ -378,7 +358,7 @@ async function processBookingRequest(data) {
                     ratedWeight: rateData.weight.rated,
                     ratedCubicFeet: rateData.dimensions.cubicFeet,
                     
-                    serviceMode: 0, // Always 0 for eShipPlus
+                    serviceMode: rateData.service.mode,
                     serviceType: rateData.service.type,
                     
                     rateId: rateData.rateId,
@@ -432,7 +412,7 @@ async function processBookingRequest(data) {
                     ratedCubicFeet: rateData.ratedCubicFeet || 0,
                     
                     // Service details
-                    serviceMode: 0, // Always 0 for eShipPlus
+                    serviceMode: rateData.serviceMode || rateData.serviceType || 0,
                     serviceType: rateData.serviceType || rateData.serviceMode || '',
                     
                     // IDs and references
@@ -599,37 +579,6 @@ async function processBookingRequest(data) {
         }
 
         logger.info('Successfully processed booking with eShipPlus REST API. Transformed Confirmation:', JSON.stringify(bookingConfirmationResult, null, 2));
-
-        // Process shipping documents with document manager
-        let processedDocuments = [];
-        let documentProcessingError = null;
-        
-        if (bookingConfirmationResult.rawShippingDocuments && bookingConfirmationResult.rawShippingDocuments.length > 0) {
-            try {
-                logger.info(`Processing ${bookingConfirmationResult.rawShippingDocuments.length} documents for shipment ${draftFirestoreDocId}`);
-                
-                const bookingContext = {
-                    proNumber: bookingConfirmationResult.proNumber,
-                    confirmationNumber: bookingConfirmationResult.confirmationNumber,
-                    carrierName: bookingConfirmationResult.carrierName,
-                    shipmentId: draftFirestoreDocId
-                };
-                
-                processedDocuments = await processCarrierDocuments(
-                    draftFirestoreDocId,
-                    'eshipplus',
-                    bookingConfirmationResult.rawShippingDocuments,
-                    bookingContext
-                );
-                
-                logger.info(`Successfully processed ${processedDocuments.length} documents`);
-            } catch (docError) {
-                // Log error but don't fail the entire booking
-                logger.error('Error processing shipping documents:', docError);
-                documentProcessingError = docError.message;
-                // Continue with booking even if document processing fails
-            }
-        }
 
         // Firestore updates
         const batch = db.batch();
@@ -848,40 +797,16 @@ function validateBookingRequest(payload) { // payload is now the entire request 
     }
     if (payload.BookedRate !== null && payload.BookedRate !== undefined) {
          logger.warn(`BookedRate is present and not null in the request payload.`);
-     }
+    }
      if (payload.ReturnConfirmations !== null && payload.ReturnConfirmations !== undefined) {
          logger.warn(`ReturnConfirmations is present and not null in the request payload.`);
-     }
+    }
      if (payload.Messages !== null && payload.Messages !== undefined && (!Array.isArray(payload.Messages) || payload.Messages.length > 0)) {
          logger.warn(`Messages field is present and not null/empty in the request payload.`);
-     }
+    }
 
-     logger.info('Booking Payload Validation Passed (based on new comprehensive example).');
-     return null;
+
+    logger.info('Booking Payload Validation Passed (based on new comprehensive example).');
+    return null;
 }
-console.log('LOG: bookRate.js - validateBookingRequest defined.');
-
-/**
- * Wrapper function for universal booking compatibility
- * @param {Object} rateRequestData - Original rate request data
- * @param {string} draftFirestoreDocId - Firestore document ID of the draft shipment
- * @param {string} selectedRateDocumentId - Document ID of the selected rate
- * @returns {Object} Booking confirmation data
- */
-async function bookEShipPlusShipment(rateRequestData, draftFirestoreDocId, selectedRateDocumentId) {
-    console.log('bookEShipPlusShipment: Wrapper function called for universal booking compatibility');
-    
-    const requestData = {
-        apiKey: 'development-api-key', // Use development key for internal calls
-        rateRequestData,
-        draftFirestoreDocId,
-        selectedRateDocumentId
-    };
-    
-    return await processBookingRequest(requestData);
-}
-
-// Export both functions
-module.exports = {
-    bookEShipPlusShipment
-};
+console.log('LOG: bookRate.js - validateBookingRequest defined.'); 

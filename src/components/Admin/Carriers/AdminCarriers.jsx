@@ -265,13 +265,13 @@ const AdminCarriers = () => {
                 enabled: formData.enabled,
                 logoFileName,
                 apiCredentials: {
+                    ...formData.apiCredentials,
                     accountNumber: formData.accountNumber,
                     hostURL: formData.hostURL,
                     username: formData.username,
                     password: formData.password,
                     secret: formData.secret,
                     endpoints: endpoints,
-                    ...formData.apiCredentials // Preserve any existing apiCredentials
                 },
                 updatedAt: serverTimestamp(),
             };

@@ -20,9 +20,10 @@ const ai = genkit({
 // Initialize Firebase Admin SDK ONCE
 if (admin.apps.length === 0) { 
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: "solushipx.firebasestorage.app"
   });
-  console.log('Initialized Admin SDK with service account credentials.');
+  console.log('Initialized Admin SDK with correct storage bucket');
 } else {
   console.log('Admin SDK already initialized.');
 }
@@ -31,16 +32,19 @@ const db = admin.firestore();
 
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
-const { bookRateEShipPlus } = require('./src/carrier-api/eshipplus/bookRate');
+const { getRatesCanpar } = require('./src/carrier-api/canpar/getRates');
+const { bookRateUniversal } = require('./src/bookRateUniversal');
 const ediProcessing = require('./src/edi-processing');
 const { checkEdiUploads } = require('./src/check-edi-uploads');
 const { generateEdiMapping } = require('./src/mapping_functions');
 const { adminCreateUser } = require('./src/admin-create-user');
 const { adminResetUserPassword, checkUserCompanyOwnership, adminDeleteUser, adminGetUsersAuthData } = require('./src/admin-user-management');
+const { getShipmentDocuments, getDocumentDownloadUrl } = require('./src/getShipmentDocuments');
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
-exports.bookRateEShipPlus = bookRateEShipPlus;
+exports.getRatesCanpar = getRatesCanpar;
+exports.bookRateUniversal = bookRateUniversal;
 exports.onFileUploaded = ediProcessing.onFileUploaded;
 exports.processEdiFile = ediProcessing.processEdiFile;
 exports.processEdiHttp = ediProcessing.processEdiHttp;
@@ -52,3 +56,5 @@ exports.adminResetUserPassword = adminResetUserPassword;
 exports.checkUserCompanyOwnership = checkUserCompanyOwnership;
 exports.adminDeleteUser = adminDeleteUser;
 exports.adminGetUsersAuthData = adminGetUsersAuthData;
+exports.getShipmentDocuments = getShipmentDocuments;
+exports.getDocumentDownloadUrl = getDocumentDownloadUrl;

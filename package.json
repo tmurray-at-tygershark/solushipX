@@ -34,6 +34,7 @@
     "lottie-react": "^2.4.1",
     "notistack": "^3.0.2",
     "papaparse": "^5.5.2",
+    "pdf-lib": "^1.17.1",
     "react": "^18.2.0",
     "react-beautiful-dnd": "^13.1.1",
     "react-chartjs-2": "^5.3.0",
@@ -53,8 +54,19 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "deploy:functions": "bash deploy-functions.sh",
-    "deploy:hosting": "npm run build && firebase deploy --only hosting",
-    "deploy:full": "npm run build && bash deploy-functions.sh && firebase deploy --only hosting"
+    "deploy:hosting": "bash deploy-hosting.sh",
+    "deploy:full": "bash deploy-full.sh",
+    "deploy": "bash deploy-full.sh",
+    "deploy:quick": "npm run build && firebase deploy",
+    "firebase:login": "firebase login",
+    "firebase:logout": "firebase logout",
+    "firebase:projects": "firebase projects:list",
+    "firebase:use": "firebase use",
+    "functions:logs": "firebase functions:log",
+    "functions:shell": "firebase functions:shell",
+    "serve": "firebase serve",
+    "serve:hosting": "firebase serve --only hosting",
+    "serve:functions": "firebase serve --only functions"
   },
   "eslintConfig": {
     "extends": [

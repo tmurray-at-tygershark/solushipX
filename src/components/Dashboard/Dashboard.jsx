@@ -38,8 +38,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { LineChart } from '@mui/x-charts/LineChart';
 import './Dashboard.css';
 import dayjs from 'dayjs';
-import { collection, query, orderBy, limit, onSnapshot, getDocs, where } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, getDocs, where, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { useCompany } from '../../contexts/CompanyContext';
 
 // Helper function to format Firestore timestamp
 const formatDate = (timestamp) => {
@@ -103,10 +104,23 @@ const StatusChip = React.memo(({ status }) => {
     const getStatusConfig = (status) => {
         switch (status?.toLowerCase()) {
             case 'pending':
+            case 'created':
                 return {
                     color: '#F59E0B',
                     bgcolor: '#FEF3C7',
                     label: 'Pending'
+                };
+            case 'booked':
+                return {
+                    color: '#10B981',
+                    bgcolor: '#ECFDF5',
+                    label: 'Booked'
+                };
+            case 'awaiting pickup':
+                return {
+                    color: '#F59E0B',
+                    bgcolor: '#FEF3C7',
+                    label: 'Awaiting Pickup'
                 };
             case 'awaiting shipment':
                 return {
@@ -187,10 +201,17 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
         handleMenuClose();
     };
 
+    const handleRowClick = () => {
+        // Use shipmentId (the display ID) for navigation, not the Firestore document ID
+        const shipmentIdForRoute = shipment.shipmentId;
+        console.log('Navigating to shipment detail:', shipmentIdForRoute);
+        navigate(`/shipment/${shipmentIdForRoute}`);
+    };
+
     return (
         <TableRow
             hover
-            onClick={() => navigate(`/shipment/${shipment.shipmentId || shipment.id}`)}
+            onClick={handleRowClick}
             sx={{
                 cursor: 'pointer',
                 '&:hover': {
@@ -204,10 +225,10 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                 sx={{ verticalAlign: 'top', paddingTop: '16px' }}
             >
                 <Link
-                    to={`/shipment/${shipment.shipmentId || shipment.id}`}
+                    to={`/shipment/${shipment.shipmentId}`}
                     style={{ textDecoration: 'none', color: '#3b82f6' }}
                 >
-                    {shipment.shipmentId || shipment.id}
+                    {shipment.shipmentId}
                 </Link>
             </TableCell>
             <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.customer}</TableCell>
@@ -250,10 +271,24 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
     const navigate = useNavigate();
+    const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
+
+    // Calculate date range for last 30 days
+    const thirtyDaysAgo = useMemo(() => {
+        const date = new Date();
+        date.setDate(date.getDate() - 30);
+        return Timestamp.fromDate(date);
+    }, []);
 
     // Fetch customers data
     useEffect(() => {
-        const customersQuery = query(collection(db, 'customers'));
+        if (!companyIdForAddress) return;
+
+        const customersQuery = query(
+            collection(db, 'customers'),
+            where('companyID', '==', companyIdForAddress)
+        );
+
         const unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
             const customersData = {};
             snapshot.docs.forEach(doc => {
@@ -266,33 +301,81 @@ const Dashboard = () => {
         });
 
         return () => unsubscribeCustomers();
-    }, []);
+    }, [companyIdForAddress]);
 
-    // Fetch shipments from Firestore
+    // Fetch shipments from Firestore for the last 30 days and current company
     useEffect(() => {
+        if (!companyIdForAddress || companyLoading) {
+            return;
+        }
+
+        console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
+        console.log('Dashboard: Date filter from:', thirtyDaysAgo.toDate());
+
         const shipmentsQuery = query(
             collection(db, 'shipments'),
+            where('companyID', '==', companyIdForAddress),
+            where('createdAt', '>=', thirtyDaysAgo),
             orderBy('createdAt', 'desc'),
-            limit(100)
+            limit(500) // Increased limit for 30 days of data
         );
 
         const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
+            console.log('Dashboard: Received shipments snapshot with', snapshot.docs.length, 'documents');
+
             const shipmentsData = snapshot.docs.map(doc => {
                 const data = doc.data();
-                const customerData = customers[data.customerId] || {};
+
+                // Get customer data - check multiple possible customer ID fields
+                const customerId = data.shipTo?.customerID || data.customerId || data.customerID;
+                const customerData = customers[customerId] || {};
+
+                // Helper function to safely get rate info
+                const getRateInfo = () => {
+                    // Check for selectedRateRef first (new structure)
+                    if (data.selectedRateRef) {
+                        return {
+                            carrier: data.selectedRateRef.carrier || data.selectedRateRef.carrierName || '',
+                            totalCharges: data.selectedRateRef.totalCharges || 0
+                        };
+                    }
+
+                    // Check for selectedRate (legacy structure)
+                    if (data.selectedRate) {
+                        return {
+                            carrier: data.selectedRate.carrier || data.selectedRate.carrierName || '',
+                            totalCharges: data.selectedRate.totalCharges || data.selectedRate.price || 0
+                        };
+                    }
+
+                    // Fallback to direct carrier field
+                    return {
+                        carrier: data.carrier || '',
+                        totalCharges: 0
+                    };
+                };
+
+                const rateInfo = getRateInfo();
+
                 return {
                     id: doc.id,
-                    shipmentId: data.shipmentId || 'N/A',
+                    shipmentId: data.shipmentID || data.shipmentId || doc.id, // Use shipmentID (capital ID) first
                     date: formatDate(data.createdAt),
-                    customer: customerData.name || 'Unknown Customer',
+                    createdAt: data.createdAt, // Keep original timestamp for calculations
+                    customer: customerData.name || data.shipTo?.company || 'Unknown Customer',
                     origin: formatAddress(data.shipFrom),
                     destination: formatAddress(data.shipTo),
-                    carrier: data.carrier || '',
-                    shipmentType: data.shipmentInfo?.shipmentType || '',
-                    status: data.status,
-                    value: data.packages?.[0]?.insuranceAmount || 0
+                    carrier: rateInfo.carrier,
+                    shipmentType: data.shipmentInfo?.shipmentType || 'Standard',
+                    status: data.status || 'pending',
+                    value: rateInfo.totalCharges || data.packages?.[0]?.declaredValue || 0
                 };
+            }).filter(shipment => {
+                // Exclude draft shipments from dashboard counts and displays
+                return shipment.status?.toLowerCase() !== 'draft';
             });
+
+            console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
             setShipments(shipmentsData);
             setLoading(false);
         }, (error) => {
@@ -301,9 +384,9 @@ const Dashboard = () => {
         });
 
         return () => unsubscribe();
-    }, [customers]); // Add customers as a dependency
+    }, [companyIdForAddress, companyLoading, customers, thirtyDaysAgo]); // Add customers and thirtyDaysAgo as dependencies
 
-    // Calculate all shipment stats in a single pass
+    // Calculate all shipment stats in a single pass for last 30 days
     const shipmentStats = useMemo(() => {
         const stats = {
             total: shipments.length,
@@ -317,10 +400,16 @@ const Dashboard = () => {
         };
 
         shipments.forEach(shipment => {
-            switch (shipment.status?.toLowerCase()) {
+            const status = shipment.status?.toLowerCase();
+
+            // Updated status mapping based on requirements
+            switch (status) {
                 case 'pending':
                 case 'created':
+                case 'booked':
+                case 'awaiting pickup':
                     stats.pending++;
+                    stats.awaitingShipment++; // These count as both pending and awaiting
                     break;
                 case 'awaiting shipment':
                 case 'label_created':
@@ -386,41 +475,43 @@ const Dashboard = () => {
             .reduce((sum, shipment) => sum + (shipment.value || 0), 0);
     }, [shipments]);
 
-    // Calculate monthly data
-    const monthlyData = useMemo(() => {
+    // Calculate daily shipment counts for the last 30 days
+    const dailyShipmentCounts = useMemo(() => {
         const today = new Date();
-        const currentMonth = today.getMonth();
-        const currentYear = today.getFullYear();
+        const dailyCounts = {};
 
-        // Initialize the data structure with all days of the current month
-        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-        const monthData = Array(daysInMonth).fill(0);
+        // Initialize all days in the last 30 days with 0
+        for (let i = 29; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateKey = date.toISOString().split('T')[0];
+            dailyCounts[dateKey] = 0;
+        }
 
-        // Aggregate shipment values by date
+        // Count shipments by date
         shipments.forEach(shipment => {
-            if (shipment.date && shipment.value) {
-                const shipmentDate = new Date(shipment.date);
-                if (shipmentDate.getMonth() === currentMonth && shipmentDate.getFullYear() === currentYear) {
-                    const day = shipmentDate.getDate() - 1;
-                    monthData[day] = (monthData[day] || 0) + shipment.value;
+            if (shipment.date) {
+                if (dailyCounts.hasOwnProperty(shipment.date)) {
+                    dailyCounts[shipment.date]++;
                 }
             }
         });
 
-        return monthData;
+        return dailyCounts;
     }, [shipments]);
 
     // Calculate carrier distribution
     const carrierDistribution = useMemo(() => {
         const distribution = shipments.reduce((acc, shipment) => {
-            acc[shipment.carrier] = (acc[shipment.carrier] || 0) + 1;
+            const carrier = shipment.carrier || 'Unknown';
+            acc[carrier] = (acc[carrier] || 0) + 1;
             return acc;
         }, {});
 
         const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
         return Object.entries(distribution).map(([carrier, count]) => ({
             carrier,
-            percentage: (count / total) * 100
+            percentage: total > 0 ? (count / total) * 100 : 0
         }));
     }, [shipments]);
 
@@ -446,7 +537,9 @@ const Dashboard = () => {
                     return shipment.status?.toLowerCase() === 'delivered';
                 case 'awaiting':
                     return shipment.status?.toLowerCase() === 'awaiting shipment' ||
-                        shipment.status?.toLowerCase() === 'label_created';
+                        shipment.status?.toLowerCase() === 'label_created' ||
+                        shipment.status?.toLowerCase() === 'booked' ||
+                        shipment.status?.toLowerCase() === 'awaiting pickup';
                 case 'pending':
                     return shipment.status?.toLowerCase() === 'pending' ||
                         shipment.status?.toLowerCase() === 'created';
@@ -472,20 +565,45 @@ const Dashboard = () => {
         console.log('Print label for shipment:', shipmentId);
     }, []);
 
-    // Generate chart data
+    // Generate chart data for the last 30 days
     const chartData = useMemo(() => {
-        return monthlyData.map((_, index) => {
-            const date = new Date();
-            date.setDate(index + 1);
-            return {
-                value: monthlyData[index] || Math.floor(Math.random() * 91) + 10,
+        const today = new Date();
+        const chartPoints = [];
+
+        for (let i = 29; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateKey = date.toISOString().split('T')[0];
+            const count = dailyShipmentCounts[dateKey] || 0;
+
+            chartPoints.push({
+                value: count,
                 day: date.toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric'
                 })
-            };
-        });
-    }, [monthlyData]);
+            });
+        }
+
+        return chartPoints;
+    }, [dailyShipmentCounts]);
+
+    // Calculate max value for chart Y-axis
+    const maxChartValue = useMemo(() => {
+        const maxValue = Math.max(...chartData.map(point => point.value));
+        return Math.max(maxValue + 2, 10); // Ensure minimum of 10 for better visualization
+    }, [chartData]);
+
+    // Show loading state while company data is loading
+    if (companyLoading || loading) {
+        return (
+            <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
+                <Box sx={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+                    <CircularProgress />
+                </Box>
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
@@ -507,9 +625,14 @@ const Dashboard = () => {
 
                 {/* Header Section */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                        Dashboard
-                    </Typography>
+                    <Box>
+                        <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                            Dashboard
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+                            Last 30 days • {companyData?.name || 'Loading...'}
+                        </Typography>
+                    </Box>
                     <Box sx={{ display: 'flex', gap: 2 }}>
                         <Button
                             variant="outlined"
@@ -537,8 +660,8 @@ const Dashboard = () => {
                     <Grid container spacing={3} sx={{ mb: 4 }}>
                         <Grid item xs={12} sm={6} md={3}>
                             <StatusBox
-                                title="Active Shipments"
-                                count={shipmentStats.inTransit + shipmentStats.awaitingShipment + shipmentStats.pending}
+                                title="Total Shipments"
+                                count={shipmentStats.total}
                                 icon={ShippingIcon}
                                 color="#000000"
                                 bgColor="rgba(0, 0, 0, 0.1)"
@@ -576,7 +699,7 @@ const Dashboard = () => {
                         </Grid>
                     </Grid>
 
-                    {/* Monthly Shipment Volume Chart */}
+                    {/* Daily Shipment Volume Chart */}
                     <Grid container spacing={3}>
                         <Grid item xs={12}>
                             <Paper sx={{
@@ -594,7 +717,7 @@ const Dashboard = () => {
                                     mb: 3
                                 }}>
                                     <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                        Total Shipments
+                                        Daily Shipments (Last 30 Days)
                                     </Typography>
                                     <Box sx={{
                                         display: 'flex',
@@ -616,7 +739,7 @@ const Dashboard = () => {
                                         series={[
                                             {
                                                 dataKey: 'value',
-                                                valueFormatter: (value) => value.toString(),
+                                                valueFormatter: (value) => `${value} shipments`,
                                                 color: '#3b82f6',
                                                 area: true,
                                                 showMark: false,
@@ -638,8 +761,8 @@ const Dashboard = () => {
                                         }]}
                                         yAxis={[{
                                             min: 0,
-                                            max: 100,
-                                            tickMinStep: 20,
+                                            max: maxChartValue,
+                                            tickMinStep: 1,
                                             tickLabelStyle: {
                                                 fontSize: 12,
                                                 fill: '#64748b'

@@ -1,7 +1,7 @@
 const functions = require('firebase-functions/v2');
+const admin = require('firebase-admin');
 const { Storage } = require('@google-cloud/storage');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const admin = require('firebase-admin');
 const { PubSub } = require('@google-cloud/pubsub');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
@@ -16,20 +16,16 @@ const { parseFloatSafe, parseIntSafe, setByPath, standardizeUOM } = require('./u
 // Add carrier-specific post-processing imports
 const { postProcessFedexCsv } = require('./edi-postprocessing/fedex_postprocess');
 
-// Initialize the admin app if not already initialized
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
+// Optimized log settings
+const INCLUDE_BUFFER_LOGS = false;
+const INCLUDE_FILE_CONTENT_LOGS = false;
 
-// Get Firestore instance with ignoreUndefinedProperties
+// Initialize services
+const storage = new Storage();
+const pubsub = new PubSub();
 const db = admin.firestore();
-db.settings({ ignoreUndefinedProperties: true });
 
 // Initialize Google Cloud Storage
-const storage = new Storage();
-
-// Initialize Pub/Sub with config variables
-const pubsub = new PubSub();
 const TOPIC_NAME = process.env.PUBSUB_TOPIC || 'edi-processing';
 const SUBSCRIPTION_PATH = process.env.PUBSUB_SUBSCRIPTION || 'projects/solushipx/subscriptions/edi-processing-sub';
 

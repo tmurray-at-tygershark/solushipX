@@ -2,10 +2,7 @@ const functions = require('firebase-functions/v2');
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require('firebase-admin');
 
-// Ensure admin SDK is initialized (it should be by index.js, but good practice for standalone module testing)
-if (admin.apps.length === 0) {
-    admin.initializeApp();
-}
+// Firebase Admin is already initialized in index.js with correct bucket configuration
 
 const db = admin.firestore();
 

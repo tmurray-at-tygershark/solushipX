@@ -1,19 +1,99 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box,
-    Typography,
     Paper,
-    IconButton,
-    Collapse,
-    Divider,
-    Button,
-    Chip,
+    Typography,
     Grid,
-    useTheme,
+    Chip,
+    Stack,
+    Button,
+    ButtonGroup,
+    Collapse,
+    Link as MuiLink,
+    Avatar,
     CircularProgress,
-    Skeleton,
-    Stack
+    IconButton,
+    Menu,
+    MenuItem,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    FormControl,
+    InputLabel,
+    Select,
+    TextField,
+    Divider,
+    Tooltip,
+    Backdrop,
+    Card,
+    CardContent,
+    CardActions,
+    InputAdornment,
+    Stepper,
+    Step,
+    StepLabel,
+    StepContent,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    ToggleButtonGroup,
+    ToggleButton,
+    Slider,
+    Switch,
+    FormControlLabel,
+    Alert,
+    Snackbar,
+    Fade,
+    Zoom,
+    useTheme,
+    alpha
 } from '@mui/material';
+import {
+    ExpandMore,
+    ExpandLess,
+    LocationOn as LocationOnIcon,
+    Business as BusinessIcon,
+    Phone as PhoneIcon,
+    Email as EmailIcon,
+    LocalShipping as LocalShippingIcon,
+    Print as PrintIcon,
+    Download as DownloadIcon,
+    NavigateNext as NavigateNextIcon,
+    Home as HomeIcon,
+    KeyboardArrowDown as KeyboardArrowDownIcon,
+    Description as DescriptionIcon,
+    Assignment as AssignmentIcon,
+    AccessTime as AccessTimeIcon,
+    Inventory2 as Inventory2Icon,
+    Route as RouteIcon,
+    Timeline as TimelineIcon,
+    Schedule as ScheduleIcon,
+    CheckCircle as CheckCircleIcon,
+    RadioButtonUnchecked as RadioButtonUncheckedIcon,
+    Visibility as VisibilityIcon,
+    Close as CloseIcon,
+    Add as AddIcon,
+    Remove as RemoveIcon,
+    GetApp as GetAppIcon,
+    FileDownload as FileDownloadIcon,
+    PictureAsPdf as PictureAsPdfIcon,
+    Settings as SettingsIcon,
+    SwapHoriz as SwapHorizIcon,
+    Map as MapIcon,
+    Location as LocationIcon
+} from '@mui/icons-material';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../firebase/config';
+import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer, LoadScript } from '@react-google-maps/api';
+import html2pdf from 'html2pdf.js';
+import { PDFDocument } from 'pdf-lib'; // For PDF manipulation
+import StatusChip from '../StatusChip/StatusChip';
 import {
     Timeline,
     TimelineItem,
@@ -22,44 +102,7 @@ import {
     TimelineContent,
     TimelineDot
 } from '@mui/lab';
-import {
-    ExpandMore as ExpandMoreIcon,
-    ArrowBack as ArrowBackIcon,
-    LocationOn as LocationIcon,
-    LocalShipping as ShippingIcon,
-    LocalShipping,
-    Inventory as BoxIcon,
-    AttachMoney as MoneyIcon,
-    AccessTime as TimeIcon,
-    Business as BusinessIcon,
-    Phone as PhoneIcon,
-    Email as EmailIcon,
-    Map as MapIcon,
-    ExpandLess as ExpandLessIcon,
-    NavigateNext as NavigateNextIcon,
-    Home as HomeIcon,
-    Download as DownloadIcon,
-    Print as PrintIcon,
-    AccessTime as AccessTimeIcon,
-    LocationOn as LocationOnIcon,
-    SwapHoriz as SwapHorizIcon,
-    CheckCircle as CheckCircleIcon,
-    Schedule as ScheduleIcon,
-    Assignment as AssignmentIcon,
-    Edit as EditIcon,
-    Delete as DeleteIcon,
-    Fullscreen as FullscreenIcon,
-    FullscreenExit as FullscreenExitIcon
-} from '@mui/icons-material';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google-maps/api';
 import './ShipmentDetail.css';
-import { Link } from 'react-router-dom';
-import html2pdf from 'html2pdf.js';
-import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { getMapsApiKey } from '../../utils/maps';
-import { getRateDetailsByDocumentId, getRatesForShipment, getSelectedRateForShipment } from '../../utils/rateUtils';
 
 // Define libraries array as a static constant outside the component
 const GOOGLE_MAPS_LIBRARIES = ["places", "geometry", "routes"];
@@ -435,6 +478,18 @@ const StatusChip = React.memo(({ status }) => {
                     bgcolor: '#FEF3C7',
                     label: 'Pending'
                 };
+            case 'booked':
+                return {
+                    color: '#10B981',
+                    bgcolor: '#ECFDF5',
+                    label: 'Booked'
+                };
+            case 'awaiting pickup':
+                return {
+                    color: '#F59E0B',
+                    bgcolor: '#FEF3C7',
+                    label: 'Awaiting Pickup'
+                };
             case 'awaiting shipment':
             case 'label_created':
                 return {
@@ -499,6 +554,74 @@ const StatusChip = React.memo(({ status }) => {
     );
 });
 
+// Helper function to capitalize shipment type
+const capitalizeShipmentType = (type) => {
+    if (!type) return 'N/A';
+    return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+};
+
+// CarrierDisplay component to show carrier logo and name
+const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', isIntegrationCarrier }) => {
+    const sizeConfig = {
+        small: { logoSize: 24, fontSize: '0.875rem' },
+        medium: { logoSize: 32, fontSize: '1rem' },
+        large: { logoSize: 40, fontSize: '1.125rem' }
+    };
+
+    const { logoSize, fontSize } = sizeConfig[size] || sizeConfig.medium;
+
+    if (!carrierName || carrierName === 'N/A') {
+        return <Typography variant="body1" sx={{ fontSize }}>N/A</Typography>;
+    }
+
+    const logoUrl = carrierData?.logoUrl || carrierData?.image;
+
+    return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            {logoUrl ? (
+                <Box
+                    component="img"
+                    src={logoUrl}
+                    alt={`${carrierName} logo`}
+                    sx={{
+                        width: logoSize,
+                        height: logoSize,
+                        objectFit: 'contain',
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        bgcolor: 'background.paper',
+                        p: 0.5
+                    }}
+                    onError={(e) => {
+                        e.target.style.display = 'none';
+                    }}
+                />
+            ) : (
+                <Avatar
+                    sx={{
+                        width: logoSize,
+                        height: logoSize,
+                        bgcolor: 'primary.main',
+                        fontSize: fontSize,
+                        fontWeight: 600
+                    }}
+                >
+                    {carrierName.charAt(0).toUpperCase()}
+                </Avatar>
+            )}
+            <Typography variant="body1" sx={{ fontSize, fontWeight: 500 }}>
+                {carrierName}
+                {isIntegrationCarrier && (
+                    <Typography component="span" variant="caption" sx={{ ml: 0.5, color: 'text.secondary' }}>
+                        (via eShipPlus)
+                    </Typography>
+                )}
+            </Typography>
+        </Box>
+    );
+});
+
 const ShipmentDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -529,11 +652,362 @@ const ShipmentDetail = () => {
     const [trackingRecords, setTrackingRecords] = useState([]);
     const [isMapReady, setIsMapReady] = useState(false);
     const [customers, setCustomers] = useState({});
+    const [carrierData, setCarrierData] = useState(null);
+
+    // Enhanced state for action buttons with individual loading states
+    const [actionStates, setActionStates] = useState({
+        printLabel: { loading: false, error: null },
+        printBOL: { loading: false, error: null },
+        printShipment: { loading: false, error: null }
+    });
+
+    // PDF Viewer Modal state
+    const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+    const [currentPdfUrl, setCurrentPdfUrl] = useState(null);
+    const [currentPdfTitle, setCurrentPdfTitle] = useState('');
+
+    // Label printing configuration state
+    const [labelConfig, setLabelConfig] = useState({
+        quantity: 1,
+        labelType: '4x6', // '4x6' or 'avery3x4' for eShipPlus
+        selectedLabelId: null,
+        availableTypes: []
+    });
+
+    // Enhanced print label menu state
+    const [printLabelMenuOpen, setPrintLabelMenuOpen] = useState(false);
+    const [printLabelAnchorEl, setPrintLabelAnchorEl] = useState(null);
+    const [showLabelTypeSelector, setShowLabelTypeSelector] = useState(false);
+
+    // State for document management
+    const [shipmentDocuments, setShipmentDocuments] = useState({
+        labels: [],
+        bol: [],
+        invoices: [],
+        other: []
+    });
+    const [documentsLoading, setDocumentsLoading] = useState(false);
+    const [documentsError, setDocumentsError] = useState(null);
 
     // Rate-related state for new data structure
     const [detailedRateInfo, setDetailedRateInfo] = useState(null);
     const [rateLoading, setRateLoading] = useState(false);
     const [allShipmentRates, setAllShipmentRates] = useState([]);
+
+    // Snackbar for user feedback
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
+
+    // Helper to get best rate info (computed from shipment data)
+    const getBestRateInfo = useMemo(() => {
+        return shipment?.selectedRate || shipment?.rates?.[0] || detailedRateInfo || null;
+    }, [shipment, detailedRateInfo]);
+
+    // Helper to update action loading states
+    const setActionLoading = (action, loading, error = null) => {
+        setActionStates(prev => ({
+            ...prev,
+            [action]: { loading, error }
+        }));
+    };
+
+    // Helper to show snackbar messages
+    const showSnackbar = (message, severity = 'info') => {
+        setSnackbar({ open: true, message, severity });
+    };
+
+    // Check if carrier is eShipPlus to show label type options
+    const isEShipPlusCarrier = useMemo(() => {
+        return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+            getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+            carrierData?.name?.toLowerCase().includes('eshipplus');
+    }, [getBestRateInfo, carrierData]);
+
+    // Enhanced handler functions for action buttons
+    const handlePrintLabelClick = (event) => {
+        // Check if we have eShipPlus labels with different types
+        const labels = shipmentDocuments.labels || [];
+        if (isEShipPlusCarrier && labels.length > 1) {
+            setShowLabelTypeSelector(true);
+        }
+        setPrintLabelAnchorEl(event.currentTarget);
+        setPrintLabelMenuOpen(true);
+    };
+
+    const handlePrintLabelClose = () => {
+        setPrintLabelAnchorEl(null);
+        setPrintLabelMenuOpen(false);
+        setShowLabelTypeSelector(false);
+    };
+
+    // Enhanced PDF viewer function
+    const viewPdfInModal = async (documentId, filename, title) => {
+        try {
+            setActionLoading('printLabel', true);
+
+            const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
+            const result = await getDocumentDownloadUrlFunction({ documentId });
+
+            if (result.data.success) {
+                setCurrentPdfUrl(result.data.downloadUrl);
+                setCurrentPdfTitle(title || filename);
+                setPdfViewerOpen(true);
+                showSnackbar('Document loaded successfully', 'success');
+            } else {
+                throw new Error('Failed to get download URL');
+            }
+        } catch (error) {
+            console.error('Error viewing document:', error);
+            showSnackbar('Failed to load document: ' + error.message, 'error');
+        } finally {
+            setActionLoading('printLabel', false);
+        }
+    };
+
+    // Enhanced PDF multiplication function
+    const multiplyPdfLabels = async (pdfArrayBuffer, quantity) => {
+        try {
+            if (quantity <= 1) return pdfArrayBuffer;
+
+            const pdfDoc = await PDFDocument.load(pdfArrayBuffer);
+            const pages = pdfDoc.getPages();
+
+            // Create a new PDF with repeated pages
+            const newPdfDoc = await PDFDocument.create();
+
+            for (let i = 0; i < quantity; i++) {
+                for (const page of pages) {
+                    const [copiedPage] = await newPdfDoc.copyPages(pdfDoc, [pages.indexOf(page)]);
+                    newPdfDoc.addPage(copiedPage);
+                }
+            }
+
+            return await newPdfDoc.save();
+        } catch (error) {
+            console.error('Error multiplying PDF labels:', error);
+            throw new Error('Failed to create multiple labels');
+        }
+    };
+
+    // Enhanced print label function with quantity and type selection
+    const handlePrintLabel = async (quantity = 1, labelType = '4x6') => {
+        try {
+            setActionLoading('printLabel', true);
+            showSnackbar(`Generating ${quantity} label(s)...`, 'info');
+
+            const labels = shipmentDocuments.labels || [];
+            if (labels.length === 0) {
+                throw new Error('No labels available for this shipment');
+            }
+
+            let selectedLabel = labels[0];
+
+            // For eShipPlus, select based on label type if multiple are available
+            if (isEShipPlusCarrier && labels.length > 1) {
+                const typeBasedLabel = labels.find(label => {
+                    const isAvery = label.filename?.toLowerCase().includes('avery') ||
+                        label.docType === 1 ||
+                        label.metadata?.eshipplus?.docType === 1;
+                    return labelType === 'avery3x4' ? isAvery : !isAvery;
+                });
+                if (typeBasedLabel) selectedLabel = typeBasedLabel;
+            }
+
+            const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
+            const result = await getDocumentDownloadUrlFunction({
+                documentId: selectedLabel.id
+            });
+
+            if (result.data.success) {
+                if (quantity === 1) {
+                    // Single label - view in modal
+                    setCurrentPdfUrl(result.data.downloadUrl);
+                    setCurrentPdfTitle(`${labelType.toUpperCase()} Label - ${shipment?.shipmentID}`);
+                    setPdfViewerOpen(true);
+                } else {
+                    // Multiple labels - fetch PDF, multiply, and show in modal
+                    const response = await fetch(result.data.downloadUrl);
+                    const pdfArrayBuffer = await response.arrayBuffer();
+                    const multipliedPdf = await multiplyPdfLabels(pdfArrayBuffer, quantity);
+
+                    // Create blob URL for the multiplied PDF
+                    const blob = new Blob([multipliedPdf], { type: 'application/pdf' });
+                    const multipliedPdfUrl = URL.createObjectURL(blob);
+
+                    setCurrentPdfUrl(multipliedPdfUrl);
+                    setCurrentPdfTitle(`${quantity}x ${labelType.toUpperCase()} Labels - ${shipment?.shipmentID}`);
+                    setPdfViewerOpen(true);
+                }
+
+                showSnackbar(`${quantity} label(s) ready for printing`, 'success');
+            } else {
+                throw new Error('Failed to get download URL');
+            }
+        } catch (error) {
+            console.error('Error printing label:', error);
+            showSnackbar('Failed to print label: ' + error.message, 'error');
+        } finally {
+            setActionLoading('printLabel', false);
+            handlePrintLabelClose();
+        }
+    };
+
+    // Enhanced BOL handler
+    const handlePrintBOL = async () => {
+        try {
+            setActionLoading('printBOL', true);
+            showSnackbar('Loading Bill of Lading...', 'info');
+
+            const bolDocuments = shipmentDocuments.bol || [];
+            if (bolDocuments.length === 0) {
+                throw new Error('No Bill of Lading available for this shipment');
+            }
+
+            const bol = bolDocuments[0];
+            await viewPdfInModal(bol.id, bol.filename, `BOL - ${shipment?.shipmentID}`);
+        } catch (error) {
+            console.error('Error printing BOL:', error);
+            showSnackbar('Failed to load BOL: ' + error.message, 'error');
+        } finally {
+            setActionLoading('printBOL', false);
+        }
+    };
+
+    // Enhanced shipment print handler
+    const handlePrintShipment = async () => {
+        try {
+            setActionLoading('printShipment', true);
+            showSnackbar('Generating shipment PDF...', 'info');
+
+            const element = document.getElementById('shipment-detail-content');
+            const opt = {
+                margin: 0.5,
+                filename: `shipment-${shipment?.shipmentID || shipment?.id}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                },
+                jsPDF: {
+                    unit: 'in',
+                    format: 'a4',
+                    orientation: 'portrait'
+                }
+            };
+
+            await html2pdf().set(opt).from(element).save();
+            showSnackbar('Shipment PDF downloaded successfully', 'success');
+        } catch (error) {
+            console.error('Error generating shipment PDF:', error);
+            showSnackbar('Failed to generate shipment PDF: ' + error.message, 'error');
+        } finally {
+            setActionLoading('printShipment', false);
+        }
+    };
+
+    // Quantity selector handlers
+    const handleQuantityChange = (newQuantity) => {
+        setLabelConfig(prev => ({ ...prev, quantity: newQuantity }));
+    };
+
+    const handleLabelTypeChange = (newType) => {
+        setLabelConfig(prev => ({ ...prev, labelType: newType }));
+    };
+
+    // Document management functions
+    const fetchShipmentDocuments = async () => {
+        if (!shipment?.id) return;
+
+        setDocumentsLoading(true);
+        setDocumentsError(null);
+
+        try {
+            console.log('Fetching documents for shipment:', shipment.id);
+
+            const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
+            const result = await getShipmentDocumentsFunction({
+                shipmentId: shipment.id,
+                organized: true
+            });
+
+            if (result.data.success) {
+                setShipmentDocuments(result.data.data);
+                console.log('Documents fetched successfully:', result.data.data);
+            } else {
+                throw new Error('Failed to fetch documents');
+            }
+        } catch (error) {
+            console.error('Error fetching shipment documents:', error);
+            setDocumentsError(error.message || 'Failed to fetch documents');
+        } finally {
+            setDocumentsLoading(false);
+        }
+    };
+
+    const downloadDocument = async (documentId, filename) => {
+        try {
+            console.log('Downloading document:', documentId);
+
+            const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
+            const result = await getDocumentDownloadUrlFunction({
+                documentId
+            });
+
+            if (result.data.success) {
+                // Open the document in a new tab for printing
+                const downloadUrl = result.data.downloadUrl;
+                window.open(downloadUrl, '_blank');
+            } else {
+                throw new Error('Failed to get download URL');
+            }
+        } catch (error) {
+            console.error('Error downloading document:', error);
+            alert('Failed to download document: ' + error.message);
+        }
+    };
+
+    const printDocument = async (documentId, filename) => {
+        try {
+            const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
+            const result = await getDocumentDownloadUrlFunction({
+                documentId
+            });
+
+            if (result.data.success) {
+                // Create a hidden iframe for printing
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = result.data.downloadUrl;
+
+                document.body.appendChild(iframe);
+
+                iframe.onload = () => {
+                    try {
+                        iframe.contentWindow.print();
+                        // Remove iframe after a delay
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                        }, 1000);
+                    } catch (error) {
+                        console.error('Error printing document:', error);
+                        // Fallback: open in new tab
+                        window.open(result.data.downloadUrl, '_blank');
+                        document.body.removeChild(iframe);
+                    }
+                };
+            }
+        } catch (error) {
+            console.error('Error printing document:', error);
+            alert('Failed to print document: ' + error.message);
+        }
+    };
+
+    // Check if shipment is freight type
+    const isFreightShipment = shipment?.shipmentInfo?.shipmentType?.toLowerCase() === 'freight';
 
     const mapStyles = [
         {
@@ -1262,6 +1736,157 @@ const ShipmentDetail = () => {
         fetchCustomers();
     }, []);
 
+    // Helper function to get the best available rate information
+    const getBestRateInfo = useMemo(() => {
+        // Priority order:
+        // 1. detailedRateInfo (from shipmentRates collection via selectedRateRef)
+        // 2. shipment.selectedRate (merged or legacy)
+        // 3. selectedRateRef (basic reference)
+        // 4. First booked/selected rate from allShipmentRates
+
+        if (detailedRateInfo) {
+            console.log('Using detailedRateInfo for rate display');
+            // Check if it's in universal format and normalize for display
+            if (detailedRateInfo.universalRateData) {
+                const universal = detailedRateInfo.universalRateData;
+                return {
+                    // Universal format fields
+                    carrier: universal.carrier?.name || detailedRateInfo.carrier,
+                    service: universal.service?.name || detailedRateInfo.service,
+                    totalCharges: universal.pricing?.total || detailedRateInfo.totalCharges,
+                    freightCharge: universal.pricing?.freight || detailedRateInfo.freightCharges,
+                    freightCharges: universal.pricing?.freight || detailedRateInfo.freightCharges,
+                    fuelCharge: universal.pricing?.fuel || detailedRateInfo.fuelCharges,
+                    fuelCharges: universal.pricing?.fuel || detailedRateInfo.fuelCharges,
+                    serviceCharges: universal.pricing?.service || detailedRateInfo.serviceCharges,
+                    accessorialCharges: universal.pricing?.accessorial || detailedRateInfo.accessorialCharges,
+                    transitDays: universal.transit?.days || detailedRateInfo.transitDays,
+                    estimatedDeliveryDate: universal.transit?.estimatedDelivery || detailedRateInfo.estimatedDeliveryDate,
+                    guaranteed: universal.transit?.guaranteed || detailedRateInfo.guaranteed,
+                    currency: universal.pricing?.currency || detailedRateInfo.currency,
+                    // Keep original data for fallback
+                    ...detailedRateInfo,
+                    // Mark as universal for other components
+                    _isUniversalFormat: true
+                };
+            }
+            return detailedRateInfo;
+        }
+
+        if (shipment?.selectedRate) {
+            console.log('Using shipment.selectedRate for rate display');
+            // Check if it's in universal format
+            if (shipment.selectedRate.carrier && shipment.selectedRate.pricing && shipment.selectedRate.transit) {
+                return {
+                    carrier: shipment.selectedRate.carrier.name,
+                    service: shipment.selectedRate.service.name,
+                    totalCharges: shipment.selectedRate.pricing.total,
+                    freightCharge: shipment.selectedRate.pricing.freight,
+                    freightCharges: shipment.selectedRate.pricing.freight,
+                    fuelCharge: shipment.selectedRate.pricing.fuel,
+                    fuelCharges: shipment.selectedRate.pricing.fuel,
+                    serviceCharges: shipment.selectedRate.pricing.service,
+                    accessorialCharges: shipment.selectedRate.pricing.accessorial,
+                    transitDays: shipment.selectedRate.transit.days,
+                    estimatedDeliveryDate: shipment.selectedRate.transit.estimatedDelivery,
+                    guaranteed: shipment.selectedRate.transit.guaranteed,
+                    currency: shipment.selectedRate.pricing.currency,
+                    _isUniversalFormat: true
+                };
+            }
+            return shipment.selectedRate;
+        }
+
+        if (shipment?.selectedRateRef) {
+            console.log('Using shipment.selectedRateRef for rate display');
+            return shipment.selectedRateRef;
+        }
+
+        // Fallback to allShipmentRates
+        if (allShipmentRates.length > 0) {
+            const bookedRate = allShipmentRates.find(rate => rate.status === 'booked') ||
+                allShipmentRates.find(rate => rate.status === 'selected') ||
+                allShipmentRates[0];
+            console.log('Using rate from allShipmentRates for rate display:', bookedRate);
+
+            // Check if it's in universal format
+            if (bookedRate?.universalRateData) {
+                const universal = bookedRate.universalRateData;
+                return {
+                    carrier: universal.carrier?.name || bookedRate.carrier,
+                    service: universal.service?.name || bookedRate.service,
+                    totalCharges: universal.pricing?.total || bookedRate.totalCharges,
+                    freightCharge: universal.pricing?.freight || bookedRate.freightCharges,
+                    freightCharges: universal.pricing?.freight || bookedRate.freightCharges,
+                    fuelCharge: universal.pricing?.fuel || bookedRate.fuelCharges,
+                    fuelCharges: universal.pricing?.fuel || bookedRate.fuelCharges,
+                    serviceCharges: universal.pricing?.service || bookedRate.serviceCharges,
+                    accessorialCharges: universal.pricing?.accessorial || bookedRate.accessorialCharges,
+                    transitDays: universal.transit?.days || bookedRate.transitDays,
+                    estimatedDeliveryDate: universal.transit?.estimatedDelivery || bookedRate.estimatedDeliveryDate,
+                    guaranteed: universal.transit?.guaranteed || bookedRate.guaranteed,
+                    currency: universal.pricing?.currency || bookedRate.currency,
+                    ...bookedRate,
+                    _isUniversalFormat: true
+                };
+            }
+            return bookedRate;
+        }
+
+        console.log('No rate information available');
+        return null;
+    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, allShipmentRates]);
+
+    // Fetch carrier data for logo display
+    useEffect(() => {
+        const fetchCarrierData = async () => {
+            if (!getBestRateInfo?.carrier) return;
+
+            try {
+                const carriersRef = collection(db, 'carriers');
+
+                // For integration carriers like eShipPlus, use the integration carrier ID instead of sub-carrier name
+                let carrierIdentifier = getBestRateInfo.carrier;
+
+                // Check if this is an eShipPlus integration with a sub-carrier
+                if (getBestRateInfo.displayCarrierId === 'ESHIPPLUS' ||
+                    getBestRateInfo.sourceCarrierName === 'eShipPlus' ||
+                    getBestRateInfo.displayCarrierId === 'eshipplus') {
+                    carrierIdentifier = 'ESHIPPLUS';
+                    console.log('Using ESHIPPLUS carrier for sub-carrier:', getBestRateInfo.carrier);
+                }
+
+                // Try carrierID lookup first
+                const q = query(carriersRef, where('carrierID', '==', carrierIdentifier));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const carrierDoc = querySnapshot.docs[0];
+                    const carrier = carrierDoc.data();
+                    console.log('Fetched carrier data:', carrier);
+                    setCarrierData(carrier);
+                } else {
+                    // Try to find by carrier name if carrierID lookup fails
+                    const nameQuery = query(carriersRef, where('name', '==', carrierIdentifier));
+                    const nameSnapshot = await getDocs(nameQuery);
+
+                    if (!nameSnapshot.empty) {
+                        const carrierDoc = nameSnapshot.docs[0];
+                        const carrier = carrierDoc.data();
+                        console.log('Fetched carrier data by name:', carrier);
+                        setCarrierData(carrier);
+                    } else {
+                        console.warn('No carrier found for:', carrierIdentifier, '(original:', getBestRateInfo.carrier + ')');
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching carrier data:', error);
+            }
+        };
+
+        fetchCarrierData();
+    }, [getBestRateInfo?.carrier, getBestRateInfo?.displayCarrierId, getBestRateInfo?.sourceCarrierName]);
+
     // Robust address getter
     const getAddress = (shipment, type) => {
         return shipment?.[type] || shipment?.[type.toLowerCase()] || null;
@@ -1317,41 +1942,12 @@ const ShipmentDetail = () => {
         fetchAllRates();
     }, [shipment?.id]);
 
-    // Helper function to get the best available rate information
-    const getBestRateInfo = useMemo(() => {
-        // Priority order:
-        // 1. detailedRateInfo (from shipmentRates collection via selectedRateRef)
-        // 2. shipment.selectedRate (merged or legacy)
-        // 3. selectedRateRef (basic reference)
-        // 4. First booked/selected rate from allShipmentRates
-
-        if (detailedRateInfo) {
-            console.log('Using detailedRateInfo for rate display');
-            return detailedRateInfo;
+    // Effect to fetch shipment documents
+    useEffect(() => {
+        if (shipment?.id && shipment?.status === 'booked') {
+            fetchShipmentDocuments();
         }
-
-        if (shipment?.selectedRate) {
-            console.log('Using shipment.selectedRate for rate display');
-            return shipment.selectedRate;
-        }
-
-        if (shipment?.selectedRateRef) {
-            console.log('Using shipment.selectedRateRef for rate display');
-            return shipment.selectedRateRef;
-        }
-
-        // Fallback to allShipmentRates
-        if (allShipmentRates.length > 0) {
-            const bookedRate = allShipmentRates.find(rate => rate.status === 'booked') ||
-                allShipmentRates.find(rate => rate.status === 'selected') ||
-                allShipmentRates[0];
-            console.log('Using rate from allShipmentRates for rate display:', bookedRate);
-            return bookedRate;
-        }
-
-        console.log('No rate information available');
-        return null;
-    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, allShipmentRates]);
+    }, [shipment?.id, shipment?.status]);
 
     if (loading) {
         return <LoadingSkeleton />;
@@ -1389,22 +1985,146 @@ const ShipmentDetail = () => {
                         <Paper sx={{ p: 3, borderRadius: 2, boxShadow: 1, mb: 3 }}>
                             {/* Breadcrumb Navigation and Action Buttons */}
                             <Box sx={{ mb: 3 }}>
-                                <Typography variant="h5" sx={{ fontWeight: 700, mb: 2 }}>
-                                    Shipment Detail
-                                </Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                    <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                                        Shipment Detail
+                                    </Typography>
+
+                                    {/* Enhanced Action Buttons */}
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                        <ButtonGroup variant="outlined" size="small">
+                                            {/* Enhanced Print Label Button - Only show if labels are available */}
+                                            {(shipmentDocuments.labels?.length > 0 || documentsLoading) && (
+                                                <Button
+                                                    onClick={handlePrintLabelClick}
+                                                    startIcon={actionStates.printLabel.loading ?
+                                                        <CircularProgress size={16} /> : <PrintIcon />}
+                                                    endIcon={!actionStates.printLabel.loading && <KeyboardArrowDownIcon />}
+                                                    disabled={actionStates.printLabel.loading ||
+                                                        documentsLoading ||
+                                                        shipmentDocuments.labels?.length === 0}
+                                                    sx={{
+                                                        textTransform: 'none',
+                                                        fontWeight: 500,
+                                                        px: 2,
+                                                        minWidth: 120
+                                                    }}
+                                                >
+                                                    {actionStates.printLabel.loading ?
+                                                        'Loading...' :
+                                                        `Print Label${shipmentDocuments.labels?.length > 1 ? ` (${shipmentDocuments.labels.length})` : ''}`
+                                                    }
+                                                </Button>
+                                            )}
+
+                                            {/* Enhanced BOL Button - Only for Freight and if BOL is available */}
+                                            {isFreightShipment && (shipmentDocuments.bol?.length > 0 || documentsLoading) && (
+                                                <Button
+                                                    onClick={handlePrintBOL}
+                                                    startIcon={actionStates.printBOL.loading ?
+                                                        <CircularProgress size={16} /> : <DescriptionIcon />}
+                                                    disabled={actionStates.printBOL.loading ||
+                                                        documentsLoading ||
+                                                        shipmentDocuments.bol?.length === 0}
+                                                    sx={{
+                                                        textTransform: 'none',
+                                                        fontWeight: 500,
+                                                        px: 2
+                                                    }}
+                                                >
+                                                    {actionStates.printBOL.loading ? 'Loading...' : 'BOL'}
+                                                </Button>
+                                            )}
+
+                                            {/* Enhanced Print Shipment - Always available */}
+                                            <Button
+                                                onClick={handlePrintShipment}
+                                                startIcon={actionStates.printShipment.loading ?
+                                                    <CircularProgress size={16} /> : <LocalShippingIcon />}
+                                                disabled={actionStates.printShipment.loading}
+                                                sx={{
+                                                    textTransform: 'none',
+                                                    fontWeight: 500,
+                                                    px: 2
+                                                }}
+                                            >
+                                                {actionStates.printShipment.loading ? 'Generating...' : 'Print Shipment'}
+                                            </Button>
+                                        </ButtonGroup>
+
+                                        {/* Document Status Indicator */}
+                                        {documentsLoading && (
+                                            <Chip
+                                                size="small"
+                                                label="Loading documents..."
+                                                icon={<CircularProgress size={16} />}
+                                                variant="outlined"
+                                                sx={{ ml: 1 }}
+                                            />
+                                        )}
+
+                                        {documentsError && (
+                                            <Chip
+                                                size="small"
+                                                label="Document error"
+                                                color="error"
+                                                variant="outlined"
+                                                sx={{ ml: 1 }}
+                                                onClick={() => fetchShipmentDocuments()}
+                                                clickable
+                                            />
+                                        )}
+
+                                        {!documentsLoading && !documentsError && shipment?.status === 'booked' && (
+                                            <Chip
+                                                size="small"
+                                                label={`${Object.values(shipmentDocuments).flat().length} docs available`}
+                                                color="success"
+                                                variant="outlined"
+                                                sx={{ ml: 1 }}
+                                            />
+                                        )}
+                                    </Box>
+                                </Box>
+
+                                {/* Print Label Quantity Dropdown */}
+                                <Menu
+                                    anchorEl={printLabelAnchorEl}
+                                    open={isPrintLabelMenuOpen}
+                                    onClose={handlePrintLabelClose}
+                                    anchorOrigin={{
+                                        vertical: 'bottom',
+                                        horizontal: 'left',
+                                    }}
+                                    transformOrigin={{
+                                        vertical: 'top',
+                                        horizontal: 'left',
+                                    }}
+                                >
+                                    {[1, 2, 3, 4, 5].map((quantity) => (
+                                        <MenuItem
+                                            key={quantity}
+                                            onClick={() => handlePrintLabel(quantity)}
+                                            sx={{ minWidth: 120 }}
+                                        >
+                                            Print {quantity} Label{quantity > 1 ? 's' : ''}
+                                        </MenuItem>
+                                    ))}
+                                </Menu>
+
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <HomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
                                     <Typography
                                         component={Link}
-                                        to="/"
+                                        to="/dashboard"
                                         sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
                                     >
-                                        Home
+                                        Dashboard
                                     </Typography>
                                     <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
                                     <Typography
                                         component={Link}
-                                        to="/admin/shipments"
+                                        to="/shipments"
                                         sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
                                     >
                                         Shipments
@@ -1434,11 +2154,16 @@ const ShipmentDetail = () => {
                                         </Grid>
                                         <Grid item xs={12} sm={6} md={3}>
                                             <Typography variant="caption" color="text.secondary">Carrier</Typography>
-                                            <Typography variant="body2">{getBestRateInfo?.carrier || 'N/A'}</Typography>
+                                            <CarrierDisplay
+                                                carrierName={getBestRateInfo?.carrier}
+                                                carrierData={carrierData}
+                                                size="small"
+                                                isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                            />
                                         </Grid>
                                         <Grid item xs={12} sm={6} md={3}>
                                             <Typography variant="caption" color="text.secondary">Status</Typography>
-                                            <Typography variant="body2">{shipment?.status || 'N/A'}</Typography>
+                                            <StatusChip status={shipment?.status} />
                                         </Grid>
                                         <Grid item xs={12} sm={6} md={3}>
                                             <Typography variant="caption" color="text.secondary">Created At</Typography>
@@ -1475,7 +2200,7 @@ const ShipmentDetail = () => {
                                                     <Stack spacing={2}>
                                                         <Box>
                                                             <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
-                                                            <Typography variant="body2">{shipment?.shipmentInfo?.shipmentType || 'N/A'}</Typography>
+                                                            <Typography variant="body2">{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
                                                         </Box>
                                                         <Box>
                                                             <Typography variant="caption" color="text.secondary">Reference Number</Typography>
@@ -1615,12 +2340,12 @@ const ShipmentDetail = () => {
                                                                     <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
                                                                         Carrier
                                                                     </Typography>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                        <LocalShipping sx={{ color: 'primary.main', fontSize: '1.2rem' }} />
-                                                                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                            {getBestRateInfo?.carrier || 'N/A'}
-                                                                        </Typography>
-                                                                    </Box>
+                                                                    <CarrierDisplay
+                                                                        carrierName={getBestRateInfo?.carrier}
+                                                                        carrierData={carrierData}
+                                                                        size="medium"
+                                                                        isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                                                    />
                                                                 </Box>
                                                             </Box>
                                                         </Grid>
@@ -1688,6 +2413,7 @@ const ShipmentDetail = () => {
                                                                                 // Check multiple sources for estimated delivery date
                                                                                 const deliveryDate =
                                                                                     shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                                                    getBestRateInfo?.transit?.estimatedDelivery ||
                                                                                     getBestRateInfo?.estimatedDeliveryDate;
 
                                                                                 if (deliveryDate) {
@@ -1836,9 +2562,22 @@ const ShipmentDetail = () => {
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                         Carrier & Service
                                                                     </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {getBestRateInfo?.carrier || 'N/A'} - {getBestRateInfo?.service || 'N/A'}
-                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                                                                        <CarrierDisplay
+                                                                            carrierName={getBestRateInfo?.carrier}
+                                                                            carrierData={carrierData}
+                                                                            size="small"
+                                                                            isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                                                        />
+                                                                        {getBestRateInfo?.service && (
+                                                                            <>
+                                                                                <Typography variant="body2" color="text.secondary">-</Typography>
+                                                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                                    {getBestRateInfo.service}
+                                                                                </Typography>
+                                                                            </>
+                                                                        )}
+                                                                    </Box>
                                                                 </Box>
                                                                 <Box>
                                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
@@ -1857,6 +2596,7 @@ const ShipmentDetail = () => {
                                                                             // Check multiple sources for estimated delivery date
                                                                             const deliveryDate =
                                                                                 shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                                                getBestRateInfo?.transit?.estimatedDelivery ||
                                                                                 getBestRateInfo?.estimatedDeliveryDate;
 
                                                                             if (deliveryDate) {
@@ -1882,52 +2622,159 @@ const ShipmentDetail = () => {
 
                                                         {/* Middle Column - Charges */}
                                                         <Grid item xs={12} md={4}>
-                                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Freight Charges
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        ${(getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges || 0).toFixed(2)}
-                                                                    </Typography>
-                                                                </Box>
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Fuel Charges
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        ${(getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges || 0).toFixed(2)}
-                                                                    </Typography>
-                                                                </Box>
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Service Charges
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        ${(getBestRateInfo?.serviceCharges || 0).toFixed(2)}
-                                                                    </Typography>
-                                                                </Box>
-                                                                {(getBestRateInfo?.accessorialCharges > 0) && (
-                                                                    <Box>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Accessorial Charges
-                                                                        </Typography>
-                                                                        <Typography variant="body1">
-                                                                            ${(getBestRateInfo?.accessorialCharges || 0).toFixed(2)}
-                                                                        </Typography>
+                                                            {(() => {
+                                                                // Helper function to safely get a numeric value
+                                                                const safeNumber = (value) => {
+                                                                    const num = parseFloat(value);
+                                                                    return isNaN(num) ? 0 : num;
+                                                                };
+
+                                                                // Try to build breakdown from enhanced billing details first (Canpar style)
+                                                                if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
+                                                                    const validDetails = getBestRateInfo.billingDetails.filter(detail =>
+                                                                        detail &&
+                                                                        detail.name &&
+                                                                        (detail.amount !== undefined && detail.amount !== null)
+                                                                    );
+
+                                                                    if (validDetails.length > 0) {
+                                                                        return (
+                                                                            <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                                {validDetails.map((detail, index) => (
+                                                                                    <Box key={index}>
+                                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                            {detail.name}
+                                                                                        </Typography>
+                                                                                        <Typography variant="body1">
+                                                                                            ${safeNumber(detail.amount).toFixed(2)}
+                                                                                        </Typography>
+                                                                                    </Box>
+                                                                                ))}
+                                                                            </Box>
+                                                                        );
+                                                                    }
+                                                                }
+
+                                                                // Fallback to standard breakdown (eShipPlus and other carriers)
+                                                                const breakdownItems = [];
+
+                                                                // Check for freight charges
+                                                                const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
+                                                                if (freight > 0) {
+                                                                    breakdownItems.push({ name: 'Freight Charges', amount: freight });
+                                                                }
+
+                                                                // Check for fuel charges
+                                                                const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
+                                                                if (fuel > 0) {
+                                                                    breakdownItems.push({ name: 'Fuel Charges', amount: fuel });
+                                                                }
+
+                                                                // Check for service charges
+                                                                const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
+                                                                if (service > 0) {
+                                                                    breakdownItems.push({ name: 'Service Charges', amount: service });
+                                                                }
+
+                                                                // Check for accessorial charges
+                                                                const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
+                                                                if (accessorial > 0) {
+                                                                    breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial });
+                                                                }
+
+                                                                // Check for tax charges
+                                                                const tax = safeNumber(getBestRateInfo?.pricing?.tax || getBestRateInfo?.taxCharges);
+                                                                if (tax > 0) {
+                                                                    breakdownItems.push({ name: 'Tax Charges', amount: tax });
+                                                                }
+
+                                                                // Check for insurance charges
+                                                                const insurance = safeNumber(getBestRateInfo?.pricing?.insurance || getBestRateInfo?.insuranceCharges);
+                                                                if (insurance > 0) {
+                                                                    breakdownItems.push({ name: 'Insurance Charges', amount: insurance });
+                                                                }
+
+                                                                // Check for guarantee charges
+                                                                if (getBestRateInfo?.guaranteed) {
+                                                                    const guarantee = safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge);
+                                                                    if (guarantee > 0) {
+                                                                        breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee });
+                                                                    }
+                                                                }
+
+                                                                if (breakdownItems.length > 0) {
+                                                                    return (
+                                                                        <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                            {breakdownItems.map((item, index) => (
+                                                                                <Box key={index}>
+                                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                        {item.name}
+                                                                                    </Typography>
+                                                                                    <Typography variant="body1">
+                                                                                        ${item.amount.toFixed(2)}
+                                                                                    </Typography>
+                                                                                </Box>
+                                                                            ))}
+                                                                        </Box>
+                                                                    );
+                                                                }
+
+                                                                // Fallback to basic display if no detailed breakdown available
+                                                                return (
+                                                                    <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                        <Box>
+                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                Freight Charges
+                                                                            </Typography>
+                                                                            <Typography variant="body1">
+                                                                                ${(getBestRateInfo?.pricing?.freight ||
+                                                                                    getBestRateInfo?.freightCharge ||
+                                                                                    getBestRateInfo?.freightCharges || 0).toFixed(2)}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                        <Box>
+                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                Fuel Charges
+                                                                            </Typography>
+                                                                            <Typography variant="body1">
+                                                                                ${(getBestRateInfo?.pricing?.fuel ||
+                                                                                    getBestRateInfo?.fuelCharge ||
+                                                                                    getBestRateInfo?.fuelCharges || 0).toFixed(2)}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                        <Box>
+                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                Service Charges
+                                                                            </Typography>
+                                                                            <Typography variant="body1">
+                                                                                ${(getBestRateInfo?.pricing?.service ||
+                                                                                    getBestRateInfo?.serviceCharges || 0).toFixed(2)}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                        {(getBestRateInfo?.accessorialCharges > 0) && (
+                                                                            <Box>
+                                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                    Accessorial Charges
+                                                                                </Typography>
+                                                                                <Typography variant="body1">
+                                                                                    ${(getBestRateInfo?.pricing?.accessorial ||
+                                                                                        getBestRateInfo?.accessorialCharges || 0).toFixed(2)}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        )}
+                                                                        {getBestRateInfo?.guaranteed && (
+                                                                            <Box>
+                                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                    Guarantee Charge
+                                                                                </Typography>
+                                                                                <Typography variant="body1">
+                                                                                    ${(getBestRateInfo?.pricing?.guarantee || 0).toFixed(2)}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        )}
                                                                     </Box>
-                                                                )}
-                                                                {getBestRateInfo?.guaranteed && (
-                                                                    <Box>
-                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                            Guarantee Charge
-                                                                        </Typography>
-                                                                        <Typography variant="body1">
-                                                                            ${(getBestRateInfo?.guaranteeCharge || 0).toFixed(2)}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                )}
-                                                            </Box>
+                                                                );
+                                                            })()}
                                                         </Grid>
 
                                                         {/* Right Column - Total */}
@@ -1949,10 +2796,12 @@ const ShipmentDetail = () => {
                                                                     Total Charges
                                                                 </Typography>
                                                                 <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
-                                                                    ${(getBestRateInfo?.totalCharges || 0).toFixed(2)}
+                                                                    ${(getBestRateInfo?.pricing?.total ||
+                                                                        getBestRateInfo?.totalCharges || 0).toFixed(2)}
                                                                 </Typography>
                                                                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                                                                    {getBestRateInfo?.currency || 'USD'}
+                                                                    {getBestRateInfo?.pricing?.currency ||
+                                                                        getBestRateInfo?.currency || 'USD'}
                                                                 </Typography>
                                                             </Paper>
                                                         </Grid>
@@ -2364,7 +3213,228 @@ const ShipmentDetail = () => {
                     }
                 `}
             </style>
-        </LoadScript>
+            {/* Enhanced Print Label Configuration Dialog */}
+            <Dialog
+                open={printLabelMenuOpen}
+                onClose={handlePrintLabelClose}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: { borderRadius: 2 }
+                }}
+            >
+                <DialogTitle sx={{ pb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PrintIcon color="primary" />
+                        <Typography variant="h6">Print Shipping Labels</Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ pt: 2 }}>
+                    <Grid container spacing={3}>
+                        {/* Label Type Selection for eShipPlus */}
+                        {isEShipPlusCarrier && shipmentDocuments.labels?.length > 1 && (
+                            <Grid item xs={12}>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    Label Type
+                                </Typography>
+                                <ToggleButtonGroup
+                                    value={labelConfig.labelType}
+                                    exclusive
+                                    onChange={(e, newType) => newType && handleLabelTypeChange(newType)}
+                                    size="small"
+                                    fullWidth
+                                >
+                                    <ToggleButton value="4x6" sx={{ textTransform: 'none' }}>
+                                        <Box sx={{ textAlign: 'center' }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                4" x 6" Standard
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Thermal printer labels
+                                            </Typography>
+                                        </Box>
+                                    </ToggleButton>
+                                    <ToggleButton value="avery3x4" sx={{ textTransform: 'none' }}>
+                                        <Box sx={{ textAlign: 'center' }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                Avery 3" x 4"
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Laser printer labels
+                                            </Typography>
+                                        </Box>
+                                    </ToggleButton>
+                                </ToggleButtonGroup>
+                            </Grid>
+                        )}
+
+                        {/* Quantity Selection */}
+                        <Grid item xs={12}>
+                            <Typography variant="subtitle2" gutterBottom>
+                                Number of Labels
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <IconButton
+                                    onClick={() => handleQuantityChange(Math.max(1, labelConfig.quantity - 1))}
+                                    disabled={labelConfig.quantity <= 1}
+                                    size="small"
+                                >
+                                    <RemoveIcon />
+                                </IconButton>
+                                <TextField
+                                    value={labelConfig.quantity}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 1;
+                                        handleQuantityChange(Math.min(Math.max(1, val), 10));
+                                    }}
+                                    size="small"
+                                    sx={{ width: 80 }}
+                                    inputProps={{
+                                        min: 1,
+                                        max: 10,
+                                        style: { textAlign: 'center' }
+                                    }}
+                                />
+                                <IconButton
+                                    onClick={() => handleQuantityChange(Math.min(10, labelConfig.quantity + 1))}
+                                    disabled={labelConfig.quantity >= 10}
+                                    size="small"
+                                >
+                                    <AddIcon />
+                                </IconButton>
+                                <Box sx={{ flexGrow: 1 }}>
+                                    <Slider
+                                        value={labelConfig.quantity}
+                                        onChange={(e, newValue) => handleQuantityChange(newValue)}
+                                        min={1}
+                                        max={10}
+                                        marks
+                                        valueLabelDisplay="auto"
+                                        size="small"
+                                    />
+                                </Box>
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                {labelConfig.quantity > 1 &&
+                                    `All ${labelConfig.quantity} labels will be combined into a single PDF document`
+                                }
+                            </Typography>
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions sx={{ p: 3, pt: 1 }}>
+                    <Button
+                        onClick={handlePrintLabelClose}
+                        color="inherit"
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => handlePrintLabel(labelConfig.quantity, labelConfig.labelType)}
+                        variant="contained"
+                        startIcon={<PrintIcon />}
+                        disabled={actionStates.printLabel.loading}
+                    >
+                        {actionStates.printLabel.loading ? 'Generating...' :
+                            `Generate ${labelConfig.quantity} Label${labelConfig.quantity > 1 ? 's' : ''}`
+                        }
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* PDF Viewer Modal */}
+            <Dialog
+                open={pdfViewerOpen}
+                onClose={() => {
+                    setPdfViewerOpen(false);
+                    if (currentPdfUrl?.startsWith('blob:')) {
+                        URL.revokeObjectURL(currentPdfUrl);
+                    }
+                    setCurrentPdfUrl(null);
+                }}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        height: '90vh',
+                        borderRadius: 2
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: '1px solid',
+                    borderColor: 'divider'
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PictureAsPdfIcon color="error" />
+                        <Typography variant="h6">{currentPdfTitle}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            onClick={() => {
+                                if (currentPdfUrl) {
+                                    window.open(currentPdfUrl, '_blank');
+                                }
+                            }}
+                            startIcon={<FileDownloadIcon />}
+                            size="small"
+                        >
+                            Download
+                        </Button>
+                        <IconButton onClick={() => {
+                            setPdfViewerOpen(false);
+                            if (currentPdfUrl?.startsWith('blob:')) {
+                                URL.revokeObjectURL(currentPdfUrl);
+                            }
+                            setCurrentPdfUrl(null);
+                        }}>
+                            <CloseIcon />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0, height: '100%' }}>
+                    {currentPdfUrl && (
+                        <Box sx={{ height: '100%', width: '100%' }}>
+                            <iframe
+                                src={currentPdfUrl}
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    border: 'none'
+                                }}
+                                title={currentPdfTitle}
+                            />
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Enhanced Snackbar for User Feedback */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={snackbar.severity === 'error' ? 8000 : 4000}
+                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert
+                    onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                    severity={snackbar.severity}
+                    variant="filled"
+                    sx={{
+                        width: '100%',
+                        borderRadius: 2,
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+                    }}
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+
+        </ErrorBoundary>
+        </LoadScript >
     );
 };
 

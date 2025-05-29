@@ -1,13 +1,12 @@
 const functions = require('firebase-functions/v2');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const admin = require('firebase-admin');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { Storage } = require('@google-cloud/storage');
 const mappingGeneratorPrompt = require('./edi-prompts/mapping_generator_prompt');
 const crypto = require('crypto');
 
-// Ensure Firebase admin is initialized (if not already done in index.js or elsewhere)
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
+// Firebase Admin is already initialized in index.js with correct bucket configuration
+
 const db = admin.firestore();
 
 const GEMINI_API_KEY = process.env.GOOGLE_GENAI_API_KEY;

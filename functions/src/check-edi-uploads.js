@@ -3,10 +3,7 @@ const admin = require('firebase-admin');
 const { PubSub } = require('@google-cloud/pubsub');
 const cors = require('cors')({ origin: true }); // Import CORS middleware
 
-// Initialize the admin app if not already initialized
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
+// Firebase Admin is already initialized in index.js with correct bucket configuration
 
 // Initialize Pub/Sub
 const pubsub = new PubSub();
