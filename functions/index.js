@@ -33,6 +33,7 @@ const db = admin.firestore();
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
 const { getRatesCanpar } = require('./src/carrier-api/canpar/getRates');
+const { generateCanparLabel } = require('./src/carrier-api/canpar/generateLabel');
 const { bookRateUniversal } = require('./src/bookRateUniversal');
 const ediProcessing = require('./src/edi-processing');
 const { checkEdiUploads } = require('./src/check-edi-uploads');
@@ -44,6 +45,7 @@ const { getShipmentDocuments, getDocumentDownloadUrl } = require('./src/getShipm
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.getRatesCanpar = getRatesCanpar;
+exports.generateCanparLabel = generateCanparLabel;
 exports.bookRateUniversal = bookRateUniversal;
 exports.onFileUploaded = ediProcessing.onFileUploaded;
 exports.processEdiFile = ediProcessing.processEdiFile;

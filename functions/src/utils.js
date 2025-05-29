@@ -106,7 +106,7 @@ function setByPath(obj, path, value) {
 
 /**
  * Get carrier credentials from Firestore
- * @param {string} carrierID - The carrier ID (e.g., 'ESHIPPLUS')
+ * @param {string} carrierID - The carrier ID or name (e.g., 'ESHIPPLUS', 'Canpar', 'Canpar Express')
  * @returns {Promise<object|null>} - Carrier credentials or null if not found
  */
 async function getCarrierCredentials(carrierID) {
@@ -114,31 +114,85 @@ async function getCarrierCredentials(carrierID) {
     logger.info(`Fetching credentials for carrier: ${carrierID}`);
     
     const carriersRef = db.collection('carriers');
-    const snapshot = await carriersRef
+    
+    // First try to find by carrierID
+    let snapshot = await carriersRef
       .where('carrierID', '==', carrierID)
       .where('enabled', '==', true)
       .where('status', '==', 'active')
       .limit(1)
       .get();
     
+    // If not found by carrierID, try searching by name
     if (snapshot.empty) {
-      logger.warn(`No active carrier found with ID: ${carrierID}`);
+      logger.info(`No carrier found with carrierID '${carrierID}', trying name search...`);
+      snapshot = await carriersRef
+        .where('name', '==', carrierID)
+        .where('enabled', '==', true)
+        .where('status', '==', 'active')
+        .limit(1)
+        .get();
+    }
+    
+    // If still not found, try case-insensitive search for name
+    if (snapshot.empty) {
+      logger.info(`No carrier found with exact name '${carrierID}', trying case-insensitive search...`);
+      const allCarriers = await carriersRef
+        .where('enabled', '==', true)
+        .where('status', '==', 'active')
+        .get();
+      
+      const matchingCarrier = allCarriers.docs.find(doc => {
+        const data = doc.data();
+        const name = data.name || '';
+        const id = data.carrierID || '';
+        return name.toLowerCase() === carrierID.toLowerCase() || 
+               id.toLowerCase() === carrierID.toLowerCase();
+      });
+      
+      if (matchingCarrier) {
+        snapshot = { docs: [matchingCarrier], empty: false };
+      }
+    }
+    
+    if (snapshot.empty) {
+      logger.warn(`No active carrier found with ID or name: ${carrierID}`);
       return null;
     }
     
     const carrierDoc = snapshot.docs[0];
     const carrierData = carrierDoc.data();
     
+    // Log the full carrier data structure for debugging
+    logger.info(`Full carrier data structure for ${carrierID}:`, JSON.stringify(carrierData, null, 2));
+    
     if (!carrierData.apiCredentials) {
       logger.warn(`Carrier ${carrierID} found but has no apiCredentials`);
       return null;
     }
     
-    logger.info(`Successfully retrieved credentials for carrier: ${carrierID}`);
+    // Check for endpoints - they can be in apiCredentials.endpoints, root level, or other locations
+    const endpoints = carrierData.apiCredentials.endpoints || 
+                     carrierData.apiEndpoints || 
+                     carrierData.endpoints || 
+                     carrierData.apiCredentials.apiEndpoints || 
+                     null;
+                     
+    if (!endpoints) {
+      logger.warn(`Carrier ${carrierID} found but has no endpoints configuration. Available apiCredentials fields:`, Object.keys(carrierData.apiCredentials));
+      logger.warn(`Available root fields:`, Object.keys(carrierData));
+    }
+    
+    logger.info(`Successfully retrieved credentials for carrier: ${carrierID} (found as: ${carrierData.name || carrierData.carrierID})`);
+    logger.info(`Endpoints found:`, endpoints ? Object.keys(endpoints) : 'No endpoints');
+    
     return {
       ...carrierData.apiCredentials,
+      endpoints: endpoints, // Include endpoints in the credentials (may be null)
+      hostURL: carrierData.apiCredentials.hostURL || carrierData.hostURL, // Check both locations for hostURL
       carrierName: carrierData.name,
-      carrierType: carrierData.type
+      carrierType: carrierData.type,
+      carrierID: carrierData.carrierID
     };
   } catch (error) {
     logger.error(`Error fetching carrier credentials for ${carrierID}:`, error);
@@ -184,14 +238,22 @@ function createEShipPlusAuthHeader(credentials) {
  */
 function buildCarrierApiUrl(credentials, endpoint) {
   if (!credentials.endpoints) {
-    throw new Error('No endpoints configuration found in carrier credentials');
+    logger.error(`No endpoints configuration found in carrier credentials for endpoint '${endpoint}'. Credentials structure:`, Object.keys(credentials));
+    throw new Error(`No endpoints configuration found in carrier credentials. Available credential fields: ${Object.keys(credentials).join(', ')}`);
   }
   
   const endpointPath = credentials.endpoints[endpoint];
   if (!endpointPath) {
-    throw new Error(`No ${endpoint} endpoint configured for this carrier`);
+    logger.error(`No ${endpoint} endpoint configured for this carrier. Available endpoints:`, Object.keys(credentials.endpoints));
+    throw new Error(`No ${endpoint} endpoint configured for this carrier. Available endpoints: ${Object.keys(credentials.endpoints).join(', ')}`);
   }
   
+  // If endpoint is already a full URL (starts with http), return it as-is
+  if (endpointPath.startsWith('http://') || endpointPath.startsWith('https://')) {
+    return endpointPath;
+  }
+  
+  // Otherwise, combine with hostURL
   // Ensure hostURL ends with '/' and endpointPath doesn't start with '/'
   const baseUrl = credentials.hostURL.endsWith('/') ? credentials.hostURL : `${credentials.hostURL}/`;
   const path = endpointPath.startsWith('/') ? endpointPath.substring(1) : endpointPath;

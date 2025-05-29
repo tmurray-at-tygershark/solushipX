@@ -335,10 +335,13 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
     // Dialog states
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [showBookingDialog, setShowBookingDialog] = useState(false);
-    const [bookingStep, setBookingStep] = useState('booking'); // 'booking' or 'completed'
+    const [bookingStep, setBookingStep] = useState('booking'); // 'booking', 'generating_label', or 'completed'
     const [confirmationNumber, setConfirmationNumber] = useState('');
     const [isDraftSaving, setIsDraftSaving] = useState(false);
     const [draftSaveSuccess, setDraftSaveSuccess] = useState(false);
+    // NEW: Canpar label generation states
+    const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
+    const [labelGenerationStatus, setLabelGenerationStatus] = useState('');
 
     // State for full rate details when needed
     const [fullRateDetails, setFullRateDetails] = useState(null);
@@ -654,7 +657,36 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                 setConfirmationNumber(bookingDetails.confirmationNumber);
 
                 setError(null); // Clear previous errors
-                setBookingStep('completed'); // Move to completed step in dialog
+
+                // NEW: Check if this is a Canpar booking and generate label
+                const carrierName = fullRateDetails?.carrier?.name ||
+                    fullRateDetails?.carrier ||
+                    selectedRate?.carrier?.name ||
+                    selectedRate?.carrier ||
+                    '';
+
+                console.log('Detected carrier:', carrierName);
+
+                if (carrierName && carrierName.toLowerCase().includes('canpar')) {
+                    console.log('Canpar booking detected, preparing to generate label...');
+
+                    // Extract Canpar shipment ID from booking response
+                    const canparShipmentId = bookingDetails.shipmentId ||
+                        bookingDetails.id ||
+                        bookingDetails.trackingNumber;
+
+                    if (canparShipmentId) {
+                        console.log('Canpar shipment ID:', canparShipmentId);
+                        // Generate label after successful booking
+                        generateCanparLabel(canparShipmentId, docIdToProcess, carrierName);
+                    } else {
+                        console.warn('No Canpar shipment ID found in booking response');
+                        setBookingStep('completed'); // Move to completed without label generation
+                    }
+                } else {
+                    console.log('Non-Canpar booking, proceeding to completion');
+                    setBookingStep('completed'); // Move to completed step in dialog for non-Canpar carriers
+                }
 
                 // Optionally, call onNext to move to the next step in the main stepper
                 if (onNext) {
@@ -691,6 +723,56 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         // Use replace to ensure we don't have navigation history issues
         console.log('Navigating to /shipments');
         navigate('/shipments', { replace: true });
+    };
+
+    // NEW: Generate Canpar labels after booking
+    const generateCanparLabel = async (canparShipmentId, docIdToProcess, carrierName) => {
+        console.log('generateCanparLabel called with shipmentId:', canparShipmentId);
+        setIsGeneratingLabel(true);
+        setLabelGenerationStatus('Preparing to generate label...');
+        setBookingStep('generating_label');
+
+        try {
+            // Wait 3 seconds as required by Canpar
+            console.log('Waiting 3 seconds before generating label...');
+            setLabelGenerationStatus('Waiting for shipment to be ready...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            setLabelGenerationStatus('Generating shipping label...');
+            console.log('Calling generateCanparLabel Firebase function...');
+
+            const functionsInstance = getFunctions();
+            const generateLabelFunction = httpsCallable(functionsInstance, 'generateCanparLabel');
+
+            const payload = {
+                shipmentId: canparShipmentId,
+                firebaseDocId: docIdToProcess,
+                carrier: carrierName
+            };
+
+            console.log('Label generation payload:', payload);
+            const result = await generateLabelFunction(payload);
+            console.log('Label generation result:', result);
+
+            if (result.data && result.data.success) {
+                console.log('Label generated successfully:', result.data);
+                setLabelGenerationStatus('Label generated successfully!');
+                setBookingStep('completed');
+            } else {
+                const errorMessage = result.data?.error || 'Failed to generate label';
+                console.error('Label generation failed:', errorMessage);
+                setLabelGenerationStatus(`Label generation failed: ${errorMessage}`);
+                // Still move to completed step but show warning
+                setBookingStep('completed');
+            }
+        } catch (error) {
+            console.error('Error generating Canpar label:', error);
+            setLabelGenerationStatus(`Error generating label: ${error.message}`);
+            // Still move to completed step but show error
+            setBookingStep('completed');
+        } finally {
+            setIsGeneratingLabel(false);
+        }
     };
 
     // Fetch full rate details when selectedRateDocumentId or selectedRate changes
@@ -1434,6 +1516,19 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                 Please wait while we process your shipment booking.
                                             </Typography>
                                         </>
+                                    ) : bookingStep === 'generating_label' ? (
+                                        <>
+                                            <CircularProgress size={60} sx={{ mb: 3, color: '#1a237e' }} />
+                                            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                                                Generating Shipping Label...
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                {labelGenerationStatus}
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                This may take a few moments.
+                                            </Typography>
+                                        </>
                                     ) : (
                                         <>
                                             <CheckCircleIcon sx={{ fontSize: 80, color: '#4caf50', mb: 2 }} />
@@ -1443,9 +1538,15 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                             <Typography variant="body1" sx={{ mb: 1 }}>
                                                 Confirmation Number:
                                             </Typography>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1a237e', mb: 3 }}>
+                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1a237e', mb: 2 }}>
                                                 {confirmationNumber}
                                             </Typography>
+                                            {/* Show label generation status if applicable */}
+                                            {labelGenerationStatus && (
+                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                                    Label Status: {labelGenerationStatus}
+                                                </Typography>
+                                            )}
                                             <Button
                                                 onClick={handleBookingComplete}
                                                 variant="contained"
