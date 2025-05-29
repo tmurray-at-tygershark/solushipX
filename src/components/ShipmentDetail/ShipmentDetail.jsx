@@ -3178,27 +3178,18 @@ const ShipmentDetail = () => {
                                     onChange={(e) => {
                                         const inputValue = e.target.value;
 
-                                        // If the input is empty (e.g., user deleted the content)
                                         if (inputValue === '') {
-                                            handleQuantityChange(1); // Default to 1 or the minimum allowed
+                                            handleQuantityChange(''); // Allow state to hold empty string
                                             return;
                                         }
-
-                                        // Try to parse the integer value
                                         const num = parseInt(inputValue, 10);
 
-                                        // Check if parsing was successful and it's a valid number
                                         if (!isNaN(num)) {
-                                            // Clamp the value between 1 and 10
                                             const clampedValue = Math.min(Math.max(1, num), 10);
                                             handleQuantityChange(clampedValue);
-                                        } else {
-                                            // If parsing fails (e.g., input is "abc" or just "-"),
-                                            // and it's not an empty string (which is handled above),
-                                            // we can choose to do nothing, or revert to a safe value.
-                                            // For now, let's do nothing to allow intermediate states like "-" if the browser permits.
-                                            // The browser's native number input handling might prevent invalid characters anyway.
                                         }
+                                        // If !isNaN(num) is false, do nothing, keeping the last valid state or empty string.
+                                        // The browser's type="number" handling should prevent most truly invalid characters.
                                     }}
                                     size="small"
                                     sx={{ width: 80 }}
@@ -3217,7 +3208,7 @@ const ShipmentDetail = () => {
                                 </IconButton>
                                 <Box sx={{ flexGrow: 1 }}>
                                     <Slider
-                                        value={labelConfig.quantity}
+                                        value={Number(labelConfig.quantity) || 1} // Ensure Slider gets a number
                                         onChange={(e, newValue) => handleQuantityChange(newValue)}
                                         min={1}
                                         max={10}
@@ -3243,13 +3234,13 @@ const ShipmentDetail = () => {
                         Cancel
                     </Button>
                     <Button
-                        onClick={() => handlePrintLabel(labelConfig.quantity, labelConfig.labelType)}
+                        onClick={() => handlePrintLabel(Number(labelConfig.quantity) || 1, labelConfig.labelType)} // Ensure numeric quantity
                         variant="contained"
                         startIcon={<PrintIcon />}
                         disabled={actionStates.printLabel.loading}
                     >
                         {actionStates.printLabel.loading ? 'Generating...' :
-                            `Generate ${labelConfig.quantity} Label${labelConfig.quantity > 1 ? 's' : ''}`
+                            `Generate ${Number(labelConfig.quantity) || 1} Label${(Number(labelConfig.quantity) || 1) > 1 ? 's' : ''}` // Ensure numeric display
                         }
                     </Button>
                 </DialogActions>
