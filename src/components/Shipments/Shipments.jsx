@@ -396,7 +396,9 @@ const Shipments = () => {
             // Pagination
             const startIndex = page * rowsPerPage;
             const endIndex = startIndex + rowsPerPage;
-            const paginatedData = shipmentsData.slice(startIndex, endIndex);
+            const paginatedData = rowsPerPage === -1
+                ? shipmentsData // Show all if rowsPerPage is -1 (All option selected)
+                : shipmentsData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
             setShipments(paginatedData);
 
             // Fetch carrier data for the loaded shipments
@@ -909,7 +911,7 @@ const Shipments = () => {
                                     setRowsPerPage(parseInt(event.target.value, 10));
                                     setPage(0);
                                 }}
-                                rowsPerPageOptions={[10, 25, 50, 100]}
+                                rowsPerPageOptions={[10, 25, 50, 100, { label: 'All', value: -1 }]}
                             />
                         </Paper>
 

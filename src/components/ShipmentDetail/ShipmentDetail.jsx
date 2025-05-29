@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Box,
     Paper,
@@ -50,7 +50,8 @@ import {
     Fade,
     Zoom,
     useTheme,
-    alpha
+    alpha,
+    Skeleton
 } from '@mui/material';
 import {
     ExpandMore,
@@ -84,12 +85,16 @@ import {
     Settings as SettingsIcon,
     SwapHoriz as SwapHorizIcon,
     Map as MapIcon,
-    Location as LocationIcon
+    LocationOn as LocationIcon,
+    AttachMoney as MoneyIcon,
+    ExpandMore as ExpandMoreIcon,
+    Inventory as BoxIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../../firebase/config';
+import { db, functions } from '../../firebase';
+
 import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer, LoadScript } from '@react-google-maps/api';
 import html2pdf from 'html2pdf.js';
 import { PDFDocument } from 'pdf-lib'; // For PDF manipulation
@@ -102,6 +107,7 @@ import {
     TimelineContent,
     TimelineDot
 } from '@mui/lab';
+import { getRateDetailsByDocumentId, getRatesForShipment } from '../../utils/rateUtils';
 import './ShipmentDetail.css';
 
 // Define libraries array as a static constant outside the component
@@ -467,92 +473,6 @@ const ShipmentTimeline = React.memo(({ events }) => (
     </Timeline>
 ));
 
-// Extract StatusChip component for reusability
-const StatusChip = React.memo(({ status }) => {
-    const getStatusConfig = (status) => {
-        switch (status?.toLowerCase()) {
-            case 'pending':
-            case 'created':
-                return {
-                    color: '#F59E0B',
-                    bgcolor: '#FEF3C7',
-                    label: 'Pending'
-                };
-            case 'booked':
-                return {
-                    color: '#10B981',
-                    bgcolor: '#ECFDF5',
-                    label: 'Booked'
-                };
-            case 'awaiting pickup':
-                return {
-                    color: '#F59E0B',
-                    bgcolor: '#FEF3C7',
-                    label: 'Awaiting Pickup'
-                };
-            case 'awaiting shipment':
-            case 'label_created':
-                return {
-                    color: '#3B82F6',
-                    bgcolor: '#EFF6FF',
-                    label: 'Awaiting Shipment'
-                };
-            case 'in transit':
-            case 'in_transit':
-                return {
-                    color: '#6366F1',
-                    bgcolor: '#EEF2FF',
-                    label: 'In Transit'
-                };
-            case 'on hold':
-            case 'on_hold':
-                return {
-                    color: '#7C3AED',
-                    bgcolor: '#F5F3FF',
-                    label: 'On Hold'
-                };
-            case 'delivered':
-                return {
-                    color: '#10B981',
-                    bgcolor: '#ECFDF5',
-                    label: 'Delivered'
-                };
-            case 'cancelled':
-            case 'canceled':
-                return {
-                    color: '#EF4444',
-                    bgcolor: '#FEE2E2',
-                    label: 'Cancelled'
-                };
-            default:
-                return {
-                    color: '#6B7280',
-                    bgcolor: '#F3F4F6',
-                    label: status || 'Unknown'
-                };
-        }
-    };
-
-    const { color, bgcolor, label } = getStatusConfig(status);
-
-    return (
-        <Chip
-            label={label}
-            sx={{
-                color: color,
-                bgcolor: bgcolor,
-                borderRadius: '16px',
-                fontWeight: 500,
-                fontSize: '0.75rem',
-                height: '24px',
-                '& .MuiChip-label': {
-                    px: 2
-                }
-            }}
-            size="small"
-        />
-    );
-});
 
 // Helper function to capitalize shipment type
 const capitalizeShipmentType = (type) => {
@@ -701,10 +621,6 @@ const ShipmentDetail = () => {
         severity: 'info'
     });
 
-    // Helper to get best rate info (computed from shipment data)
-    const getBestRateInfo = useMemo(() => {
-        return shipment?.selectedRate || shipment?.rates?.[0] || detailedRateInfo || null;
-    }, [shipment, detailedRateInfo]);
 
     // Helper to update action loading states
     const setActionLoading = (action, loading, error = null) => {
@@ -719,18 +635,11 @@ const ShipmentDetail = () => {
         setSnackbar({ open: true, message, severity });
     };
 
-    // Check if carrier is eShipPlus to show label type options
-    const isEShipPlusCarrier = useMemo(() => {
-        return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
-            getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-            carrierData?.name?.toLowerCase().includes('eshipplus');
-    }, [getBestRateInfo, carrierData]);
-
     // Enhanced handler functions for action buttons
     const handlePrintLabelClick = (event) => {
         // Check if we have eShipPlus labels with different types
         const labels = shipmentDocuments.labels || [];
-        if (isEShipPlusCarrier && labels.length > 1) {
+        if (isEShipPlusCarrier && labels.length > 1) { // Restored isEShipPlusCarrier
             setShowLabelTypeSelector(true);
         }
         setPrintLabelAnchorEl(event.currentTarget);
@@ -744,9 +653,9 @@ const ShipmentDetail = () => {
     };
 
     // Enhanced PDF viewer function
-    const viewPdfInModal = async (documentId, filename, title) => {
+    const viewPdfInModal = async (documentId, filename, title, actionType = 'printLabel') => {
         try {
-            setActionLoading('printLabel', true);
+            setActionLoading(actionType, true);
 
             const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
             const result = await getDocumentDownloadUrlFunction({ documentId });
@@ -763,7 +672,7 @@ const ShipmentDetail = () => {
             console.error('Error viewing document:', error);
             showSnackbar('Failed to load document: ' + error.message, 'error');
         } finally {
-            setActionLoading('printLabel', false);
+            setActionLoading(actionType, false);
         }
     };
 
@@ -806,12 +715,13 @@ const ShipmentDetail = () => {
             let selectedLabel = labels[0];
 
             // For eShipPlus, select based on label type if multiple are available
-            if (isEShipPlusCarrier && labels.length > 1) {
+            if (isEShipPlusCarrier && labels.length > 1) { // Restored isEShipPlusCarrier
+                const typeToSearch = labelType === 'Thermal' ? 'avery3x4' : labelType;
                 const typeBasedLabel = labels.find(label => {
                     const isAvery = label.filename?.toLowerCase().includes('avery') ||
                         label.docType === 1 ||
                         label.metadata?.eshipplus?.docType === 1;
-                    return labelType === 'avery3x4' ? isAvery : !isAvery;
+                    return typeToSearch === 'avery3x4' ? isAvery : !isAvery;
                 });
                 if (typeBasedLabel) selectedLabel = typeBasedLabel;
             }
@@ -824,9 +734,7 @@ const ShipmentDetail = () => {
             if (result.data.success) {
                 if (quantity === 1) {
                     // Single label - view in modal
-                    setCurrentPdfUrl(result.data.downloadUrl);
-                    setCurrentPdfTitle(`${labelType.toUpperCase()} Label - ${shipment?.shipmentID}`);
-                    setPdfViewerOpen(true);
+                    await viewPdfInModal(selectedLabel.id, selectedLabel.filename, `${labelType.toUpperCase()} Label - ${shipment?.shipmentID}`, 'printLabel');
                 } else {
                     // Multiple labels - fetch PDF, multiply, and show in modal
                     const response = await fetch(result.data.downloadUrl);
@@ -867,7 +775,7 @@ const ShipmentDetail = () => {
             }
 
             const bol = bolDocuments[0];
-            await viewPdfInModal(bol.id, bol.filename, `BOL - ${shipment?.shipmentID}`);
+            await viewPdfInModal(bol.id, bol.filename, `BOL - ${shipment?.shipmentID}`, 'printBOL');
         } catch (error) {
             console.error('Error printing BOL:', error);
             showSnackbar('Failed to load BOL: ' + error.message, 'error');
@@ -1837,6 +1745,13 @@ const ShipmentDetail = () => {
         return null;
     }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, allShipmentRates]);
 
+    // Check if carrier is eShipPlus to show label type options - ADDED HERE
+    const isEShipPlusCarrier = useMemo(() => {
+        return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+            getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+            carrierData?.name?.toLowerCase().includes('eshipplus');
+    }, [getBestRateInfo, carrierData]);
+
     // Fetch carrier data for logo display
     useEffect(() => {
         const fetchCarrierData = async () => {
@@ -1992,14 +1907,15 @@ const ShipmentDetail = () => {
 
                                     {/* Enhanced Action Buttons */}
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                        {/* The TextField and FormControl previously here are removed. */}
+
                                         <ButtonGroup variant="outlined" size="small">
                                             {/* Enhanced Print Label Button - Only show if labels are available */}
                                             {(shipmentDocuments.labels?.length > 0 || documentsLoading) && (
                                                 <Button
-                                                    onClick={handlePrintLabelClick}
+                                                    onClick={handlePrintLabelClick} // Reverted to open dialog
                                                     startIcon={actionStates.printLabel.loading ?
                                                         <CircularProgress size={16} /> : <PrintIcon />}
-                                                    endIcon={!actionStates.printLabel.loading && <KeyboardArrowDownIcon />}
                                                     disabled={actionStates.printLabel.loading ||
                                                         documentsLoading ||
                                                         shipmentDocuments.labels?.length === 0}
@@ -2007,12 +1923,12 @@ const ShipmentDetail = () => {
                                                         textTransform: 'none',
                                                         fontWeight: 500,
                                                         px: 2,
-                                                        minWidth: 120
+                                                        minWidth: 140 // Slightly increased width for new text
                                                     }}
                                                 >
                                                     {actionStates.printLabel.loading ?
                                                         'Loading...' :
-                                                        `Print Label${shipmentDocuments.labels?.length > 1 ? ` (${shipmentDocuments.labels.length})` : ''}`
+                                                        'Print / Configure Labels' // Updated text
                                                     }
                                                 </Button>
                                             )}
@@ -2087,31 +2003,6 @@ const ShipmentDetail = () => {
                                     </Box>
                                 </Box>
 
-                                {/* Print Label Quantity Dropdown */}
-                                <Menu
-                                    anchorEl={printLabelAnchorEl}
-                                    open={isPrintLabelMenuOpen}
-                                    onClose={handlePrintLabelClose}
-                                    anchorOrigin={{
-                                        vertical: 'bottom',
-                                        horizontal: 'left',
-                                    }}
-                                    transformOrigin={{
-                                        vertical: 'top',
-                                        horizontal: 'left',
-                                    }}
-                                >
-                                    {[1, 2, 3, 4, 5].map((quantity) => (
-                                        <MenuItem
-                                            key={quantity}
-                                            onClick={() => handlePrintLabel(quantity)}
-                                            sx={{ minWidth: 120 }}
-                                        >
-                                            Print {quantity} Label{quantity > 1 ? 's' : ''}
-                                        </MenuItem>
-                                    ))}
-                                </Menu>
-
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <HomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
                                     <Typography
@@ -2180,7 +2071,7 @@ const ShipmentDetail = () => {
                                 <Grid item xs={12}>
                                     <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                            <ShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <LocalShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
                                             <Typography variant="h6">Shipment Information</Typography>
                                         </Box>
 
@@ -3232,7 +3123,7 @@ const ShipmentDetail = () => {
                 <DialogContent sx={{ pt: 2 }}>
                     <Grid container spacing={3}>
                         {/* Label Type Selection for eShipPlus */}
-                        {isEShipPlusCarrier && shipmentDocuments.labels?.length > 1 && (
+                        {isEShipPlusCarrier && shipmentDocuments.labels?.length > 1 && ( // Restored isEShipPlusCarrier
                             <Grid item xs={12}>
                                 <Typography variant="subtitle2" gutterBottom>
                                     Label Type
@@ -3250,17 +3141,17 @@ const ShipmentDetail = () => {
                                                 4" x 6" Standard
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                Thermal printer labels
+                                                Standard thermal labels
                                             </Typography>
                                         </Box>
                                     </ToggleButton>
-                                    <ToggleButton value="avery3x4" sx={{ textTransform: 'none' }}>
+                                    <ToggleButton value="Thermal" sx={{ textTransform: 'none' }}> {/* Changed value to 'Thermal' */}
                                         <Box sx={{ textAlign: 'center' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                Avery 3" x 4"
+                                                Thermal Printer
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                Laser printer labels
+                                                e.g., Avery 3" x 4", specialized thermal
                                             </Typography>
                                         </Box>
                                     </ToggleButton>
@@ -3282,10 +3173,32 @@ const ShipmentDetail = () => {
                                     <RemoveIcon />
                                 </IconButton>
                                 <TextField
+                                    type="number" // Explicitly set type to number
                                     value={labelConfig.quantity}
                                     onChange={(e) => {
-                                        const val = parseInt(e.target.value) || 1;
-                                        handleQuantityChange(Math.min(Math.max(1, val), 10));
+                                        const inputValue = e.target.value;
+
+                                        // If the input is empty (e.g., user deleted the content)
+                                        if (inputValue === '') {
+                                            handleQuantityChange(1); // Default to 1 or the minimum allowed
+                                            return;
+                                        }
+
+                                        // Try to parse the integer value
+                                        const num = parseInt(inputValue, 10);
+
+                                        // Check if parsing was successful and it's a valid number
+                                        if (!isNaN(num)) {
+                                            // Clamp the value between 1 and 10
+                                            const clampedValue = Math.min(Math.max(1, num), 10);
+                                            handleQuantityChange(clampedValue);
+                                        } else {
+                                            // If parsing fails (e.g., input is "abc" or just "-"),
+                                            // and it's not an empty string (which is handled above),
+                                            // we can choose to do nothing, or revert to a safe value.
+                                            // For now, let's do nothing to allow intermediate states like "-" if the browser permits.
+                                            // The browser's native number input handling might prevent invalid characters anyway.
+                                        }
                                     }}
                                     size="small"
                                     sx={{ width: 80 }}
@@ -3432,9 +3345,7 @@ const ShipmentDetail = () => {
                     {snackbar.message}
                 </Alert>
             </Snackbar>
-
-        </ErrorBoundary>
-        </LoadScript >
+        </LoadScript>
     );
 };
 
@@ -3459,7 +3370,7 @@ const getStatusIcon = (status) => {
         case 'delivered':
             return <CheckCircleIcon />;
         case 'out_for_delivery':
-            return <LocalShipping />;
+            return <LocalShippingIcon />;
         case 'in_transit':
             return <SwapHorizIcon />;
         case 'picked_up':
