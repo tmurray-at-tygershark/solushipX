@@ -32,7 +32,6 @@ const formatDateForInput = (date) => {
 
 // Removed data and onDataChange from props
 const ShipmentInfo = ({ onNext, onPrevious }) => {
-    console.log('deploy test confirmed - ShipmentInfo component loaded');
     // Get state and update function from context
     const { formData, updateFormSection } = useShipmentForm();
     // Use a local state for errors, still managed locally
@@ -42,17 +41,9 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Set default shipment date to today if not already set
-        // and if shipmentInfo itself exists to avoid errors on initial context load
-        if (formData.shipmentInfo && !formData.shipmentInfo.shipmentDate) {
-            updateFormSection('shipmentInfo', { ...formData.shipmentInfo, shipmentDate: formatDateForInput(new Date()) });
-        }
-
-        // Set default shipment type to 'courier' if not already set
-        if (formData.shipmentInfo && !formData.shipmentInfo.shipmentType) {
-            updateFormSection('shipmentInfo', { ...formData.shipmentInfo, shipmentType: 'courier' });
-        }
-    }, [formData.shipmentInfo, updateFormSection]); // Rerun if shipmentInfo object changes or updateFormSection changes
+        // This useEffect is now simplified - the initialization is handled by the mount useEffect below
+        // Only handle updates to existing shipmentInfo if needed for other logic
+    }, [formData.shipmentInfo, updateFormSection]); // Keep dependencies for consistency
 
     // Add loading effect
     useEffect(() => {
@@ -65,7 +56,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     const handleInputChange = (e) => {
         const { id, value, type } = e.target;
         const newValue = type === 'checkbox' ? e.target.checked : value;
-        console.log('Input changed:', id, newValue);
         // Update context directly
         updateFormSection('shipmentInfo', { [id]: newValue });
         // Clear error when field is modified
@@ -75,8 +65,10 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     };
 
     const handleShipmentTypeChange = (type) => {
-        console.log('Shipment type changed:', type);
-        // Update context directly
+        // Mark that user has made a change
+        setUserHasChanged(true);
+        // Update both local state and context
+        setLocalShipmentType(type);
         updateFormSection('shipmentInfo', { shipmentType: type });
         if (errors.shipmentType) {
             setErrors(prev => ({ ...prev, shipmentType: null }));
@@ -140,7 +132,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
 
         // currentShipmentInfo IS formData.shipmentInfo from context, which should have been updated by handleInputChange
         const currentShipmentInfo = formData.shipmentInfo || {};
-        console.log('ShipmentInfo handleSubmit: Validating data from context:', currentShipmentInfo);
 
         // Validate form using the data currently in context (formData.shipmentInfo)
         const isValid = validateForm();
@@ -160,13 +151,47 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
 
         // Since handleInputChange updates context directly, formData.shipmentInfo IS the source of truth.
         // No need to explicitly call updateFormSection here again with the same object unless there was local state being managed.
-        console.log("ShipmentInfo handleSubmit: Validation passed. Calling onNext with data from context:", currentShipmentInfo);
         onNext(currentShipmentInfo); // Pass the validated shipmentInfo data from context to the parent
     };
 
     const handleCloseSnackbar = () => {
         setShowErrorSnackbar(false);
     };
+
+    // Local state to ensure immediate courier selection and track user changes
+    const [localShipmentType, setLocalShipmentType] = useState('courier');
+    const [userHasChanged, setUserHasChanged] = useState(false);
+
+    // Read values directly from context for rendering
+    const currentData = formData.shipmentInfo || {};
+
+    // Smart default logic:
+    // 1. If user has made changes this session → use their selection
+    // 2. If there's existing draft data with shipmentType → respect it
+    // 3. Only default to courier for completely new shipments
+    let shipmentType;
+    if (userHasChanged) {
+        // User has made a change this session, use context or local state
+        shipmentType = currentData.shipmentType || localShipmentType;
+    } else if (currentData.shipmentType) {
+        // Existing draft data, respect the saved shipment type
+        shipmentType = currentData.shipmentType;
+    } else {
+        // New shipment, default to courier
+        shipmentType = 'courier';
+    }
+
+    // Also ensure the data is set in the context immediately if it's not already set
+    React.useEffect(() => {
+        // Only set courier as default if there's NO existing shipmentType data
+        if (!userHasChanged && !currentData.shipmentType) {
+            updateFormSection('shipmentInfo', {
+                ...currentData,
+                shipmentType: 'courier',
+                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date())
+            });
+        }
+    }, []); // Run only once on mount
 
     if (loading) {
         return (
@@ -222,9 +247,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
         );
     }
 
-    // Read values directly from context for rendering
-    const currentData = formData.shipmentInfo || {};
-
     return (
         <div className="form-section">
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
@@ -240,7 +262,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                     <Grid container spacing={2}>
                         <Grid item xs={12} sm={6}>
                             <div
-                                className={`shipment-type-card ${currentData.shipmentType === 'courier' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
+                                className={`shipment-type-card ${shipmentType === 'courier' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
                                 onClick={() => handleShipmentTypeChange('courier')}
                                 role="button"
                                 tabIndex={0}
@@ -260,7 +282,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                         </Grid>
                         <Grid item xs={12} sm={6}>
                             <div
-                                className={`shipment-type-card ${currentData.shipmentType === 'freight' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
+                                className={`shipment-type-card ${shipmentType === 'freight' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
                                 onClick={() => handleShipmentTypeChange('freight')}
                                 role="button"
                                 tabIndex={0}
