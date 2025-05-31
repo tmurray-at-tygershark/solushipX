@@ -175,7 +175,6 @@ const Shipments = () => {
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading } = useCompany();
     const [shipments, setShipments] = useState([]);
-    const [allShipments, setAllShipments] = useState([]); // Store all unfiltered shipments for stats
     const [customers, setCustomers] = useState({});
     const [carrierData, setCarrierData] = useState({});
     const [page, setPage] = useState(0);
@@ -215,16 +214,16 @@ const Shipments = () => {
     // Enhanced stats calculation to include all statuses including drafts
     const stats = useMemo(() => {
         // Calculate total excluding drafts for the "All" tab
-        const nonDraftShipments = allShipments.filter(s => s.status !== 'draft');
+        const nonDraftShipments = shipments.filter(s => s.status !== 'draft');
 
         return {
             total: nonDraftShipments.length, // Exclude drafts from total
-            inTransit: allShipments.filter(s => s.status === 'In Transit').length,
-            delivered: allShipments.filter(s => s.status === 'Delivered').length,
-            awaitingShipment: allShipments.filter(s => s.status === 'Awaiting Shipment').length,
-            drafts: allShipments.filter(s => s.status === 'draft').length
+            inTransit: shipments.filter(s => s.status === 'In Transit').length,
+            delivered: shipments.filter(s => s.status === 'Delivered').length,
+            awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length,
+            drafts: shipments.filter(s => s.status === 'draft').length
         };
-    }, [allShipments]);
+    }, [shipments]);
 
     // Fetch customers for name lookup (copied from admin view)
     const fetchCustomers = async () => {
@@ -283,7 +282,6 @@ const Shipments = () => {
             console.log("Shipments.jsx: Waiting for companyIdForAddress or company context to finish loading.");
             setLoading(false);
             setShipments([]); // Clear shipments if no companyId
-            setAllShipments([]); // Clear all shipments for stats
             setTotalCount(0);
             return;
         }
@@ -296,7 +294,6 @@ const Shipments = () => {
             console.warn("Shipments.jsx: companyIdForAddress is not available. Cannot load shipments.");
             setLoading(false);
             setShipments([]);
-            setAllShipments([]);
             setTotalCount(0);
             return;
         }
@@ -383,9 +380,6 @@ const Shipments = () => {
                 );
             }
 
-            // Store the full unfiltered dataset for stats calculation
-            setAllShipments(shipmentsData);
-
             // Filter by tab - exclude drafts from "All" tab
             if (selectedTab === 'all') {
                 // "All" tab should exclude drafts
@@ -427,7 +421,6 @@ const Shipments = () => {
         } catch (error) {
             console.error('Error loading shipments:', error);
             setShipments([]);
-            setAllShipments([]);
             setTotalCount(0);
         } finally {
             setLoading(false);
