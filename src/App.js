@@ -33,6 +33,7 @@ const AddCustomer = lazy(() => import('./components/Customers/AddCustomer'));
 const EditCustomer = lazy(() => import('./components/Customers/EditCustomer'));
 const Profile = lazy(() => import('./components/Profile/Profile'));
 const Carriers = lazy(() => import('./components/Carriers/Carriers'));
+const CarrierConfig = lazy(() => import('./components/Carriers/CarrierConfig'));
 const AdminLayout = lazy(() => import('./components/Admin/AdminLayout'));
 const AdminDashboard = lazy(() => import('./components/Admin/Dashboard'));
 const CompanyList = lazy(() => import('./components/Admin/Companies/CompanyList'));
@@ -169,6 +170,11 @@ function AppRoutes() {
                 <Route path="/carriers" element={
                     <ProtectedRoute>
                         <Carriers />
+                    </ProtectedRoute>
+                } />
+                <Route path="/carriers/:carrierId" element={
+                    <ProtectedRoute>
+                        <CarrierConfig />
                     </ProtectedRoute>
                 } />
 

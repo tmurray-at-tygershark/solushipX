@@ -3,6 +3,180 @@
  * This model provides a consistent interface for all carriers regardless of their API structure
  */
 
+// ===== UNIVERSAL SHIPMENT STATUSES =====
+export const SHIPMENT_STATUSES = {
+    // Draft/Preparation Phase
+    DRAFT: 'draft',
+    PENDING: 'pending',
+    
+    // Booking Phase
+    BOOKED: 'booked',
+    SCHEDULED: 'scheduled',
+    
+    // Transit Phase
+    AWAITING_SHIPMENT: 'awaiting_shipment',
+    IN_TRANSIT: 'in_transit',
+    
+    // Completion Phase
+    DELIVERED: 'delivered',
+    
+    // Exception Phase
+    ON_HOLD: 'on_hold',
+    CANCELED: 'canceled',
+    CANCELLED: 'cancelled', // Legacy support
+    VOID: 'void',
+    
+    // Error/Unknown
+    UNKNOWN: 'unknown'
+};
+
+// Status Display Names
+export const STATUS_DISPLAY_NAMES = {
+    [SHIPMENT_STATUSES.DRAFT]: 'Draft',
+    [SHIPMENT_STATUSES.PENDING]: 'Pending',
+    [SHIPMENT_STATUSES.BOOKED]: 'Booked',
+    [SHIPMENT_STATUSES.SCHEDULED]: 'Scheduled',
+    [SHIPMENT_STATUSES.AWAITING_SHIPMENT]: 'Awaiting Shipment',
+    [SHIPMENT_STATUSES.IN_TRANSIT]: 'In Transit',
+    [SHIPMENT_STATUSES.DELIVERED]: 'Delivered',
+    [SHIPMENT_STATUSES.ON_HOLD]: 'On Hold',
+    [SHIPMENT_STATUSES.CANCELED]: 'Canceled',
+    [SHIPMENT_STATUSES.CANCELLED]: 'Cancelled',
+    [SHIPMENT_STATUSES.VOID]: 'Void',
+    [SHIPMENT_STATUSES.UNKNOWN]: 'Unknown'
+};
+
+// Status Categories for filtering and business logic
+export const STATUS_CATEGORIES = {
+    ACTIVE: [
+        SHIPMENT_STATUSES.PENDING,
+        SHIPMENT_STATUSES.BOOKED,
+        SHIPMENT_STATUSES.SCHEDULED,
+        SHIPMENT_STATUSES.AWAITING_SHIPMENT,
+        SHIPMENT_STATUSES.IN_TRANSIT
+    ],
+    COMPLETED: [
+        SHIPMENT_STATUSES.DELIVERED
+    ],
+    EXCEPTIONS: [
+        SHIPMENT_STATUSES.ON_HOLD,
+        SHIPMENT_STATUSES.CANCELED,
+        SHIPMENT_STATUSES.CANCELLED,
+        SHIPMENT_STATUSES.VOID
+    ],
+    DRAFT: [
+        SHIPMENT_STATUSES.DRAFT
+    ]
+};
+
+// ===== STATUS MAPPING FUNCTIONS =====
+
+/**
+ * Normalize status from various carrier formats to universal format
+ */
+export function normalizeShipmentStatus(carrierStatus, carrierType = 'UNKNOWN') {
+    if (!carrierStatus) return SHIPMENT_STATUSES.UNKNOWN;
+    
+    const normalizedStatus = carrierStatus.toString().toLowerCase().trim();
+    
+    // Common status mappings
+    switch (normalizedStatus) {
+        case 'draft':
+        case 'created':
+        case 'new':
+            return SHIPMENT_STATUSES.DRAFT;
+            
+        case 'pending':
+        case 'quoted':
+        case 'rated':
+            return SHIPMENT_STATUSES.PENDING;
+            
+        case 'booked':
+        case 'confirmed':
+        case 'accepted':
+            return SHIPMENT_STATUSES.BOOKED;
+            
+        case 'scheduled':
+        case 'planned':
+        case 'dispatched':
+            return SHIPMENT_STATUSES.SCHEDULED;
+            
+        case 'awaiting shipment':
+        case 'awaiting_shipment':
+        case 'ready':
+        case 'pickup_scheduled':
+            return SHIPMENT_STATUSES.AWAITING_SHIPMENT;
+            
+        case 'in transit':
+        case 'in_transit':
+        case 'intransit':
+        case 'shipped':
+        case 'picked_up':
+        case 'pickup':
+        case 'en_route':
+        case 'out_for_delivery':
+            return SHIPMENT_STATUSES.IN_TRANSIT;
+            
+        case 'delivered':
+        case 'completed':
+        case 'pod':
+        case 'proof_of_delivery':
+            return SHIPMENT_STATUSES.DELIVERED;
+            
+        case 'on hold':
+        case 'on_hold':
+        case 'onhold':
+        case 'hold':
+        case 'delayed':
+        case 'exception':
+            return SHIPMENT_STATUSES.ON_HOLD;
+            
+        case 'canceled':
+        case 'cancelled':
+        case 'cancel':
+            return SHIPMENT_STATUSES.CANCELED;
+            
+        case 'void':
+        case 'voided':
+        case 'rejected':
+            return SHIPMENT_STATUSES.VOID;
+            
+        default:
+            return SHIPMENT_STATUSES.UNKNOWN;
+    }
+}
+
+/**
+ * Get status color for UI display
+ */
+export function getStatusColor(status) {
+    switch (status) {
+        case SHIPMENT_STATUSES.DRAFT:
+            return { color: '#64748b', bgcolor: '#f1f5f9' };
+        case SHIPMENT_STATUSES.PENDING:
+            return { color: '#d97706', bgcolor: '#fef3c7' };
+        case SHIPMENT_STATUSES.BOOKED:
+            return { color: '#059669', bgcolor: '#d1fae5' };
+        case SHIPMENT_STATUSES.SCHEDULED:
+            return { color: '#7c3aed', bgcolor: '#ede9fe' };
+        case SHIPMENT_STATUSES.AWAITING_SHIPMENT:
+            return { color: '#dc2626', bgcolor: '#fee2e2' };
+        case SHIPMENT_STATUSES.IN_TRANSIT:
+            return { color: '#2563eb', bgcolor: '#dbeafe' };
+        case SHIPMENT_STATUSES.DELIVERED:
+            return { color: '#16a34a', bgcolor: '#dcfce7' };
+        case SHIPMENT_STATUSES.ON_HOLD:
+            return { color: '#ea580c', bgcolor: '#fed7aa' };
+        case SHIPMENT_STATUSES.CANCELED:
+        case SHIPMENT_STATUSES.CANCELLED:
+            return { color: '#7f1d1d', bgcolor: '#fecaca' };
+        case SHIPMENT_STATUSES.VOID:
+            return { color: '#374151', bgcolor: '#f3f4f6' };
+        default:
+            return { color: '#6b7280', bgcolor: '#f9fafb' };
+    }
+}
+
 // ===== UNIVERSAL RATE STRUCTURE =====
 export const UNIVERSAL_RATE_SCHEMA = {
     // Core Identifiers

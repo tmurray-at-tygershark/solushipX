@@ -47,7 +47,8 @@ const AdminCarriers = () => {
         booking: '',
         tracking: '',
         cancel: '',
-        labels: ''
+        labels: '',
+        status: ''
     });
     const [carrierIdError, setCarrierIdError] = useState('');
     const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
@@ -112,7 +113,8 @@ const AdminCarriers = () => {
                 booking: carrier.apiCredentials?.endpoints?.booking || '',
                 tracking: carrier.apiCredentials?.endpoints?.tracking || '',
                 cancel: carrier.apiCredentials?.endpoints?.cancel || '',
-                labels: carrier.apiCredentials?.endpoints?.labels || ''
+                labels: carrier.apiCredentials?.endpoints?.labels || '',
+                status: carrier.apiCredentials?.endpoints?.status || ''
             });
             setLogoPreview(carrier.logoFileName ? `/images/carrier-badges/${carrier.logoFileName}` : '');
         } else {
@@ -136,7 +138,8 @@ const AdminCarriers = () => {
                 booking: '',
                 tracking: '',
                 cancel: '',
-                labels: ''
+                labels: '',
+                status: ''
             });
             setLogoPreview('');
         }
@@ -168,7 +171,8 @@ const AdminCarriers = () => {
             booking: '',
             tracking: '',
             cancel: '',
-            labels: ''
+            labels: '',
+            status: ''
         });
         setCarrierIdError('');
     };
@@ -593,7 +597,19 @@ const AdminCarriers = () => {
                                     placeholder="e.g., GetLabels.aspx"
                                     helperText="Endpoint for retrieving shipping labels"
                                 />
-                            </Grid>                         </Grid>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Status Endpoint"
+                                    name="status"
+                                    value={endpoints.status}
+                                    onChange={handleEndpointChange}
+                                    placeholder="e.g., GetStatus.aspx"
+                                    helperText="Endpoint for retrieving carrier status"
+                                />
+                            </Grid>
+                        </Grid>
                     </DialogContent>
                     <DialogActions>
                         {selectedCarrier && (

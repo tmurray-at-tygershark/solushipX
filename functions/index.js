@@ -41,6 +41,7 @@ const { generateEdiMapping } = require('./src/mapping_functions');
 const { adminCreateUser } = require('./src/admin-create-user');
 const { adminResetUserPassword, checkUserCompanyOwnership, adminDeleteUser, adminGetUsersAuthData } = require('./src/admin-user-management');
 const { getShipmentDocuments, getDocumentDownloadUrl } = require('./src/getShipmentDocuments');
+const { checkShipmentStatus } = require('./src/checkShipmentStatus');
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
@@ -60,3 +61,4 @@ exports.adminDeleteUser = adminDeleteUser;
 exports.adminGetUsersAuthData = adminGetUsersAuthData;
 exports.getShipmentDocuments = getShipmentDocuments;
 exports.getDocumentDownloadUrl = getDocumentDownloadUrl;
+exports.checkShipmentStatus = checkShipmentStatus;
