@@ -47,7 +47,8 @@ import {
     Print as PrintIcon,
     Delete as DeleteIcon,
     Home as HomeIcon,
-    NavigateNext as NavigateNextIcon
+    NavigateNext as NavigateNextIcon,
+    Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -86,59 +87,99 @@ const formatAddress = (address, label = '') => {
 const StatusChip = React.memo(({ status }) => {
     const getStatusConfig = (status) => {
         switch (status?.toLowerCase()) {
+            // Draft/Initial States - Grey
+            case 'draft':
+                return {
+                    color: '#64748b',
+                    bgcolor: '#f1f5f9',
+                    label: 'Draft'
+                };
+            case 'unknown':
+                return {
+                    color: '#6b7280',
+                    bgcolor: '#f9fafb',
+                    label: 'Unknown'
+                };
+
+            // Early Processing - Light Grey
             case 'pending':
             case 'created':
                 return {
-                    color: '#F59E0B',
-                    bgcolor: '#FEF3C7',
+                    color: '#d97706',
+                    bgcolor: '#fef3c7',
                     label: 'Pending'
                 };
+
+            // Scheduled - Light Blue
+            case 'scheduled':
+                return {
+                    color: '#7c3aed',
+                    bgcolor: '#ede9fe',
+                    label: 'Scheduled'
+                };
+
+            // Confirmed - Blue
             case 'booked':
                 return {
-                    color: '#10B981',
-                    bgcolor: '#ECFDF5',
+                    color: '#2563eb',
+                    bgcolor: '#dbeafe',
                     label: 'Booked'
                 };
+
+            // Ready to Ship - Orange
             case 'awaiting pickup':
-                return {
-                    color: '#F59E0B',
-                    bgcolor: '#FEF3C7',
-                    label: 'Awaiting Pickup'
-                };
             case 'awaiting shipment':
+            case 'awaiting_shipment':
+            case 'label_created':
                 return {
-                    color: '#3B82F6',
-                    bgcolor: '#EFF6FF',
+                    color: '#ea580c',
+                    bgcolor: '#fed7aa',
                     label: 'Awaiting Shipment'
                 };
+
+            // In Motion - Purple
             case 'in transit':
+            case 'in_transit':
                 return {
-                    color: '#6366F1',
-                    bgcolor: '#EEF2FF',
+                    color: '#7c2d92',
+                    bgcolor: '#f3e8ff',
                     label: 'In Transit'
                 };
-            case 'on hold':
-                return {
-                    color: '#7C3AED',
-                    bgcolor: '#F5F3FF',
-                    label: 'On Hold'
-                };
+
+            // Success - Green (Reserved for completion)
             case 'delivered':
                 return {
-                    color: '#10B981',
-                    bgcolor: '#ECFDF5',
+                    color: '#16a34a',
+                    bgcolor: '#dcfce7',
                     label: 'Delivered'
                 };
-            case 'cancelled':
+
+            // Problem States - Red variants
+            case 'on hold':
+            case 'on_hold':
                 return {
-                    color: '#EF4444',
-                    bgcolor: '#FEE2E2',
+                    color: '#dc2626',
+                    bgcolor: '#fee2e2',
+                    label: 'On Hold'
+                };
+            case 'cancelled':
+            case 'canceled':
+                return {
+                    color: '#b91c1c',
+                    bgcolor: '#fecaca',
                     label: 'Cancelled'
                 };
+            case 'void':
+                return {
+                    color: '#7f1d1d',
+                    bgcolor: '#f3f4f6',
+                    label: 'Void'
+                };
+
             default:
                 return {
-                    color: '#6B7280',
-                    bgcolor: '#F3F4F6',
+                    color: '#6b7280',
+                    bgcolor: '#f9fafb',
                     label: status || 'Unknown'
                 };
         }
@@ -205,6 +246,7 @@ const Shipments = () => {
     const [selected, setSelected] = useState([]);
     const [selectedShipment, setSelectedShipment] = useState(null);
     const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
+    const [refreshingStatus, setRefreshingStatus] = useState(new Set());
     const navigate = useNavigate();
 
     // Scroll to top when component mounts
@@ -546,15 +588,6 @@ const Shipments = () => {
         setSelected(newSelected);
     };
 
-    const handleShipmentClick = (shipment) => {
-        if (shipment.status === 'draft') {
-            navigate(`/create-shipment/shipment-info/${shipment.id}`);
-        } else {
-            const shipmentId = shipment.shipmentID || shipment.id;
-            navigate(`/shipment/${shipmentId}`, { state: { from: '/shipments' } });
-        }
-    };
-
     const getStatusColor = (status) => {
         switch (status) {
             case 'Delivered':
@@ -579,11 +612,6 @@ const Shipments = () => {
         setActionMenuAnchorEl(null);
     };
 
-    const handleSelectClick = (event, id) => {
-        event.stopPropagation();
-        handleSelect(id);
-    };
-
     // Handle draft deletion
     const handleDeleteDraft = async (shipmentId) => {
         if (!window.confirm('Are you sure you want to delete this draft shipment? This action cannot be undone.')) {
@@ -601,7 +629,59 @@ const Shipments = () => {
             console.log('Draft shipment deleted successfully');
         } catch (error) {
             console.error('Error deleting draft shipment:', error);
-            alert('Failed to delete draft shipment: ' + error.message);
+            alert('Failed to delete draft shipment. Please try again.');
+        }
+    };
+
+    /**
+     * Refresh status for a specific shipment
+     */
+    const handleRefreshShipmentStatus = async (shipment) => {
+        try {
+            setRefreshingStatus(prev => new Set([...prev, shipment.id]));
+
+            const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    shipmentId: shipment.id,
+                    trackingNumber: shipment.trackingNumber || shipment.id,
+                    bookingReferenceNumber: shipment.selectedRate?.BookingReferenceNumber || shipment.bookingReferenceNumber
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update the shipment in the local state
+                setShipments(prevShipments =>
+                    prevShipments.map(s =>
+                        s.id === shipment.id
+                            ? {
+                                ...s,
+                                status: result.status,
+                                statusLastChecked: new Date().toISOString(),
+                                carrierTrackingData: result
+                            }
+                            : s
+                    )
+                );
+
+                console.log(`Status updated for shipment ${shipment.id}: ${result.statusDisplay}`);
+            } else {
+                console.error(`Failed to check status for shipment ${shipment.id}:`, result.error);
+            }
+
+        } catch (error) {
+            console.error('Error refreshing shipment status:', error);
+        } finally {
+            setRefreshingStatus(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(shipment.id);
+                return newSet;
+            });
         }
     };
 
@@ -868,9 +948,7 @@ const Shipments = () => {
                                                 <TableRow
                                                     hover
                                                     key={shipment.id}
-                                                    onClick={() => handleShipmentClick(shipment)}
                                                     selected={selected.indexOf(shipment.id) !== -1}
-                                                    sx={{ cursor: 'pointer' }}
                                                 >
                                                     <TableCell
                                                         padding="checkbox"
@@ -878,8 +956,7 @@ const Shipments = () => {
                                                     >
                                                         <Checkbox
                                                             checked={selected.indexOf(shipment.id) !== -1}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            onChange={(e) => handleSelectClick(e, shipment.id)}
+                                                            onChange={() => handleSelect(shipment.id)}
                                                         />
                                                     </TableCell>
                                                     <TableCell
@@ -920,17 +997,34 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        <StatusChip status={shipment.status} />
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <StatusChip status={shipment.status} />
+                                                            {shipment.status !== 'draft' && (
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => handleRefreshShipmentStatus(shipment)}
+                                                                    disabled={refreshingStatus.has(shipment.id)}
+                                                                    sx={{
+                                                                        opacity: refreshingStatus.has(shipment.id) ? 0.5 : 0.7,
+                                                                        '&:hover': { opacity: 1 }
+                                                                    }}
+                                                                    title="Refresh status"
+                                                                >
+                                                                    {refreshingStatus.has(shipment.id) ? (
+                                                                        <CircularProgress size={14} />
+                                                                    ) : (
+                                                                        <RefreshIcon sx={{ fontSize: 14 }} />
+                                                                    )}
+                                                                </IconButton>
+                                                            )}
+                                                        </Box>
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                         align="right"
                                                     >
                                                         <IconButton
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleActionMenuOpen(e, shipment);
-                                                            }}
+                                                            onClick={(e) => handleActionMenuOpen(e, shipment)}
                                                             size="small"
                                                         >
                                                             <MoreVertIcon />

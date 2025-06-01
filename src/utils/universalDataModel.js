@@ -151,27 +151,45 @@ export function normalizeShipmentStatus(carrierStatus, carrierType = 'UNKNOWN') 
  */
 export function getStatusColor(status) {
     switch (status) {
+        // Draft/Initial States - Grey
         case SHIPMENT_STATUSES.DRAFT:
             return { color: '#64748b', bgcolor: '#f1f5f9' };
+        case SHIPMENT_STATUSES.UNKNOWN:
+            return { color: '#6b7280', bgcolor: '#f9fafb' };
+        
+        // Early Processing - Amber
         case SHIPMENT_STATUSES.PENDING:
             return { color: '#d97706', bgcolor: '#fef3c7' };
-        case SHIPMENT_STATUSES.BOOKED:
-            return { color: '#059669', bgcolor: '#d1fae5' };
+        
+        // Scheduled - Purple
         case SHIPMENT_STATUSES.SCHEDULED:
             return { color: '#7c3aed', bgcolor: '#ede9fe' };
-        case SHIPMENT_STATUSES.AWAITING_SHIPMENT:
-            return { color: '#dc2626', bgcolor: '#fee2e2' };
-        case SHIPMENT_STATUSES.IN_TRANSIT:
+        
+        // Confirmed - Blue
+        case SHIPMENT_STATUSES.BOOKED:
             return { color: '#2563eb', bgcolor: '#dbeafe' };
+        
+        // Ready to Ship - Orange
+        case SHIPMENT_STATUSES.AWAITING_SHIPMENT:
+            return { color: '#ea580c', bgcolor: '#fed7aa' };
+        
+        // In Motion - Purple
+        case SHIPMENT_STATUSES.IN_TRANSIT:
+            return { color: '#7c2d92', bgcolor: '#f3e8ff' };
+        
+        // Success - Green
         case SHIPMENT_STATUSES.DELIVERED:
             return { color: '#16a34a', bgcolor: '#dcfce7' };
+        
+        // Problem States - Red variants
         case SHIPMENT_STATUSES.ON_HOLD:
-            return { color: '#ea580c', bgcolor: '#fed7aa' };
+            return { color: '#dc2626', bgcolor: '#fee2e2' };
         case SHIPMENT_STATUSES.CANCELED:
         case SHIPMENT_STATUSES.CANCELLED:
-            return { color: '#7f1d1d', bgcolor: '#fecaca' };
+            return { color: '#b91c1c', bgcolor: '#fecaca' };
         case SHIPMENT_STATUSES.VOID:
-            return { color: '#374151', bgcolor: '#f3f4f6' };
+            return { color: '#7f1d1d', bgcolor: '#f3f4f6' };
+        
         default:
             return { color: '#6b7280', bgcolor: '#f9fafb' };
     }

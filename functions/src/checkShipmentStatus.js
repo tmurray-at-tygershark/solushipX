@@ -4,6 +4,10 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const axios = require('axios');
 
+// Import carrier-specific status checkers
+const { getEShipPlusStatus } = require('./carrier-api/eshipplus/getStatus');
+const { getCanparStatus } = require('./carrier-api/canpar/getStatus');
+
 // Initialize Firebase Admin if not already initialized
 try {
     initializeApp();
@@ -24,63 +28,130 @@ exports.checkShipmentStatus = onRequest(
     },
     async (req, res) => {
         try {
-            const { trackingNumber, shipmentId, carrier } = req.body;
+            const { trackingNumber, shipmentId, carrier, bookingReferenceNumber } = req.body;
 
-            if (!trackingNumber || !carrier) {
+            if (!trackingNumber && !shipmentId) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Missing required parameters: trackingNumber and carrier'
+                    error: 'Either trackingNumber or shipmentId is required'
                 });
             }
 
-            logger.info(`Checking status for ${carrier} shipment: ${trackingNumber}`);
+            let shipmentData = null;
+            let carrierInfo = null;
+
+            // If shipmentId is provided, get shipment data from Firestore
+            if (shipmentId) {
+                const shipmentRef = db.collection('shipments').doc(shipmentId);
+                const shipmentDoc = await shipmentRef.get();
+                
+                if (!shipmentDoc.exists) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Shipment not found'
+                    });
+                }
+                
+                shipmentData = shipmentDoc.data();
+                
+                // Determine carrier from shipment data if not provided
+                if (!carrier) {
+                    carrierInfo = getShipmentCarrier(shipmentData);
+                } else {
+                    carrierInfo = { name: carrier, type: carrier };
+                }
+            } else {
+                // Use provided carrier
+                carrierInfo = { name: carrier, type: carrier };
+            }
+
+            if (!carrierInfo || !carrierInfo.name) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Could not determine carrier'
+                });
+            }
 
             // Get carrier configuration
-            const carrierConfig = await getCarrierConfig(carrier);
+            const carrierConfig = await getCarrierConfig(carrierInfo.name);
             if (!carrierConfig) {
                 return res.status(404).json({
                     success: false,
-                    error: `Carrier configuration not found for: ${carrier}`
+                    error: `Carrier configuration not found for: ${carrierInfo.name}`
                 });
             }
 
-            // Check status based on carrier
-            let statusData;
-            switch (carrier.toUpperCase()) {
-                case 'ESHIPPLUS':
-                case 'ESHIP':
-                    statusData = await checkEShipPlusStatus(trackingNumber, carrierConfig);
-                    break;
-                case 'CANPAR':
-                    statusData = await checkCanparStatus(trackingNumber, carrierConfig);
-                    break;
-                case 'FEDEX':
-                    statusData = await checkFedExStatus(trackingNumber, carrierConfig);
-                    break;
-                case 'UPS':
-                    statusData = await checkUPSStatus(trackingNumber, carrierConfig);
-                    break;
-                default:
-                    return res.status(400).json({
-                        success: false,
-                        error: `Status checking not implemented for carrier: ${carrier}`
-                    });
+            // Determine the correct tracking identifier
+            let trackingIdentifier = trackingNumber;
+            
+            // For eShip Plus, use booking reference number if available
+            if (carrierInfo.name.toLowerCase().includes('eshipplus') || carrierInfo.name.toLowerCase().includes('eship')) {
+                trackingIdentifier = bookingReferenceNumber || 
+                                   shipmentData?.selectedRate?.BookingReferenceNumber || 
+                                   shipmentData?.bookingReferenceNumber ||
+                                   trackingNumber;
+                
+                logger.info(`Using eShip Plus booking reference: ${trackingIdentifier}`);
+            }
+            // For Canpar, use barcode from selected rate
+            else if (carrierInfo.name.toLowerCase().includes('canpar')) {
+                trackingIdentifier = shipmentData?.selectedRate?.TrackingNumber ||
+                                   shipmentData?.selectedRate?.Barcode ||
+                                   shipmentData?.trackingNumber ||
+                                   trackingNumber;
+                
+                logger.info(`Using Canpar barcode: ${trackingIdentifier}`);
             }
 
-            // Return the status data
-            res.json({
-                success: true,
-                shipmentId,
-                trackingNumber,
-                carrier,
-                ...statusData
-            });
+            // Check status based on carrier
+            let statusResult;
+            const carrierName = carrierInfo.name.toLowerCase();
+
+            if (carrierName.includes('eshipplus') || carrierName.includes('eship')) {
+                statusResult = await checkEShipPlusStatus(trackingIdentifier, carrierConfig);
+            } else if (carrierName.includes('canpar')) {
+                statusResult = await checkCanparStatus(trackingIdentifier, carrierConfig);
+            } else if (carrierName.includes('fedex')) {
+                statusResult = await checkFedExStatus(trackingIdentifier, carrierConfig);
+            } else if (carrierName.includes('ups')) {
+                statusResult = await checkUPSStatus(trackingIdentifier, carrierConfig);
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    error: `Unsupported carrier: ${carrierInfo.name}`
+                });
+            }
+
+            // Update shipment status in Firestore if shipmentId provided
+            if (shipmentId && statusResult.success) {
+                const updateData = {
+                    status: statusResult.status,
+                    statusLastChecked: new Date(),
+                    carrierTrackingData: statusResult
+                };
+
+                // Add estimated delivery if available
+                if (statusResult.estimatedDelivery) {
+                    updateData.estimatedDelivery = new Date(statusResult.estimatedDelivery);
+                }
+
+                // Add actual delivery if available
+                if (statusResult.actualDelivery) {
+                    updateData.actualDelivery = new Date(statusResult.actualDelivery);
+                }
+
+                await db.collection('shipments').doc(shipmentId).update(updateData);
+                logger.info(`Updated shipment ${shipmentId} with new status: ${statusResult.status}`);
+            }
+
+            return res.status(200).json(statusResult);
 
         } catch (error) {
             logger.error('Error in checkShipmentStatus:', error);
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
-                error: error.message || 'Internal server error'
+                error: 'Internal server error',
+                details: error.message
             });
         }
     }
@@ -92,24 +163,66 @@ exports.checkShipmentStatus = onRequest(
 async function getCarrierConfig(carrierKey) {
     try {
         const carriersRef = db.collection('carriers');
-        const snapshot = await carriersRef.where('carrierKey', '==', carrierKey.toUpperCase()).get();
+        const snapshot = await carriersRef
+            .where('carrierKey', '==', carrierKey.toUpperCase())
+            .where('enabled', '==', true)
+            .limit(1)
+            .get();
 
         if (snapshot.empty) {
-            logger.warn(`No carrier configuration found for: ${carrierKey}`);
+            logger.warn(`No enabled carrier found for key: ${carrierKey}`);
             return null;
         }
 
         const carrierDoc = snapshot.docs[0];
-        const config = carrierDoc.data();
+        const carrierData = carrierDoc.data();
 
-        if (!config.apiCredentials || !config.apiCredentials.endpoints?.status) {
-            logger.warn(`Status endpoint not configured for carrier: ${carrierKey}`);
-            return null;
-        }
+        logger.info(`Found carrier config for: ${carrierKey}`);
+        return carrierData;
 
-        return config;
     } catch (error) {
-        logger.error(`Error fetching carrier config for ${carrierKey}:`, error);
+        logger.error(`Error getting carrier config for ${carrierKey}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Determine carrier from shipment data
+ */
+function getShipmentCarrier(shipmentData) {
+    try {
+        // Try to get carrier from selected rate
+        if (shipmentData.selectedRate?.CarrierName) {
+            return {
+                name: shipmentData.selectedRate.CarrierName,
+                type: shipmentData.selectedRate.CarrierName.toLowerCase()
+            };
+        }
+        
+        // Try to get from carrier field
+        if (shipmentData.carrier) {
+            return {
+                name: shipmentData.carrier,
+                type: shipmentData.carrier.toLowerCase()
+            };
+        }
+        
+        // Try to get from rate data
+        if (shipmentData.rates && shipmentData.rates.length > 0) {
+            const firstRate = shipmentData.rates[0];
+            if (firstRate.CarrierName) {
+                return {
+                    name: firstRate.CarrierName,
+                    type: firstRate.CarrierName.toLowerCase()
+                };
+            }
+        }
+        
+        logger.warn('Could not determine carrier from shipment data');
+        return null;
+        
+    } catch (error) {
+        logger.error('Error determining carrier from shipment data:', error);
         return null;
     }
 }
@@ -119,136 +232,67 @@ async function getCarrierConfig(carrierKey) {
  */
 async function checkEShipPlusStatus(trackingNumber, carrierConfig) {
     try {
-        const { apiCredentials } = carrierConfig;
-        const statusEndpoint = apiCredentials.endpoints.status;
-        const hostURL = apiCredentials.hostURL;
+        logger.info(`Checking eShip Plus status for tracking number: ${trackingNumber}`);
 
-        if (!statusEndpoint) {
-            throw new Error('eShip Plus status endpoint not configured');
+        if (!carrierConfig.apiCredentials) {
+            throw new Error('eShip Plus API credentials not configured');
         }
 
-        // Construct full URL
-        const fullURL = `${hostURL}${statusEndpoint}`;
-
-        // Prepare request data (adjust based on eShip Plus API requirements)
-        const requestData = {
-            TrackingNumber: trackingNumber,
-            Username: apiCredentials.username,
-            Password: apiCredentials.password,
-            AccountNumber: apiCredentials.accountNumber
-        };
-
-        logger.info(`Making eShip Plus status request to: ${fullURL}`);
-
-        const response = await axios.post(fullURL, requestData, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            timeout: 30000,
-            validateStatus: (status) => status >= 200 && status < 600
-        });
-
-        if (response.status >= 400) {
-            throw new Error(`eShip Plus API error: ${response.status} - ${response.statusText}`);
-        }
-
-        // Parse eShip Plus response
-        const statusData = parseEShipPlusStatusResponse(response.data, trackingNumber);
-        
-        logger.info(`eShip Plus status check successful for: ${trackingNumber}`);
-        return statusData;
-
-    } catch (error) {
-        logger.error(`eShip Plus status check failed for ${trackingNumber}:`, error.message);
-        throw new Error(`eShip Plus status check failed: ${error.message}`);
-    }
-}
-
-/**
- * Parse eShip Plus status response
- */
-function parseEShipPlusStatusResponse(responseData, trackingNumber) {
-    try {
-        // Handle different response formats from eShip Plus
-        let statusInfo;
-        
-        if (responseData.TrackingResults) {
-            statusInfo = responseData.TrackingResults;
-        } else if (responseData.Results) {
-            statusInfo = responseData.Results;
-        } else if (Array.isArray(responseData)) {
-            statusInfo = responseData[0];
-        } else {
-            statusInfo = responseData;
-        }
-
-        // Extract status information
-        const status = statusInfo.Status || statusInfo.CurrentStatus || statusInfo.ShipmentStatus || 'Unknown';
-        const location = statusInfo.Location || statusInfo.CurrentLocation || '';
-        const timestamp = statusInfo.Timestamp || statusInfo.StatusDate || statusInfo.LastUpdate || new Date().toISOString();
-
-        // Build status history
-        const statusHistory = [];
-        if (statusInfo.StatusHistory && Array.isArray(statusInfo.StatusHistory)) {
-            statusHistory.push(...statusInfo.StatusHistory.map(item => ({
-                status: item.Status || item.StatusDescription,
-                timestamp: item.Timestamp || item.Date,
-                location: item.Location || item.City,
-                description: item.Description || item.Comments || ''
-            })));
-        } else {
-            // Add current status to history
-            statusHistory.push({
-                status,
-                timestamp,
-                location,
-                description: statusInfo.Description || statusInfo.Comments || ''
-            });
-        }
-
-        // Extract delivery information if delivered
-        let deliveryInfo = {};
-        if (status.toLowerCase().includes('delivered')) {
-            deliveryInfo = {
-                deliveredAt: timestamp,
-                deliveryLocation: location,
-                signedBy: statusInfo.SignedBy || statusInfo.ReceivedBy || ''
-            };
-        }
+        // Use the new eShip Plus status checker
+        const statusResult = await getEShipPlusStatus(trackingNumber, carrierConfig.apiCredentials);
 
         return {
-            status: status,
-            location: location,
-            timestamp: timestamp,
-            statusHistory: statusHistory,
-            trackingUpdates: statusHistory,
-            carrier: 'ESHIPPLUS',
-            ...deliveryInfo
+            success: true,
+            carrier: 'eshipplus',
+            trackingNumber,
+            ...statusResult
         };
 
     } catch (error) {
-        logger.error('Error parsing eShip Plus status response:', error);
-        throw new Error('Failed to parse status response');
+        logger.error(`Error checking eShip Plus status:`, error);
+        return {
+            success: false,
+            carrier: 'eshipplus',
+            trackingNumber,
+            error: error.message,
+            status: 'unknown',
+            statusDisplay: 'Unknown'
+        };
     }
 }
 
 /**
- * Placeholder for Canpar status checking
+ * Check Canpar shipment status
  */
 async function checkCanparStatus(trackingNumber, carrierConfig) {
-    // TODO: Implement Canpar status checking
-    logger.info(`Canpar status check requested for: ${trackingNumber}`);
-    
-    return {
-        status: 'Unknown',
-        location: '',
-        timestamp: new Date().toISOString(),
-        statusHistory: [],
-        trackingUpdates: [],
-        carrier: 'CANPAR',
-        message: 'Canpar status checking not yet implemented'
-    };
+    try {
+        logger.info(`Checking Canpar status for tracking number: ${trackingNumber}`);
+
+        if (!carrierConfig.apiCredentials) {
+            throw new Error('Canpar API credentials not configured');
+        }
+
+        // Use the new Canpar status checker
+        const statusResult = await getCanparStatus(trackingNumber, carrierConfig.apiCredentials);
+
+        return {
+            success: true,
+            carrier: 'canpar',
+            trackingNumber,
+            ...statusResult
+        };
+
+    } catch (error) {
+        logger.error(`Error checking Canpar status:`, error);
+        return {
+            success: false,
+            carrier: 'canpar',
+            trackingNumber,
+            error: error.message,
+            status: 'unknown',
+            statusDisplay: 'Unknown'
+        };
+    }
 }
 
 /**

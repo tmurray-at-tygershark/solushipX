@@ -4,63 +4,99 @@ import { Chip } from '@mui/material';
 const StatusChip = React.memo(({ status }) => {
     const getStatusConfig = (status) => {
         switch (status?.toLowerCase()) {
+            // Draft/Initial States - Grey
+            case 'draft':
+                return {
+                    color: '#64748b',
+                    bgcolor: '#f1f5f9',
+                    label: 'Draft'
+                };
+            case 'unknown':
+                return {
+                    color: '#6b7280',
+                    bgcolor: '#f9fafb',
+                    label: 'Unknown'
+                };
+
+            // Early Processing - Light Grey
             case 'pending':
             case 'created':
                 return {
-                    color: '#F59E0B',
-                    bgcolor: '#FEF3C7',
+                    color: '#d97706',
+                    bgcolor: '#fef3c7',
                     label: 'Pending'
                 };
+
+            // Scheduled - Light Blue
+            case 'scheduled':
+                return {
+                    color: '#7c3aed',
+                    bgcolor: '#ede9fe',
+                    label: 'Scheduled'
+                };
+
+            // Confirmed - Blue
             case 'booked':
                 return {
-                    color: '#10B981',
-                    bgcolor: '#ECFDF5',
+                    color: '#2563eb',
+                    bgcolor: '#dbeafe',
                     label: 'Booked'
                 };
+
+            // Ready to Ship - Orange
             case 'awaiting pickup':
-                return {
-                    color: '#F59E0B',
-                    bgcolor: '#FEF3C7',
-                    label: 'Awaiting Pickup'
-                };
             case 'awaiting shipment':
+            case 'awaiting_shipment':
             case 'label_created':
                 return {
-                    color: '#3B82F6',
-                    bgcolor: '#EFF6FF',
+                    color: '#ea580c',
+                    bgcolor: '#fed7aa',
                     label: 'Awaiting Shipment'
                 };
+
+            // In Motion - Purple
             case 'in transit':
             case 'in_transit':
                 return {
-                    color: '#6366F1',
-                    bgcolor: '#EEF2FF',
+                    color: '#7c2d92',
+                    bgcolor: '#f3e8ff',
                     label: 'In Transit'
                 };
+
+            // Success - Green (Reserved for completion)
+            case 'delivered':
+                return {
+                    color: '#16a34a',
+                    bgcolor: '#dcfce7',
+                    label: 'Delivered'
+                };
+
+            // Problem States - Red variants
             case 'on hold':
             case 'on_hold':
                 return {
-                    color: '#7C3AED',
-                    bgcolor: '#F5F3FF',
+                    color: '#dc2626',
+                    bgcolor: '#fee2e2',
                     label: 'On Hold'
-                };
-            case 'delivered':
-                return {
-                    color: '#10B981',
-                    bgcolor: '#ECFDF5',
-                    label: 'Delivered'
                 };
             case 'cancelled':
             case 'canceled':
                 return {
-                    color: '#EF4444',
-                    bgcolor: '#FEE2E2',
+                    color: '#b91c1c',
+                    bgcolor: '#fecaca',
                     label: 'Cancelled'
                 };
+            case 'void':
+                return {
+                    color: '#7f1d1d',
+                    bgcolor: '#f3f4f6',
+                    label: 'Void'
+                };
+
             default:
                 return {
-                    color: '#6B7280',
-                    bgcolor: '#F3F4F6',
+                    color: '#6b7280',
+                    bgcolor: '#f9fafb',
                     label: status || 'Unknown'
                 };
         }

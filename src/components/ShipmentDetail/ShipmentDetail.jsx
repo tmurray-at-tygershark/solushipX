@@ -88,7 +88,18 @@ import {
     LocationOn as LocationIcon,
     AttachMoney as MoneyIcon,
     ExpandMore as ExpandMoreIcon,
-    Inventory as BoxIcon
+    Inventory as BoxIcon,
+    Person as PersonIcon,
+    CalendarToday as CalendarIcon,
+    FileCopy as FileCopyIcon,
+    Refresh as RefreshIcon,
+    ArrowBack as ArrowBackIcon,
+    ZoomIn as ZoomInIcon,
+    CheckCircleOutline as CheckCircleOutlineIcon,
+    Pause as PauseIcon,
+    Cancel as CancelIcon,
+    Edit as EditIcon,
+    HelpOutline as HelpOutlineIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
@@ -578,7 +589,8 @@ const ShipmentDetail = () => {
     const [actionStates, setActionStates] = useState({
         printLabel: { loading: false, error: null },
         printBOL: { loading: false, error: null },
-        printShipment: { loading: false, error: null }
+        printShipment: { loading: false, error: null },
+        refreshStatus: { loading: false, error: null }
     });
 
     // PDF Viewer Modal state
@@ -876,6 +888,52 @@ const ShipmentDetail = () => {
 
     const handleLabelTypeChange = (newType) => {
         setLabelConfig(prev => ({ ...prev, labelType: newType }));
+    };
+
+    /**
+     * Refresh shipment status from carrier
+     */
+    const handleRefreshStatus = async () => {
+        try {
+            setActionLoading('refreshStatus', true);
+            showSnackbar('Checking shipment status...', 'info');
+
+            const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    shipmentId: shipment.id,
+                    trackingNumber: shipment.trackingNumber || shipment.id,
+                    bookingReferenceNumber: shipment.selectedRate?.BookingReferenceNumber || shipment.bookingReferenceNumber
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update local shipment state with new status
+                setShipment(prev => ({
+                    ...prev,
+                    status: result.status,
+                    statusLastChecked: new Date().toISOString(),
+                    carrierTrackingData: result,
+                    estimatedDelivery: result.estimatedDelivery ? new Date(result.estimatedDelivery) : prev.estimatedDelivery,
+                    actualDelivery: result.actualDelivery ? new Date(result.actualDelivery) : prev.actualDelivery
+                }));
+
+                showSnackbar(`Status updated: ${result.statusDisplay}`, 'success');
+            } else {
+                showSnackbar(`Failed to check status: ${result.error}`, 'error');
+            }
+
+        } catch (error) {
+            console.error('Error refreshing status:', error);
+            showSnackbar('Failed to refresh status. Please try again.', 'error');
+        } finally {
+            setActionLoading('refreshStatus', false);
+        }
     };
 
     // Enhanced function to fetch shipment documents
@@ -2352,6 +2410,16 @@ const ShipmentDetail = () => {
                                                                     </Typography>
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                         <StatusChip status={shipment?.status} />
+                                                                        <Button
+                                                                            variant="outlined"
+                                                                            size="small"
+                                                                            startIcon={actionStates.refreshStatus.loading ? <CircularProgress size={16} /> : <RefreshIcon />}
+                                                                            onClick={handleRefreshStatus}
+                                                                            disabled={actionStates.refreshStatus.loading || shipment?.status === 'draft'}
+                                                                            sx={{ minWidth: 120, ml: 1 }}
+                                                                        >
+                                                                            {actionStates.refreshStatus.loading ? 'Checking...' : 'Refresh'}
+                                                                        </Button>
                                                                     </Box>
                                                                 </Box>
                                                                 <Box>
@@ -3470,32 +3538,110 @@ const ShipmentDetail = () => {
 // Add helper functions at the end of the file, before the export
 const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
-        case 'delivered':
-            return '#4caf50';  // Green
-        case 'out_for_delivery':
-            return '#ff9800';  // Orange
+        // Draft/Initial States - Grey
+        case 'draft':
+            return '#64748b';
+        case 'unknown':
+            return '#6b7280';
+
+        // Early Processing - Amber
+        case 'pending':
+        case 'created':
+            return '#d97706';
+
+        // Scheduled - Purple
+        case 'scheduled':
+            return '#7c3aed';
+
+        // Confirmed - Blue
+        case 'booked':
+            return '#2563eb';
+
+        // Ready to Ship - Orange
+        case 'awaiting_shipment':
+        case 'awaiting shipment':
+        case 'label_created':
+            return '#ea580c';
+
+        // In Motion - Purple
         case 'in_transit':
-            return '#2196f3';  // Blue
-        case 'picked_up':
-            return '#9c27b0';  // Purple
+        case 'in transit':
+            return '#7c2d92';
+
+        // Success - Green
+        case 'delivered':
+            return '#16a34a';
+
+        // Problem States - Red variants
+        case 'on_hold':
+        case 'on hold':
+            return '#dc2626';
+        case 'canceled':
+        case 'cancelled':
+            return '#b91c1c';
+        case 'void':
+            return '#7f1d1d';
+
         default:
-            return '#9e9e9e';  // Grey
+            return '#6b7280';  // Grey
     }
 };
 
 const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
         case 'delivered':
-            return <CheckCircleIcon />;
-        case 'out_for_delivery':
-            return <LocalShippingIcon />;
+            return <CheckCircleIcon sx={{ fontSize: 'inherit' }} />;
         case 'in_transit':
-            return <SwapHorizIcon />;
-        case 'picked_up':
-            return <AssignmentIcon />;
+        case 'in transit':
+            return <LocalShippingIcon sx={{ fontSize: 'inherit' }} />;
+        case 'awaiting_shipment':
+        case 'awaiting shipment':
+            return <AccessTimeIcon sx={{ fontSize: 'inherit' }} />;
+        case 'on_hold':
+        case 'on hold':
+            return <PauseIcon sx={{ fontSize: 'inherit' }} />;
+        case 'canceled':
+        case 'cancelled':
+            return <CancelIcon sx={{ fontSize: 'inherit' }} />;
+        case 'draft':
+            return <EditIcon sx={{ fontSize: 'inherit' }} />;
+        case 'booked':
+            return <CheckCircleOutlineIcon sx={{ fontSize: 'inherit' }} />;
+        case 'scheduled':
+            return <CalendarIcon sx={{ fontSize: 'inherit' }} />;
+        case 'pending':
+            return <AccessTimeIcon sx={{ fontSize: 'inherit' }} />;
+        case 'void':
+            return <CancelIcon sx={{ fontSize: 'inherit' }} />;
         default:
-            return <ScheduleIcon />;
+            return <HelpOutlineIcon sx={{ fontSize: 'inherit' }} />;
     }
+};
+
+/**
+ * Get display name for status
+ */
+const getStatusDisplayName = (status) => {
+    const displayNames = {
+        'draft': 'Draft',
+        'pending': 'Pending',
+        'created': 'Created',
+        'scheduled': 'Scheduled',
+        'booked': 'Booked',
+        'awaiting_shipment': 'Awaiting Shipment',
+        'awaiting shipment': 'Awaiting Shipment',
+        'label_created': 'Awaiting Shipment',
+        'in_transit': 'In Transit',
+        'in transit': 'In Transit',
+        'delivered': 'Delivered',
+        'on_hold': 'On Hold',
+        'on hold': 'On Hold',
+        'canceled': 'Canceled',
+        'cancelled': 'Cancelled',
+        'void': 'Void',
+        'unknown': 'Unknown'
+    };
+    return displayNames[status?.toLowerCase()] || status || 'Unknown';
 };
 
 export default ShipmentDetail; 

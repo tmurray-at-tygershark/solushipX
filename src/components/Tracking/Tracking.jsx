@@ -6,20 +6,33 @@ import {
     Typography,
     TextField,
     Button,
-    InputAdornment
+    InputAdornment,
+    Alert
 } from '@mui/material';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 const Tracking = () => {
     const [trackingNumber, setTrackingNumber] = useState('');
+    const [error, setError] = useState('');
     const navigate = useNavigate();
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (trackingNumber.trim()) {
-            navigate(`/tracking/${trackingNumber.trim()}`);
+        setError('');
+
+        if (!trackingNumber.trim()) {
+            setError('Please enter a tracking number or shipment ID');
+            return;
         }
+
+        // Navigate to tracking detail page
+        navigate(`/tracking/${encodeURIComponent(trackingNumber.trim())}`);
+    };
+
+    const handleInputChange = (e) => {
+        setTrackingNumber(e.target.value);
+        if (error) setError(''); // Clear error when user starts typing
     };
 
     return (
@@ -35,8 +48,11 @@ const Tracking = () => {
                     <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 2 }}>
                         Track Your Shipment
                     </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                        Enter your tracking number to get real-time updates on your shipment
+                    <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                        Enter your shipment ID or tracking number to get real-time updates
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        Supports shipment IDs (e.g., IC-DWSLOGISTICS-226KSP) and carrier tracking numbers
                     </Typography>
                 </Box>
 
@@ -48,12 +64,18 @@ const Tracking = () => {
                         borderRadius: 2
                     }}
                 >
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 3 }}>
+                            {error}
+                        </Alert>
+                    )}
+
                     <form onSubmit={handleSubmit}>
                         <TextField
                             fullWidth
-                            placeholder="Enter tracking number"
+                            placeholder="Enter shipment ID or tracking number"
                             value={trackingNumber}
-                            onChange={(e) => setTrackingNumber(e.target.value)}
+                            onChange={handleInputChange}
                             InputProps={{
                                 startAdornment: (
                                     <InputAdornment position="start">
@@ -62,6 +84,7 @@ const Tracking = () => {
                                 ),
                             }}
                             sx={{ mb: 3 }}
+                            autoFocus
                         />
                         <Button
                             type="submit"
@@ -76,6 +99,26 @@ const Tracking = () => {
                             Track Shipment
                         </Button>
                     </form>
+
+                    <Box sx={{ mt: 4, textAlign: 'center' }}>
+                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                            What can you track?
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                                • Shipment IDs from SolushipX (e.g., IC-DWSLOGISTICS-226KSP)
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                • eShip Plus tracking numbers and booking references
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                • Canpar barcodes and tracking numbers
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                • Other carrier tracking numbers
+                            </Typography>
+                        </Box>
+                    </Box>
                 </Paper>
             </Container>
         </Box>
