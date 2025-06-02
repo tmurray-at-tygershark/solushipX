@@ -362,6 +362,13 @@ function buildCanparSoapEnvelope(requestData, credentials) {
     const pickupAddress = shipment.pickup_address || {};
     const deliveryAddress = shipment.delivery_address || {};
     
+    // Extract reference number from shipment data
+    const referenceNumber = shipment.reference || 
+                           requestData.referenceNumber || 
+                           requestData.shipmentInfo?.shipperReferenceNumber || 
+                           shipment.shipmentID || 
+                           '';
+    
     // Build packages XML
     const packagesXml = packages.map(pkg => `
         <xsd:packages>
@@ -394,6 +401,7 @@ function buildCanparSoapEnvelope(requestData, credentials) {
           <xsd:shipment_status>R</xsd:shipment_status>
           <xsd:reported_weight_unit>L</xsd:reported_weight_unit>
           <xsd:dimention_unit>I</xsd:dimention_unit>
+          ${referenceNumber ? `<xsd:reference>${referenceNumber}</xsd:reference>` : ''}
 
           ${packagesXml}
 

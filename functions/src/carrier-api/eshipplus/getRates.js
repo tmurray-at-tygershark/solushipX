@@ -139,6 +139,19 @@ async function processRateRequest(data) {
     // We might remove the 'apiKey' field before sending it to eShipPlus.
     const { apiKey: userApiKey, ...eShipPlusRequestData } = data;
 
+    // Extract reference number from various possible locations in the request data
+    const referenceNumber = eShipPlusRequestData.ReferenceNumber || 
+                           eShipPlusRequestData.referenceNumber || 
+                           eShipPlusRequestData.shipmentInfo?.shipperReferenceNumber || 
+                           eShipPlusRequestData.shipmentID || 
+                           eShipPlusRequestData.BookingReferenceNumber || 
+                           '';
+
+    // Add the reference number to the request payload
+    if (referenceNumber) {
+        eShipPlusRequestData.ReferenceNumber = referenceNumber;
+    }
+
     // Example: Ensure BookingReferenceNumberType is an integer if API expects it.
     // This depends on what the frontend sends vs what the API strictly needs.
     if (eShipPlusRequestData.BookingReferenceNumberType && typeof eShipPlusRequestData.BookingReferenceNumberType === 'string') {

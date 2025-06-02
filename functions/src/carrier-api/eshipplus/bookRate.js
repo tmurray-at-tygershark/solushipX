@@ -134,6 +134,14 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
                                  selectedRateFromFrontend.bookingReferenceNumber ||
                                  "TFM_MISSING"; // Fallback like example
 
+    // Extract reference number from various possible locations
+    const referenceNumber = safeAccess(rateRequestData, 'ReferenceNumber') || 
+                           safeAccess(rateRequestData, 'referenceNumber') || 
+                           safeAccess(rateRequestData, 'shipmentInfo.shipperReferenceNumber') || 
+                           safeAccess(rateRequestData, 'shipmentID') || 
+                           bookingReferenceNumber || 
+                           "REF" + Date.now();
+
     // Defaulting to UTC for formatting if no timezone info is present.
     // The example shows "-04:00". If the input dates have timezone, dayjs should preserve it.
     // Otherwise, we format to ISO string, and the API might handle it or expect UTC.
@@ -184,7 +192,7 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
             Mobile: "", // Example: ""
             
         },
-        ReferenceNumber: safeAccess(rateRequestData, 'ReferenceNumber') || safeAccess(rateRequestData, 'Request.ReferenceNumber') || safeAccess(rateRequestData, 'BookingReferenceNumber') || "REF" + Date.now(),
+        ReferenceNumber: referenceNumber,
         PurchaseOrder: safeAccess(rateRequestData, 'PurchaseOrder') || safeAccess(rateRequestData, 'Request.PurchaseOrder') || safeAccess(rateRequestData, 'BookingReferenceNumber') || "PO" + Date.now(),
         ShipperBOL: safeAccess(rateRequestData, 'ShipperBOL') || safeAccess(rateRequestData, 'Request.ShipperBOL') || "BOL" + Date.now(),
         OverrideApiRatingDates: false, // Example: false

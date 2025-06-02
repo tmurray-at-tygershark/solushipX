@@ -112,6 +112,13 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
     console.log('buildCanparBookingRequest: Extracted shipTo:', shipTo);
     console.log('buildCanparBookingRequest: Extracted packages:', packages);
     
+    // Extract reference number from shipment data
+    const referenceNumber = shipmentData.reference || 
+                           rateRequestData.referenceNumber || 
+                           rateRequestData.shipmentInfo?.shipperReferenceNumber || 
+                           shipmentData.shipmentID || 
+                           '';
+    
     // Sanitize postal codes
     const fromPostalCode = sanitizePostalCode(shipFrom.postal_code);
     const toPostalCode = sanitizePostalCode(shipTo.postal_code);
@@ -156,6 +163,7 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
                <xsd:dimention_unit>I</xsd:dimention_unit>
                <xsd:print_format>PDF</xsd:print_format>
                <xsd:thermal>false</xsd:thermal>
+               ${referenceNumber ? `<xsd:reference>${referenceNumber}</xsd:reference>` : ''}
 
                <xsd:pickup_address>
                   <xsd:name>${shipFrom.name || ''}</xsd:name>
