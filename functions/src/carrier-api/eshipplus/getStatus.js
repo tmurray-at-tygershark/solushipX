@@ -18,13 +18,15 @@ const ESHIP_STATUS_MAP = {
  * eShip Plus Check Call Status Codes to Universal Status
  */
 const CHECK_CALL_STATUS_MAP = {
-    // Pickup related
+    // Pickup/Loading Related
     'AF': 'in_transit',    // carrier departed pickup location with shipment
     'CP': 'in_transit',    // completed loading at pickup location
     'X3': 'in_transit',    // arrived at pickup location
     'X8': 'in_transit',    // arrived at pickup location loading dock
+    'BA': 'in_transit',    // connecting line or cartage pick-up
+    'L1': 'in_transit',    // loading
     
-    // In transit
+    // In Transit - General Movement
     'AN': 'in_transit',    // diverted to air carrier
     'AM': 'in_transit',    // loaded on truck
     'P1': 'in_transit',    // departed terminal location
@@ -32,8 +34,17 @@ const CHECK_CALL_STATUS_MAP = {
     'X4': 'in_transit',    // arrived at terminal location
     'B6': 'in_transit',    // estimated to arrive at carrier terminal
     'C1': 'in_transit',    // estimated to depart terminal location
+    'BC': 'in_transit',    // storage in transit
+    'CD': 'in_transit',    // carrier departed delivery location
+    'I1': 'in_transit',    // in-gate
+    'K1': 'in_transit',    // arrived at customs
+    'OA': 'in_transit',    // out-gate
+    'R1': 'in_transit',    // received from prior carrier
+    'AR': 'in_transit',    // rail arrival at destination intermodal ramp
+    'RL': 'in_transit',    // rail departure from origin intermodal ramp
+    'CL': 'in_transit',    // trailer closed out
     
-    // Delivery related
+    // Delivery Related
     'AG': 'in_transit',    // estimated delivery
     'AH': 'in_transit',    // attempted delivery
     'AJ': 'in_transit',    // tendered for delivery
@@ -43,19 +54,21 @@ const CHECK_CALL_STATUS_MAP = {
     'X5': 'in_transit',    // arrived at delivery location loading dock
     'S1': 'in_transit',    // trailer spotted at consignee's location
     'D1': 'delivered',     // completed unloading at delivery location
+    'J1': 'delivered',     // delivered to connecting line
     
-    // Issues/Exceptions
+    // Issues/Exceptions/Holds
     'A3': 'on_hold',       // shipment returned to shipper
     'A7': 'on_hold',       // refused by consignee
     'A9': 'on_hold',       // shipment damaged
     'AP': 'on_hold',       // delivery not completed
     'SD': 'on_hold',       // shipment delayed
     'CA': 'canceled',      // shipment cancelled
-    'PR': 'on_hold',       // U.S. customs hold at origin
+    'PR': 'on_hold',       // U.S. customs hold at origin intermodal ramp
+    'AI': 'on_hold',       // shipment has been reconsigned
     
-    // Default
-    'AA': 'scheduled',     // Default status from example
-    'XB': 'scheduled'      // shipment acknowledged
+    // Administrative/Processing
+    'XB': 'scheduled',     // shipment acknowledged
+    'OO': 'scheduled'      // paperwork received - did not receive shipment or equipment
 };
 
 /**

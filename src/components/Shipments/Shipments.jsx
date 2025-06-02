@@ -1121,9 +1121,21 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        <Link to={`/shipment/${shipment.shipmentID || shipment.id}`} className="shipment-link">
-                                                            {shipment.shipmentID || shipment.id}
-                                                        </Link>
+                                                        {shipment.status === 'draft' ? (
+                                                            <Link
+                                                                to={`/create-shipment/shipment-info/${shipment.id}`}
+                                                                className="shipment-link"
+                                                            >
+                                                                {shipment.shipmentID || shipment.id}
+                                                            </Link>
+                                                        ) : (
+                                                            <Link
+                                                                to={`/shipment/${shipment.shipmentID || shipment.id}`}
+                                                                className="shipment-link"
+                                                            >
+                                                                {shipment.shipmentID || shipment.id}
+                                                            </Link>
+                                                        )}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
