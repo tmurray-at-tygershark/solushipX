@@ -159,12 +159,31 @@ const CreateShipmentContent = () => {
 
     const createNewDraftInternal = async () => {
         console.log("CreateShipment: Attempting to create NEW draft shipment locally...");
-        if (!currentUser || !companyIdForAddress) {
-            console.error("CreateShipment: Missing user or companyIdForAddress for new draft.");
-            setError("Cannot create draft: Missing user or company information.");
+
+        // Add detailed authentication checks
+        console.log("CreateShipment: Authentication check details:", {
+            currentUser: !!currentUser,
+            uid: currentUser?.uid,
+            email: currentUser?.email,
+            companyIdForAddress,
+            authLoading,
+            companyLoading
+        });
+
+        if (!currentUser || !currentUser.uid) {
+            console.error("CreateShipment: Missing user authentication for new draft.");
+            setError("Cannot create draft: User not authenticated. Please log in and try again.");
             setIsDraftProcessing(false);
             return null;
         }
+
+        if (!companyIdForAddress) {
+            console.error("CreateShipment: Missing companyIdForAddress for new draft.");
+            setError("Cannot create draft: Company information not loaded. Please refresh the page.");
+            setIsDraftProcessing(false);
+            return null;
+        }
+
         try {
             // Generate a simple draft ID with short timestamp
             const shortTimestamp = Date.now().toString().slice(-6); // Last 6 digits
@@ -182,46 +201,95 @@ const CreateShipmentContent = () => {
             const initialShipmentData = {
                 status: 'draft',
                 companyID: companyIdForAddress,
+                userID: currentUser.uid, // Add user ID for security
+                userEmail: currentUser.email, // Add user email for reference
                 shipmentID: newShipmentID,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 shipFrom: emptyAddress(),
                 shipTo: emptyAddress(),
                 packages: [{}],
-                shipmentInfo: { shipmentDate: new Date().toISOString().split('T')[0] }
+                shipmentInfo: {
+                    shipmentDate: new Date().toISOString().split('T')[0],
+                    shipmentType: 'LTL' // Add default shipment type
+                }
             };
+
+            console.log("CreateShipment: Creating document with data:", initialShipmentData);
+
             const docRef = await addDoc(collection(db, 'shipments'), initialShipmentData);
+
+            console.log("CreateShipment: Document created successfully with ID:", docRef.id);
+
+            // Update the form context and active draft ID
             setDraftShipmentIdentifiers(docRef.id);
             setActiveDraftId(docRef.id);
             updateFormSection('shipFrom', initialShipmentData.shipFrom);
             updateFormSection('shipTo', initialShipmentData.shipTo);
             updateFormSection('packages', initialShipmentData.packages);
             updateFormSection('shipmentInfo', initialShipmentData.shipmentInfo);
-            console.log("CreateShipment: New draft created:", { firestoreDocId: docRef.id, shipmentID: newShipmentID });
+
+            console.log("CreateShipment: New draft created successfully:", {
+                firestoreDocId: docRef.id,
+                shipmentID: newShipmentID
+            });
+
             return docRef.id;
         } catch (err) {
             console.error("CreateShipment: Error creating new draft:", err);
-            setError(`Failed to create new draft: ${err.message}`);
+            console.error("CreateShipment: Error details:", {
+                name: err.name,
+                code: err.code,
+                message: err.message,
+                stack: err.stack
+            });
+
+            // Provide more specific error messages based on error type
+            let errorMessage = `Failed to create new draft: ${err.message}`;
+            if (err.code === 'permission-denied') {
+                errorMessage = "Permission denied: You don't have permission to create shipments. Please contact your administrator.";
+            } else if (err.code === 'unauthenticated') {
+                errorMessage = "Authentication required: Please log in again and try again.";
+            } else if (err.code === 'network-request-failed') {
+                errorMessage = "Network error: Please check your internet connection and try again.";
+            }
+
+            setError(errorMessage);
             setIsDraftProcessing(false);
             return null;
         }
     };
 
     useEffect(() => {
-        if (authLoading || companyLoading) return;
-        if (!currentUser) {
-            setError("Authentication required to create or load a shipment.");
+        // Wait for authentication to complete before proceeding
+        if (authLoading || companyLoading) {
+            console.log("CreateShipment: Waiting for auth/company loading to complete...", {
+                authLoading,
+                companyLoading,
+                currentUser: !!currentUser,
+                companyIdForAddress
+            });
+            return;
+        }
+
+        if (!currentUser || !currentUser.uid) {
+            console.error("CreateShipment: User not authenticated or missing UID");
+            setError("Authentication required to create or load a shipment. Please log in.");
             setIsDraftProcessing(false);
             return;
         }
+
         if (!companyIdForAddress) {
             console.log("CreateShipment: Waiting for companyIdForAddress for draft management...");
+            setError("Company information not loaded. Please refresh the page or contact support.");
+            setIsDraftProcessing(false);
             return;
         }
 
         const manageDraftLogic = async () => {
             console.log(`CreateShipment manageDraftLogic START: urlDraftId: ${urlDraftId}, current activeDraftId: ${activeDraftId}, formData.draftId: ${formData.draftFirestoreDocId}`);
             setIsDraftProcessing(true);
+            setError(null); // Clear any previous errors
 
             if (urlDraftId) {
                 if (urlDraftId === activeDraftId && formData.draftFirestoreDocId === urlDraftId) {
@@ -459,12 +527,35 @@ const CreateShipmentContent = () => {
                         formData.shipTo.customerID
                     );
 
-                    // Update Firestore with new shipment ID
-                    const shipmentDocRef = doc(db, 'shipments', activeDraftId);
-                    await updateDoc(shipmentDocRef, {
+                    // Check if we need to set the reference number fallback
+                    const currentShipmentInfo = formData.shipmentInfo || {};
+                    const shouldSetReferenceFallback = !currentShipmentInfo.shipperReferenceNumber ||
+                        currentShipmentInfo.shipperReferenceNumber.trim() === '';
+
+                    // Prepare update data
+                    const updateData = {
                         shipmentID: newShipmentID,
                         updatedAt: serverTimestamp()
-                    });
+                    };
+
+                    // If no reference number is set, use the shipment ID as fallback
+                    if (shouldSetReferenceFallback) {
+                        updateData.shipmentInfo = {
+                            ...currentShipmentInfo,
+                            shipperReferenceNumber: newShipmentID
+                        };
+                        console.log(`CreateShipment: Setting shipperReferenceNumber to shipmentID: ${newShipmentID}`);
+
+                        // Update the form context as well
+                        updateFormSection('shipmentInfo', {
+                            ...currentShipmentInfo,
+                            shipperReferenceNumber: newShipmentID
+                        });
+                    }
+
+                    // Update Firestore with new shipment ID and reference number if needed
+                    const shipmentDocRef = doc(db, 'shipments', activeDraftId);
+                    await updateDoc(shipmentDocRef, updateData);
 
                     // Update context with new identifiers
                     setDraftShipmentIdentifiers(activeDraftId);
@@ -480,11 +571,34 @@ const CreateShipmentContent = () => {
                     const fallbackId = `${companyIdForAddress}-${formData.shipTo.customerID}-${timestamp}`;
 
                     try {
-                        const shipmentDocRef = doc(db, 'shipments', activeDraftId);
-                        await updateDoc(shipmentDocRef, {
+                        // Check if we need to set the reference number fallback
+                        const currentShipmentInfo = formData.shipmentInfo || {};
+                        const shouldSetReferenceFallback = !currentShipmentInfo.shipperReferenceNumber ||
+                            currentShipmentInfo.shipperReferenceNumber.trim() === '';
+
+                        // Prepare update data
+                        const updateData = {
                             shipmentID: fallbackId,
                             updatedAt: serverTimestamp()
-                        });
+                        };
+
+                        // If no reference number is set, use the shipment ID as fallback
+                        if (shouldSetReferenceFallback) {
+                            updateData.shipmentInfo = {
+                                ...currentShipmentInfo,
+                                shipperReferenceNumber: fallbackId
+                            };
+                            console.log(`CreateShipment: Setting shipperReferenceNumber to fallback shipmentID: ${fallbackId}`);
+
+                            // Update the form context as well
+                            updateFormSection('shipmentInfo', {
+                                ...currentShipmentInfo,
+                                shipperReferenceNumber: fallbackId
+                            });
+                        }
+
+                        const shipmentDocRef = doc(db, 'shipments', activeDraftId);
+                        await updateDoc(shipmentDocRef, updateData);
                         setDraftShipmentIdentifiers(activeDraftId);
                         console.log(`CreateShipment: Used fallback shipmentID: ${fallbackId}`);
                     } catch (fallbackErr) {

@@ -957,7 +957,7 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                                 Reference Number
                                                             </Typography>
                                                             <Typography variant="body1">
-                                                                {shipmentInfo.referenceNumber || 'N/A'}
+                                                                {shipmentInfo.shipperReferenceNumber || 'N/A'}
                                                             </Typography>
                                                         </Box>
                                                         <Box>

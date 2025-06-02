@@ -634,6 +634,12 @@ async function processBookingRequest(data) {
         // Firestore updates
         const batch = db.batch();
 
+        // CRITICAL FIX: Fetch existing shipment data to preserve shipmentInfo
+        const existingShipmentDoc = await db.collection('shipments').doc(draftFirestoreDocId).get();
+        const existingShipmentData = existingShipmentDoc.data();
+        
+        logger.info('eShipPlus Booking: Preserving existing shipmentInfo:', existingShipmentData?.shipmentInfo);
+
         // 1. Update the main shipment document
         const shipmentDocRef = db.collection('shipments').doc(draftFirestoreDocId);
         const shipmentUpdateData = {
@@ -653,9 +659,21 @@ async function processBookingRequest(data) {
                 estimatedDeliveryDate: bookingConfirmationResult.estimatedDeliveryDate,
                 shippingDocuments: bookingConfirmationResult.shippingDocuments || null, 
             },
+            
+            // CRITICAL FIX: Explicitly preserve shipmentInfo data
+            shipmentInfo: {
+                ...existingShipmentData?.shipmentInfo,
+                // Ensure shipperReferenceNumber is preserved or set to shipmentID as fallback
+                shipperReferenceNumber: existingShipmentData?.shipmentInfo?.shipperReferenceNumber || 
+                                       existingShipmentData?.shipmentID || 
+                                       ''
+            },
+            
             shipmentStatus: admin.firestore.FieldValue.delete(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
+        
+        logger.info('eShipPlus Booking: Update data with preserved shipmentInfo:', JSON.stringify(shipmentUpdateData.shipmentInfo, null, 2));
         logger.info(`LOG: Updating shipment document ${draftFirestoreDocId} with:`, shipmentUpdateData);
         await shipmentDocRef.update(shipmentUpdateData);
         logger.info(`LOG: Shipment document ${draftFirestoreDocId} successfully updated.`);

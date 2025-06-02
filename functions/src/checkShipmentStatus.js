@@ -19,6 +19,7 @@ const db = getFirestore();
 
 /**
  * Check shipment status across different carriers
+ * Updated: Added carrier name normalization for better carrier matching
  */
 exports.checkShipmentStatus = onRequest(
     {
@@ -85,13 +86,21 @@ exports.checkShipmentStatus = onRequest(
             let trackingIdentifier = trackingNumber;
             
             // For eShip Plus, use booking reference number if available
-            if (carrierInfo.name.toLowerCase().includes('eshipplus') || carrierInfo.name.toLowerCase().includes('eship')) {
-                trackingIdentifier = bookingReferenceNumber || 
+            if (carrierInfo.name.toLowerCase().includes('eshipplus') || carrierInfo.name.includes('eship')) {
+                // Match the logic from ShipmentDetail.jsx - prioritize proNumber/confirmationNumber
+                trackingIdentifier = shipmentData?.carrierBookingConfirmation?.proNumber ||
+                                   shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
+                                   bookingReferenceNumber || 
                                    shipmentData?.selectedRate?.BookingReferenceNumber || 
                                    shipmentData?.bookingReferenceNumber ||
                                    trackingNumber;
                 
-                logger.info(`Using eShip Plus booking reference: ${trackingIdentifier}`);
+                logger.info(`Using eShip Plus identifier: ${trackingIdentifier} (type: ${
+                    shipmentData?.carrierBookingConfirmation?.proNumber ? 'proNumber' :
+                    shipmentData?.carrierBookingConfirmation?.confirmationNumber ? 'confirmationNumber' :
+                    bookingReferenceNumber ? 'bookingReferenceNumber from request' :
+                    'other'
+                })`);
             }
             // For Canpar, use barcode from selected rate
             else if (carrierInfo.name.toLowerCase().includes('canpar')) {
@@ -124,10 +133,31 @@ exports.checkShipmentStatus = onRequest(
 
             // Update shipment status in Firestore if shipmentId provided
             if (shipmentId && statusResult.success) {
+                // Clean up the statusResult to remove undefined values
+                const cleanStatusResult = Object.entries(statusResult).reduce((acc, [key, value]) => {
+                    if (value !== undefined) {
+                        // For nested objects, clean them too
+                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                            const cleanedNested = Object.entries(value).reduce((nestedAcc, [nestedKey, nestedValue]) => {
+                                if (nestedValue !== undefined) {
+                                    nestedAcc[nestedKey] = nestedValue;
+                                }
+                                return nestedAcc;
+                            }, {});
+                            if (Object.keys(cleanedNested).length > 0) {
+                                acc[key] = cleanedNested;
+                            }
+                        } else {
+                            acc[key] = value;
+                        }
+                    }
+                    return acc;
+                }, {});
+
                 const updateData = {
                     status: statusResult.status,
                     statusLastChecked: new Date(),
-                    carrierTrackingData: statusResult
+                    carrierTrackingData: cleanStatusResult
                 };
 
                 // Add estimated delivery if available
@@ -162,22 +192,60 @@ exports.checkShipmentStatus = onRequest(
  */
 async function getCarrierConfig(carrierKey) {
     try {
+        // Normalize carrier key to handle variations
+        const normalizeCarrierKey = (key) => {
+            const normalized = key.toUpperCase();
+            // Handle common variations
+            if (normalized.includes('CANPAR')) return 'CANPAR';
+            if (normalized.includes('ESHIP') || normalized.includes('E-SHIP')) return 'ESHIPPLUS';
+            if (normalized.includes('FEDEX')) return 'FEDEX';
+            if (normalized.includes('UPS')) return 'UPS';
+            if (normalized.includes('DHL')) return 'DHL';
+            if (normalized.includes('PUROLATOR')) return 'PUROLATOR';
+            if (normalized.includes('CANADA POST')) return 'CANADAPOST';
+            if (normalized.includes('USPS')) return 'USPS';
+            return normalized;
+        };
+
+        const normalizedKey = normalizeCarrierKey(carrierKey);
+        logger.info(`Looking for carrier config with key: ${normalizedKey} (original: ${carrierKey})`);
+
         const carriersRef = db.collection('carriers');
-        const snapshot = await carriersRef
-            .where('carrierKey', '==', carrierKey.toUpperCase())
+        
+        // First try with carrierKey
+        let snapshot = await carriersRef
+            .where('carrierKey', '==', normalizedKey)
             .where('enabled', '==', true)
             .limit(1)
             .get();
 
+        // If not found, try with carrierID
         if (snapshot.empty) {
-            logger.warn(`No enabled carrier found for key: ${carrierKey}`);
+            logger.info(`No carrier found with carrierKey, trying carrierID: ${normalizedKey}`);
+            snapshot = await carriersRef
+                .where('carrierID', '==', normalizedKey)
+                .where('enabled', '==', true)
+                .limit(1)
+                .get();
+        }
+
+        if (snapshot.empty) {
+            logger.warn(`No enabled carrier found for key/ID: ${normalizedKey} (original: ${carrierKey})`);
             return null;
         }
 
         const carrierDoc = snapshot.docs[0];
         const carrierData = carrierDoc.data();
 
-        logger.info(`Found carrier config for: ${carrierKey}`);
+        logger.info(`Found carrier config for: ${normalizedKey} (original: ${carrierKey})`);
+        logger.info(`Carrier config:`, {
+            id: carrierData.id || carrierDoc.id,
+            name: carrierData.name,
+            enabled: carrierData.enabled,
+            hasApiCredentials: !!carrierData.apiCredentials,
+            hostURL: carrierData.apiCredentials?.hostURL
+        });
+        
         return carrierData;
 
     } catch (error) {
@@ -241,10 +309,12 @@ async function checkEShipPlusStatus(trackingNumber, carrierConfig) {
         // Use the new eShip Plus status checker
         const statusResult = await getEShipPlusStatus(trackingNumber, carrierConfig.apiCredentials);
 
+        // Make sure trackingNumber is not undefined - use the booking reference we passed in
         return {
             success: true,
             carrier: 'eshipplus',
-            trackingNumber,
+            trackingNumber: statusResult.trackingNumber || trackingNumber, // Fallback to input tracking number
+            bookingReferenceNumber: trackingNumber, // Store the booking reference
             ...statusResult
         };
 
@@ -253,7 +323,8 @@ async function checkEShipPlusStatus(trackingNumber, carrierConfig) {
         return {
             success: false,
             carrier: 'eshipplus',
-            trackingNumber,
+            trackingNumber: trackingNumber, // Use the input tracking number
+            bookingReferenceNumber: trackingNumber,
             error: error.message,
             status: 'unknown',
             statusDisplay: 'Unknown'

@@ -640,6 +640,141 @@ const Shipments = () => {
         try {
             setRefreshingStatus(prev => new Set([...prev, shipment.id]));
 
+            // Log the full shipment object for debugging
+            console.log('Attempting to refresh status for shipment:', {
+                id: shipment.id,
+                status: shipment.status,
+                carrier: shipment.carrier,
+                selectedRate: shipment.selectedRate,
+                selectedRateRef: shipment.selectedRateRef,
+                trackingNumber: shipment.trackingNumber,
+                bookingReferenceNumber: shipment.bookingReferenceNumber,
+                carrierBookingConfirmation: shipment.carrierBookingConfirmation
+            });
+
+            // Determine the carrier from various possible sources
+            let carrier = carrierData[shipment.id]?.carrier ||
+                shipment.selectedRateRef?.carrier ||
+                shipment.selectedRate?.carrier ||
+                shipment.selectedRate?.CarrierName ||
+                shipment.carrier ||
+                shipment.shipmentInfo?.carrier;
+
+            // Get tracking information early so we can use it for carrier detection
+            // For general tracking numbers
+            const trackingNumber = shipment.trackingNumber ||
+                shipment.selectedRate?.trackingNumber ||
+                shipment.selectedRate?.TrackingNumber ||
+                shipment.selectedRateRef?.trackingNumber ||
+                shipment.selectedRateRef?.TrackingNumber ||
+                shipment.carrierTrackingData?.trackingNumber ||
+                shipment.carrierBookingConfirmation?.trackingNumber ||
+                shipment.carrierBookingConfirmation?.proNumber;
+
+            // For booking references (eShipPlus)
+            const bookingReferenceNumber = shipment.bookingReferenceNumber ||
+                shipment.selectedRate?.BookingReferenceNumber ||
+                shipment.selectedRate?.bookingReferenceNumber ||
+                shipment.selectedRateRef?.BookingReferenceNumber ||
+                shipment.selectedRateRef?.bookingReferenceNumber ||
+                shipment.carrierTrackingData?.bookingReferenceNumber ||
+                shipment.carrierBookingConfirmation?.bookingReference ||
+                shipment.carrierBookingConfirmation?.confirmationNumber;
+
+            // Check if this is an eShipPlus shipment
+            const isEShipPlusShipment =
+                carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
+                carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
+                shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
+                shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+                carrier?.toLowerCase().includes('eshipplus');
+
+            // Extract carrier from different sources with eShipPlus override
+            if (isEShipPlusShipment) {
+                carrier = 'eShipPlus';
+                console.log('Detected eShipPlus shipment, overriding carrier to eShipPlus');
+            } else if (!carrier) {
+                // Try to get carrier from other sources
+                carrier = carrierData[shipment.id]?.carrier ||
+                    shipment.selectedRateRef?.carrier ||
+                    shipment.selectedRate?.carrier ||
+                    shipment.carrier ||
+                    shipment.selectedRate?.CarrierName ||
+                    shipment.carrierBookingConfirmation?.carrier;
+            }
+
+            if (!carrier) {
+                console.error('Cannot refresh status: No carrier information found for shipment', shipment.id);
+                alert('Cannot refresh status: No carrier information available for this shipment.');
+                return;
+            }
+
+            const normalizeCarrier = (carrierName) => {
+                const normalized = carrierName.toLowerCase();
+                if (normalized.includes('canpar')) return 'Canpar';
+                if (normalized.includes('eship') || normalized.includes('e-ship')) return 'eShipPlus';
+                // For eShipPlus sub-carriers
+                if (normalized.includes('fedex freight')) return 'eShipPlus';
+                if (normalized.includes('freight')) return 'eShipPlus'; // Generic freight often means eShipPlus
+                // Standard carriers
+                if (normalized.includes('fedex')) return 'FedEx';
+                if (normalized.includes('ups')) return 'UPS';
+                if (normalized.includes('dhl')) return 'DHL';
+                if (normalized.includes('purolator')) return 'Purolator';
+                if (normalized.includes('canada post')) return 'Canada Post';
+                if (normalized.includes('usps')) return 'USPS';
+                return carrierName; // Return original if no match
+            };
+
+            const normalizedCarrier = normalizeCarrier(carrier);
+
+            // For Canpar specific barcode
+            const canparBarcode = shipment.selectedRate?.Barcode ||
+                shipment.selectedRateRef?.Barcode ||
+                shipment.carrierBookingConfirmation?.trackingNumber;
+
+            console.log('Found tracking information:', {
+                trackingNumber,
+                bookingReferenceNumber,
+                canparBarcode,
+                carrier: normalizedCarrier
+            });
+
+            // Determine which identifier to use based on carrier
+            let identifierToUse = trackingNumber;
+            const carrierLower = normalizedCarrier.toLowerCase();
+
+            if (carrierLower.includes('eshipplus') || carrierLower.includes('eship')) {
+                identifierToUse = bookingReferenceNumber || trackingNumber;
+                if (!identifierToUse) {
+                    console.error(`Cannot refresh status for eShipPlus shipment ${shipment.id}: No booking reference found`);
+                    alert('Cannot refresh status: No booking reference available for this eShipPlus shipment.');
+                    return;
+                }
+            } else if (carrierLower.includes('canpar')) {
+                identifierToUse = canparBarcode || trackingNumber;
+                if (!identifierToUse) {
+                    console.error(`Cannot refresh status for Canpar shipment ${shipment.id}: No barcode/tracking number found`);
+                    alert('Cannot refresh status: No barcode available for this Canpar shipment.');
+                    return;
+                }
+            } else if (!trackingNumber && !bookingReferenceNumber) {
+                console.error(`Cannot refresh status for shipment ${shipment.id}: No tracking information found`, {
+                    shipmentData: shipment,
+                    carrierData: carrierData[shipment.id]
+                });
+                alert('Cannot refresh status: No tracking number or booking reference available for this shipment.');
+                return;
+            }
+
+            console.log(`Refreshing status for shipment ${shipment.id}`, {
+                carrier: normalizedCarrier,
+                trackingNumber: identifierToUse,
+                bookingReferenceNumber: carrierLower.includes('eship') ? identifierToUse : bookingReferenceNumber
+            });
+
             const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
                 method: 'POST',
                 headers: {
@@ -647,12 +782,17 @@ const Shipments = () => {
                 },
                 body: JSON.stringify({
                     shipmentId: shipment.id,
-                    trackingNumber: shipment.trackingNumber || shipment.id,
-                    bookingReferenceNumber: shipment.selectedRate?.BookingReferenceNumber || shipment.bookingReferenceNumber
+                    carrier: normalizedCarrier,
+                    trackingNumber: trackingNumber || identifierToUse || '',
+                    bookingReferenceNumber: bookingReferenceNumber || (carrierLower.includes('eship') ? identifierToUse : '') || ''
                 })
             });
 
             const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || `HTTP error! status: ${response.status}`);
+            }
 
             if (result.success) {
                 // Update the shipment in the local state
@@ -663,19 +803,38 @@ const Shipments = () => {
                                 ...s,
                                 status: result.status,
                                 statusLastChecked: new Date().toISOString(),
-                                carrierTrackingData: result
+                                carrierTrackingData: result,
+                                trackingNumber: trackingNumber || s.trackingNumber,
+                                bookingReferenceNumber: bookingReferenceNumber || s.bookingReferenceNumber
                             }
                             : s
                     )
                 );
 
-                console.log(`Status updated for shipment ${shipment.id}: ${result.statusDisplay}`);
+                // Also update allShipments for stats
+                setAllShipments(prevShipments =>
+                    prevShipments.map(s =>
+                        s.id === shipment.id
+                            ? {
+                                ...s,
+                                status: result.status,
+                                statusLastChecked: new Date().toISOString(),
+                                carrierTrackingData: result,
+                                trackingNumber: trackingNumber || s.trackingNumber,
+                                bookingReferenceNumber: bookingReferenceNumber || s.bookingReferenceNumber
+                            }
+                            : s
+                    )
+                );
+
+                console.log(`Status updated for shipment ${shipment.id}: ${result.statusDisplay || result.status}`);
             } else {
-                console.error(`Failed to check status for shipment ${shipment.id}:`, result.error);
+                throw new Error(result.error || 'Failed to check status');
             }
 
         } catch (error) {
             console.error('Error refreshing shipment status:', error);
+            alert(`Failed to refresh status: ${error.message}`);
         } finally {
             setRefreshingStatus(prev => {
                 const newSet = new Set(prev);
@@ -984,10 +1143,25 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {carrierData[shipment.id]?.carrier ||
-                                                            shipment.selectedRateRef?.carrier ||
-                                                            shipment.selectedRate?.carrier ||
-                                                            shipment.carrier || 'N/A'}
+                                                        {(() => {
+                                                            // Check if this is an eShipPlus shipment
+                                                            const isEShipPlus =
+                                                                carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
+                                                                carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
+                                                                shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                                                                shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
+                                                                shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                                                                shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus';
+
+                                                            if (isEShipPlus) {
+                                                                return 'eShipPlus';
+                                                            }
+
+                                                            return carrierData[shipment.id]?.carrier ||
+                                                                shipment.selectedRateRef?.carrier ||
+                                                                shipment.selectedRate?.carrier ||
+                                                                shipment.carrier || 'N/A';
+                                                        })()}
                                                     </TableCell>
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}

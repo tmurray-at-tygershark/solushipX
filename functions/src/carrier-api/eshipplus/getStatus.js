@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('firebase-functions/logger');
+const { createEShipPlusAuthHeader } = require('../../utils');
 
 /**
  * eShip Plus Status Codes Mapping
@@ -67,31 +68,102 @@ async function getEShipPlusStatus(bookingReferenceNumber, credentials) {
     try {
         logger.info(`Getting eShip Plus status for booking: ${bookingReferenceNumber}`);
 
-        // Construct the API URL
-        const baseUrl = credentials.hostURL || 'https://cloudstaging.eshipplus.com';
-        const endpoint = credentials.endpoints?.status || '/services/rest/GetShipmentStatus.aspx';
-        const url = `${baseUrl}${endpoint}`;
+        // Get URL components from credentials only - no hardcoded defaults
+        const baseUrl = credentials.hostURL;
+        const endpoint = credentials.endpoints?.status;
+        
+        if (!baseUrl) {
+            throw new Error('eShip Plus hostURL not configured in carrier settings');
+        }
+        
+        if (!endpoint) {
+            throw new Error('eShip Plus status endpoint not configured in carrier settings');
+        }
+        
+        // Remove trailing slash from baseUrl
+        const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+        
+        // Ensure endpoint starts with /
+        const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+        
+        // Build full URL
+        const url = `${cleanBaseUrl}${cleanEndpoint}`;
 
-        // Prepare authentication
-        const auth = {
+        logger.info(`eShip Plus status URL: ${url}`);
+        logger.info(`Using credentials:`, {
             username: credentials.username,
-            password: credentials.password
-        };
+            hasPassword: !!credentials.password,
+            hasSecret: !!credentials.secret,
+            hasAccountNumber: !!credentials.accountNumber,
+            hasEndpoints: !!credentials.endpoints,
+            statusEndpoint: credentials.endpoints?.status
+        });
+
+        // Create eShipPlus auth header using the same method as getRates
+        const eShipPlusAuthHeader = createEShipPlusAuthHeader(credentials);
+        
+        logger.info('eShipPlusAuth header created successfully');
 
         // Make the API call - body is just the booking reference number as a string
         const response = await axios.post(url, `"${bookingReferenceNumber}"`, {
-            auth: auth,
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'eShipPlusAuth': eShipPlusAuthHeader
             },
-            timeout: 30000 // 30 second timeout
+            timeout: 30000, // 30 second timeout
+            validateStatus: function (status) {
+                // Accept any status code to handle errors properly
+                return status < 600;
+            }
         });
 
-        const statusData = response.data;
-        logger.info(`eShip Plus status response:`, { statusData });
+        logger.info(`eShip Plus response status: ${response.status}`);
+        
+        // Check if we got an HTML response (likely login page)
+        if (response.headers['content-type']?.includes('text/html')) {
+            logger.error('Received HTML response instead of JSON - likely authentication failure');
+            throw new Error('Authentication failed - received login page instead of API response');
+        }
 
-        // Check for errors
+        // Check for 401/403 authentication errors
+        if (response.status === 401 || response.status === 403) {
+            throw new Error(`Authentication failed - ${response.status} ${response.statusText}`);
+        }
+
+        // Check for other HTTP errors
+        if (response.status >= 400) {
+            throw new Error(`API request failed - ${response.status} ${response.statusText}`);
+        }
+
+        const statusData = response.data;
+        logger.info(`eShip Plus status response:`, { 
+            statusData: typeof statusData === 'string' ? statusData.substring(0, 200) : statusData 
+        });
+
+        // If response is a string and contains HTML, it's likely an error
+        if (typeof statusData === 'string' && statusData.includes('<!doctype html>')) {
+            throw new Error('Received HTML response instead of JSON - authentication or endpoint issue');
+        }
+
+        // If no data or empty response
+        if (!statusData) {
+            logger.warn('Empty response from eShip Plus API');
+            return {
+                success: true,
+                status: 'unknown',
+                statusDisplay: 'Unknown',
+                lastUpdated: new Date().toISOString(),
+                trackingEvents: [],
+                rawData: {
+                    carrier: 'eshipplus',
+                    statusSource: 'empty_response',
+                    checkCallsCount: 0
+                }
+            };
+        }
+
+        // Check for API errors in the response
         if (statusData.ContainsErrorMessage) {
             const errorMessages = statusData.Messages?.filter(m => m.Type === 0).map(m => m.Value) || ['Unknown error'];
             throw new Error(`eShip Plus API Error: ${errorMessages.join(', ')}`);
@@ -104,12 +176,16 @@ async function getEShipPlusStatus(bookingReferenceNumber, credentials) {
         return universalStatus;
 
     } catch (error) {
-        logger.error(`Error getting eShip Plus status for ${bookingReferenceNumber}:`, error);
+        logger.error(`Error getting eShip Plus status for ${bookingReferenceNumber}:`, error.message);
         
         if (error.response) {
             logger.error(`API Response Error:`, {
                 status: error.response.status,
-                data: error.response.data
+                statusText: error.response.statusText,
+                headers: error.response.headers,
+                data: typeof error.response.data === 'string' 
+                    ? error.response.data.substring(0, 500) 
+                    : error.response.data
             });
         }
         

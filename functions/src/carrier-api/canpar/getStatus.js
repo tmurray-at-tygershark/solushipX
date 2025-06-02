@@ -26,10 +26,33 @@ async function getCanparStatus(barcode, credentials) {
         // Construct the SOAP envelope
         const soapEnvelope = buildCanparSoapRequest(barcode, credentials);
         
-        // Construct the API URL
-        const baseUrl = credentials.hostURL || 'https://ws.canpar.com';
-        const endpoint = credentials.endpoints?.tracking || '/CanparAddonsService/trackByBarcode';
-        const url = `${baseUrl}${endpoint}`;
+        // Use the dynamic URL from carrier configuration
+        const baseUrl = credentials.hostURL;
+        const endpoint = credentials.endpoints?.tracking;
+        
+        // Ensure proper URL construction
+        if (!baseUrl) {
+            throw new Error('Canpar hostURL not configured in carrier settings');
+        }
+        
+        if (!endpoint) {
+            throw new Error('Canpar tracking endpoint not configured in carrier settings');
+        }
+        
+        // Remove trailing slash from baseUrl if present
+        let url = baseUrl;
+        if (url.endsWith('/')) {
+            url = url.slice(0, -1);
+        }
+        
+        // Add leading slash to endpoint if not present
+        if (!endpoint.startsWith('/')) {
+            url += '/';
+        }
+        
+        url += endpoint;
+        
+        logger.info(`Making Canpar tracking request to: ${url}`);
 
         // Make the SOAP API call
         const response = await axios.post(url, soapEnvelope, {
@@ -44,7 +67,15 @@ async function getCanparStatus(barcode, credentials) {
 
         // Parse XML response
         const xmlData = await parseStringPromise(response.data);
+        
+        // Log the raw XML response for debugging
+        logger.info('Raw Canpar XML response:', JSON.stringify(response.data).substring(0, 1000));
+        logger.info('Parsed XML structure:', JSON.stringify(xmlData).substring(0, 2000));
+        
         const trackingData = extractCanparTrackingData(xmlData);
+        
+        // Log extracted data
+        logger.info('Extracted tracking data:', trackingData);
         
         // Check for errors
         if (trackingData.error) {
@@ -78,6 +109,9 @@ async function getCanparStatus(barcode, credentials) {
  * @returns {string} - SOAP XML envelope
  */
 function buildCanparSoapRequest(barcode, credentials) {
+    // Use uppercase for user_id if it's an email
+    const userId = (credentials.username || credentials.userId || '').toUpperCase();
+    
     return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                   xmlns:ws="http://ws.canparaddons.canpar.com"
@@ -86,7 +120,7 @@ function buildCanparSoapRequest(barcode, credentials) {
   <soapenv:Body>
     <ws:trackByBarcode>
       <ws:request>
-        <xsd:user_id>${credentials.username || credentials.userId}</xsd:user_id>
+        <xsd:user_id>${userId}</xsd:user_id>
         <xsd:password>${credentials.password}</xsd:password>
         <xsd:barcode>${barcode}</xsd:barcode>
       </ws:request>
@@ -102,38 +136,103 @@ function buildCanparSoapRequest(barcode, credentials) {
  */
 function extractCanparTrackingData(xmlData) {
     try {
-        const envelope = xmlData['soapenv:Envelope'] || xmlData.Envelope;
-        const body = envelope['soapenv:Body'][0] || envelope.Body[0];
-        const response = body['ns:trackByBarcodeResponse'][0] || body.trackByBarcodeResponse[0];
-        const returnData = response['ns:return'][0] || response.return[0];
+        // Handle different envelope namespace variations
+        const envelope = xmlData['soapenv:Envelope'] || xmlData['soap:Envelope'] || xmlData.Envelope;
+        if (!envelope) {
+            logger.error('No SOAP envelope found in response');
+            return { error: 'Invalid SOAP response structure' };
+        }
         
-        // Check for error
-        const error = returnData['ax21:error'] && returnData['ax21:error'][0];
-        if (error && error._ && error._ !== 'nil') {
-            return { error: error._ };
+        // Get body - handle array or object
+        const bodyWrapper = envelope['soapenv:Body'] || envelope['soap:Body'] || envelope.Body;
+        const body = Array.isArray(bodyWrapper) ? bodyWrapper[0] : bodyWrapper;
+        if (!body) {
+            logger.error('No SOAP body found in response');
+            return { error: 'Invalid SOAP body structure' };
+        }
+        
+        // Log body structure for debugging
+        logger.info('SOAP Body structure:', JSON.stringify(body).substring(0, 1000));
+        
+        // Find the trackByBarcodeResponse - try different namespace variations
+        const responseWrapper = body['ns:trackByBarcodeResponse'] || 
+                               body['trackByBarcodeResponse'] ||
+                               body['ns2:trackByBarcodeResponse'] ||
+                               Object.values(body).find(val => {
+                                   const key = Object.keys(body).find(k => k.includes('trackByBarcodeResponse'));
+                                   return key ? body[key] : null;
+                               });
+        
+        const response = Array.isArray(responseWrapper) ? responseWrapper[0] : responseWrapper;
+        if (!response) {
+            logger.error('No trackByBarcodeResponse found in body');
+            return { error: 'No tracking response found' };
+        }
+        
+        // Get return data - try different namespace variations
+        const returnWrapper = response['ns:return'] || 
+                             response['return'] ||
+                             response['ns2:return'] ||
+                             Object.values(response).find(val => {
+                                 const key = Object.keys(response).find(k => k.includes('return'));
+                                 return key ? response[key] : null;
+                             });
+        
+        const returnData = Array.isArray(returnWrapper) ? returnWrapper[0] : returnWrapper;
+        if (!returnData) {
+            logger.error('No return data found in response');
+            return { error: 'No return data in tracking response' };
+        }
+        
+        // Check for error - try different namespace variations
+        const errorKey = Object.keys(returnData).find(k => k.includes('error'));
+        const error = errorKey ? returnData[errorKey] : null;
+        if (error) {
+            const errorValue = Array.isArray(error) ? error[0] : error;
+            if (errorValue && errorValue._ && errorValue._ !== 'nil') {
+                return { error: errorValue._ };
+            }
         }
 
-        const result = returnData['ax21:result'][0];
+        // Get result - try different namespace variations
+        const resultKey = Object.keys(returnData).find(k => k.includes('result'));
+        const resultWrapper = resultKey ? returnData[resultKey] : null;
+        const result = Array.isArray(resultWrapper) ? resultWrapper[0] : resultWrapper;
+        
+        if (!result) {
+            logger.error('No result found in return data');
+            return { error: 'No result in tracking response' };
+        }
+        
+        // Log result structure
+        logger.info('Result structure:', JSON.stringify(result).substring(0, 1000));
+        
+        // Extract fields with flexible namespace handling
+        const extractField = (fieldName) => {
+            const key = Object.keys(result).find(k => k.includes(fieldName));
+            return key ? getXmlValue(result, key) : null;
+        };
         
         return {
-            barcode: getXmlValue(result, 'ax23:barcode'),
-            delivered: getXmlValue(result, 'ax23:delivered') === 'true',
-            estimatedDeliveryDate: getXmlValue(result, 'ax23:estimated_delivery_date'),
-            referenceNum: getXmlValue(result, 'ax23:reference_num'),
-            serviceDescriptionEn: getXmlValue(result, 'ax23:service_description_en'),
-            serviceDescriptionFr: getXmlValue(result, 'ax23:service_description_fr'),
-            shippingDate: getXmlValue(result, 'ax23:shipping_date'),
-            signature: getXmlValue(result, 'ax23:signature'),
-            signatureUrl: getXmlValue(result, 'ax23:signature_url'),
-            signedBy: getXmlValue(result, 'ax23:signed_by'),
-            trackingUrlEn: getXmlValue(result, 'ax23:tracking_url_en'),
-            trackingUrlFr: getXmlValue(result, 'ax23:tracking_url_fr'),
-            consigneeAddress: getXmlValue(result, 'ax23:consignee_address')
+            barcode: extractField('barcode'),
+            delivered: extractField('delivered') === 'true',
+            estimatedDeliveryDate: extractField('estimated_delivery_date'),
+            referenceNum: extractField('reference_num'),
+            serviceDescriptionEn: extractField('service_description_en'),
+            serviceDescriptionFr: extractField('service_description_fr'),
+            shippingDate: extractField('shipping_date'),
+            signature: extractField('signature'),
+            signatureUrl: extractField('signature_url'),
+            signedBy: extractField('signed_by'),
+            trackingUrlEn: extractField('tracking_url_en'),
+            trackingUrlFr: extractField('tracking_url_fr'),
+            consigneeAddress: extractField('consignee_address')
         };
         
     } catch (error) {
         logger.error('Error extracting Canpar tracking data:', error);
-        return { error: 'Failed to parse tracking response' };
+        logger.error('Error stack:', error.stack);
+        return { error: 'Failed to parse tracking response: ' + error.message };
     }
 }
 
