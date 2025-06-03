@@ -2,7 +2,6 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { bookEShipPlusShipment } = require('./carrier-api/eshipplus/bookRate');
 const { bookCanparShipment } = require('./carrier-api/canpar/bookRate');
-const { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } = require('./utils/shipmentEvents');
 
 // Get Firestore instance
 const db = admin.firestore();
@@ -62,23 +61,6 @@ exports.bookRateUniversal = onCall(async (request) => {
         }
 
         console.log('bookRateUniversal: Booking completed successfully');
-        
-        // Record the booking confirmation event
-        try {
-            await recordShipmentEvent(
-                draftFirestoreDocId,
-                EVENT_TYPES.BOOKING_CONFIRMED,
-                'Shipment Booking Confirmed',
-                `Shipment successfully booked with ${carrier}. Tracking information and documents will be available shortly.`,
-                EVENT_SOURCES.SYSTEM,
-                null, // No specific user context in this function
-                { carrier: carrier, selectedRateId: selectedRateDocumentId }
-            );
-        } catch (eventError) {
-            console.error('Error recording booking confirmation event:', eventError);
-            // Don't fail the entire booking process for event recording errors
-        }
-        
         return bookingResult;
 
     } catch (error) {

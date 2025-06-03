@@ -1032,8 +1032,8 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                                 International
                                                             </Typography>
                                                             <Chip
-                                                                label={shipmentInfo.international ? "Yes" : "No"}
-                                                                color={shipmentInfo.international ? "primary" : "default"}
+                                                                label={shipFrom.country && shipTo.country && shipFrom.country !== shipTo.country ? "Yes" : "No"}
+                                                                color={shipFrom.country && shipTo.country && shipFrom.country !== shipTo.country ? "primary" : "default"}
                                                                 size="small"
                                                                 sx={{ minWidth: 60 }}
                                                             />
@@ -1054,8 +1054,8 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                                 Signature Required
                                                             </Typography>
                                                             <Chip
-                                                                label={shipmentInfo.signatureRequired ? "Yes" : "No"}
-                                                                color={shipmentInfo.signatureRequired ? "primary" : "default"}
+                                                                label={formData.shipmentInfo?.signatureRequired ? "Yes" : "No"}
+                                                                color={formData.shipmentInfo?.signatureRequired ? "primary" : "default"}
                                                                 size="small"
                                                                 sx={{ minWidth: 60 }}
                                                             />
@@ -1586,14 +1586,28 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                                     Label Status: {labelGenerationStatus}
                                                 </Typography>
                                             )}
-                                            <Button
-                                                onClick={handleBookingComplete}
-                                                variant="contained"
-                                                size="large"
-                                                sx={{ bgcolor: '#1a237e' }}
-                                            >
-                                                Complete & Return to Shipments
-                                            </Button>
+                                            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 2 }}>
+                                                <Button
+                                                    onClick={handleBookingComplete}
+                                                    variant="outlined"
+                                                    size="large"
+                                                    sx={{ minWidth: 160 }}
+                                                >
+                                                    Return to Shipments
+                                                </Button>
+                                                <Button
+                                                    onClick={() => {
+                                                        setShowBookingDialog(false);
+                                                        clearFormData();
+                                                        navigate(`/shipment/${shipmentId}`, { replace: true });
+                                                    }}
+                                                    variant="contained"
+                                                    size="large"
+                                                    sx={{ minWidth: 160, bgcolor: '#1a237e' }}
+                                                >
+                                                    View Shipment
+                                                </Button>
+                                            </Box>
                                         </>
                                     )}
                                 </DialogContent>

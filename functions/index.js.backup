@@ -33,7 +33,6 @@ const db = admin.firestore();
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
 const { getRatesCanpar } = require('./src/carrier-api/canpar/getRates');
-const { getHistoryCanpar } = require("./src/carrier-api/canpar/getHistory");
 const { generateCanparLabel } = require('./src/carrier-api/canpar/generateLabel');
 const { bookRateUniversal } = require('./src/bookRateUniversal');
 const ediProcessing = require('./src/edi-processing');
@@ -48,7 +47,6 @@ const { checkShipmentStatus } = require('./src/checkShipmentStatus');
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.getRatesCanpar = getRatesCanpar;
 exports.generateCanparLabel = generateCanparLabel;
-exports.getHistoryCanpar = getHistoryCanpar;
 exports.bookRateUniversal = bookRateUniversal;
 exports.onFileUploaded = ediProcessing.onFileUploaded;
 exports.processEdiFile = ediProcessing.processEdiFile;

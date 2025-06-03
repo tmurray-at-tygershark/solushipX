@@ -191,7 +191,7 @@ function extractCanparTrackingData(xmlData) {
             const errorValue = Array.isArray(error) ? error[0] : error;
             if (errorValue && errorValue._ && errorValue._ !== 'nil') {
                 return { error: errorValue._ };
-            }
+        }
         }
 
         // Get result - try different namespace variations

@@ -6,6 +6,7 @@ import { useCompany } from '../../contexts/CompanyContext';
 import { ShipmentFormProvider, useShipmentForm, initialFormState as contextInitialFormState } from '../../contexts/ShipmentFormContext';
 import { doc, getDoc, collection, query, where, getDocs, limit, serverTimestamp, updateDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } from '../../utils/shipmentEvents';
 import StepperComponent from './Stepper';
 import ShipmentInfo from './ShipmentInfo';
 import ShipFrom from './ShipFrom';
@@ -735,8 +736,29 @@ const CreateShipmentContent = () => {
         if (activeDraftId) {
             const shipmentDocRef = doc(db, 'shipments', activeDraftId);
             updateDoc(shipmentDocRef, { status: 'processing', updatedAt: serverTimestamp() })
-                .then(() => {
+                .then(async () => {
                     console.log(`Shipment ${activeDraftId} status updated to processing.`);
+
+                    // Record status change event
+                    try {
+                        await recordShipmentEvent(
+                            activeDraftId,
+                            EVENT_TYPES.STATUS_UPDATE,
+                            'Shipment Status Updated',
+                            'Shipment status changed from draft to processing. Ready for booking.',
+                            EVENT_SOURCES.USER,
+                            {
+                                email: currentUser?.email,
+                                userId: currentUser?.uid,
+                                userName: currentUser?.displayName || currentUser?.email
+                            },
+                            { fromStatus: 'draft', toStatus: 'processing' }
+                        );
+                    } catch (eventError) {
+                        console.error('Error recording status update event:', eventError);
+                        // Don't fail the entire process for event recording errors
+                    }
+
                     navigate('/shipments');
                     clearFormData();
                 })

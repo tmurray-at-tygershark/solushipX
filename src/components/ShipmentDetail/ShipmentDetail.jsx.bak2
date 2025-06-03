@@ -99,8 +99,7 @@ import {
     Pause as PauseIcon,
     Cancel as CancelIcon,
     Edit as EditIcon,
-    HelpOutline as HelpOutlineIcon,
-    ContentCopy as ContentCopyIcon
+    HelpOutline as HelpOutlineIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
@@ -120,7 +119,7 @@ import {
     TimelineDot
 } from '@mui/lab';
 import { getRateDetailsByDocumentId, getRatesForShipment } from '../../utils/rateUtils';
-import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES, recordStatusChange, recordTrackingUpdate } from "../../utils/shipmentEvents";
+import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } from "../../utils/shipmentEvents";
 import './ShipmentDetail.css';
 
 // Define libraries array as a static constant outside the component
@@ -414,7 +413,7 @@ const LoadingSkeleton = () => (
 );
 
 // Add optimized Timeline component
-const ShipmentTimeline = React.memo(({ events, shipmentId }) => (
+const ShipmentTimeline = React.memo(({ events }) => (
     <Timeline
         sx={{
             [`& .MuiTimelineItem-root`]: {
@@ -470,28 +469,15 @@ const ShipmentTimeline = React.memo(({ events, shipmentId }) => (
                         <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
                             {event.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                         </Typography>
-                        {event.location && (event.location.city || event.location.state || event.location.postalCode) && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                {[
-                                    event.location.city,
-                                    event.location.state,
-                                    event.location.postalCode
-                                ].filter(Boolean).join(', ')}
-                            </Typography>
-                        )}
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            {event.location.city}, {event.location.state} {event.location.postalCode}
+                        </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                             {formatTimestamp(event.timestamp)}
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                             {event.description}
                         </Typography>
-                        {event.userData && event.userData.email && (
-                            <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
-                                <Typography variant="caption" color="text.secondary">
-                                    {`User: ${event.userData.email}`}
-                                </Typography>
-                            </Box>
-                        )}
                     </Box>
                 </TimelineContent>
             </TimelineItem>
@@ -647,69 +633,6 @@ const ShipmentDetail = () => {
         severity: 'info'
     });
 
-    // Add at the top of the component:
-    const [shipmentEvents, setShipmentEvents] = useState([]);
-    const [historyLoading, setHistoryLoading] = useState(true);
-
-    useEffect(() => {
-        const fetchEvents = async () => {
-            if (!shipment?.id && !shipment?.shipmentID) return;
-            setHistoryLoading(true);
-            try {
-                // Try both possible keys
-                const eventsById = await getShipmentEvents(shipment.id);
-                const eventsByShipmentID = shipment.shipmentID ? await getShipmentEvents(shipment.shipmentID) : [];
-                // Prefer the one with more events
-                const events = (eventsById?.length || 0) > (eventsByShipmentID?.length || 0) ? eventsById : eventsByShipmentID;
-                setShipmentEvents(events || []);
-            } catch (e) {
-                setShipmentEvents([]);
-            }
-            setHistoryLoading(false);
-        };
-        fetchEvents();
-    }, [shipment?.id, shipment?.shipmentID]);
-
-    // Merge tracking and shipment events, always include a 'created' event
-    const mergedEvents = useMemo(() => {
-        let all = [
-            ...(trackingRecords || []),
-            ...(shipmentEvents || []).map(event => ({
-                id: event.eventId,
-                status: event.title,
-                description: event.description,
-                location: { city: '', state: '', postalCode: '' },
-                timestamp: new Date(event.timestamp),
-                color: getStatusColor(event.eventType || event.status),
-                icon: getStatusIcon(event.eventType || event.status),
-                eventType: event.eventType,
-                source: event.source,
-                userData: event.userData
-            }))
-        ];
-        // Add a synthetic 'created' event if not present
-        const hasCreated = all.some(e => (e.eventType === 'created' || (e.status && e.status.toLowerCase().includes('created'))));
-        if (!hasCreated && shipment?.createdAt) {
-            all.push({
-                id: 'created-' + (shipment.id || shipment.shipmentID),
-                status: 'Created',
-                description: 'Shipment was created',
-                location: { city: '', state: '', postalCode: '' },
-                timestamp: shipment.createdAt.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
-                color: getStatusColor('created'),
-                icon: getStatusIcon('created'),
-                eventType: 'created',
-                source: 'user',
-                userData: {
-                    email: shipment.createdByEmail || shipment.createdBy || shipment.userEmail || null,
-                    userId: shipment.createdBy || null,
-                    userName: shipment.createdByName || null
-                }
-            });
-        }
-        // Sort by timestamp descending
-        return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    }, [trackingRecords, shipmentEvents, shipment]);
 
     // Helper to update action loading states
     const setActionLoading = (action, loading, error = null) => {
@@ -975,20 +898,6 @@ const ShipmentDetail = () => {
             setActionLoading('refreshStatus', true);
             showSnackbar('Checking shipment status...', 'info');
 
-            // Store previous status for comparison
-            const prevStatus = shipment?.status;
-
-            // Helper to check for duplicate status event
-            const isDuplicateStatusEvent = (status, reason) => {
-                if (!shipmentEvents || shipmentEvents.length === 0) return false;
-                const lastEvent = shipmentEvents.find(e => e.eventType === 'status_update');
-                if (!lastEvent) return false;
-                return (
-                    lastEvent.statusChange?.to === status &&
-                    (reason ? lastEvent.statusChange?.reason === reason : true)
-                );
-            };
-
             // Check if this is a Canpar shipment
             const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
                 carrierData?.name?.toLowerCase().includes('canpar') ||
@@ -1013,25 +922,43 @@ const ShipmentDetail = () => {
 
                 console.log('Canpar refresh status - using barcode:', trackingNumber);
             } else if (isEShipPlusShipment) {
-                // For eShipPlus, use the booking reference number
-                bookingReferenceNumber = shipment.bookingReferenceNumber ||
-                    shipment.selectedRate?.BookingReferenceNumber ||
-                    shipment.carrierBookingConfirmation?.bookingReferenceNumber;
+                // For eShipPlus, prioritize proNumber or confirmationNumber from carrierBookingConfirmation
+                trackingNumber = shipment.carrierBookingConfirmation?.proNumber ||
+                    shipment.carrierBookingConfirmation?.confirmationNumber ||
+                    shipment.trackingNumber ||
+                    shipment.id;
 
-                console.log('eShipPlus refresh status - using booking reference:', bookingReferenceNumber);
+                // eShipPlus also uses booking reference
+                bookingReferenceNumber = shipment.selectedRate?.BookingReferenceNumber ||
+                    shipment.bookingReferenceNumber ||
+                    shipment.carrierBookingConfirmation?.bookingReferenceNumber ||
+                    shipment.carrierBookingConfirmation?.confirmationNumber;
+
+                console.log('eShipPlus refresh status - using proNumber/confirmationNumber:', trackingNumber);
             } else {
-                // For other carriers, use the tracking number
-                trackingNumber = shipment.trackingNumber ||
-                    shipment.selectedRate?.TrackingNumber ||
-                    shipment.carrierBookingConfirmation?.trackingNumber;
-
-                console.log('Standard refresh status - using tracking number:', trackingNumber);
+                // For other carriers, use existing logic
+                trackingNumber = shipment.trackingNumber || shipment.id;
+                bookingReferenceNumber = shipment.selectedRate?.BookingReferenceNumber ||
+                    shipment.bookingReferenceNumber ||
+                    shipment.carrierBookingConfirmation?.bookingReferenceNumber;
             }
 
-            // Determine carrier name
-            let carrier = carrierData?.name ||
-                getBestRateInfo?.carrier ||
-                shipment.carrier;
+            // Determine carrier name and normalize it
+            let carrier = getBestRateInfo?.carrier ||
+                carrierData?.name ||
+                shipment.carrier ||
+                shipment.selectedRate?.carrier ||
+                shipment.selectedRate?.CarrierName;
+
+            // Normalize carrier name (e.g., "Canpar Express" → "Canpar")
+            if (carrier) {
+                // Handle specific carrier name variations
+                if (carrier.toLowerCase().includes('canpar')) {
+                    carrier = 'Canpar';
+                } else if (carrier.toLowerCase().includes('eshipplus')) {
+                    carrier = 'eShipPlus';
+                }
+            }
 
             // Override carrier name for eShipPlus to ensure we use the integration carrier
             if (isEShipPlusShipment) {
@@ -1069,57 +996,14 @@ const ShipmentDetail = () => {
 
             if (result.success) {
                 // Update local shipment state with new status
-                setShipment(prev => {
-                    const newStatus = result.status;
-
-                    // Record status change if status has changed
-                    if (prevStatus && newStatus && prevStatus !== newStatus) {
-                        // Special handling for booked to scheduled transition
-                        const reason = prevStatus === 'booked' && newStatus === 'scheduled'
-                            ? 'Shipment scheduled for pickup'
-                            : 'Status updated via tracking refresh';
-                        if (!isDuplicateStatusEvent(newStatus, reason)) {
-                            recordStatusChange(
-                                shipment.id || shipment.shipmentID,
-                                prevStatus,
-                                newStatus,
-                                null,
-                                reason
-                            );
-                        }
-                    }
-
-                    // Record initial status if this is the first status update
-                    if (!prevStatus && (newStatus === 'pending' || newStatus === 'booked')) {
-                        if (!isDuplicateStatusEvent(newStatus, 'Initial status set')) {
-                            recordStatusChange(
-                                shipment.id || shipment.shipmentID,
-                                'created',
-                                newStatus,
-                                null,
-                                'Initial status set'
-                            );
-                        }
-                    }
-
-                    // Record tracking update with carrier data
-                    if (result.trackingUpdates && result.trackingUpdates.length > 0) {
-                        recordTrackingUpdate(
-                            shipment.id || shipment.shipmentID,
-                            result.trackingUpdates,
-                            carrier
-                        );
-                    }
-
-                    return {
-                        ...prev,
-                        status: newStatus,
-                        statusLastChecked: new Date().toISOString(),
-                        carrierTrackingData: result,
-                        estimatedDelivery: result.estimatedDelivery ? new Date(result.estimatedDelivery) : prev.estimatedDelivery,
-                        actualDelivery: result.actualDelivery ? new Date(result.actualDelivery) : prev.actualDelivery
-                    };
-                });
+                setShipment(prev => ({
+                    ...prev,
+                    status: result.status,
+                    statusLastChecked: new Date().toISOString(),
+                    carrierTrackingData: result,
+                    estimatedDelivery: result.estimatedDelivery ? new Date(result.estimatedDelivery) : prev.estimatedDelivery,
+                    actualDelivery: result.actualDelivery ? new Date(result.actualDelivery) : prev.actualDelivery
+                }));
 
                 showSnackbar(`Status updated: ${result.statusDisplay || result.status}`, 'success');
             } else {
@@ -2255,30 +2139,6 @@ const ShipmentDetail = () => {
         }
     }, [shipment?.id, shipment?.status, fetchShipmentDocuments]);
 
-    // On initial load, after shipment is loaded and set, check if status is 'pending' or 'booked' and if no event exists, log it:
-    useEffect(() => {
-        if (shipment && shipment.status && (shipment.status === 'pending' || shipment.status === 'booked')) {
-            const hasInitialEvent = (shipmentEvents || []).some(e => e.eventType === 'status_update' && e.statusChange && e.statusChange.to === shipment.status);
-            if (!hasInitialEvent) {
-                recordStatusChange(
-                    shipment.id || shipment.shipmentID,
-                    'created',
-                    shipment.status,
-                    null,
-                    'Initial status set on shipment creation or booking'
-                );
-            }
-        }
-    }, [shipment, shipmentEvents]);
-
-    // 1. Add this useEffect after shipment is loaded and not loading:
-    useEffect(() => {
-        if (shipment && !loading) {
-            handleRefreshStatus();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shipment?.id]);
-
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -2614,99 +2474,65 @@ const ShipmentDetail = () => {
                                                         </Box>
                                                         <Box>
                                                             <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <Link
-                                                                    to={`/tracking/${(() => {
-                                                                        const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                                                                            carrierData?.name?.toLowerCase().includes('canpar') ||
-                                                                            carrierData?.carrierID === 'CANPAR';
+                                                            <Link
+                                                                to={`/tracking/${(() => {
+                                                                    const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
+                                                                        carrierData?.name?.toLowerCase().includes('canpar') ||
+                                                                        carrierData?.carrierID === 'CANPAR';
 
-                                                                        if (isCanparShipment) {
-                                                                            return shipment?.trackingNumber ||
-                                                                                shipment?.carrierBookingConfirmation?.trackingNumber ||
-                                                                                shipment?.selectedRate?.TrackingNumber ||
-                                                                                shipment?.selectedRate?.Barcode ||
-                                                                                shipment?.id;
-                                                                        } else {
-                                                                            return shipment?.carrierBookingConfirmation?.proNumber ||
-                                                                                shipment?.carrierBookingConfirmation?.confirmationNumber ||
-                                                                                shipment?.trackingNumber ||
-                                                                                shipment?.id;
-                                                                        }
-                                                                    })()}`}
-                                                                    style={{ textDecoration: 'none' }}
-                                                                >
-                                                                    <Box sx={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 0.5,
-                                                                        '&:hover': { color: 'primary.dark' }
-                                                                    }}>
-                                                                        <AssignmentIcon sx={{ color: 'primary.main', fontSize: '0.9rem' }} />
-                                                                        <Typography
-                                                                            variant="body2"
-                                                                            sx={{
-                                                                                fontWeight: 500,
-                                                                                color: 'primary.main',
-                                                                                '&:hover': { textDecoration: 'underline' }
-                                                                            }}
-                                                                        >
-                                                                            {(() => {
-                                                                                const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                                                                                    carrierData?.name?.toLowerCase().includes('canpar') ||
-                                                                                    carrierData?.carrierID === 'CANPAR';
-
-                                                                                if (isCanparShipment) {
-                                                                                    return shipment?.trackingNumber ||
-                                                                                        shipment?.carrierBookingConfirmation?.trackingNumber ||
-                                                                                        shipment?.selectedRate?.TrackingNumber ||
-                                                                                        shipment?.selectedRate?.Barcode ||
-                                                                                        shipment?.id ||
-                                                                                        'N/A';
-                                                                                } else {
-                                                                                    return shipment?.carrierBookingConfirmation?.proNumber ||
-                                                                                        shipment?.carrierBookingConfirmation?.confirmationNumber ||
-                                                                                        shipment?.trackingNumber ||
-                                                                                        shipment?.id ||
-                                                                                        'N/A';
-                                                                                }
-                                                                            })()}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                </Link>
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => {
-                                                                        const trackingNum = (() => {
+                                                                    if (isCanparShipment) {
+                                                                        return shipment?.trackingNumber ||
+                                                                            shipment?.carrierBookingConfirmation?.trackingNumber ||
+                                                                            shipment?.selectedRate?.TrackingNumber ||
+                                                                            shipment?.selectedRate?.Barcode ||
+                                                                            shipment?.id;
+                                                                    } else {
+                                                                        return shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                            shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                            shipment?.trackingNumber ||
+                                                                            shipment?.id;
+                                                                    }
+                                                                })()}`}
+                                                                style={{ textDecoration: 'none' }}
+                                                            >
+                                                                <Box sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 0.5,
+                                                                    '&:hover': { color: 'primary.dark' }
+                                                                }}>
+                                                                    <AssignmentIcon sx={{ color: 'primary.main', fontSize: '0.9rem' }} />
+                                                                    <Typography
+                                                                        variant="body2"
+                                                                        sx={{
+                                                                            fontWeight: 500,
+                                                                            color: 'primary.main',
+                                                                            '&:hover': { textDecoration: 'underline' }
+                                                                        }}
+                                                                    >
+                                                                        {(() => {
                                                                             const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
                                                                                 carrierData?.name?.toLowerCase().includes('canpar') ||
                                                                                 carrierData?.carrierID === 'CANPAR';
+
                                                                             if (isCanparShipment) {
                                                                                 return shipment?.trackingNumber ||
                                                                                     shipment?.carrierBookingConfirmation?.trackingNumber ||
                                                                                     shipment?.selectedRate?.TrackingNumber ||
                                                                                     shipment?.selectedRate?.Barcode ||
-                                                                                    shipment?.id;
+                                                                                    shipment?.id ||
+                                                                                    'N/A';
                                                                             } else {
                                                                                 return shipment?.carrierBookingConfirmation?.proNumber ||
                                                                                     shipment?.carrierBookingConfirmation?.confirmationNumber ||
                                                                                     shipment?.trackingNumber ||
-                                                                                    shipment?.id;
+                                                                                    shipment?.id ||
+                                                                                    'N/A';
                                                                             }
-                                                                        })();
-                                                                        if (trackingNum && trackingNum !== 'N/A') {
-                                                                            navigator.clipboard.writeText(trackingNum);
-                                                                            showSnackbar('Tracking number copied!', 'success');
-                                                                        } else {
-                                                                            showSnackbar('No tracking number to copy.', 'warning');
-                                                                        }
-                                                                    }}
-                                                                    sx={{ padding: '2px' }}
-                                                                    title="Copy tracking number"
-                                                                >
-                                                                    <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                                                                </IconButton>
-                                                            </Box>
+                                                                        })()}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Link>
                                                         </Box>
                                                         <Box>
                                                             <Typography variant="caption" color="text.secondary">Last Updated</Typography>
@@ -2746,8 +2572,8 @@ const ShipmentDetail = () => {
                                                             <Typography variant="caption" color="text.secondary">International</Typography>
                                                             <Chip
                                                                 size="small"
-                                                                label={shipment?.shipFrom?.country && shipment?.shipTo?.country && shipment.shipFrom.country !== shipment.shipTo.country ? "Yes" : "No"}
-                                                                color={shipment?.shipFrom?.country && shipment?.shipTo?.country && shipment.shipFrom.country !== shipment.shipTo.country ? "primary" : "default"}
+                                                                label={shipment?.shipmentInfo?.internationalShipment ? "Yes" : "No"}
+                                                                color={shipment?.shipmentInfo?.internationalShipment ? "primary" : "default"}
                                                                 variant="outlined"
                                                             />
                                                         </Box>
@@ -3544,30 +3370,7 @@ const ShipmentDetail = () => {
                                                         },
                                                     },
                                                 }}>
-                                                    {historyLoading ? (
-                                                        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                                                            <CircularProgress size={24} />
-                                                        </Box>
-                                                    ) : mergedEvents.length === 0 ? (
-                                                        <Box sx={{
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            p: 4,
-                                                            textAlign: 'center'
-                                                        }}>
-                                                            <TimelineIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                                                            <Typography variant="h6" color="text.secondary" gutterBottom>
-                                                                No History Available
-                                                            </Typography>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Tracking and event information will appear here as they become available.
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <ShipmentTimeline events={mergedEvents} shipmentId={shipment?.id} />
-                                                    )}
+                                                    <ShipmentTimeline events={trackingRecords} />
                                                 </Box>
                                             </Paper>
                                         </Grid>

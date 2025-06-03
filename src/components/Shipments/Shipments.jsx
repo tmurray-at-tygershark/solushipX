@@ -56,7 +56,8 @@ import {
     FilterAlt as FilterAltIcon,
     PictureAsPdf as PictureAsPdfIcon,
     FileDownload as FileDownloadIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
@@ -69,6 +70,7 @@ import { useCompany } from '../../contexts/CompanyContext';
 import { collection, getDocs, query, where, orderBy, limit, startAfter, doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
+import Snackbar from '@mui/material/Snackbar';
 
 // Add formatAddress function (copied from admin view)
 const formatAddress = (address, label = '', searchTerm = '') => {
@@ -404,6 +406,10 @@ const Shipments = () => {
         origin: '',
         destination: ''
     });
+
+    // Add state for snackbar
+    const [snackbarOpen, setSnackbarOpen] = useState(false);
+    const [snackbarMessage, setSnackbarMessage] = useState('');
 
     // Helper function to normalize carrier names for comparison
     const normalizeCarrierName = useCallback((name) => {
@@ -2407,17 +2413,33 @@ const Shipments = () => {
 
                                                                     {/* Tracking Number (only for non-draft shipments) */}
                                                                     {trackingNumber && (
-                                                                        <div style={{
-                                                                            fontSize: '0.75rem',
-                                                                            color: '#059669',
-                                                                            marginTop: '4px',
-                                                                            fontFamily: 'monospace'
-                                                                        }}>
-                                                                            {highlightSearchTerm(
-                                                                                trackingNumber,
-                                                                                searchFields.trackingNumber
-                                                                            )}
-                                                                        </div>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, marginTop: '4px' }}>
+                                                                            <Typography
+                                                                                variant="body2"
+                                                                                sx={{
+                                                                                    fontSize: '0.75rem',
+                                                                                    color: '#059669',
+                                                                                    fontFamily: 'monospace'
+                                                                                }}
+                                                                            >
+                                                                                {highlightSearchTerm(
+                                                                                    trackingNumber,
+                                                                                    searchFields.trackingNumber
+                                                                                )}
+                                                                            </Typography>
+                                                                            <IconButton
+                                                                                size="small"
+                                                                                onClick={() => {
+                                                                                    navigator.clipboard.writeText(trackingNumber);
+                                                                                    setSnackbarMessage('Tracking number copied!');
+                                                                                    setSnackbarOpen(true);
+                                                                                }}
+                                                                                sx={{ padding: '2px' }}
+                                                                                title="Copy tracking number"
+                                                                            >
+                                                                                <ContentCopyIcon sx={{ fontSize: '0.875rem', color: '#64748b' }} />
+                                                                            </IconButton>
+                                                                        </Box>
                                                                     )}
                                                                 </div>
                                                             );
@@ -2815,6 +2837,14 @@ const Shipments = () => {
                     )}
                 </DialogContent>
             </Dialog>
+
+            <Snackbar
+                open={snackbarOpen}
+                autoHideDuration={2000}
+                onClose={() => setSnackbarOpen(false)}
+                message={snackbarMessage}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            />
         </div>
     );
 };
