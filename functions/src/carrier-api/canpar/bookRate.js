@@ -57,6 +57,22 @@ async function bookCanparShipment(rateRequestData, draftFirestoreDocId, selected
         // Update the shipment document with booking confirmation
         await updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate);
 
+        // Record the status change event from draft to booked
+        try {
+            const { recordStatusChange } = require('../../utils/shipmentEvents');
+            await recordStatusChange(
+                draftFirestoreDocId,
+                'draft',
+                'booked',
+                null,
+                'Shipment successfully booked with Canpar carrier'
+            );
+            console.log(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> booked`);
+        } catch (eventError) {
+            console.error('Error recording status change event:', eventError);
+            // Don't fail the booking process for event recording errors
+        }
+
         // Update the rate document with booking status
         await db.collection('shipmentRates').doc(selectedRateDocumentId).update({
             status: 'booked',

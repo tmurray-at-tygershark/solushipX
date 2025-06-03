@@ -148,6 +148,47 @@ const formatTimestamp = (timestamp) => {
     }
 };
 
+// Add this helper function to determine the most recent update timestamp
+const getLastUpdatedTimestamp = (shipment, mergedEvents) => {
+    const timestamps = [];
+
+    // 1. Latest event timestamp from tracking/shipment events
+    if (mergedEvents && mergedEvents.length > 0) {
+        const latestEventTimestamp = mergedEvents[0]?.timestamp; // mergedEvents are sorted newest first
+        if (latestEventTimestamp) {
+            timestamps.push(new Date(latestEventTimestamp));
+        }
+    }
+
+    // 2. Status last checked timestamp
+    if (shipment?.statusLastChecked) {
+        timestamps.push(new Date(shipment.statusLastChecked));
+    }
+
+    // 3. Tracking last updated timestamp
+    if (shipment?.tracking?.lastUpdated) {
+        timestamps.push(new Date(shipment.tracking.lastUpdated));
+    }
+
+    // 4. Shipment updated timestamp
+    if (shipment?.updatedAt) {
+        const updatedAt = shipment.updatedAt.toDate ? shipment.updatedAt.toDate() : new Date(shipment.updatedAt);
+        timestamps.push(updatedAt);
+    }
+
+    // 5. Carrier tracking data timestamp (from refresh status)
+    if (shipment?.carrierTrackingData?.lastChecked) {
+        timestamps.push(new Date(shipment.carrierTrackingData.lastChecked));
+    }
+
+    // Return the most recent timestamp
+    if (timestamps.length > 0) {
+        return new Date(Math.max(...timestamps.map(t => t.getTime())));
+    }
+
+    return null;
+};
+
 // Add ErrorBoundary component at the top
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -1120,7 +1161,10 @@ const ShipmentDetail = () => {
                         ...prev,
                         status: newStatus,
                         statusLastChecked: new Date().toISOString(),
-                        carrierTrackingData: result,
+                        carrierTrackingData: {
+                            ...result,
+                            lastChecked: new Date().toISOString() // Add timestamp for when we last checked
+                        },
                         estimatedDelivery: result.estimatedDelivery ? new Date(result.estimatedDelivery) : prev.estimatedDelivery,
                         actualDelivery: result.actualDelivery ? new Date(result.actualDelivery) : prev.actualDelivery
                     };
@@ -1145,8 +1189,7 @@ const ShipmentDetail = () => {
                         await recordTrackingUpdate(
                             shipment.id,
                             historyResult.data.trackingUpdates,
-                            EVENT_SOURCES.CARRIER_API,
-                            shipment.status
+                            'eShipPlus' // Use proper carrier name instead of EVENT_SOURCES.CARRIER_API
                         );
                         showSnackbar(`Fetched ${historyResult.data.trackingUpdates.length} new eShipPlus history events.`, 'success');
                     } else if (historyResult.data.success) {
@@ -2772,8 +2815,10 @@ const ShipmentDetail = () => {
                                                         <Box>
                                                             <Typography variant="caption" color="text.secondary">Last Updated</Typography>
                                                             <Typography variant="body2">
-                                                                {shipment?.tracking?.lastUpdated ?
-                                                                    formatTimestamp(shipment.tracking.lastUpdated) : 'N/A'}
+                                                                {(() => {
+                                                                    const lastUpdated = getLastUpdatedTimestamp(shipment, mergedEvents);
+                                                                    return lastUpdated ? formatTimestamp(lastUpdated) : 'N/A';
+                                                                })()}
                                                             </Typography>
                                                         </Box>
                                                     </Stack>

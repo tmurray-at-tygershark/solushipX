@@ -416,7 +416,14 @@ const Tracking = () => {
                     determinedCarrierName = data.selectedRateRef.sourceCarrierName;
                 }
 
-                if (determinedCarrierName) {
+                // Enhanced carrier detection for eShipPlus
+                if (data.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                    data.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                    data.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+                    data.selectedRate?.sourceCarrierName === 'eShipPlus') {
+                    setCarrier('eShipPlus');
+                    console.log('Detected eShipPlus shipment via displayCarrierId/sourceCarrierName');
+                } else if (determinedCarrierName) {
                     const dcLower = determinedCarrierName.toLowerCase();
                     if (dcLower.includes('canpar')) setCarrier('Canpar');
                     else if (dcLower.includes('eshipplus') || dcLower.includes('e-ship') || determinedCarrierName === 'ESHIPPLUS') {
@@ -427,6 +434,9 @@ const Tracking = () => {
                 }
 
                 console.log('Shipment found. Events will be loaded via shipmentEvents listener and tracking records.');
+
+                setShipmentData(data);
+                setLoading(false);
             }
 
         } catch (err) {
@@ -652,63 +662,55 @@ const Tracking = () => {
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         <Typography variant="body1" sx={{ fontWeight: 600, color: 'secondary.main' }}>
                                             {(() => {
-                                                // Determine carrier tracking number based on carrier type
+                                                // Use the exact same logic as ShipmentDetail.jsx
                                                 const isCanparShipment = carrier?.toLowerCase().includes('canpar');
-                                                const isEShipPlusShipment = carrier?.toLowerCase().includes('eshipplus') || carrier?.toLowerCase().includes('e-ship');
 
                                                 if (isCanparShipment) {
                                                     return shipmentData?.trackingNumber ||
+                                                        shipmentData?.carrierBookingConfirmation?.trackingNumber ||
                                                         shipmentData?.selectedRate?.TrackingNumber ||
                                                         shipmentData?.selectedRate?.Barcode ||
-                                                        shipmentData?.carrierBookingConfirmation?.trackingNumber ||
-                                                        'N/A';
-                                                } else if (isEShipPlusShipment) {
-                                                    return shipmentData?.carrierBookingConfirmation?.proNumber ||
-                                                        shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
-                                                        shipmentData?.bookingReferenceNumber ||
-                                                        shipmentData?.trackingNumber ||
+                                                        currentTrackingId ||
                                                         'N/A';
                                                 } else {
-                                                    return shipmentData?.trackingNumber ||
-                                                        shipmentData?.carrierBookingConfirmation?.trackingNumber ||
-                                                        shipmentData?.carrierBookingConfirmation?.proNumber ||
+                                                    // For eShipPlus and other carriers, use proNumber then confirmationNumber
+                                                    return shipmentData?.carrierBookingConfirmation?.proNumber ||
+                                                        shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
+                                                        shipmentData?.trackingNumber ||
+                                                        currentTrackingId ||
                                                         'N/A';
                                                 }
                                             })()}
                                         </Typography>
-                                        {(() => {
-                                            // Get the tracking number for copy functionality
-                                            const isCanparShipment = carrier?.toLowerCase().includes('canpar');
-                                            const isEShipPlusShipment = carrier?.toLowerCase().includes('eshipplus') || carrier?.toLowerCase().includes('e-ship');
-                                            let trackingNumber;
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => {
+                                                const trackingNumberToCopy = (() => {
+                                                    // Use the exact same logic as display
+                                                    const isCanparShipment = carrier?.toLowerCase().includes('canpar');
 
-                                            if (isCanparShipment) {
-                                                trackingNumber = shipmentData?.trackingNumber ||
-                                                    shipmentData?.selectedRate?.TrackingNumber ||
-                                                    shipmentData?.selectedRate?.Barcode ||
-                                                    shipmentData?.carrierBookingConfirmation?.trackingNumber;
-                                            } else if (isEShipPlusShipment) {
-                                                trackingNumber = shipmentData?.carrierBookingConfirmation?.proNumber ||
-                                                    shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
-                                                    shipmentData?.bookingReferenceNumber ||
-                                                    shipmentData?.trackingNumber;
-                                            } else {
-                                                trackingNumber = shipmentData?.trackingNumber ||
-                                                    shipmentData?.carrierBookingConfirmation?.trackingNumber ||
-                                                    shipmentData?.carrierBookingConfirmation?.proNumber;
-                                            }
-
-                                            return trackingNumber && trackingNumber !== 'N/A' && (
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => copyToClipboard(trackingNumber, 'Carrier Tracking Number')}
-                                                    sx={{ padding: '2px' }}
-                                                    title="Copy carrier tracking number"
-                                                >
-                                                    <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                                                </IconButton>
-                                            );
-                                        })()}
+                                                    if (isCanparShipment) {
+                                                        return shipmentData?.trackingNumber ||
+                                                            shipmentData?.carrierBookingConfirmation?.trackingNumber ||
+                                                            shipmentData?.selectedRate?.TrackingNumber ||
+                                                            shipmentData?.selectedRate?.Barcode ||
+                                                            currentTrackingId ||
+                                                            'N/A';
+                                                    } else {
+                                                        // For eShipPlus and other carriers, use proNumber then confirmationNumber
+                                                        return shipmentData?.carrierBookingConfirmation?.proNumber ||
+                                                            shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
+                                                            shipmentData?.trackingNumber ||
+                                                            currentTrackingId ||
+                                                            'N/A';
+                                                    }
+                                                })();
+                                                copyToClipboard(trackingNumberToCopy, 'Carrier confirmation number');
+                                            }}
+                                            title="Copy carrier confirmation number"
+                                        >
+                                            <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                        </IconButton>
                                     </Box>
                                 </Box>
 

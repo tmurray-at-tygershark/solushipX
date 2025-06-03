@@ -686,6 +686,22 @@ async function processBookingRequest(data) {
         await shipmentDocRef.update(shipmentUpdateData);
         logger.info(`LOG: Shipment document ${draftFirestoreDocId} successfully updated.`);
 
+        // Record the status change event from draft to booked
+        try {
+            const { recordStatusChange, EVENT_TYPES, EVENT_SOURCES } = require('../../utils/shipmentEvents');
+            await recordStatusChange(
+                draftFirestoreDocId,
+                'draft',
+                'booked',
+                null,
+                'Shipment successfully booked with eShipPlus carrier'
+            );
+            logger.info(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> booked`);
+        } catch (eventError) {
+            logger.error('Error recording status change event:', eventError);
+            // Don't fail the booking process for event recording errors
+        }
+
         // 2. Update the selected rate document in shipmentRates collection
         if (selectedRateDocumentId) { // Should always be true due to earlier validation
             const rateDocRefToUpdate = db.collection('shipmentRates').doc(selectedRateDocumentId);

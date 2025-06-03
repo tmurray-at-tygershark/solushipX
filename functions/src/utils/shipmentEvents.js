@@ -119,17 +119,24 @@ const recordTrackingUpdate = async (shipmentId, trackingUpdates, carrier) => {
 
   const latestUpdate = trackingUpdates[trackingUpdates.length - 1];
   
+  let description = latestUpdate.description || latestUpdate.status || 'Status update';
+  
+  if (latestUpdate.location) {
+    description += ` in ${latestUpdate.location}`;
+  }
+  
   return await recordShipmentEvent(
     shipmentId,
     EVENT_TYPES.TRACKING_UPDATE,
     "Tracking Update",
-    `${carrier}: ${latestUpdate.status || latestUpdate.description}${latestUpdate.location ? ` in ${latestUpdate.location}` : ""}`,
+    `${carrier}: ${description}`,
     EVENT_SOURCES.CARRIER,
     null,
     {
     sourceCarrier: carrier,
     trackingData: {
       latestStatus: latestUpdate.status,
+      latestDescription: latestUpdate.description,
       location: latestUpdate.location,
       timestamp: latestUpdate.timestamp,
       allUpdates: trackingUpdates

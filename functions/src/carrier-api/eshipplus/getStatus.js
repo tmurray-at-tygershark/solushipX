@@ -68,7 +68,8 @@ const CHECK_CALL_STATUS_MAP = {
     
     // Administrative/Processing
     'XB': 'scheduled',     // shipment acknowledged
-    'OO': 'scheduled'      // paperwork received - did not receive shipment or equipment
+    'OO': 'scheduled',     // paperwork received - did not receive shipment or equipment
+    'AA': 'scheduled'      // shipment created
 };
 
 /**

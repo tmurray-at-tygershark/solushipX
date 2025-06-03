@@ -131,22 +131,17 @@ exports.checkShipmentStatus = onRequest(
                 });
             }
 
-            // Update shipment status in Firestore if shipmentId provided
-            if (shipmentId && statusResult.success) {
-                // Clean up the statusResult to remove undefined values
-                const cleanStatusResult = Object.entries(statusResult).reduce((acc, [key, value]) => {
-                    if (value !== undefined) {
-                        // For nested objects, clean them too
-                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                            const cleanedNested = Object.entries(value).reduce((nestedAcc, [nestedKey, nestedValue]) => {
-                                if (nestedValue !== undefined) {
-                                    nestedAcc[nestedKey] = nestedValue;
-                                }
-                                return nestedAcc;
-                            }, {});
-                            if (Object.keys(cleanedNested).length > 0) {
-                                acc[key] = cleanedNested;
-                            }
+            // Update shipment with new status if it has changed
+            if (statusResult.status !== shipmentData.status) {
+                logger.info(`Status changed from ${shipmentData.status} to ${statusResult.status} for shipment ${shipmentId}`);
+                
+                // Clean the status result for Firestore storage
+                const cleanStatusResult = Object.keys(statusResult).reduce((acc, key) => {
+                    const value = statusResult[key];
+                    if (value !== null && value !== undefined) {
+                        // Convert functions to string representation if any
+                        if (typeof value === 'function') {
+                            acc[key] = '[Function]';
                         } else {
                             acc[key] = value;
                         }
@@ -172,6 +167,50 @@ exports.checkShipmentStatus = onRequest(
 
                 await db.collection('shipments').doc(shipmentId).update(updateData);
                 logger.info(`Updated shipment ${shipmentId} with new status: ${statusResult.status}`);
+                
+                // Record the status change event with proper validation and duplicate prevention
+                try {
+                    const { recordStatusChange, getShipmentEvents } = require('./utils/shipmentEvents');
+                    
+                    // Normalize status values to handle undefined/null cases
+                    const fromStatus = shipmentData.status || 'unknown';
+                    const toStatus = statusResult.status || 'unknown';
+                    
+                    // Only record the event if we have valid status values and they're actually different
+                    if (fromStatus !== toStatus && toStatus !== 'unknown') {
+                        // Check for recent duplicate events (within last 5 minutes)
+                        const recentEvents = await getShipmentEvents(shipmentId);
+                        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+                        
+                        const isDuplicate = recentEvents.some(event => {
+                            const eventTime = new Date(event.timestamp);
+                            return (
+                                event.eventType === 'status_update' &&
+                                event.metadata?.statusChange?.from === fromStatus &&
+                                event.metadata?.statusChange?.to === toStatus &&
+                                eventTime > fiveMinutesAgo
+                            );
+                        });
+                        
+                        if (!isDuplicate) {
+                            await recordStatusChange(
+                                shipmentId,
+                                fromStatus,
+                                toStatus,
+                                null,
+                                'Status updated via carrier API check'
+                            );
+                            logger.info(`Recorded status change event for shipment ${shipmentId}: ${fromStatus} -> ${toStatus}`);
+                        } else {
+                            logger.info(`Skipped duplicate status change event for shipment ${shipmentId}: ${fromStatus} -> ${toStatus}`);
+                        }
+                    } else {
+                        logger.info(`Skipped recording status change event for shipment ${shipmentId}: invalid or unchanged status (${fromStatus} -> ${toStatus})`);
+                    }
+                } catch (eventError) {
+                    logger.error('Error recording status change event:', eventError);
+                    // Don't fail the status check for event recording errors
+                }
             }
 
             return res.status(200).json(statusResult);
