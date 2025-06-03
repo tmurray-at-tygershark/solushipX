@@ -226,6 +226,123 @@ const capitalizeShipmentType = (type) => {
     return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
 };
 
+// Helper function to format route (origin → destination)
+const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestination = '') => {
+    const formatLocation = (address) => {
+        if (!address || typeof address !== 'object') {
+            return 'N/A';
+        }
+        // Format as "City, State/Province" for compact display
+        const parts = [];
+        if (address.city) parts.push(address.city);
+        if (address.state || address.province) parts.push(address.state || address.province);
+
+        return parts.length > 0 ? parts.join(', ') : 'N/A';
+    };
+
+    const origin = formatLocation(shipFrom);
+    const destination = formatLocation(shipTo);
+
+    return (
+        <div style={{ lineHeight: 1.3 }}>
+            {/* Origin */}
+            <div style={{
+                fontSize: '0.875rem',
+                fontWeight: 400,
+                color: '#374151'
+            }}>
+                {searchTermOrigin ? (
+                    <span>
+                        {origin.split(new RegExp(`(${searchTermOrigin})`, 'gi')).map((part, i) =>
+                            part.toLowerCase() === searchTermOrigin.toLowerCase() ? (
+                                <span key={i} style={{ backgroundColor: '#fff8c5' }}>
+                                    {part}
+                                </span>
+                            ) : (
+                                part
+                            )
+                        )}
+                    </span>
+                ) : origin}
+            </div>
+
+            {/* Arrow */}
+            <div style={{
+                fontSize: '0.75rem',
+                color: '#9ca3af',
+                margin: '2px 0',
+                textAlign: 'center'
+            }}>
+                ↓
+            </div>
+
+            {/* Destination */}
+            <div style={{
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: '#111827'
+            }}>
+                {searchTermDestination ? (
+                    <span>
+                        {destination.split(new RegExp(`(${searchTermDestination})`, 'gi')).map((part, i) =>
+                            part.toLowerCase() === searchTermDestination.toLowerCase() ? (
+                                <span key={i} style={{ backgroundColor: '#fff8c5' }}>
+                                    {part}
+                                </span>
+                            ) : (
+                                part
+                            )
+                        )}
+                    </span>
+                ) : destination}
+            </div>
+        </div>
+    );
+};
+
+// Helper function to format date and time
+const formatDateTime = (timestamp) => {
+    if (!timestamp) return 'N/A';
+
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+
+    // Format date as MM/DD/YY
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const year = String(date.getFullYear()).slice(-2);
+    const formattedDate = `${month}/${day}/${year}`;
+
+    // Format time
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+    const formattedTime = timeFormatter.format(date);
+
+    return (
+        <div style={{ lineHeight: 1.3 }}>
+            {/* Date */}
+            <div style={{
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: '#111827'
+            }}>
+                {formattedDate}
+            </div>
+
+            {/* Time */}
+            <div style={{
+                fontSize: '0.75rem',
+                color: '#6b7280',
+                marginTop: '2px'
+            }}>
+                {formattedTime}
+            </div>
+        </div>
+    );
+};
+
 const Shipments = () => {
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading } = useCompany();
@@ -2118,25 +2235,25 @@ const Shipments = () => {
                                                 />
                                             </TableCell>
                                             <TableCell>ID</TableCell>
+                                            <TableCell>DATE</TableCell>
                                             <TableCell>CUSTOMER</TableCell>
-                                            <TableCell>ORIGIN</TableCell>
-                                            <TableCell>DESTINATION</TableCell>
+                                            <TableCell>ROUTE</TableCell>
                                             <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
                                             <TableCell>TYPE</TableCell>
                                             <TableCell>STATUS</TableCell>
-                                            <TableCell align="right">ACTIONS</TableCell>
+                                            <TableCell align="right"></TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
                                         {loading ? (
                                             <TableRow>
-                                                <TableCell colSpan={10} align="center">
+                                                <TableCell colSpan={9} align="center">
                                                     <CircularProgress />
                                                 </TableCell>
                                             </TableRow>
                                         ) : shipments.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={10} align="center">
+                                                <TableCell colSpan={9} align="center">
                                                     No shipments found
                                                 </TableCell>
                                             </TableRow>
@@ -2184,6 +2301,11 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
+                                                        {formatDateTime(shipment.createdAt)}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                    >
                                                         {highlightSearchTerm(
                                                             shipment.shipTo?.customerID ?
                                                                 customers[shipment.shipTo.customerID] ||
@@ -2195,18 +2317,10 @@ const Shipments = () => {
                                                     <TableCell
                                                         sx={{ verticalAlign: 'top', textAlign: 'left' }}
                                                     >
-                                                        {formatAddress(
+                                                        {formatRoute(
                                                             shipment.shipFrom || shipment.shipfrom,
-                                                            'Origin',
-                                                            searchFields.origin
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
-                                                        {formatAddress(
                                                             shipment.shipTo || shipment.shipto,
-                                                            'Destination',
+                                                            searchFields.origin,
                                                             searchFields.destination
                                                         )}
                                                     </TableCell>
