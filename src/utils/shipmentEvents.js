@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 
 export const EVENT_TYPES = {
@@ -135,4 +135,33 @@ export const recordTrackingUpdate = async (shipmentId, trackingUpdates, carrier)
   };
   
   return await recordShipmentEvent(shipmentId, eventData);
+};
+
+// New function to listen for real-time shipment event updates
+export const listenToShipmentEvents = (shipmentId, callback) => {
+  if (!shipmentId) {
+    console.error("Shipment ID is required to listen to events.");
+    return () => {}; // Return a no-op unsubscribe function
+  }
+
+  const shipmentEventsRef = doc(db, "shipmentEvents", shipmentId);
+
+  const unsubscribe = onSnapshot(shipmentEventsRef, (docSnapshot) => {
+    if (docSnapshot.exists()) {
+      const data = docSnapshot.data();
+      const events = data.events || [];
+      // Sort events by timestamp (newest first)
+      events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      callback(events);
+    } else {
+      // Document doesn't exist (e.g., new shipment with no events yet)
+      callback([]);
+    }
+  }, (error) => {
+    console.error("Error listening to shipment events:", error);
+    // Optionally, you could call the callback with an error indicator or an empty array
+    callback([]); 
+  });
+
+  return unsubscribe; // Return the unsubscribe function to stop listening
 };

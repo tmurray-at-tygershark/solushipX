@@ -120,7 +120,7 @@ import {
     TimelineDot
 } from '@mui/lab';
 import { getRateDetailsByDocumentId, getRatesForShipment } from '../../utils/rateUtils';
-import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES, recordStatusChange, recordTrackingUpdate } from "../../utils/shipmentEvents";
+import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES, recordStatusChange, recordTrackingUpdate, listenToShipmentEvents } from "../../utils/shipmentEvents";
 import './ShipmentDetail.css';
 
 // Define libraries array as a static constant outside the component
@@ -652,23 +652,27 @@ const ShipmentDetail = () => {
     const [historyLoading, setHistoryLoading] = useState(true);
 
     useEffect(() => {
-        const fetchEvents = async () => {
-            if (!shipment?.id && !shipment?.shipmentID) return;
-            setHistoryLoading(true);
-            try {
-                // Try both possible keys
-                const eventsById = await getShipmentEvents(shipment.id);
-                const eventsByShipmentID = shipment.shipmentID ? await getShipmentEvents(shipment.shipmentID) : [];
-                // Prefer the one with more events
-                const events = (eventsById?.length || 0) > (eventsByShipmentID?.length || 0) ? eventsById : eventsByShipmentID;
-                setShipmentEvents(events || []);
-            } catch (e) {
-                setShipmentEvents([]);
-            }
+        if (!shipment?.id && !shipment?.shipmentID) {
             setHistoryLoading(false);
+            setShipmentEvents([]); // Clear events if no ID
+            return;
+        }
+
+        setHistoryLoading(true);
+        // Determine the ID to use for listening
+        const idToListen = shipment.id || shipment.shipmentID;
+
+        // Subscribe to real-time updates
+        const unsubscribe = listenToShipmentEvents(idToListen, (events) => {
+            setShipmentEvents(events || []);
+            setHistoryLoading(false);
+        });
+
+        // Cleanup: Unsubscribe when component unmounts or shipment ID changes
+        return () => {
+            unsubscribe();
         };
-        fetchEvents();
-    }, [shipment?.id, shipment?.shipmentID]);
+    }, [shipment?.id, shipment?.shipmentID]); // Re-run if shipment.id or shipment.shipmentID changes
 
     // Merge tracking and shipment events, always include a 'created' event
     const mergedEvents = useMemo(() => {
@@ -2258,14 +2262,21 @@ const ShipmentDetail = () => {
     // On initial load, after shipment is loaded and set, check if status is 'pending' or 'booked' and if no event exists, log it:
     useEffect(() => {
         if (shipment && shipment.status && (shipment.status === 'pending' || shipment.status === 'booked')) {
-            const hasInitialEvent = (shipmentEvents || []).some(e => e.eventType === 'status_update' && e.statusChange && e.statusChange.to === shipment.status);
-            if (!hasInitialEvent) {
+            // Check if a status_update event already exists marking the transition from 'created' to the current status.
+            const hasCreationToCurrentStatusEvent = (shipmentEvents || []).some(event =>
+                event.eventType === 'status_update' &&
+                event.statusChange &&
+                event.statusChange.from === 'created' &&
+                event.statusChange.to === shipment.status
+            );
+
+            if (!hasCreationToCurrentStatusEvent) {
                 recordStatusChange(
                     shipment.id || shipment.shipmentID,
-                    'created',
-                    shipment.status,
-                    null,
-                    'Initial status set on shipment creation or booking'
+                    'created', // fromStatus
+                    shipment.status, // toStatus
+                    null, // userData - consider adding user info if available
+                    'Initial status set on shipment creation or booking' // reason
                 );
             }
         }
