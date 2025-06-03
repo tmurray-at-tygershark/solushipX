@@ -194,8 +194,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
             updateFormSection('shipmentInfo', {
                 ...currentData,
                 shipmentType: 'courier',
-                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date()),
-                signatureRequired: currentData.signatureRequired !== undefined ? currentData.signatureRequired : true
+                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date())
             });
         }
     }, []); // Run only once on mount
@@ -466,7 +465,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                         control={
                                             <Checkbox
                                                 id="signatureRequired"
-                                                checked={currentData.signatureRequired !== undefined ? currentData.signatureRequired : true}
+                                                checked={!!currentData.signatureRequired}
                                                 onChange={handleInputChange}
                                                 color="primary"
                                             />

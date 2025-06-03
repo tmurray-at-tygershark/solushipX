@@ -2721,6 +2721,7 @@ const ShipmentDetail = () => {
 
                                             {/* Service Options */}
                                             <Grid item xs={12} md={3}>
+                                                {console.log("ShipmentDetail Service Options - shipment.shipmentInfo:", shipment?.shipmentInfo)}
                                                 <Box sx={{
                                                     p: 2,
                                                     bgcolor: 'background.default',
@@ -2737,8 +2738,8 @@ const ShipmentDetail = () => {
                                                             <Typography variant="caption" color="text.secondary">Hold for Pickup</Typography>
                                                             <Chip
                                                                 size="small"
-                                                                label={shipment?.shipmentInfo?.holdForPickup ? "Yes" : "No"}
-                                                                color={shipment?.shipmentInfo?.holdForPickup ? "primary" : "default"}
+                                                                label={(shipment?.shipmentInfo?.holdForPickup === true || String(shipment?.shipmentInfo?.holdForPickup).toLowerCase() === "true") ? "Yes" : "No"}
+                                                                color={(shipment?.shipmentInfo?.holdForPickup === true || String(shipment?.shipmentInfo?.holdForPickup).toLowerCase() === "true") ? "primary" : "default"}
                                                                 variant="outlined"
                                                             />
                                                         </Box>
@@ -2755,8 +2756,8 @@ const ShipmentDetail = () => {
                                                             <Typography variant="caption" color="text.secondary">Saturday Delivery</Typography>
                                                             <Chip
                                                                 size="small"
-                                                                label={shipment?.shipmentInfo?.saturdayDelivery ? "Yes" : "No"}
-                                                                color={shipment?.shipmentInfo?.saturdayDelivery ? "primary" : "default"}
+                                                                label={(shipment?.shipmentInfo?.saturdayDelivery === true || String(shipment?.shipmentInfo?.saturdayDelivery).toLowerCase() === "true") ? "Yes" : "No"}
+                                                                color={(shipment?.shipmentInfo?.saturdayDelivery === true || String(shipment?.shipmentInfo?.saturdayDelivery).toLowerCase() === "true") ? "primary" : "default"}
                                                                 variant="outlined"
                                                             />
                                                         </Box>
@@ -2764,8 +2765,8 @@ const ShipmentDetail = () => {
                                                             <Typography variant="caption" color="text.secondary">Signature Required</Typography>
                                                             <Chip
                                                                 size="small"
-                                                                label={shipment?.shipmentInfo?.signatureRequired ? "Yes" : "No"}
-                                                                color={shipment?.shipmentInfo?.signatureRequired ? "primary" : "default"}
+                                                                label={(shipment?.shipmentInfo?.signatureRequired === true || String(shipment?.shipmentInfo?.signatureRequired).toLowerCase() === "true") ? "Yes" : "No"}
+                                                                color={(shipment?.shipmentInfo?.signatureRequired === true || String(shipment?.shipmentInfo?.signatureRequired).toLowerCase() === "true") ? "primary" : "default"}
                                                                 variant="outlined"
                                                             />
                                                         </Box>
