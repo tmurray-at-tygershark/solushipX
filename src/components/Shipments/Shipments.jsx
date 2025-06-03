@@ -451,10 +451,7 @@ const Shipments = () => {
                 console.log('🏷️ After "Delivered" tab filter:', filteredShipments.length);
             } else if (selectedTab === 'Awaiting Shipment') {
                 filteredShipments = filteredShipments.filter(s =>
-                    s.status?.toLowerCase() === 'awaiting_shipment' ||
-                    s.status?.toLowerCase() === 'awaiting shipment' ||
-                    s.status?.toLowerCase() === 'awaiting_pickup' ||
-                    s.status?.toLowerCase() === 'awaiting pickup'
+                    s.status?.toLowerCase() === 'scheduled'
                 );
                 console.log('🏷️ After "Awaiting Shipment" tab filter:', filteredShipments.length);
             }
@@ -810,12 +807,7 @@ const Shipments = () => {
             total: allShipments.filter(s => s.status?.toLowerCase() !== 'draft').length, // Exclude drafts from total
             inTransit: allShipments.filter(s => s.status?.toLowerCase() === 'in_transit' || s.status?.toLowerCase() === 'in transit').length,
             delivered: allShipments.filter(s => s.status?.toLowerCase() === 'delivered').length,
-            awaitingShipment: allShipments.filter(s =>
-                s.status?.toLowerCase() === 'awaiting_shipment' ||
-                s.status?.toLowerCase() === 'awaiting shipment' ||
-                s.status?.toLowerCase() === 'awaiting_pickup' ||
-                s.status?.toLowerCase() === 'awaiting pickup'
-            ).length,
+            awaitingShipment: allShipments.filter(s => s.status?.toLowerCase() === 'scheduled').length,
             drafts: allShipments.filter(s => s.status?.toLowerCase() === 'draft').length
         };
     }, [allShipments]);
@@ -1154,6 +1146,10 @@ const Shipments = () => {
                 // Handle draft tab - only show drafts (case-insensitive)
                 shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'draft');
                 console.log(`📊 After "draft" tab filter: ${shipmentsData.length} shipments`);
+            } else if (selectedTab === 'Awaiting Shipment') {
+                // Handle "Awaiting Shipment" tab - filter by "scheduled" status
+                shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'scheduled');
+                console.log(`📊 After "Awaiting Shipment" tab filter: ${shipmentsData.length} shipments`);
             } else {
                 // Handle other specific status tabs (In Transit, Delivered, etc.)
                 // Use case-insensitive comparison for other statuses too
