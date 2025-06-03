@@ -7,11 +7,8 @@ import {
     ListItemIcon,
     Divider,
     IconButton,
-    Paper,
-    InputBase,
     Button,
     Box,
-    Collapse,
     Typography,
     Popper,
     ClickAwayListener,
@@ -22,20 +19,17 @@ import {
     Settings as SettingsIcon,
     Person as PersonIcon,
     Logout as LogoutIcon,
-    Search as SearchIcon,
     ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import './Navigation.css';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Navigation = () => {
-    const [isOpen, setIsOpen] = useState(false);
     const [profileAnchorEl, setProfileAnchorEl] = useState(null);
-    const [showTrackingSearch, setShowTrackingSearch] = useState(false);
-    const [trackingNumber, setTrackingNumber] = useState('');
     const [featuresAnchorEl, setFeaturesAnchorEl] = useState(null);
     const [integrationsAnchorEl, setIntegrationsAnchorEl] = useState(null);
     const [resourcesAnchorEl, setResourcesAnchorEl] = useState(null);
+    const [isOpen, setIsOpen] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
     const { logout } = useAuth();
@@ -202,20 +196,6 @@ const Navigation = () => {
         }
     };
 
-    const handleTrackingClick = (e) => {
-        e.preventDefault();
-        setShowTrackingSearch(!showTrackingSearch);
-    };
-
-    const handleTrackingSubmit = (e) => {
-        e.preventDefault();
-        if (trackingNumber.trim()) {
-            navigate(`/tracking/${trackingNumber.trim()}`);
-            setShowTrackingSearch(false);
-            setTrackingNumber('');
-        }
-    };
-
     const handleMenuItemClick = (path) => {
         navigate(path);
         setFeaturesAnchorEl(null);
@@ -337,7 +317,7 @@ const Navigation = () => {
                                     <Link
                                         className={`nav-link ${location.pathname === item.path ? 'active' : ''}`}
                                         to={item.path}
-                                        onClick={item.label === 'Track Shipment' ? handleTrackingClick : () => setIsOpen(false)}
+                                        onClick={() => setIsOpen(false)}
                                     >
                                         <span>{item.label}</span>
                                     </Link>
@@ -642,55 +622,6 @@ const Navigation = () => {
                     </Menu>
                 </div>
             </nav>
-
-            {/* Tracking Search Box */}
-            <Collapse in={showTrackingSearch}>
-                <Box
-                    sx={{
-                        width: '100%',
-                        bgcolor: '#f8f9fa',
-                        borderBottom: '1px solid #e9ecef',
-                        py: 2
-                    }}
-                >
-                    <div className="container">
-                        <form onSubmit={handleTrackingSubmit}>
-                            <Box sx={{ display: 'flex', gap: 2, width: '100%' }}>
-                                <Paper
-                                    component="div"
-                                    sx={{
-                                        p: '2px 4px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        flex: 1,
-                                        boxShadow: 'none',
-                                        border: '1px solid #dfe3e8'
-                                    }}
-                                >
-                                    <SearchIcon sx={{ p: 1, color: 'action.active' }} />
-                                    <InputBase
-                                        sx={{ ml: 1, flex: 1 }}
-                                        placeholder="Enter tracking number"
-                                        value={trackingNumber}
-                                        onChange={(e) => setTrackingNumber(e.target.value)}
-                                    />
-                                </Paper>
-                                <Button
-                                    type="submit"
-                                    variant="contained"
-                                    sx={{
-                                        bgcolor: '#2C6ECB',
-                                        '&:hover': { bgcolor: '#235ba7' },
-                                        minWidth: '120px'
-                                    }}
-                                >
-                                    Track
-                                </Button>
-                            </Box>
-                        </form>
-                    </div>
-                </Box>
-            </Collapse>
         </>
     );
 };

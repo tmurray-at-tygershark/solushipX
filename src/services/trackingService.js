@@ -3,8 +3,9 @@
  * Handles tracking for shipments using shipment IDs and carrier-agnostic APIs
  */
 
-import { db } from '../firebase';
+import { db, functions } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 
 /**
  * Track shipment by shipment ID or tracking number
@@ -83,35 +84,88 @@ async function trackByShipmentId(shipmentId) {
  */
 async function trackByTrackingNumber(trackingNumber) {
     try {
-        // Call the universal status checking function directly
-        const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                trackingNumber: trackingNumber,
-                // Note: Without shipment context, we can't determine carrier automatically
-                // This will require the user to specify carrier or we need to try multiple carriers
-            })
-        });
+        console.log(`Attempting to track by raw tracking number: ${trackingNumber}`);
+        let trackingResult = {
+            success: false,
+            type: 'tracking_number',
+            identifier: trackingNumber,
+            events: [],
+            carrier: null,
+            error: null
+        };
 
-        const result = await response.json();
-        
-        if (result.success) {
-            return {
-                success: true,
-                type: 'tracking_number',
-                identifier: trackingNumber,
-                ...result
-            };
-        } else {
-            throw new Error(result.error || 'Failed to track shipment');
+        // Try Canpar first
+        try {
+            console.log(`Tracking ${trackingNumber} with Canpar...`);
+            const getHistoryCanpar = httpsCallable(functions, 'getHistoryCanpar');
+            const canparResponse = await getHistoryCanpar({ trackingNumber });
+
+            if (canparResponse.data && canparResponse.data.success && canparResponse.data.trackingUpdates && canparResponse.data.trackingUpdates.length > 0) {
+                console.log('Canpar success:', canparResponse.data);
+                trackingResult = {
+                    ...trackingResult,
+                    success: true,
+                    carrier: 'Canpar',
+                    events: canparResponse.data.trackingUpdates,
+                    status: canparResponse.data.currentStatus || (canparResponse.data.trackingUpdates[0]?.status || 'In Transit'), // Best guess for overall status
+                    statusDetails: canparResponse.data.currentStatusDetails || (canparResponse.data.trackingUpdates[0]?.description || '-'),
+                    rawResponse: canparResponse.data
+                };
+                return trackingResult;
+            } else if (canparResponse.data && !canparResponse.data.success) {
+                console.warn(`Canpar attempt for ${trackingNumber} failed or no data:`, canparResponse.data.error);
+            }
+        } catch (canparError) {
+            console.warn(`Error calling getHistoryCanpar for ${trackingNumber}:`, canparError.message);
         }
 
+        // If Canpar fails or no data, try eShipPlus
+        try {
+            console.log(`Tracking ${trackingNumber} with eShipPlus...`);
+            const getHistoryEShipPlus = httpsCallable(functions, 'getHistoryEShipPlus');
+            const eshipplusResponse = await getHistoryEShipPlus({ shipmentNumber: trackingNumber });
+
+            // eShipPlus responses are wrapped in { data: { success: ..., trackingUpdates: ...}}
+            if (eshipplusResponse.data && eshipplusResponse.data.data?.success && eshipplusResponse.data.data.trackingUpdates && eshipplusResponse.data.data.trackingUpdates.length > 0) {
+                console.log('eShipPlus success:', eshipplusResponse.data.data);
+                trackingResult = {
+                    ...trackingResult,
+                    success: true,
+                    carrier: 'eShipPlus',
+                    events: eshipplusResponse.data.data.trackingUpdates,
+                    status: eshipplusResponse.data.data.currentStatus || (eshipplusResponse.data.data.trackingUpdates[0]?.status || 'In Transit'),
+                    statusDetails: eshipplusResponse.data.data.currentStatusDetails || (eshipplusResponse.data.data.trackingUpdates[0]?.description || '-'),
+                    rawResponse: eshipplusResponse.data.data
+                };
+                return trackingResult;
+            } else if (eshipplusResponse.data && eshipplusResponse.data.data && !eshipplusResponse.data.data.success) {
+                 console.warn(`eShipPlus attempt for ${trackingNumber} failed or no data:`, eshipplusResponse.data.data.error || eshipplusResponse.data.error);
+            } else if (eshipplusResponse.data && eshipplusResponse.data.error) {
+                 console.warn(`eShipPlus attempt for ${trackingNumber} returned top-level error:`, eshipplusResponse.data.error);
+            }
+
+        } catch (eshipplusError) {
+            console.warn(`Error calling getHistoryEShipPlus for ${trackingNumber}:`, eshipplusError.message);
+        }
+        
+        // If neither worked
+        if (!trackingResult.success) {
+            trackingResult.error = `Could not determine carrier or no tracking information found for ${trackingNumber}.`;
+            console.log(trackingResult.error);
+            throw new Error(trackingResult.error);
+        }
+        
+        // This part should ideally not be reached if one of the above returns
+        return trackingResult; 
+
     } catch (error) {
-        console.error('Error tracking by tracking number:', error);
-        throw error;
+        console.error('Error in trackByTrackingNumber service:', error.message);
+        // Ensure the thrown error is an instance of Error for consistent handling upstream
+        if (error instanceof Error) {
+            throw error;
+        } else {
+            throw new Error(error.message || 'Failed to track by tracking number due to an unexpected issue.');
+        }
     }
 }
 
@@ -188,25 +242,71 @@ async function getTrackingFromShipmentData(shipmentData) {
         const trackingIdentifiers = await extractTrackingIdentifiers(shipmentData, carrierInfo);
 
         if (!trackingIdentifiers.primary) {
-            return {
-                success: false,
-                error: `No tracking identifier found for ${carrierInfo.name} shipment ${shipmentData.id || shipmentData.shipmentID}`,
-                identifier: shipmentData.shipmentID || shipmentData.id,
-                carrierInfo,
-                shipmentData: {
-                    id: shipmentData.id,
-                    shipmentID: shipmentData.shipmentID,
-                    status: shipmentData.status,
-                    selectedRate: shipmentData.selectedRate,
-                    selectedRateRef: shipmentData.selectedRateRef
-                },
-                debugInfo: {
-                    carrierType: carrierInfo.type,
-                    expectedFields: getExpectedTrackingFields(carrierInfo.type),
-                    actualFields: shipmentData.selectedRate ? Object.keys(shipmentData.selectedRate) : [],
-                    selectedRateRefFields: shipmentData.selectedRateRef ? Object.keys(shipmentData.selectedRateRef) : []
+            const earlyStatuses = ['scheduled', 'pending', 'created', 'booked'];
+            const currentStatus = shipmentData.status ? String(shipmentData.status).toLowerCase() : '';
+
+            if (earlyStatuses.includes(currentStatus)) {
+                console.log(`Shipment ${shipmentData.id || shipmentData.shipmentID} is in status '${shipmentData.status}' and no primary tracking ID found. Returning current status as event.`);
+                
+                let eventDate;
+                if (shipmentData.statusTimestamp) { // Prefer a specific status timestamp if available
+                    eventDate = shipmentData.statusTimestamp.toDate ? shipmentData.statusTimestamp.toDate() : new Date(shipmentData.statusTimestamp);
+                } else if (shipmentData.updatedAt) { // Fallback to last document update
+                    eventDate = shipmentData.updatedAt.toDate ? shipmentData.updatedAt.toDate() : new Date(shipmentData.updatedAt);
+                } else { // Fallback to creation date
+                    eventDate = shipmentData.createdAt.toDate();
                 }
-            };
+                const eventTimestampStr = eventDate.toISOString();
+
+                return {
+                    success: true,
+                    type: 'shipment_id',
+                    identifier: shipmentData.shipmentID || shipmentData.id,
+                    shipmentData: {
+                        id: shipmentData.id,
+                        shipmentID: shipmentData.shipmentID,
+                        status: shipmentData.status,
+                        createdAt: shipmentData.createdAt,
+                        shipFrom: shipmentData.shipFrom,
+                        shipTo: shipmentData.shipTo,
+                        selectedRate: shipmentData.selectedRate,
+                        selectedRateRef: shipmentData.selectedRateRef
+                    },
+                    carrierInfo,
+                    trackingIdentifiers, // Provide for context, even if primary is null
+                    currentStatus: shipmentData.status, // Report current DB status
+                    currentStatusDetails: `Shipment is ${shipmentData.status}. Live tracking updates from the carrier are not yet available.`,
+                    events: [{
+                        timestamp: eventTimestampStr,
+                        status: shipmentData.status,
+                        description: `Shipment status: ${shipmentData.status}.`,
+                        location: shipmentData.shipFrom?.city || shipmentData.shipFrom?.country || 'Origin',
+                        isCurrent: true 
+                    }],
+                    message: `Shipment is ${shipmentData.status}. Carrier tracking details will be available once the carrier processes the shipment.`
+                };
+            } else {
+                // If status is beyond 'scheduled' etc., and still no tracking ID, then it's an error
+                console.error(`No tracking identifier found for ${carrierInfo.name} shipment ${shipmentData.id || shipmentData.shipmentID} which is in status '${shipmentData.status}'. This is unexpected.`);
+                return {
+                    success: false,
+                    error: `No tracking identifier found for ${carrierInfo.name} shipment ${shipmentData.id || shipmentData.shipmentID}. Current status: ${shipmentData.status}.`,
+                    identifier: shipmentData.shipmentID || shipmentData.id,
+                    carrierInfo,
+                    shipmentData: {
+                        id: shipmentData.id,
+                        shipmentID: shipmentData.shipmentID,
+                        status: shipmentData.status
+                    },
+                    debugInfo: {
+                        carrierType: carrierInfo.type,
+                        expectedFields: getExpectedTrackingFields(carrierInfo.type),
+                        actualFieldsInSelectedRate: shipmentData.selectedRate ? Object.keys(shipmentData.selectedRate) : 'N/A',
+                        trackingNumberOnShipmentDoc: shipmentData.trackingNumber || 'N/A',
+                        rateDataUsedForExtraction: carrierInfo.rateData ? Object.keys(carrierInfo.rateData) : 'N/A'
+                    }
+                };
+            }
         }
 
         // Call the universal status checking function
@@ -262,7 +362,9 @@ async function getTrackingFromShipmentData(shipmentData) {
 function getExpectedTrackingFields(carrierType) {
     const fieldMap = {
         'eshipplus': ['BookingReferenceNumber', 'ShipmentNumber'],
+        'eship plus': ['BookingReferenceNumber', 'ShipmentNumber'], // Adding alias
         'canpar': ['TrackingNumber', 'Barcode', 'ReferenceNumber'],
+        'canpar express': ['TrackingNumber', 'Barcode', 'ReferenceNumber'], // Adding alias
         'fedex': ['TrackingNumber'],
         'ups': ['TrackingNumber'],
         'purolator': ['TrackingNumber']
@@ -278,9 +380,10 @@ function getExpectedTrackingFields(carrierType) {
 function determineCarrier(shipmentData) {
     console.log('Determining carrier from shipment data:', {
         id: shipmentData.id,
-        selectedRate: shipmentData.selectedRate,
-        selectedRateRef: shipmentData.selectedRateRef,
-        carrier: shipmentData.carrier,
+        selectedRateCarrierName: shipmentData.selectedRate?.CarrierName,
+        selectedRateCarrier: shipmentData.selectedRate?.carrier,
+        selectedRateRefCarrier: shipmentData.selectedRateRef?.CarrierName || shipmentData.selectedRateRef?.carrier,
+        topLevelCarrier: shipmentData.carrier,
         ratesLength: shipmentData.rates?.length
     });
 
@@ -290,7 +393,7 @@ function determineCarrier(shipmentData) {
         return {
             name: shipmentData.selectedRate.CarrierName,
             displayName: shipmentData.selectedRate.CarrierName,
-            type: shipmentData.selectedRate.CarrierName.toLowerCase(),
+            type: shipmentData.selectedRate.CarrierName.toLowerCase().replace(/\s+/g, ''), // normalize type
             rateData: shipmentData.selectedRate
         };
     }
@@ -301,7 +404,7 @@ function determineCarrier(shipmentData) {
         return {
             name: shipmentData.selectedRate.carrier,
             displayName: shipmentData.selectedRate.carrier,
-            type: shipmentData.selectedRate.carrier.toLowerCase(),
+            type: shipmentData.selectedRate.carrier.toLowerCase().replace(/\s+/g, ''), // normalize type
             rateData: shipmentData.selectedRate
         };
     }
@@ -311,7 +414,7 @@ function determineCarrier(shipmentData) {
         return {
             name: shipmentData.selectedRate.Carrier,
             displayName: shipmentData.selectedRate.Carrier,
-            type: shipmentData.selectedRate.Carrier.toLowerCase(),
+            type: shipmentData.selectedRate.Carrier.toLowerCase().replace(/\s+/g, ''), // normalize type
             rateData: shipmentData.selectedRate
         };
     }
@@ -332,7 +435,7 @@ function determineCarrier(shipmentData) {
         return {
             name: shipmentData.carrier,
             displayName: shipmentData.carrier,
-            type: shipmentData.carrier.toLowerCase()
+            type: shipmentData.carrier.toLowerCase().replace(/\s+/g, '') // normalize type
         };
     }
     
@@ -344,7 +447,7 @@ function determineCarrier(shipmentData) {
             return {
                 name: firstRate.CarrierName,
                 displayName: firstRate.CarrierName,
-                type: firstRate.CarrierName.toLowerCase(),
+                type: firstRate.CarrierName.toLowerCase().replace(/\s+/g, ''), // normalize type
                 rateData: firstRate
             };
         }
@@ -353,7 +456,7 @@ function determineCarrier(shipmentData) {
             return {
                 name: firstRate.carrier,
                 displayName: firstRate.carrier,
-                type: firstRate.carrier.toLowerCase(),
+                type: firstRate.carrier.toLowerCase().replace(/\s+/g, ''), // normalize type
                 rateData: firstRate
             };
         }
@@ -361,28 +464,28 @@ function determineCarrier(shipmentData) {
 
     // Try to infer from shipment ID or other fields
     if (shipmentData.id || shipmentData.shipmentID) {
-        const shipmentId = shipmentData.id || shipmentData.shipmentID;
-        if (shipmentId.includes('ESHIPPLUS') || shipmentId.includes('ESHIP')) {
-            console.log('Inferred eShip Plus from shipment ID:', shipmentId);
+        const shipmentIdString = String(shipmentData.id || shipmentData.shipmentID).toUpperCase();
+        if (shipmentIdString.includes('ESHIPPLUS') || shipmentIdString.includes('ESHIP')) {
+            console.log('Inferred eShip Plus from shipment ID:', shipmentIdString);
             return {
                 name: 'eShip Plus',
                 displayName: 'eShip Plus', 
                 type: 'eshipplus'
             };
         }
-        if (shipmentId.includes('CANPAR')) {
-            console.log('Inferred Canpar from shipment ID:', shipmentId);
+        if (shipmentIdString.includes('CANPAR')) {
+            console.log('Inferred Canpar from shipment ID:', shipmentIdString);
             return {
-                name: 'Canpar',
-                displayName: 'Canpar',
-                type: 'canpar'
+                name: 'Canpar Express', // Use consistent name
+                displayName: 'Canpar Express',
+                type: 'canparexpress' // normalize type
             };
         }
     }
 
     // Check if there's any booking or tracking number that might indicate carrier
-    if (shipmentData.selectedRate?.BookingReferenceNumber) {
-        console.log('Found booking reference, assuming eShip Plus:', shipmentData.selectedRate.BookingReferenceNumber);
+    if (shipmentData.selectedRate?.BookingReferenceNumber || shipmentData.bookingReferenceNumber) {
+        console.log('Found booking reference, assuming eShip Plus:', shipmentData.selectedRate?.BookingReferenceNumber || shipmentData.bookingReferenceNumber);
         return {
             name: 'eShip Plus',
             displayName: 'eShip Plus',
@@ -429,7 +532,7 @@ async function extractTrackingIdentifiers(shipmentData, carrierInfo) {
 
     if (!carrierInfo) return identifiers;
 
-    const carrierName = carrierInfo.name.toLowerCase();
+    const carrierName = carrierInfo.name.toLowerCase().replace(/\s+/g, ''); // normalize for comparison
     
     // First check if we have rate data from the carrier info
     let rateData = carrierInfo.rateData || shipmentData.selectedRate;
@@ -448,12 +551,12 @@ async function extractTrackingIdentifiers(shipmentData, carrierInfo) {
         // eShip Plus uses booking reference number
         identifiers.primary = rateData?.BookingReferenceNumber || 
                              shipmentData.selectedRate?.BookingReferenceNumber ||
-                             shipmentData.bookingReferenceNumber;
+                             shipmentData.bookingReferenceNumber; // Check top-level field
         identifiers.bookingReference = identifiers.primary;
-        identifiers.secondary = shipmentData.trackingNumber;
+        identifiers.secondary = rateData?.ShipmentNumber || shipmentData.selectedRate?.ShipmentNumber || shipmentData.trackingNumber; // eShipPlus ShipmentNumber can act as tracking
         identifiers.carrierSpecific = {
             bookingReferenceNumber: identifiers.primary,
-            shipmentNumber: rateData?.ShipmentNumber || shipmentData.selectedRate?.ShipmentNumber
+            shipmentNumber: identifiers.secondary
         };
     } else if (carrierName.includes('canpar')) {
         // Canpar uses barcode/tracking number
@@ -461,10 +564,12 @@ async function extractTrackingIdentifiers(shipmentData, carrierInfo) {
                              rateData?.Barcode ||
                              shipmentData.selectedRate?.TrackingNumber ||
                              shipmentData.selectedRate?.Barcode ||
-                             shipmentData.trackingNumber;
+                             shipmentData.trackingNumber; // Check top-level field
+        identifiers.secondary = rateData?.ReferenceNumber || shipmentData.selectedRate?.ReferenceNumber;
         identifiers.carrierSpecific = {
-            barcode: identifiers.primary,
-            referenceNumber: rateData?.ReferenceNumber || shipmentData.selectedRate?.ReferenceNumber
+            trackingNumber: identifiers.primary, // primary is usually the tracking number
+            barcode: rateData?.Barcode || shipmentData.selectedRate?.Barcode, // explicit barcode
+            referenceNumber: identifiers.secondary
         };
     } else if (carrierName.includes('fedex')) {
         // FedEx uses tracking number
@@ -629,18 +734,25 @@ function extractCarrierFromRate(rate) {
     if (!rate) return null;
     
     // Try different carrier field names
-    const carrierName = rate.CarrierName || 
+    const carrierNameValue = rate.CarrierName || 
                        rate.carrier || 
                        rate.Carrier ||
                        rate.carrierName ||
                        rate.service_name || // Some APIs use service_name
                        rate.serviceName;
     
-    if (carrierName) {
+    if (carrierNameValue) {
+        // Standardize common carrier names
+        let standardizedName = carrierNameValue;
+        const lowerName = String(carrierNameValue).toLowerCase();
+        if (lowerName.includes('eship')) standardizedName = 'eShip Plus';
+        if (lowerName.includes('canpar')) standardizedName = 'Canpar Express';
+        // Add more standardizations if needed
+
         return {
-            name: carrierName,
-            displayName: carrierName,
-            type: carrierName.toLowerCase().replace(/\s+/g, ''),
+            name: standardizedName,
+            displayName: standardizedName, // Use the standardized name for display
+            type: standardizedName.toLowerCase().replace(/\s+/g, ''), // normalize type
             rateData: rate // Include the full rate data for tracking identifier extraction
         };
     }

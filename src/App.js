@@ -23,7 +23,6 @@ const CreateShipment = lazy(() => import('./components/CreateShipment'));
 const ShipmentDetail = lazy(() => import('./components/ShipmentDetail/ShipmentDetail'));
 const Shipments = lazy(() => import('./components/Shipments/Shipments'));
 const Tracking = lazy(() => import('./components/Tracking/Tracking'));
-const TrackingDetail = lazy(() => import('./components/Tracking/TrackingDetail'));
 const Customers = lazy(() => import('./components/Customers/Customers'));
 const CustomerDetail = lazy(() => import('./components/Customers/CustomerDetail'));
 const Reports = lazy(() => import('./components/Reports/Reports'));
@@ -125,9 +124,9 @@ function AppRoutes() {
                         <Tracking />
                     </ProtectedRoute>
                 } />
-                <Route path="/tracking/:trackingId" element={
+                <Route path="/tracking/:trackingIdentifier" element={
                     <ProtectedRoute>
-                        <TrackingDetail />
+                        <Tracking />
                     </ProtectedRoute>
                 } />
                 <Route path="/customers" element={

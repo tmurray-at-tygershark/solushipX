@@ -599,6 +599,7 @@ const ShipmentDetail = () => {
     const [isMapReady, setIsMapReady] = useState(false);
     const [customers, setCustomers] = useState({});
     const [carrierData, setCarrierData] = useState(null);
+    const [isRefreshingHistory, setIsRefreshingHistory] = useState(false); // Added this line
 
     // Enhanced state for action buttons with individual loading states
     const [actionStates, setActionStates] = useState({
@@ -1130,6 +1131,37 @@ const ShipmentDetail = () => {
                 showSnackbar(`Failed to check status: ${result.error}`, 'error');
             }
 
+            // If it's an eShipPlus shipment and has a confirmationNumber
+            if (isEShipPlusShipment && shipment.carrierBookingConfirmation?.confirmationNumber) {
+                setIsRefreshingHistory(true); // Indicate history refresh start
+                showSnackbar('Fetching detailed eShipPlus history...', 'info');
+                try {
+                    const getHistoryEShipPlusCallable = httpsCallable(functions, 'getHistoryEShipPlus'); // Reverted name
+                    // eShipPlus uses 'ShipmentNumber' which corresponds to our 'confirmationNumber' from booking
+                    const historyResult = await getHistoryEShipPlusCallable({ shipmentNumber: shipment.carrierBookingConfirmation.confirmationNumber });
+
+                    if (historyResult.data.success && historyResult.data.trackingUpdates && historyResult.data.trackingUpdates.length > 0) {
+                        // Record these new tracking updates.
+                        await recordTrackingUpdate(
+                            shipment.id,
+                            historyResult.data.trackingUpdates,
+                            EVENT_SOURCES.CARRIER_API,
+                            shipment.status
+                        );
+                        showSnackbar(`Fetched ${historyResult.data.trackingUpdates.length} new eShipPlus history events.`, 'success');
+                    } else if (historyResult.data.success) {
+                        showSnackbar('No new history events found for eShipPlus shipment.', 'info');
+                    } else {
+                        showSnackbar(historyResult.data.error || 'Failed to fetch eShipPlus history.', 'error');
+                        console.error("Error fetching eShipPlus history:", historyResult.data.error);
+                    }
+                } catch (historyError) {
+                    console.error('Error calling getHistoryEShipPlus callable:', historyError); // Reverted log message
+                    showSnackbar(`Error fetching eShipPlus history: ${historyError.message}`, 'error');
+                } finally {
+                    setIsRefreshingHistory(false); // Indicate history refresh end
+                }
+            }
         } catch (error) {
             console.error('Error refreshing status:', error);
             showSnackbar('Failed to refresh status. Please try again.', 'error');
