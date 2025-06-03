@@ -1,7 +1,157 @@
 import React, { useState, useEffect } from 'react';
-import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel } from '@mui/material';
+import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel, FormHelperText } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
+
+// Comprehensive Freight Class Data
+const FREIGHT_CLASSES = [
+    {
+        class: "50",
+        description: "Clean Freight",
+        examples: ["Bricks", "Sand", "Nuts & Bolts"],
+        weight_range_per_cubic_foot: "50 lbs and above",
+        min_weight: 50,
+        max_weight: Infinity
+    },
+    {
+        class: "55",
+        description: "Bricks, cement, mortar, hardwood flooring",
+        examples: ["Bricks", "Cement", "Mortar", "Hardwood Flooring"],
+        weight_range_per_cubic_foot: "35-50 lbs",
+        min_weight: 35,
+        max_weight: 50
+    },
+    {
+        class: "60",
+        description: "Car accessories & car parts",
+        examples: ["Car Accessories", "Car Parts"],
+        weight_range_per_cubic_foot: "30-35 lbs",
+        min_weight: 30,
+        max_weight: 35
+    },
+    {
+        class: "65",
+        description: "Car accessories & car parts, bottled beverages, books in boxes",
+        examples: ["Car Accessories", "Car Parts", "Bottled Beverages", "Books in Boxes"],
+        weight_range_per_cubic_foot: "22.5-30 lbs",
+        min_weight: 22.5,
+        max_weight: 30
+    },
+    {
+        class: "70",
+        description: "Car accessories & car parts, food items, automobile engines",
+        examples: ["Car Accessories", "Car Parts", "Food Items", "Automobile Engines"],
+        weight_range_per_cubic_foot: "15-22.5 lbs",
+        min_weight: 15,
+        max_weight: 22.5
+    },
+    {
+        class: "77.5",
+        description: "Tires, bathroom fixtures",
+        examples: ["Tires", "Bathroom Fixtures"],
+        weight_range_per_cubic_foot: "13.5-15 lbs",
+        min_weight: 13.5,
+        max_weight: 15
+    },
+    {
+        class: "85",
+        description: "Crated machinery, cast iron stoves",
+        examples: ["Crated Machinery", "Cast Iron Stoves"],
+        weight_range_per_cubic_foot: "12-13.5 lbs",
+        min_weight: 12,
+        max_weight: 13.5
+    },
+    {
+        class: "92.5",
+        description: "Computers, monitors, refrigerators",
+        examples: ["Computers", "Monitors", "Refrigerators"],
+        weight_range_per_cubic_foot: "10.5-12 lbs",
+        min_weight: 10.5,
+        max_weight: 12
+    },
+    {
+        class: "100",
+        description: "Boat covers, car covers, canvas, wine cases, caskets",
+        examples: ["Boat Covers", "Car Covers", "Canvas", "Wine Cases", "Caskets"],
+        weight_range_per_cubic_foot: "9-10.5 lbs",
+        min_weight: 9,
+        max_weight: 10.5
+    },
+    {
+        class: "110",
+        description: "Cabinets, framed artwork, table saw",
+        examples: ["Cabinets", "Framed Artwork", "Table Saw"],
+        weight_range_per_cubic_foot: "8-9 lbs",
+        min_weight: 8,
+        max_weight: 9
+    },
+    {
+        class: "125",
+        description: "Small household appliances",
+        examples: ["Small Household Appliances"],
+        weight_range_per_cubic_foot: "7-8 lbs",
+        min_weight: 7,
+        max_weight: 8
+    },
+    {
+        class: "150",
+        description: "Auto sheet metal parts, bookcases",
+        examples: ["Auto Sheet Metal Parts", "Bookcases"],
+        weight_range_per_cubic_foot: "6-7 lbs",
+        min_weight: 6,
+        max_weight: 7
+    },
+    {
+        class: "175",
+        description: "Clothing, couches, stuffed furniture",
+        examples: ["Clothing", "Couches", "Stuffed Furniture"],
+        weight_range_per_cubic_foot: "5-6 lbs",
+        min_weight: 5,
+        max_weight: 6
+    },
+    {
+        class: "200",
+        description: "Auto sheet metal parts, aircraft parts, aluminum table, packaged mattresses",
+        examples: ["Auto Sheet Metal Parts", "Aircraft Parts", "Aluminum Table", "Packaged Mattresses"],
+        weight_range_per_cubic_foot: "4-5 lbs",
+        min_weight: 4,
+        max_weight: 5
+    },
+    {
+        class: "250",
+        description: "Bamboo furniture, mattress and box spring, plasma TV",
+        examples: ["Bamboo Furniture", "Mattress and Box Spring", "Plasma TV"],
+        weight_range_per_cubic_foot: "3-4 lbs",
+        min_weight: 3,
+        max_weight: 4
+    },
+    {
+        class: "300",
+        description: "Wood cabinets, tables, chairs setup, model boats",
+        examples: ["Wood Cabinets", "Tables", "Chairs Setup", "Model Boats"],
+        weight_range_per_cubic_foot: "2-3 lbs",
+        min_weight: 2,
+        max_weight: 3
+    },
+    {
+        class: "400",
+        description: "Deer antlers",
+        examples: ["Deer Antlers"],
+        weight_range_per_cubic_foot: "1-2 lbs",
+        min_weight: 1,
+        max_weight: 2
+    },
+    {
+        class: "500",
+        description: "Low Density or High Value",
+        examples: ["Bags of Gold Dust", "Ping Pong Balls"],
+        weight_range_per_cubic_foot: "Less than 1 lb",
+        min_weight: 0,
+        max_weight: 1
+    }
+];
+
+// Removed freight class validation helper functions - users can now select any freight class without restrictions
 
 const Packages = ({ onNext, onPrevious }) => {
     const { formData, updateFormSection } = useShipmentForm();
@@ -28,10 +178,12 @@ const Packages = ({ onNext, onPrevious }) => {
         { code: 'USD', symbol: '$', name: 'US Dollar' },
         { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' }
     ]);
+    // Removed freightClassErrors state - freight class selection is now purely user choice without validation
 
     useEffect(() => {
         // Enhanced package initialization logic for draft data
         const contextPackages = formData.packages;
+        const shipmentType = formData.shipmentInfo?.shipmentType;
 
         console.log("Packages: Context packages changed:", contextPackages);
 
@@ -40,15 +192,15 @@ const Packages = ({ onNext, onPrevious }) => {
             const processedPackages = contextPackages.map((pkg, index) => ({
                 id: pkg.id || `${Date.now()}-${index}`,
                 itemDescription: pkg.itemDescription || '',
-                packagingType: pkg.packagingType || 258,
+                packagingType: pkg.packagingType || (shipmentType === 'freight' ? 258 : 260),
                 packagingQuantity: pkg.packagingQuantity || 1,
                 packageReferenceID: pkg.packageReferenceID || '',
-                stackable: pkg.stackable !== undefined ? pkg.stackable : true,
+                stackable: pkg.stackable !== undefined ? pkg.stackable : (shipmentType === 'freight' ? true : false),
                 weight: pkg.weight || '',
                 height: pkg.height || '',
                 width: pkg.width || '',
                 length: pkg.length || '',
-                freightClass: pkg.freightClass || "50",
+                freightClass: pkg.freightClass || (shipmentType === 'freight' ? "50" : "50"),
                 declaredValue: pkg.declaredValue || 0.00,
                 currency: pkg.currency || 'USD'
             }));
@@ -56,11 +208,17 @@ const Packages = ({ onNext, onPrevious }) => {
             console.log("Packages: Setting processed packages:", processedPackages);
             setPackages(processedPackages);
         } else {
-            // No packages in context or empty array - use default
-            console.log("Packages: No packages in context, using default package");
-            setPackages([defaultPackage]);
+            // No packages in context or empty array - use default with appropriate values for shipment type
+            const defaultWithShipmentType = {
+                ...defaultPackage,
+                packagingType: shipmentType === 'freight' ? 258 : 260,
+                stackable: shipmentType === 'freight' ? true : false,
+                freightClass: "50" // Use 50 as default for all shipment types
+            };
+            console.log("Packages: No packages in context, using default package with shipment type defaults");
+            setPackages([defaultWithShipmentType]);
         }
-    }, [formData.packages]);
+    }, [formData.packages, formData.shipmentInfo?.shipmentType]);
 
     const updateContext = (newPackages) => {
         updateFormSection('packages', newPackages);
@@ -114,9 +272,14 @@ const Packages = ({ onNext, onPrevious }) => {
     };
 
     const addPackage = () => {
+        const shipmentType = formData.shipmentInfo?.shipmentType;
         const newPackage = {
             ...defaultPackage,
-            id: Date.now().toString()
+            id: Date.now().toString(),
+            // Set appropriate defaults based on shipment type
+            packagingType: shipmentType === 'freight' ? 258 : 260, // Default to Box for courier, Pallet for freight
+            stackable: shipmentType === 'freight' ? true : false,   // Default to false for courier
+            freightClass: "50" // Use 50 as default for all shipment types
         };
         const newPackages = [...packages, newPackage];
         setPackages(newPackages);
@@ -149,19 +312,32 @@ const Packages = ({ onNext, onPrevious }) => {
     const handleSubmit = (e) => {
         e.preventDefault();
         const currentPackages = formData.packages || [];
+        const shipmentType = formData.shipmentInfo?.shipmentType;
 
-        const hasEmptyFields = currentPackages.some(pkg =>
-            !pkg.itemDescription || String(pkg.itemDescription).trim() === '' ||
-            !pkg.packagingType ||
-            !pkg.packagingQuantity || String(pkg.packagingQuantity).trim() === '' || isNaN(parseInt(pkg.packagingQuantity)) || parseInt(pkg.packagingQuantity) < 1 ||
-            !pkg.weight || String(pkg.weight).trim() === '' || isNaN(parseFloat(pkg.weight)) || parseFloat(pkg.weight) <= 0 ||
-            !pkg.height || String(pkg.height).trim() === '' || isNaN(parseFloat(pkg.height)) || parseFloat(pkg.height) <= 0 ||
-            !pkg.width || String(pkg.width).trim() === '' || isNaN(parseFloat(pkg.width)) || parseFloat(pkg.width) <= 0 ||
-            !pkg.length || String(pkg.length).trim() === '' || isNaN(parseFloat(pkg.length)) || parseFloat(pkg.length) <= 0
-        );
+        const hasEmptyFields = currentPackages.some(pkg => {
+            // Basic required fields for all shipment types
+            const basicFieldsInvalid =
+                !pkg.itemDescription || String(pkg.itemDescription).trim() === '' ||
+                !pkg.packagingQuantity || String(pkg.packagingQuantity).trim() === '' || isNaN(parseInt(pkg.packagingQuantity)) || parseInt(pkg.packagingQuantity) < 1 ||
+                !pkg.weight || String(pkg.weight).trim() === '' || isNaN(parseFloat(pkg.weight)) || parseFloat(pkg.weight) <= 0 ||
+                !pkg.height || String(pkg.height).trim() === '' || isNaN(parseFloat(pkg.height)) || parseFloat(pkg.height) <= 0 ||
+                !pkg.width || String(pkg.width).trim() === '' || isNaN(parseFloat(pkg.width)) || parseFloat(pkg.width) <= 0 ||
+                !pkg.length || String(pkg.length).trim() === '' || isNaN(parseFloat(pkg.length)) || parseFloat(pkg.length) <= 0;
+
+            // Packaging type is only required for freight shipments
+            const packagingTypeInvalid = shipmentType === 'freight' && !pkg.packagingType;
+
+            // Freight class is only required for freight shipments
+            const freightClassInvalid = shipmentType === 'freight' && !pkg.freightClass;
+
+            return basicFieldsInvalid || packagingTypeInvalid || freightClassInvalid;
+        });
 
         if (hasEmptyFields) {
-            alert('Please fill in all required fields for each package (Description, Type, Qty > 0, Weight > 0, Dimensions > 0).');
+            const requiredFieldsMessage = shipmentType === 'freight'
+                ? 'Please fill in all required fields for each package (Description, Type, Qty > 0, Weight > 0, Dimensions > 0, Freight Class).'
+                : 'Please fill in all required fields for each package (Description, Qty > 0, Weight > 0, Dimensions > 0).';
+            alert(requiredFieldsMessage);
             console.warn("Packages handleSubmit: Validation failed due to empty/invalid required fields.", currentPackages);
             return;
         }
@@ -228,22 +404,57 @@ const Packages = ({ onNext, onPrevious }) => {
                                     required
                                 />
                             </Grid>
-                            <Grid item xs={12} md={4}>
-                                <FormControl fullWidth required>
-                                    <InputLabel>Packaging Type</InputLabel>
-                                    <Select
-                                        value={pkg.packagingType || ''}
-                                        onChange={(e) => updatePackage(index, 'packagingType', e.target.value)}
-                                        label="Packaging Type"
-                                    >
-                                        <MenuItem value={258}>Standard Wooden Pallet</MenuItem>
-                                        <MenuItem value={259}>Oversized Pallet</MenuItem>
-                                        <MenuItem value={260}>Box</MenuItem>
-                                        <MenuItem value={261}>Crate</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} md={3}>
+
+                            {/* Packaging Type - Only show for freight shipments */}
+                            {formData.shipmentInfo?.shipmentType === 'freight' && (
+                                <Grid item xs={12} md={4}>
+                                    <FormControl fullWidth required>
+                                        <InputLabel>Packaging Type</InputLabel>
+                                        <Select
+                                            value={pkg.packagingType || ''}
+                                            onChange={(e) => updatePackage(index, 'packagingType', e.target.value)}
+                                            label="Packaging Type"
+                                        >
+                                            <MenuItem value={237}>10KG BOX</MenuItem>
+                                            <MenuItem value={238}>25KG BOX</MenuItem>
+                                            <MenuItem value={239}>ENVELOPE</MenuItem>
+                                            <MenuItem value={240}>TUBE (PACKAGE)</MenuItem>
+                                            <MenuItem value={241}>PAK (PACKAGE)</MenuItem>
+                                            <MenuItem value={242}>BAGS</MenuItem>
+                                            <MenuItem value={243}>BALE(S)</MenuItem>
+                                            <MenuItem value={244}>BOX(ES)</MenuItem>
+                                            <MenuItem value={245}>BUNCH(ES)</MenuItem>
+                                            <MenuItem value={246}>BUNDLE(S)</MenuItem>
+                                            <MenuItem value={248}>CARBOY(S)</MenuItem>
+                                            <MenuItem value={249}>CARPET(S)</MenuItem>
+                                            <MenuItem value={250}>CARTONS</MenuItem>
+                                            <MenuItem value={251}>CASE(S)</MenuItem>
+                                            <MenuItem value={252}>COIL(S)</MenuItem>
+                                            <MenuItem value={253}>CRATE(S)</MenuItem>
+                                            <MenuItem value={254}>CYLINDER(S)</MenuItem>
+                                            <MenuItem value={255}>DRUM(S)</MenuItem>
+                                            <MenuItem value={256}>LOOSE</MenuItem>
+                                            <MenuItem value={257}>PAIL(S)</MenuItem>
+                                            <MenuItem value={258}>PALLET(S)</MenuItem>
+                                            <MenuItem value={260}>REELS(S)</MenuItem>
+                                            <MenuItem value={261}>ROLL(S)</MenuItem>
+                                            <MenuItem value={262}>SKID(S)</MenuItem>
+                                            <MenuItem value={265}>TOTE(S)</MenuItem>
+                                            <MenuItem value={266}>TUBES/PIPES</MenuItem>
+                                            <MenuItem value={268}>GALLONS</MenuItem>
+                                            <MenuItem value={269}>LIQUID BULK</MenuItem>
+                                            <MenuItem value={270}>CONTAINER</MenuItem>
+                                            <MenuItem value={271}>PIECES</MenuItem>
+                                            <MenuItem value={272}>LOAD</MenuItem>
+                                            <MenuItem value={273}>BLADE(S)</MenuItem>
+                                            <MenuItem value={274}>RACKS</MenuItem>
+                                            <MenuItem value={275}>GAYLORDS</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                            )}
+
+                            <Grid item xs={12} md={formData.shipmentInfo?.shipmentType === 'freight' ? 3 : 7}>
                                 <FormControl fullWidth required>
                                     <InputLabel>Qty</InputLabel>
                                     <Select
@@ -269,6 +480,35 @@ const Packages = ({ onNext, onPrevious }) => {
                                     helperText="Optional: Used to track individual packages within a shipment"
                                 />
                             </Grid>
+
+                            {/* Freight Class - Only show for freight shipments */}
+                            {formData.shipmentInfo?.shipmentType === 'freight' && (
+                                <Grid item xs={12}>
+                                    <FormControl fullWidth required>
+                                        <InputLabel>Freight Class</InputLabel>
+                                        <Select
+                                            value={pkg.freightClass || ''}
+                                            onChange={(e) => updatePackage(index, 'freightClass', e.target.value)}
+                                            label="Freight Class"
+                                            renderValue={(value) => {
+                                                const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
+                                                return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
+                                            }}
+                                        >
+                                            {FREIGHT_CLASSES.map((fc) => (
+                                                <MenuItem key={fc.class} value={fc.class}>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                                        Class {fc.class} - {fc.description}
+                                                    </Typography>
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                        <FormHelperText sx={{ mt: 1 }}>
+                                            Select the appropriate freight class for your shipment
+                                        </FormHelperText>
+                                    </FormControl>
+                                </Grid>
+                            )}
 
                             <Grid item xs={12} md={2.4}>
                                 <TextField
@@ -403,28 +643,32 @@ const Packages = ({ onNext, onPrevious }) => {
                                     <Typography variant="body2" color="text.secondary">Metric</Typography>
                                 </Box>
                             </Grid>
-                            <Grid item xs={12}>
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={pkg.stackable || false}
-                                            onChange={(e) => updatePackage(index, 'stackable', e.target.checked)}
-                                            sx={{
-                                                '& .MuiSwitch-switchBase.Mui-checked': {
-                                                    color: 'primary.main',
-                                                    '&:hover': {
-                                                        backgroundColor: 'primary.light'
+
+                            {/* Stackable - Only show for freight shipments */}
+                            {formData.shipmentInfo?.shipmentType === 'freight' && (
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={pkg.stackable || false}
+                                                onChange={(e) => updatePackage(index, 'stackable', e.target.checked)}
+                                                sx={{
+                                                    '& .MuiSwitch-switchBase.Mui-checked': {
+                                                        color: 'primary.main',
+                                                        '&:hover': {
+                                                            backgroundColor: 'primary.light'
+                                                        }
+                                                    },
+                                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                        backgroundColor: 'primary.main'
                                                     }
-                                                },
-                                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                    backgroundColor: 'primary.main'
-                                                }
-                                            }}
-                                        />
-                                    }
-                                    label="Stackable"
-                                />
-                            </Grid>
+                                                }}
+                                            />
+                                        }
+                                        label="Stackable"
+                                    />
+                                </Grid>
+                            )}
                         </Grid>
                     </Paper>
                 ))}
