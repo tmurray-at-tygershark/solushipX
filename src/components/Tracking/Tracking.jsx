@@ -630,13 +630,64 @@ const Tracking = () => {
                 {!loading && !displayError && currentTrackingId && (mergedEvents.length > 0 || shipmentData) && (
                     <Paper elevation={0} sx={{ p: { xs: 2, sm: 4 }, borderRadius: 3, border: '1px solid #eee', bgcolor: 'background.paper' }}>
                         <Grid container spacing={3}>
-                            {/* Left Column: Shipment Info Summary */}
+                            {/* Left Column: Tracking Details */}
                             <Grid item xs={12} md={4}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2.5 }}>
-                                    Shipment Summary
-                                </Typography>
+                                {/* QR Code Section - Moved to top and full width */}
+                                <Box sx={{ mb: 3 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                                        {qrCodeLoading ? (
+                                            <Box sx={{
+                                                width: '100%',
+                                                height: 200,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                border: '1px solid',
+                                                borderColor: 'divider',
+                                                borderRadius: 1
+                                            }}>
+                                                <CircularProgress size={24} />
+                                            </Box>
+                                        ) : qrCodeUrl ? (
+                                            <Box sx={{
+                                                width: '100%',
+                                                display: 'flex',
+                                                justifyContent: 'center',
+                                                border: '1px solid',
+                                                borderColor: 'divider',
+                                                borderRadius: 1,
+                                                p: 2,
+                                                bgcolor: 'background.paper'
+                                            }}>
+                                                <img
+                                                    src={qrCodeUrl}
+                                                    alt="Tracking QR Code"
+                                                    style={{
+                                                        width: 180,
+                                                        height: 180,
+                                                        display: 'block'
+                                                    }}
+                                                />
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{
+                                                width: '100%',
+                                                height: 200,
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                border: '1px dashed',
+                                                borderColor: 'divider',
+                                                borderRadius: 1,
+                                                bgcolor: 'grey.50'
+                                            }}>
+                                                <QrCodeIcon sx={{ fontSize: '3rem', color: 'text.secondary' }} />
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Box>
 
-                                {/* SolushipX Shipment ID */}
                                 <Box sx={{ mb: 2.5 }}>
                                     <Typography variant="caption" color="text.secondary" display="block">SolushipX Shipment ID</Typography>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -750,68 +801,6 @@ const Tracking = () => {
                                         </Box>
                                     </Box>
                                 )}
-
-                                {/* QR Code Section */}
-                                <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                                    <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                        QR Code - Share Tracking
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                                        {qrCodeLoading ? (
-                                            <Box sx={{
-                                                width: 150,
-                                                height: 150,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                border: '1px solid',
-                                                borderColor: 'divider',
-                                                borderRadius: 1
-                                            }}>
-                                                <CircularProgress size={24} />
-                                            </Box>
-                                        ) : qrCodeUrl ? (
-                                            <Box sx={{
-                                                border: '1px solid',
-                                                borderColor: 'divider',
-                                                borderRadius: 1,
-                                                p: 1,
-                                                bgcolor: 'background.paper'
-                                            }}>
-                                                <img
-                                                    src={qrCodeUrl}
-                                                    alt="Tracking QR Code"
-                                                    style={{
-                                                        width: 150,
-                                                        height: 150,
-                                                        display: 'block'
-                                                    }}
-                                                />
-                                            </Box>
-                                        ) : (
-                                            <Box sx={{
-                                                width: 150,
-                                                height: 150,
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                border: '1px dashed',
-                                                borderColor: 'divider',
-                                                borderRadius: 1,
-                                                bgcolor: 'grey.50'
-                                            }}>
-                                                <QrCodeIcon sx={{ fontSize: '2rem', color: 'text.secondary', mb: 1 }} />
-                                                <Typography variant="caption" color="text.secondary" textAlign="center">
-                                                    QR Code Unavailable
-                                                </Typography>
-                                            </Box>
-                                        )}
-                                        <Typography variant="caption" color="text.secondary" textAlign="center" sx={{ maxWidth: 150 }}>
-                                            Scan to open tracking page
-                                        </Typography>
-                                    </Box>
-                                </Box>
                             </Grid>
 
                             {/* Right Column: Timeline */}
