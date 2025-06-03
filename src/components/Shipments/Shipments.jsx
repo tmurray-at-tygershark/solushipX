@@ -2414,19 +2414,29 @@ const Shipments = () => {
                                                                     {/* Tracking Number (only for non-draft shipments) */}
                                                                     {trackingNumber && (
                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, marginTop: '4px' }}>
-                                                                            <Typography
-                                                                                variant="body2"
-                                                                                sx={{
-                                                                                    fontSize: '0.75rem',
-                                                                                    color: '#059669',
-                                                                                    fontFamily: 'monospace'
-                                                                                }}
+                                                                            <Link
+                                                                                to={`/tracking/${encodeURIComponent(trackingNumber)}`}
+                                                                                style={{ textDecoration: 'none' }}
                                                                             >
-                                                                                {highlightSearchTerm(
-                                                                                    trackingNumber,
-                                                                                    searchFields.trackingNumber
-                                                                                )}
-                                                                            </Typography>
+                                                                                <Typography
+                                                                                    variant="body2"
+                                                                                    sx={{
+                                                                                        fontSize: '0.75rem',
+                                                                                        color: '#059669',
+                                                                                        fontFamily: 'monospace',
+                                                                                        cursor: 'pointer',
+                                                                                        '&:hover': {
+                                                                                            textDecoration: 'underline',
+                                                                                            color: '#047857'
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    {highlightSearchTerm(
+                                                                                        trackingNumber,
+                                                                                        searchFields.trackingNumber
+                                                                                    )}
+                                                                                </Typography>
+                                                                            </Link>
                                                                             <IconButton
                                                                                 size="small"
                                                                                 onClick={() => {

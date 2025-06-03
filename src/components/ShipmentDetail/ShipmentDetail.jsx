@@ -2492,7 +2492,25 @@ const ShipmentDetail = () => {
                                     <Grid container spacing={2}>
                                         <Grid item xs={12} sm={6} md={3}>
                                             <Typography variant="caption" color="text.secondary">Shipment ID</Typography>
-                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{shipment?.shipmentID || 'N/A'}</Typography>
+                                            <Link
+                                                to={`/tracking/${encodeURIComponent(shipment?.shipmentID || 'N/A')}`}
+                                                style={{ textDecoration: 'none' }}
+                                            >
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{
+                                                        fontWeight: 600,
+                                                        color: 'primary.main',
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            textDecoration: 'underline',
+                                                            color: 'primary.dark'
+                                                        }
+                                                    }}
+                                                >
+                                                    {shipment?.shipmentID || 'N/A'}
+                                                </Typography>
+                                            </Link>
                                         </Grid>
                                         <Grid item xs={12} sm={6} md={3}>
                                             <Typography variant="caption" color="text.secondary">Company ID</Typography>
