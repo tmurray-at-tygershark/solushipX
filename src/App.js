@@ -1,3 +1,6 @@
+// Import license initialization FIRST - before any MUI X components
+import './muiLicense.js';
+
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CssBaseline, Box, CircularProgress } from '@mui/material';

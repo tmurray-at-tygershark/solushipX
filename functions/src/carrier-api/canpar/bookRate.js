@@ -119,6 +119,10 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
                            shipmentData.shipmentID || 
                            '';
     
+    // Extract signature service - nsr is REVERSE logic for Canpar
+    const signatureRequired = rateRequestData.shipmentInfo?.signatureRequired !== undefined ? rateRequestData.shipmentInfo.signatureRequired : true;
+    const nsr = !signatureRequired;
+    
     // Sanitize postal codes
     const fromPostalCode = sanitizePostalCode(shipFrom.postal_code);
     const toPostalCode = sanitizePostalCode(shipTo.postal_code);
