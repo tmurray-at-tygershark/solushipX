@@ -19,11 +19,9 @@ const sanitizePostalCode = (postalCode) => {
 
 export function toCanparRequest(formData) {
     return {
-        shipmentInfo: formData.shipmentInfo, // Pass through for signature service
         shipment: {
             shipping_date: formatCanparDate(formData.shipmentInfo?.shipmentDate),
             service_type: 1, // Default to Canpar Ground
-            reference: formData.shipmentInfo?.shipperReferenceNumber || "",
             packages: (formData.packages || []).map(pkg => ({
                 reported_weight: parseFloat(pkg.weight) || 1,
                 length: parseFloat(pkg.length) || 10,

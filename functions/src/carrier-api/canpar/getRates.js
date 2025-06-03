@@ -363,6 +363,10 @@ function buildCanparSoapEnvelope(requestData, credentials) {
     const deliveryAddress = shipment.delivery_address || {};
     
     // Extract reference number from shipment data
+    // Extract signature service - nsr is REVERSE logic for Canpar
+    const signatureRequired = requestData.shipmentInfo?.signatureRequired !== undefined ? requestData.shipmentInfo.signatureRequired : true;
+    const nsr = !signatureRequired;
+
     const referenceNumber = shipment.reference || 
                            requestData.referenceNumber || 
                            requestData.shipmentInfo?.shipperReferenceNumber || 
@@ -400,6 +404,7 @@ function buildCanparSoapEnvelope(requestData, credentials) {
           <xsd:service_type>${shipment.service_type || 1}</xsd:service_type>
           <xsd:shipment_status>R</xsd:shipment_status>
           <xsd:reported_weight_unit>L</xsd:reported_weight_unit>
+          <xsd:nsr>${nsr}</xsd:nsr>
           <xsd:dimention_unit>I</xsd:dimention_unit>
           ${referenceNumber ? `<xsd:reference>${referenceNumber}</xsd:reference>` : ''}
 

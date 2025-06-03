@@ -12,13 +12,7 @@ import {
     Alert,
     Snackbar,
     Button,
-    Skeleton,
-    FormControlLabel,
-    Checkbox,
-    Select,
-    MenuItem,
-    InputLabel,
-    Paper
+    Skeleton
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
@@ -194,8 +188,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
             updateFormSection('shipmentInfo', {
                 ...currentData,
                 shipmentType: 'courier',
-                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date()),
-                signatureRequired: currentData.signatureRequired !== undefined ? currentData.signatureRequired : true
+                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date())
             });
         }
     }, []); // Run only once on mount
@@ -430,104 +423,93 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
 
                 {/* Additional Services */}
                 <Box sx={{ mb: 4 }}>
-                    <Typography variant="h6" sx={{ mb: 3, display: 'flex', alignItems: 'center' }}>
-                        Additional Services
-                    </Typography>
-
-                    <Paper elevation={0} sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
-                        <Grid container spacing={3}>
-                            {/* Dangerous Goods */}
-                            <Grid item xs={12} md={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel id="dangerous-goods-label">
-                                        Dangerous Goods
-                                    </InputLabel>
-                                    <Select
-                                        labelId="dangerous-goods-label"
-                                        id="dangerousGoodsType"
-                                        value={currentData.dangerousGoodsType || 'none'}
-                                        label="Dangerous Goods"
-                                        onChange={handleInputChange}
-                                    >
-                                        <MenuItem value="none">None</MenuItem>
-                                        <MenuItem value="limited">Limited Quantity</MenuItem>
-                                        <MenuItem value="fully-regulated">Fully Regulated</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-
-                            {/* Service Options */}
-                            <Grid item xs={12} md={6}>
-                                <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
-                                    Service Options
-                                </Typography>
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                id="signatureRequired"
-                                                checked={currentData.signatureRequired !== undefined ? currentData.signatureRequired : true}
-                                                onChange={handleInputChange}
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                Signature Required
-                                                <Tooltip title="Require signature upon delivery (recommended for security)">
-                                                    <IconButton size="small" sx={{ ml: 0.5 }}>
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        }
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                id="holdForPickup"
-                                                checked={currentData.holdForPickup || false}
-                                                onChange={handleInputChange}
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                Hold for Pickup
-                                                <Tooltip title="Package will be held at the carrier's facility for pickup">
-                                                    <IconButton size="small" sx={{ ml: 0.5 }}>
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        }
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                id="saturdayDelivery"
-                                                checked={currentData.saturdayDelivery || false}
-                                                onChange={handleInputChange}
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                Saturday Delivery
-                                                <Tooltip title="Request delivery on Saturday (additional charges may apply)">
-                                                    <IconButton size="small" sx={{ ml: 0.5 }}>
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        }
-                                    />
-                                </Box>
-                            </Grid>
+                    <Typography variant="h6" sx={{ mb: 2 }}>Additional Services</Typography>
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="dangerousGoodsType">
+                                    Dangerous Goods
+                                    <Tooltip title="Select if your shipment contains hazardous materials">
+                                        <IconButton size="small" sx={{ ml: 0.5 }}>
+                                            <InfoIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                </label>
+                                <select
+                                    id="dangerousGoodsType"
+                                    className="form-control"
+                                    value={currentData.dangerousGoodsType || 'none'} // Read from context
+                                    onChange={handleInputChange}
+                                >
+                                    <option value="none">None</option>
+                                    <option value="limited">Limited Quantity</option>
+                                    <option value="fully-regulated">Fully Regulated</option>
+                                </select>
+                            </div>
                         </Grid>
-                    </Paper>
+                        <Grid item xs={12} sm={6}>
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="signatureServiceType">
+                                    Signature Service
+                                    <Tooltip title="Select signature requirement for delivery">
+                                        <IconButton size="small" sx={{ ml: 0.5 }}>
+                                            <InfoIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                </label>
+                                <select
+                                    id="signatureServiceType"
+                                    className="form-control"
+                                    value={currentData.signatureServiceType || 'none'} // Read from context
+                                    onChange={handleInputChange}
+                                >
+                                    <option value="none">None</option>
+                                    <option value="direct">Direct Signature</option>
+                                    <option value="adult">Adult Signature</option>
+                                </select>
+                            </div>
+                        </Grid>
+                        <Grid item xs={12}>
+                            <div className="form-group">
+                                <div className="checkbox-group">
+                                    <div className="form-check">
+                                        <input
+                                            type="checkbox"
+                                            id="holdForPickup"
+                                            className="form-check-input"
+                                            checked={currentData.holdForPickup || false} // Read from context
+                                            onChange={handleInputChange}
+                                        />
+                                        <label className="form-check-label" htmlFor="holdForPickup">
+                                            Hold for Pickup
+                                            <Tooltip title="Package will be held at the carrier's facility for pickup">
+                                                <IconButton size="small" sx={{ ml: 0.5 }}>
+                                                    <InfoIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </label>
+                                    </div>
+                                    <div className="form-check">
+                                        <input
+                                            type="checkbox"
+                                            id="saturdayDelivery"
+                                            className="form-check-input"
+                                            checked={currentData.saturdayDelivery || false} // Read from context
+                                            onChange={handleInputChange}
+                                        />
+                                        <label className="form-check-label" htmlFor="saturdayDelivery">
+                                            Saturday Delivery
+                                            <Tooltip title="Request delivery on Saturday (additional charges may apply)">
+                                                <IconButton size="small" sx={{ ml: 0.5 }}>
+                                                    <InfoIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </Grid>
+                    </Grid>
                 </Box>
 
                 <Box sx={{

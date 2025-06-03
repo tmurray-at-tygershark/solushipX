@@ -2589,8 +2589,8 @@ const ShipmentDetail = () => {
                                                             <Typography variant="caption" color="text.secondary">Signature Required</Typography>
                                                             <Chip
                                                                 size="small"
-                                                                label={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "Yes" : "No"}
-                                                                color={shipment?.shipmentInfo?.signatureServiceType !== "none" ? "primary" : "default"}
+                                                                label={shipment?.shipmentInfo?.signatureRequired ? "Yes" : "No"}
+                                                                color={shipment?.shipmentInfo?.signatureRequired ? "primary" : "default"}
                                                                 variant="outlined"
                                                             />
                                                         </Box>

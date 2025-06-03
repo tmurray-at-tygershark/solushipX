@@ -339,7 +339,7 @@ const CreateShipmentContent = () => {
                                     earliestDeliveryTime: draftData.shipmentInfo?.earliestDeliveryTime || '09:00',
                                     latestDeliveryTime: draftData.shipmentInfo?.latestDeliveryTime || '17:00',
                                     dangerousGoodsType: draftData.shipmentInfo?.dangerousGoodsType || 'none',
-                                    signatureServiceType: draftData.shipmentInfo?.signatureServiceType || 'none',
+                                    signatureRequired: draftData.shipmentInfo?.signatureRequired !== undefined ? draftData.shipmentInfo.signatureRequired : true,
                                     holdForPickup: draftData.shipmentInfo?.holdForPickup || false,
                                     saturdayDelivery: draftData.shipmentInfo?.saturdayDelivery || false,
                                     notes: draftData.shipmentInfo?.notes || ''

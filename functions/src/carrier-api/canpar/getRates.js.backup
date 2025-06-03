@@ -37,12 +37,228 @@ function transformCanparResponseToInternalFormat(canparResponse) {
     const taxCharge1 = parseFloat(safeAccess(shipment, 'ax27:tax_charge_1.0', '0'));
     const taxCharge2 = parseFloat(safeAccess(shipment, 'ax27:tax_charge_2.0', '0'));
     const total = parseFloat(safeAccess(shipment, 'ax27:total.0', '0'));
+    const subtotal = parseFloat(safeAccess(shipment, 'ax27:subtotal.0', '0'));
+    
+    // Extract all additional charges and surcharges
+    const carbonSurcharge = parseFloat(safeAccess(shipment, 'ax27:carbon_surcharge.0', '0'));
+    const codCharge = parseFloat(safeAccess(shipment, 'ax27:cod_charge.0', '0'));
+    const cosCharge = parseFloat(safeAccess(shipment, 'ax27:cos_charge.0', '0')); // Chain of Signature
+    const dgCharge = parseFloat(safeAccess(shipment, 'ax27:dg_charge.0', '0')); // Dangerous Goods
+    const dvCharge = parseFloat(safeAccess(shipment, 'ax27:dv_charge.0', '0')); // Declared Value
+    const eaCharge = parseFloat(safeAccess(shipment, 'ax27:ea_charge.0', '0')); // Extended Area
+    const handling = parseFloat(safeAccess(shipment, 'ax27:handling.0', '0'));
+    const lgCharge = parseFloat(safeAccess(shipment, 'ax27:lg_charge.0', '0')); // Liftgate
+    const overLengthCharge = parseFloat(safeAccess(shipment, 'ax27:over_length_charge.0', '0'));
+    const overSizeCharge = parseFloat(safeAccess(shipment, 'ax27:over_size_charge.0', '0'));
+    const overWeightCharge = parseFloat(safeAccess(shipment, 'ax27:over_weight_charge.0', '0'));
+    const premiumCharge = parseFloat(safeAccess(shipment, 'ax27:premium_charge.0', '0'));
+    const raCharge = parseFloat(safeAccess(shipment, 'ax27:ra_charge.0', '0')); // Residential Area
+    const ruralCharge = parseFloat(safeAccess(shipment, 'ax27:rural_charge.0', '0'));
+    const saCharge = parseFloat(safeAccess(shipment, 'ax27:sa_charge.0', '0')); // Signature Required
+    const srCharge = parseFloat(safeAccess(shipment, 'ax27:sr_charge.0', '0'));
+    const xcCharge = parseFloat(safeAccess(shipment, 'ax27:xc_charge.0', '0'));
+    
+    // Get tax codes for reference
+    const taxCode1 = safeAccess(shipment, 'ax27:tax_code_1.0', '');
+    const taxCode2 = safeAccess(shipment, 'ax27:tax_code_2.0', '');
     
     const transitTime = parseInt(safeAccess(shipment, 'ax27:transit_time.0', '0'));
     const estimatedDeliveryDate = safeAccess(shipment, 'ax27:estimated_delivery_date.0');
     const serviceType = parseInt(safeAccess(shipment, 'ax27:service_type.0', '5'));
     const billedWeight = parseFloat(safeAccess(shipment, 'ax27:billed_weight.0', '0'));
     const isGuaranteed = safeAccess(shipment, 'ax27:transit_time_guaranteed.0') === 'true';
+
+    // Calculate total accessorial charges (all non-freight, non-fuel, non-tax charges)
+    const totalAccessorialCharges = carbonSurcharge + codCharge + cosCharge + dgCharge + dvCharge + 
+                                   eaCharge + handling + lgCharge + overLengthCharge + overSizeCharge + 
+                                   overWeightCharge + premiumCharge + raCharge + ruralCharge + 
+                                   saCharge + srCharge + xcCharge;
+
+    // Create detailed billing breakdown
+    const billingDetails = [];
+    
+    // Add base charges
+    if (freightCharge > 0) {
+        billingDetails.push({
+            name: 'Freight Charge',
+            amount: freightCharge,
+            type: 'freight'
+        });
+    }
+    
+    if (fuelSurcharge > 0) {
+        billingDetails.push({
+            name: 'Fuel Surcharge',
+            amount: fuelSurcharge,
+            type: 'fuel'
+        });
+    }
+    
+    // Add accessorial charges (only if > 0)
+    if (carbonSurcharge > 0) {
+        billingDetails.push({
+            name: 'Carbon Surcharge',
+            amount: carbonSurcharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (codCharge > 0) {
+        billingDetails.push({
+            name: 'COD Charge',
+            amount: codCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (cosCharge > 0) {
+        billingDetails.push({
+            name: 'Chain of Signature',
+            amount: cosCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (dgCharge > 0) {
+        billingDetails.push({
+            name: 'Dangerous Goods',
+            amount: dgCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (dvCharge > 0) {
+        billingDetails.push({
+            name: 'Declared Value',
+            amount: dvCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (eaCharge > 0) {
+        billingDetails.push({
+            name: 'Extended Area',
+            amount: eaCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (handling > 0) {
+        billingDetails.push({
+            name: 'Handling',
+            amount: handling,
+            type: 'accessorial'
+        });
+    }
+    
+    if (lgCharge > 0) {
+        billingDetails.push({
+            name: 'Liftgate',
+            amount: lgCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (overLengthCharge > 0) {
+        billingDetails.push({
+            name: 'Over Length',
+            amount: overLengthCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (overSizeCharge > 0) {
+        billingDetails.push({
+            name: 'Over Size',
+            amount: overSizeCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (overWeightCharge > 0) {
+        billingDetails.push({
+            name: 'Over Weight',
+            amount: overWeightCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (premiumCharge > 0) {
+        billingDetails.push({
+            name: 'Premium Service',
+            amount: premiumCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (raCharge > 0) {
+        billingDetails.push({
+            name: 'Residential Area',
+            amount: raCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (ruralCharge > 0) {
+        billingDetails.push({
+            name: 'Rural Charge',
+            amount: ruralCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (saCharge > 0) {
+        billingDetails.push({
+            name: 'Signature Required',
+            amount: saCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (srCharge > 0) {
+        billingDetails.push({
+            name: 'SR Charge',
+            amount: srCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    if (xcCharge > 0) {
+        billingDetails.push({
+            name: 'XC Charge',
+            amount: xcCharge,
+            type: 'accessorial'
+        });
+    }
+    
+    // Add taxes
+    if (taxCharge1 > 0) {
+        billingDetails.push({
+            name: `Tax (${taxCode1 || 'Tax 1'})`,
+            amount: taxCharge1,
+            type: 'tax'
+        });
+    }
+    
+    if (taxCharge2 > 0) {
+        billingDetails.push({
+            name: `Tax (${taxCode2 || 'Tax 2'})`,
+            amount: taxCharge2,
+            type: 'tax'
+        });
+    }
+
+    // Log extracted values for debugging
+    logger.info('Canpar extracted values:', {
+        freightCharge,
+        fuelSurcharge,
+        taxCharge1,
+        taxCharge2,
+        total,
+        subtotal,
+        totalAccessorialCharges,
+        billingDetailsCount: billingDetails.length
+    });
 
     // Map service type to service name
     const getServiceName = (serviceType) => {
@@ -70,12 +286,12 @@ function transformCanparResponseToInternalFormat(canparResponse) {
         freightCharges: freightCharge,
         fuelCharges: fuelSurcharge,
         serviceCharges: 0, // Canpar doesn't separate service charges
-        accessorialCharges: 0, // Additional charges would be calculated separately
+        accessorialCharges: totalAccessorialCharges,
         totalCharges: total,
         currency: 'CAD', // Canpar is Canadian, typically CAD
         guaranteedService: isGuaranteed,
         guaranteeCharge: 0, // Would need separate calculation if guarantee is selected
-        billingDetails: [],
+        billingDetails: billingDetails,
         guarOptions: [],
         billedWeight: billedWeight,
         ratedWeight: billedWeight,
@@ -83,8 +299,14 @@ function transformCanparResponseToInternalFormat(canparResponse) {
         canparServiceType: serviceType,
         canparZone: safeAccess(shipment, 'ax27:zone.0'),
         canparTaxCode1: safeAccess(shipment, 'ax27:tax_code_1.0'),
-        canparTaxCode2: safeAccess(shipment, 'ax27:tax_code_2.0')
+        canparTaxCode2: safeAccess(shipment, 'ax27:tax_code_2.0'),
+        // Add tax charges for proper mapping
+        taxCharge1: taxCharge1,
+        taxCharge2: taxCharge2
     };
+
+    // Log the final rate object for debugging
+    logger.info('Canpar final rate object:', JSON.stringify(rate, null, 2));
 
     const transformed = {
         bookingReference: `CANPAR_${Date.now()}`,
@@ -134,19 +356,27 @@ function transformCanparResponseToInternalFormat(canparResponse) {
 
 // Build SOAP envelope for Canpar API
 function buildCanparSoapEnvelope(requestData, credentials) {
-    const packages = requestData.shipment.packages.map(pkg => `
+    // Ensure we have required fields with defaults
+    const shipment = requestData.shipment || {};
+    const packages = shipment.packages || [];
+    const pickupAddress = shipment.pickup_address || {};
+    const deliveryAddress = shipment.delivery_address || {};
+    
+    // Extract reference number from shipment data
+    const referenceNumber = shipment.reference || 
+                           requestData.referenceNumber || 
+                           requestData.shipmentInfo?.shipperReferenceNumber || 
+                           shipment.shipmentID || 
+                           '';
+    
+    // Build packages XML
+    const packagesXml = packages.map(pkg => `
         <xsd:packages>
-            <xsd:reported_weight>${pkg.reported_weight}</xsd:reported_weight>
-            <xsd:length>${pkg.length}</xsd:length>
-            <xsd:width>${pkg.width}</xsd:width>
-            <xsd:height>${pkg.height}</xsd:height>
-            <xsd:declared_value>${pkg.declared_value}</xsd:declared_value>
-            <xsd:dim_weight>${pkg.dim_weight}</xsd:dim_weight>
-            <xsd:dim_weight_flag>${pkg.dim_weight_flag}</xsd:dim_weight_flag>
-            <xsd:min_weight_flag>${pkg.min_weight_flag}</xsd:min_weight_flag>
-            <xsd:package_num>${pkg.package_num}</xsd:package_num>
-            <xsd:package_reference>${pkg.package_reference}</xsd:package_reference>
-            <xsd:xc>${pkg.xc}</xsd:xc>
+            <xsd:reported_weight>${parseFloat(pkg.reported_weight || 1).toFixed(1)}</xsd:reported_weight>
+            <xsd:length>${parseFloat(pkg.length || 10).toFixed(1)}</xsd:length>
+            <xsd:width>${parseFloat(pkg.width || 10).toFixed(1)}</xsd:width>
+            <xsd:height>${parseFloat(pkg.height || 10).toFixed(1)}</xsd:height>
+            <xsd:declared_value>${parseFloat(pkg.declared_value || 0).toFixed(2)}</xsd:declared_value>
         </xsd:packages>
     `).join('');
 
@@ -160,41 +390,43 @@ function buildCanparSoapEnvelope(requestData, credentials) {
       <ws:request>
         <xsd:user_id>${credentials.username}</xsd:user_id>
         <xsd:password>${credentials.password}</xsd:password>
-        <xsd:apply_association_discount>${requestData.apply_association_discount}</xsd:apply_association_discount>
-        <xsd:apply_individual_discount>${requestData.apply_individual_discount}</xsd:apply_individual_discount>
-        <xsd:apply_invoice_discount>${requestData.apply_invoice_discount}</xsd:apply_invoice_discount>
+        <xsd:apply_association_discount>false</xsd:apply_association_discount>
+        <xsd:apply_individual_discount>false</xsd:apply_individual_discount>
+        <xsd:apply_invoice_discount>false</xsd:apply_invoice_discount>
 
         <xsd:shipment>
           <xsd:shipper_num>${credentials.accountNumber}</xsd:shipper_num>
-          <xsd:shipping_date>${requestData.shipment.shipping_date}</xsd:shipping_date>
-          <xsd:service_type>${requestData.shipment.service_type}</xsd:service_type>
-          <xsd:shipment_status>${requestData.shipment.shipment_status}</xsd:shipment_status>
-          <xsd:reported_weight_unit>${requestData.shipment.reported_weight_unit}</xsd:reported_weight_unit>
+          <xsd:shipping_date>${(shipment.shipping_date || new Date().toISOString()).replace(/T.*$/, "T00:00:00")}</xsd:shipping_date>
+          <xsd:service_type>${shipment.service_type || 1}</xsd:service_type>
+          <xsd:shipment_status>R</xsd:shipment_status>
+          <xsd:reported_weight_unit>L</xsd:reported_weight_unit>
+          <xsd:dimention_unit>I</xsd:dimention_unit>
+          ${referenceNumber ? `<xsd:reference>${referenceNumber}</xsd:reference>` : ''}
 
-          ${packages}
+          ${packagesXml}
 
           <xsd:pickup_address>
-            <xsd:name>${requestData.shipment.pickup_address.name}</xsd:name>
-            <xsd:address_line_1>${requestData.shipment.pickup_address.address_line_1}</xsd:address_line_1>
-            <xsd:address_line_2>${requestData.shipment.pickup_address.address_line_2}</xsd:address_line_2>
-            <xsd:city>${requestData.shipment.pickup_address.city}</xsd:city>
-            <xsd:province>${requestData.shipment.pickup_address.province}</xsd:province>
-            <xsd:country>${requestData.shipment.pickup_address.country}</xsd:country>
-            <xsd:postal_code>${requestData.shipment.pickup_address.postal_code}</xsd:postal_code>
-            <xsd:phone>${requestData.shipment.pickup_address.phone}</xsd:phone>
-            <xsd:residential>${requestData.shipment.pickup_address.residential}</xsd:residential>
+            <xsd:name>${pickupAddress.name || 'Test Shipper'}</xsd:name>
+            <xsd:address_line_1>${pickupAddress.address_line_1 || '123 Test St'}</xsd:address_line_1>
+            ${pickupAddress.address_line_2 ? `<xsd:address_line_2>${pickupAddress.address_line_2}</xsd:address_line_2>` : ""}
+            <xsd:city>${pickupAddress.city || 'Toronto'}</xsd:city>
+            <xsd:province>${pickupAddress.province || 'ON'}</xsd:province>
+            <xsd:country>${pickupAddress.country || 'CA'}</xsd:country>
+            <xsd:postal_code>${pickupAddress.postal_code || 'M5V3A8'}</xsd:postal_code>
+            <xsd:phone>${pickupAddress.phone || '4165551234'}</xsd:phone>
+            <xsd:residential>false</xsd:residential>
           </xsd:pickup_address>
 
           <xsd:delivery_address>
-            <xsd:name>${requestData.shipment.delivery_address.name}</xsd:name>
-            <xsd:address_line_1>${requestData.shipment.delivery_address.address_line_1}</xsd:address_line_1>
-            <xsd:address_line_2>${requestData.shipment.delivery_address.address_line_2}</xsd:address_line_2>
-            <xsd:city>${requestData.shipment.delivery_address.city}</xsd:city>
-            <xsd:province>${requestData.shipment.delivery_address.province}</xsd:province>
-            <xsd:country>${requestData.shipment.delivery_address.country}</xsd:country>
-            <xsd:postal_code>${requestData.shipment.delivery_address.postal_code}</xsd:postal_code>
-            <xsd:phone>${requestData.shipment.delivery_address.phone}</xsd:phone>
-            <xsd:residential>${requestData.shipment.delivery_address.residential}</xsd:residential>
+            <xsd:name>${deliveryAddress.name || 'Test Recipient'}</xsd:name>
+            <xsd:address_line_1>${deliveryAddress.address_line_1 || '456 Test Ave'}</xsd:address_line_1>
+            ${deliveryAddress.address_line_2 ? `<xsd:address_line_2>${deliveryAddress.address_line_2}</xsd:address_line_2>` : ""}
+            <xsd:city>${deliveryAddress.city || 'Vancouver'}</xsd:city>
+            <xsd:province>${deliveryAddress.province || 'BC'}</xsd:province>
+            <xsd:country>${deliveryAddress.country || 'CA'}</xsd:country>
+            <xsd:postal_code>${deliveryAddress.postal_code || 'V6B1A1'}</xsd:postal_code>
+            <xsd:phone>${deliveryAddress.phone || '6045551234'}</xsd:phone>
+            <xsd:residential>false</xsd:residential>
           </xsd:delivery_address>
         </xsd:shipment>
       </ws:request>
@@ -206,45 +438,95 @@ function buildCanparSoapEnvelope(requestData, credentials) {
 // Validate Canpar rate request
 function validateCanparRateRequest(data) {
     if (!data) return 'Request body is required';
-    if (!data.shipment) return 'Shipment data is required';
     
-    const shipment = data.shipment;
-    if (!shipment.shipping_date) return 'Shipping date is required';
-    if (!shipment.packages || !Array.isArray(shipment.packages) || shipment.packages.length === 0) {
-        return 'At least one package is required';
-    }
-    
-    // Validate addresses
-    if (!shipment.pickup_address) return 'Pickup address is required';
-    if (!shipment.delivery_address) return 'Delivery address is required';
-    
-    const validateAddress = (address, type) => {
-        if (!address.name) return `${type} name is required`;
-        if (!address.address_line_1) return `${type} address is required`;
-        if (!address.city) return `${type} city is required`;
-        if (!address.province) return `${type} province is required`;
-        if (!address.postal_code) return `${type} postal code is required`;
-        if (!address.country) return `${type} country is required`;
-        return null;
+    // Helper to sanitize postal codes for Canpar (remove spaces, uppercase)
+    const sanitizePostalCode = (postalCode) => {
+        if (!postalCode) return '';
+        return postalCode.replace(/\s+/g, '').toUpperCase();
     };
     
-    let error = validateAddress(shipment.pickup_address, 'Pickup');
-    if (error) return error;
-    
-    error = validateAddress(shipment.delivery_address, 'Delivery');
-    if (error) return error;
-    
-    // Validate packages
-    for (const [index, pkg] of shipment.packages.entries()) {
-        if (!pkg.reported_weight || pkg.reported_weight <= 0) {
-            return `Package ${index + 1} must have a valid weight`;
-        }
-        if (!pkg.length || pkg.length <= 0) return `Package ${index + 1} must have a valid length`;
-        if (!pkg.width || pkg.width <= 0) return `Package ${index + 1} must have a valid width`;
-        if (!pkg.height || pkg.height <= 0) return `Package ${index + 1} must have a valid height`;
+    // Create default shipment structure if missing
+    if (!data.shipment) {
+        data.shipment = {};
     }
     
-    return null;
+    const shipment = data.shipment;
+    
+    // Set default shipping date if not provided
+    if (!shipment.shipping_date) {
+        shipment.shipping_date = new Date().toISOString();
+    }
+    
+    // Ensure packages array exists with at least one package
+    if (!shipment.packages || !Array.isArray(shipment.packages) || shipment.packages.length === 0) {
+        shipment.packages = [{
+            reported_weight: 1,
+            length: 10,
+            width: 10,
+            height: 10,
+            declared_value: 0
+        }];
+    }
+    
+    // Ensure pickup address exists with defaults and sanitize postal code
+    if (!shipment.pickup_address) {
+        shipment.pickup_address = {
+            name: 'Test Shipper',
+            address_line_1: '123 Test St',
+            city: 'Toronto',
+            province: 'ON',
+            country: 'CA',
+            postal_code: 'M5V3A8',
+            phone: '4165551234'
+        };
+    } else {
+        // Sanitize postal code if it exists
+        if (shipment.pickup_address.postal_code) {
+            shipment.pickup_address.postal_code = sanitizePostalCode(shipment.pickup_address.postal_code);
+        }
+    }
+    
+    // Ensure delivery address exists with defaults and sanitize postal code
+    if (!shipment.delivery_address) {
+        shipment.delivery_address = {
+            name: 'Test Recipient',
+            address_line_1: '456 Test Ave',
+            city: 'Vancouver',
+            province: 'BC',
+            country: 'CA',
+            postal_code: 'V6B1A1',
+            phone: '6045551234'
+        };
+    } else {
+        // Sanitize postal code if it exists
+        if (shipment.delivery_address.postal_code) {
+            shipment.delivery_address.postal_code = sanitizePostalCode(shipment.delivery_address.postal_code);
+        }
+    }
+    
+    // Set default service type if not provided
+    if (!shipment.service_type) {
+        shipment.service_type = 1; // Canpar Ground
+    }
+    
+    // Validate packages have minimum required fields
+    for (const [index, pkg] of shipment.packages.entries()) {
+        if (!pkg.reported_weight || pkg.reported_weight <= 0) {
+            pkg.reported_weight = 1; // Default to 1 lb
+        }
+        if (!pkg.length || pkg.length <= 0) pkg.length = 10;
+        if (!pkg.width || pkg.width <= 0) pkg.width = 10;
+        if (!pkg.height || pkg.height <= 0) pkg.height = 10;
+        if (!pkg.declared_value) pkg.declared_value = 0;
+    }
+    
+    // Log sanitized postal codes for debugging
+    logger.info('Canpar postal codes after sanitization:', {
+        pickup: shipment.pickup_address.postal_code,
+        delivery: shipment.delivery_address.postal_code
+    });
+    
+    return null; // No validation errors
 }
 
 // Main rate processing function
@@ -271,16 +553,25 @@ async function processCanparRateRequest(data) {
         }
         
         logger.info(`Using Canpar Rate API URL: ${apiUrl}`);
-        logger.info(`Canpar credentials retrieved:`, {
-            username: credentials.username,
-            accountNumber: credentials.accountNumber,
-            hasPassword: !!credentials.password
-        });
+        logger.info(`Canpar credentials retrieved - username: ${credentials.username || "MISSING"}, accountNumber: ${credentials.accountNumber || "MISSING"}, hasPassword: ${!!credentials.password}`);
         
         // Build SOAP envelope
         const soapEnvelope = buildCanparSoapEnvelope(data, credentials);
         logger.info('Canpar SOAP request envelope built');
-        logger.info('SOAP Envelope (first 1000 chars):', soapEnvelope.substring(0, 1000));
+        
+        // Log the full SOAP envelope in chunks to avoid truncation
+        const chunkSize = 800; // Safe size for Firebase logs
+        const soapLength = soapEnvelope.length;
+        logger.info(`Full SOAP Envelope (${soapLength} characters total):`);
+        
+        for (let i = 0; i < soapLength; i += chunkSize) {
+            const chunk = soapEnvelope.substring(i, i + chunkSize);
+            const chunkNumber = Math.floor(i / chunkSize) + 1;
+            const totalChunks = Math.ceil(soapLength / chunkSize);
+            logger.info(`SOAP Chunk ${chunkNumber}/${totalChunks}: ${chunk}`);
+        }
+        
+        logger.info('=== END OF SOAP ENVELOPE ===');
         
         // Make SOAP request to Canpar
         const response = await axios.post(apiUrl, soapEnvelope, {
@@ -294,6 +585,20 @@ async function processCanparRateRequest(data) {
         });
         
         logger.info(`Canpar API Response Status: ${response.status}`);
+        
+        // Log the full response in chunks for debugging
+        const responseData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+        const responseLength = responseData.length;
+        logger.info(`Full Canpar Response (${responseLength} characters total):`);
+        
+        for (let i = 0; i < responseLength; i += chunkSize) {
+            const chunk = responseData.substring(i, i + chunkSize);
+            const chunkNumber = Math.floor(i / chunkSize) + 1;
+            const totalChunks = Math.ceil(responseLength / chunkSize);
+            logger.info(`Response Chunk ${chunkNumber}/${totalChunks}: ${chunk}`);
+        }
+        
+        logger.info('=== END OF CANPAR RESPONSE ===');
         
         if (response.status >= 400) {
             logger.error('Canpar API Error Response:', response.data);
@@ -319,8 +624,33 @@ async function processCanparRateRequest(data) {
         // Check for application errors
         const error = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0.ax25:error.0');
         if (error && error !== null) {
-            logger.error('Canpar application error:', JSON.stringify(error, null, 2));
-            throw new Error(`Canpar application error: ${JSON.stringify(error, null, 2)}`);
+            // Check if it's a null error (which means NO error occurred)
+            if (error.$ && error.$.hasOwnProperty('xsi:nil') && error.$['xsi:nil'] === 'true') {
+                logger.info('Canpar error element is null (xsi:nil="true") - this means NO error occurred, proceeding with response processing');
+            } else {
+                // This is an actual error
+                logger.error('Canpar application error:', JSON.stringify(error, null, 2));
+                throw new Error(`Canpar application error: ${JSON.stringify(error, null, 2)}`);
+            }
+        }
+        
+        // Check for successful response structure
+        const rateResponse = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0');
+        if (!rateResponse) {
+            logger.error('No rate response found in Canpar API response');
+            logger.error('Full parsed response:', JSON.stringify(parsedResponse, null, 2));
+            throw new Error('Invalid response structure from Canpar API - no rate data found');
+        }
+        
+        // Log successful response structure for debugging
+        logger.info('Canpar rate response structure found:', Object.keys(rateResponse));
+        
+        // Check for shipment data
+        const shipmentResult = safeAccess(rateResponse, 'ax25:processShipmentResult.0.ax27:shipment.0');
+        if (!shipmentResult) {
+            logger.error('No shipment result found in Canpar response');
+            logger.error('Available response keys:', Object.keys(rateResponse));
+            throw new Error('No shipment data found in Canpar API response');
         }
         
         // Transform response to internal format
@@ -328,10 +658,18 @@ async function processCanparRateRequest(data) {
         
         if (!transformedData || !transformedData.availableRates || transformedData.availableRates.length === 0) {
             logger.error('Failed to transform Canpar response or no rates available');
+            logger.error('Transformed data:', JSON.stringify(transformedData, null, 2));
             throw new Error('Failed to process rates from Canpar API or no rates available');
         }
         
         logger.info('Successfully transformed rates from Canpar SOAP API');
+        logger.info('Number of rates found:', transformedData.availableRates.length);
+        logger.info('Transformed data summary:', {
+            bookingReference: transformedData.bookingReference,
+            ratesCount: transformedData.availableRates.length,
+            firstRateTotal: transformedData.availableRates[0]?.totalCharges,
+            firstRateCarrier: transformedData.availableRates[0]?.carrierName
+        });
         
         return {
             success: true,
