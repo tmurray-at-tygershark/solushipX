@@ -180,16 +180,12 @@ const StatusChip = React.memo(({ status }) => {
                 };
             case 'cancelled':
             case 'canceled':
+            case 'void':
+            case 'voided':
                 return {
                     color: '#b91c1c',
                     bgcolor: '#fecaca',
                     label: 'Cancelled'
-                };
-            case 'void':
-                return {
-                    color: '#7f1d1d',
-                    bgcolor: '#f3f4f6',
-                    label: 'Void'
                 };
 
             default:
@@ -356,7 +352,6 @@ const Shipments = () => {
     const [rowsPerPage, setRowsPerPage] = useState(50);
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
     const [shipmentNumber, setShipmentNumber] = useState('');
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [filterAnchorEl, setFilterAnchorEl] = useState(null);
@@ -410,6 +405,9 @@ const Shipments = () => {
     // Add state for snackbar
     const [snackbarOpen, setSnackbarOpen] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
+
+    // Add state to track if we should refresh on mount (when returning from other pages)
+    const [shouldRefreshOnMount, setShouldRefreshOnMount] = useState(false);
 
     // Helper function to normalize carrier names for comparison
     const normalizeCarrierName = useCallback((name) => {
@@ -577,6 +575,15 @@ const Shipments = () => {
                     s.status?.toLowerCase() === 'scheduled'
                 );
                 console.log('🏷️ After "Awaiting Shipment" tab filter:', filteredShipments.length);
+            } else if (selectedTab === 'Cancelled') {
+                // Handle \"Cancelled\" tab - filter by \"cancelled\" or \"void\" status (both spellings)
+                filteredShipments = filteredShipments.filter(s =>
+                    s.status?.toLowerCase() === 'cancelled' ||
+                    s.status?.toLowerCase() === 'canceled' ||
+                    s.status?.toLowerCase() === 'void' ||
+                    s.status?.toLowerCase() === 'voided'
+                );
+                console.log(`📊 After \"Cancelled\" tab filter: ${filteredShipments.length} shipments`);
             }
 
             // Shipment ID search (partial match)
@@ -871,7 +878,7 @@ const Shipments = () => {
                     }
                     return matches;
                 });
-                console.log('🔍 After customer filter:', beforeCount, '->', filteredShipments.length);
+                console.log(`📊 After customer filter: ${beforeCount} -> ${filteredShipments.length}`);
             }
 
             // Origin/Destination search
@@ -924,13 +931,19 @@ const Shipments = () => {
         window.scrollTo(0, 0);
     }, []);
 
-    // Enhanced stats calculation to include all statuses including drafts
+    // Enhanced stats calculation to include all statuses including drafts and cancelled
     const stats = useMemo(() => {
         return {
             total: allShipments.filter(s => s.status?.toLowerCase() !== 'draft').length, // Exclude drafts from total
             inTransit: allShipments.filter(s => s.status?.toLowerCase() === 'in_transit' || s.status?.toLowerCase() === 'in transit').length,
             delivered: allShipments.filter(s => s.status?.toLowerCase() === 'delivered').length,
             awaitingShipment: allShipments.filter(s => s.status?.toLowerCase() === 'scheduled').length,
+            cancelled: allShipments.filter(s =>
+                s.status?.toLowerCase() === 'cancelled' ||
+                s.status?.toLowerCase() === 'canceled' ||
+                s.status?.toLowerCase() === 'void' ||
+                s.status?.toLowerCase() === 'voided'
+            ).length,
             drafts: allShipments.filter(s => s.status?.toLowerCase() === 'draft').length
         };
     }, [allShipments]);
@@ -1018,16 +1031,12 @@ const Shipments = () => {
         setLoading(true);
         try {
             let shipmentsRef = collection(db, 'shipments');
-            // Always filter by companyID
+            // Build Firestore query
             let q = query(shipmentsRef, where('companyID', '==', companyIdForAddress), orderBy('createdAt', 'desc'));
 
             console.log(`📊 Firestore query: companyID == ${companyIdForAddress}`);
 
-            // Apply status filter
-            if (filters.status !== 'all') {
-                q = query(q, where('status', '==', filters.status));
-                console.log(`📊 Adding status filter: ${filters.status}`);
-            }
+            // Note: Status filter will be applied client-side to handle cancelled/void grouping
 
             // Fetch all shipments (for now, pagination can be improved with startAfter/limit)
             const querySnapshot = await getDocs(q);
@@ -1037,6 +1046,27 @@ const Shipments = () => {
             }));
 
             console.log(`📊 Firestore returned ${shipmentsData.length} shipments`);
+
+            // Apply status filter (client-side to handle cancelled/void grouping)
+            if (filters.status !== 'all') {
+                const beforeCount = shipmentsData.length;
+                if (filters.status === 'cancelled') {
+                    // For cancelled filter, include both cancelled and void shipments
+                    shipmentsData = shipmentsData.filter(shipment => {
+                        const status = shipment.status?.toLowerCase();
+                        return status === 'cancelled' ||
+                            status === 'canceled' ||
+                            status === 'void' ||
+                            status === 'voided';
+                    });
+                } else {
+                    // For other statuses, use exact match
+                    shipmentsData = shipmentsData.filter(shipment =>
+                        shipment.status?.toLowerCase() === filters.status.toLowerCase()
+                    );
+                }
+                console.log(`📊 After status filter (${filters.status}): ${beforeCount} -> ${shipmentsData.length}`);
+            }
 
             // Log first few shipments for debugging
             if (shipmentsData.length > 0) {
@@ -1230,6 +1260,8 @@ const Shipments = () => {
             }
 
             // Apply general search filter
+            // REMOVED: searchTerm functionality - wildcard search was deleted
+            /*
             if (searchTerm) {
                 const beforeCount = shipmentsData.length;
                 const searchableFields = ['shipmentId', 'id', 'companyName', 'shippingAddress', 'deliveryAddress', 'carrier', 'shipmentType', 'status'];
@@ -1255,6 +1287,7 @@ const Shipments = () => {
                 );
                 console.log(`📊 After search term filter: ${beforeCount} -> ${shipmentsData.length}`);
             }
+            */
 
             // Store the full unfiltered dataset for stats calculation
             console.log(`📊 Setting allShipments to ${shipmentsData.length} shipments`);
@@ -1273,6 +1306,15 @@ const Shipments = () => {
                 // Handle "Awaiting Shipment" tab - filter by "scheduled" status
                 shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'scheduled');
                 console.log(`📊 After "Awaiting Shipment" tab filter: ${shipmentsData.length} shipments`);
+            } else if (selectedTab === 'Cancelled') {
+                // Handle "Cancelled" tab - filter by "cancelled" status (both spellings)
+                shipmentsData = shipmentsData.filter(s =>
+                    s.status?.toLowerCase() === 'cancelled' ||
+                    s.status?.toLowerCase() === 'canceled' ||
+                    s.status?.toLowerCase() === 'void' ||
+                    s.status?.toLowerCase() === 'voided'
+                );
+                console.log(`📊 After \"Cancelled\" tab filter: ${shipmentsData.length} shipments`);
             } else {
                 // Handle other specific status tabs (In Transit, Delivered, etc.)
                 // Use case-insensitive comparison for other statuses too
@@ -1330,7 +1372,7 @@ const Shipments = () => {
         if (!authLoading && !companyCtxLoading && companyIdForAddress) {
             loadShipments();
         }
-    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange, companyIdForAddress, companyCtxLoading, authLoading]);
+    }, [page, rowsPerPage, filters, sortBy, selectedTab, dateRange, companyIdForAddress, companyCtxLoading, authLoading]);
 
     // Debug print dialog state changes
     useEffect(() => {
@@ -1869,6 +1911,61 @@ const Shipments = () => {
         }
     };
 
+    // Add refresh on page focus to catch status updates when returning from other pages
+    useEffect(() => {
+        const handleFocus = () => {
+            console.log('📱 Page focused - refreshing shipments to catch any status updates');
+            if (!authLoading && !companyCtxLoading && companyIdForAddress) {
+                loadShipments();
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                console.log('📱 Page visible - refreshing shipments to catch any status updates');
+                if (!authLoading && !companyCtxLoading && companyIdForAddress) {
+                    loadShipments();
+                }
+            }
+        };
+
+        // Also listen for back/forward navigation events
+        const handlePopState = () => {
+            console.log('📱 Navigation back/forward detected - refreshing shipments');
+            if (!authLoading && !companyCtxLoading && companyIdForAddress) {
+                loadShipments();
+            }
+        };
+
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('popstate', handlePopState);
+
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, [authLoading, companyCtxLoading, companyIdForAddress]);
+
+    // Additional effect to refresh when component mounts (when navigating from other routes)
+    useEffect(() => {
+        const refreshOnMount = () => {
+            // Check if we're navigating from another route (has history state)
+            if (window.history.state || performance.getEntriesByType('navigation')[0]?.type === 'back_forward') {
+                console.log('📱 Detected navigation return - refreshing shipments for status updates');
+                if (!authLoading && !companyCtxLoading && companyIdForAddress) {
+                    // Small delay to ensure the page has settled
+                    setTimeout(() => {
+                        loadShipments();
+                    }, 100);
+                }
+            }
+        };
+
+        refreshOnMount();
+    }, []); // Only run on mount
+
     return (
         <div className="shipments-container">
             <div className="breadcrumb-container">
@@ -1921,35 +2018,9 @@ const Shipments = () => {
                                     <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
                                     <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
                                     <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
+                                    <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
                                     <Tab label={`Drafts (${stats.drafts})`} value="draft" />
                                 </Tabs>
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    <TextField
-                                        size="small"
-                                        placeholder="Search shipments..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        InputProps={{
-                                            startAdornment: (
-                                                <InputAdornment position="start">
-                                                    <SearchIcon sx={{ color: '#64748b' }} />
-                                                </InputAdornment>
-                                            ),
-                                            endAdornment: searchTerm && (
-                                                <InputAdornment position="end">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => setSearchTerm('')}
-                                                        sx={{ color: '#64748b' }}
-                                                    >
-                                                        <ClearIcon />
-                                                    </IconButton>
-                                                </InputAdornment>
-                                            )
-                                        }}
-                                        sx={{ width: 300 }}
-                                    />
-                                </Box>
                             </Toolbar>
 
                             {/* Search and Filter Section */}

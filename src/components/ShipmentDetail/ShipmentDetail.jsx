@@ -120,7 +120,7 @@ import {
     TimelineDot
 } from '@mui/lab';
 import { getRateDetailsByDocumentId, getRatesForShipment } from '../../utils/rateUtils';
-import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES, recordStatusChange, recordTrackingUpdate, listenToShipmentEvents } from "../../utils/shipmentEvents";
+import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES, recordStatusChange, recordTrackingUpdate, listenToShipmentEvents, subscribeToShipmentEvents } from "../../utils/shipmentEvents";
 import './ShipmentDetail.css';
 
 // Define libraries array as a static constant outside the component
@@ -693,6 +693,14 @@ const ShipmentDetail = () => {
     const [shipmentEvents, setShipmentEvents] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(true);
 
+    const [snackbarOpen, setSnackbarOpen] = useState(false);
+    const [snackbarMessage, setSnackbarMessage] = useState('');
+    const [snackbarSeverity, setSnackbarSeverity] = useState('info');
+
+    // Cancel shipment state
+    const [cancelModalOpen, setCancelModalOpen] = useState(false);
+    const [cancelLoading, setCancelLoading] = useState(false);
+
     useEffect(() => {
         if (!shipment?.id && !shipment?.shipmentID) {
             setHistoryLoading(false);
@@ -1211,6 +1219,145 @@ const ShipmentDetail = () => {
         } finally {
             setActionLoading('refreshStatus', false);
         }
+    };
+
+    // Cancel shipment handlers
+    const handleCancelShipmentClick = () => {
+        setCancelModalOpen(true);
+    };
+
+    const handleCancelModalClose = () => {
+        setCancelModalOpen(false);
+    };
+
+    const handleCancelShipment = async () => {
+        try {
+            setCancelLoading(true);
+
+            // Check if shipment can be cancelled based on status
+            const currentStatus = shipment?.status?.toLowerCase();
+            if (currentStatus === 'delivered' || currentStatus === 'in_transit' || currentStatus === 'in transit') {
+                showSnackbar('Shipment cannot be cancelled after delivery or when in transit. Contact your Soluship rep.', 'error');
+                setCancelModalOpen(false);
+                return;
+            }
+
+            // Check if this is an eShipPlus shipment for automatic cancellation
+            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+
+            if (isEShipPlusShipment) {
+                // Handle eShipPlus automatic cancellation
+                const bookingReferenceNumber = shipment?.carrierBookingConfirmation?.proNumber ||
+                    shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                    shipment?.carrierBookingConfirmation?.bookingReferenceNumber ||
+                    shipment?.bookingReferenceNumber;
+
+                if (!bookingReferenceNumber) {
+                    showSnackbar('No booking reference number found for cancellation. Contact your Soluship rep.', 'error');
+                    setCancelModalOpen(false);
+                    return;
+                }
+
+                // Call the eShipPlus cancel cloud function
+                const cancelFunction = httpsCallable(functions, 'cancelShipmentEShipPlus');
+                const result = await cancelFunction({ bookingReferenceNumber });
+
+                if (result.data.success && result.data.data.cancelled) {
+                    // Successfully cancelled
+                    showSnackbar('Shipment successfully cancelled', 'success');
+
+                    // Update shipment status locally
+                    setShipment(prev => ({
+                        ...prev,
+                        status: 'cancelled'
+                    }));
+
+                    // Record the cancellation event
+                    try {
+                        await recordStatusChange(
+                            shipment.shipmentId || shipment.id,
+                            shipment.status,
+                            'cancelled',
+                            null,
+                            'Shipment cancelled by user via eShipPlus API'
+                        );
+                    } catch (eventError) {
+                        console.warn('Failed to record cancellation event:', eventError);
+                    }
+
+                } else if (result.data.success && !result.data.data.cancelled) {
+                    // Cancellation request failed
+                    showSnackbar(result.data.data.message || 'Shipment cannot be cancelled. Contact your Soluship rep for assistance.', 'error');
+                } else {
+                    // API call failed
+                    showSnackbar('Failed to cancel shipment. Please contact your Soluship rep for assistance.', 'error');
+                }
+            } else {
+                // For non-eShipPlus shipments, direct to contact rep
+                const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
+                showSnackbar(`Cancellation for ${carrierName} shipments requires manual processing. Please contact your Soluship representative for assistance.`, 'info');
+
+                // Still update status locally to cancelled for user feedback
+                setShipment(prev => ({
+                    ...prev,
+                    status: 'cancelled'
+                }));
+
+                // Record the cancellation request event
+                try {
+                    await recordStatusChange(
+                        shipment.shipmentId || shipment.id,
+                        shipment.status,
+                        'cancelled',
+                        null,
+                        `Cancellation requested by user for ${carrierName} shipment - requires manual processing`
+                    );
+                } catch (eventError) {
+                    console.warn('Failed to record cancellation request event:', eventError);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error cancelling shipment:', error);
+            showSnackbar('Cannot cancel shipment. Please try again or contact your Soluship rep.', 'error');
+        } finally {
+            setCancelLoading(false);
+            setCancelModalOpen(false);
+        }
+    };
+
+    // Check if shipment can be cancelled
+    const canCancelShipment = () => {
+        const currentStatus = shipment?.status?.toLowerCase();
+        const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+            getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+            getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+
+        // Debug information - expose to window for debugging
+        if (typeof window !== 'undefined') {
+            window.shipmentDebug = {
+                shipment,
+                getBestRateInfo,
+                currentStatus,
+                isEShipPlusShipment,
+                canCancel: currentStatus !== 'delivered' &&
+                    currentStatus !== 'in_transit' &&
+                    currentStatus !== 'in transit' &&
+                    currentStatus !== 'cancelled' &&
+                    currentStatus !== 'void' &&
+                    currentStatus !== 'draft'
+            };
+        }
+
+        // Allow cancellation for all shipments that are not delivered, in transit, cancelled, void, or draft
+        return currentStatus !== 'delivered' &&
+            currentStatus !== 'in_transit' &&
+            currentStatus !== 'in transit' &&
+            currentStatus !== 'cancelled' &&
+            currentStatus !== 'void' &&
+            currentStatus !== 'draft';
     };
 
     // Enhanced function to fetch shipment documents
@@ -2357,14 +2504,6 @@ const ShipmentDetail = () => {
         }
     }, [shipment, shipmentEvents]);
 
-    // 1. Add this useEffect after shipment is loaded and not loading:
-    useEffect(() => {
-        if (shipment && !loading) {
-            handleRefreshStatus();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shipment?.id]);
-
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -2528,9 +2667,34 @@ const ShipmentDetail = () => {
                             <Box id="shipment-detail-content">
                                 {/* Customer and Shipment Summary Section */}
                                 <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                        <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                        <Typography variant="h6">Shipment Summary</Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                            <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="h6">Shipment Summary</Typography>
+                                        </Box>
+                                        {/* Cancel Button */}
+                                        {canCancelShipment() && (
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={handleCancelShipmentClick}
+                                                sx={{
+                                                    borderColor: 'text.secondary',
+                                                    color: 'text.secondary',
+                                                    textTransform: 'none',
+                                                    fontSize: '0.875rem',
+                                                    minWidth: 'auto',
+                                                    px: 2,
+                                                    '&:hover': {
+                                                        borderColor: 'error.main',
+                                                        color: 'error.main',
+                                                        bgcolor: 'transparent'
+                                                    }
+                                                }}
+                                            >
+                                                Cancel Shipment
+                                            </Button>
+                                        )}
                                     </Box>
                                     <Grid container spacing={2}>
                                         <Grid item xs={12} sm={6} md={3}>
@@ -3971,6 +4135,106 @@ const ShipmentDetail = () => {
                         </Box>
                     )}
                 </DialogContent>
+            </Dialog>
+
+            {/* Cancel Shipment Confirmation Modal */}
+            <Dialog
+                open={cancelModalOpen}
+                onClose={handleCancelModalClose}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 2,
+                        p: 1
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    pb: 2
+                }}>
+                    <CancelIcon sx={{ color: 'warning.main' }} />
+                    <Typography variant="h6">Cancel Shipment</Typography>
+                </DialogTitle>
+                <DialogContent>
+                    {(() => {
+                        const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                            getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                            getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+
+                        const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
+
+                        return (
+                            <>
+                                <Typography variant="body1" sx={{ mb: 2 }}>
+                                    Are you sure you want to cancel this shipment?
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                    <strong>Shipment ID:</strong> {shipment?.shipmentID}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                    <strong>Carrier:</strong> {carrierName}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    <strong>Tracking Number:</strong> {(() => {
+                                        return shipment?.carrierBookingConfirmation?.proNumber ||
+                                            shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                            shipment?.trackingNumber ||
+                                            'N/A';
+                                    })()}
+                                </Typography>
+
+                                {isEShipPlusShipment ? (
+                                    <Alert severity="warning" sx={{ mt: 2 }}>
+                                        This action will immediately cancel the shipment with eShipPlus. This cannot be undone.
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="info" sx={{ mt: 2 }}>
+                                        <Typography variant="body2" sx={{ mb: 1 }}>
+                                            <strong>Manual Processing Required:</strong>
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            Cancellation for {carrierName} shipments requires manual processing by your Soluship representative.
+                                            This will mark the shipment as cancelled in the system and notify your rep to process the cancellation with the carrier.
+                                        </Typography>
+                                    </Alert>
+                                )}
+                            </>
+                        );
+                    })()}
+                </DialogContent>
+                <DialogActions sx={{ p: 3, gap: 1 }}>
+                    <Button
+                        onClick={handleCancelModalClose}
+                        disabled={cancelLoading}
+                        sx={{ textTransform: 'none' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleCancelShipment}
+                        variant="contained"
+                        color="error"
+                        disabled={cancelLoading}
+                        sx={{ textTransform: 'none' }}
+                    >
+                        {cancelLoading ? (
+                            <>
+                                <CircularProgress size={16} sx={{ mr: 1 }} />
+                                Processing...
+                            </>
+                        ) : (() => {
+                            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                                getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+
+                            return isEShipPlusShipment ? 'Cancel Shipment' : 'Request Cancellation';
+                        })()}
+                    </Button>
+                </DialogActions>
             </Dialog>
 
             {/* Enhanced Snackbar for User Feedback */}

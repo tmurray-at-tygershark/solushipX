@@ -393,6 +393,7 @@ function getStatusDisplayName(status) {
 module.exports = {
     getEShipPlusStatus,
     mapEShipPlusStatusToUniversal,
+    getCheckCallDescription,
     ESHIP_STATUS_MAP,
     CHECK_CALL_STATUS_MAP
 }; 

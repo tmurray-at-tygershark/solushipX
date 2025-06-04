@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 const axios = require('axios');
 const { getCarrierApiConfig, createEShipPlusAuthHeader } = require('../../utils');
+const { getCheckCallDescription } = require('./getStatus');
 
 /**
  * Parses location information from eShipPlus CallNotes.
@@ -171,24 +172,13 @@ const fetchAndTransformEShipPlusHistory = async (shipmentNumber) => {
       const callDate = parseEShipDate(callDateStr);
       ts = eventDate || callDate || new Date();
 
-      let derivedStatus = call.StatusCode || 'INFO';
-      if (call.CallNotes) {
-        const notesLower = call.CallNotes.toLowerCase();
-        if (notesLower.includes("delivered")) derivedStatus = "Delivered";
-        else if (notesLower.includes("picked up")) derivedStatus = "Picked Up";
-        else if (notesLower.includes("departed origin")) derivedStatus = "Departed Origin";
-        else if (notesLower.includes("in transit")) derivedStatus = "In Transit";
-        else if (notesLower.includes("arrived at destination") || (notesLower.includes("arrived") && notesLower.includes("destination"))) derivedStatus = "Arrived Destination";
-        else if (notesLower.includes("out for delivery")) derivedStatus = "Out for Delivery";
-        else if (notesLower.includes("arrived") && notesLower.includes("service center")) derivedStatus = "Arrived Service Center";
-        else if (notesLower.includes("departed") && notesLower.includes("service center")) derivedStatus = "Departed Service Center";
-        else if (notesLower.includes("exception") || notesLower.includes("issue")) derivedStatus = "Exception";
-      }
+      // Use the proper getCheckCallDescription function from getStatus.js
+      const properDescription = getCheckCallDescription(call.StatusCode, call.CallNotes);
 
       return {
         timestamp: ts.toISOString(),
-        status: derivedStatus,
-        description: call.CallNotes,
+        status: properDescription, // Use the human-readable description
+        description: call.CallNotes || properDescription,
         location: parseLocationFromNotes(call.CallNotes),
         rawStatusCode: call.StatusCode,
         rawCallDate: call.CallDate,

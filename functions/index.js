@@ -33,6 +33,7 @@ const db = admin.firestore();
 
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
+const { cancelShipmentEShipPlus } = require('./src/carrier-api/eshipplus/cancelShipment');
 const { getRatesCanpar } = require('./src/carrier-api/canpar/getRates');
 const { getHistoryCanpar } = require("./src/carrier-api/canpar/getHistory");
 const { generateCanparLabel } = require('./src/carrier-api/canpar/generateLabel');
@@ -48,6 +49,7 @@ const eshipPlusApi = require('./src/carrier-api/eshipplus');
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
+exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
 exports.getRatesCanpar = getRatesCanpar;
 exports.generateCanparLabel = generateCanparLabel;
 exports.getHistoryCanpar = getHistoryCanpar;
