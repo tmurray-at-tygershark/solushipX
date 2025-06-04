@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Box, Paper, Typography, Grid, Card, CardContent, CardMedia, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Switch, IconButton, Tooltip, Chip, CircularProgress, InputLabel, MenuItem, Select, FormControl, Breadcrumbs, Link, InputAdornment
+    Box, Paper, Typography, Grid, Card, CardContent, CardMedia, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Switch, IconButton, Tooltip, Chip, CircularProgress, InputLabel, MenuItem, Select, FormControl, Breadcrumbs, Link, InputAdornment, LinearProgress
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, CloudUpload as CloudUploadIcon, NavigateNext as NavigateNextIcon, Search as SearchIcon } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
 import { db } from '../../../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { getApp } from 'firebase/app';
+import { getStorage } from 'firebase/storage';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -28,6 +31,8 @@ const AdminCarriers = () => {
     const [logoPreview, setLogoPreview] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [enabledFilter, setEnabledFilter] = useState('all');
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadError, setUploadError] = useState(null);
     const [formData, setFormData] = useState({
         name: '',
         carrierID: '',
@@ -40,6 +45,7 @@ const AdminCarriers = () => {
         password: '',
         secret: '',
         logoFileName: '',
+        logoURL: '',
     });
     const [saving, setSaving] = useState(false);
     const [endpoints, setEndpoints] = useState({
@@ -106,6 +112,7 @@ const AdminCarriers = () => {
                 password: carrier.apiCredentials?.password || carrier.password || '',
                 secret: carrier.apiCredentials?.secret || carrier.secret || '',
                 logoFileName: carrier.logoFileName || '',
+                logoURL: carrier.logoURL || '',
             });
             // Set endpoints from carrier data
             setEndpoints({
@@ -116,7 +123,7 @@ const AdminCarriers = () => {
                 labels: carrier.apiCredentials?.endpoints?.labels || '',
                 status: carrier.apiCredentials?.endpoints?.status || ''
             });
-            setLogoPreview(carrier.logoFileName ? `/images/carrier-badges/${carrier.logoFileName}` : '');
+            setLogoPreview(carrier.logoURL || '');
         } else {
             setSelectedCarrier(null);
             setFormData({
@@ -131,6 +138,7 @@ const AdminCarriers = () => {
                 password: '',
                 secret: '',
                 logoFileName: '',
+                logoURL: '',
             });
             // Reset endpoints for new carrier
             setEndpoints({
@@ -153,6 +161,8 @@ const AdminCarriers = () => {
         setSelectedCarrier(null);
         setLogoFile(null);
         setLogoPreview('');
+        setUploadProgress(0);
+        setUploadError(null);
         setFormData({
             name: '',
             carrierID: '',
@@ -165,6 +175,7 @@ const AdminCarriers = () => {
             password: '',
             secret: '',
             logoFileName: '',
+            logoURL: '',
         });
         setEndpoints({
             rate: '',
@@ -249,25 +260,70 @@ const AdminCarriers = () => {
     const handleSaveCarrier = async (e) => {
         e.preventDefault();
         if (carrierIdError) {
+            enqueueSnackbar('Carrier ID is already in use. Please choose a different one.', { variant: 'error' });
             return;
         }
         if (!formData.accountNumber || formData.accountNumber.trim() === '') {
             setError('Account Number is required.');
+            enqueueSnackbar('Account Number is required.', { variant: 'error' });
             return;
         }
         setSaving(true);
         setError(null);
+        setUploadError(null);
+        setUploadProgress(0);
+
         try {
-            let logoFileName = formData.logoFileName;
+            let logoFileNameToSave = formData.logoFileName;
+            let logoURLToSave = formData.logoURL;
+
             if (logoFile) {
-                logoFileName = logoFile.name;
+                // New logo file selected, upload it to custom storage bucket
+                const newLogoFileName = `${Date.now()}_${logoFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                const firebaseApp = getApp();
+                const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+                const storageRef = ref(customStorage, `carrierLogos/${newLogoFileName}`);
+                const uploadTask = uploadBytesResumable(storageRef, logoFile);
+
+                await new Promise((resolve, reject) => {
+                    uploadTask.on('state_changed',
+                        (snapshot) => {
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            setUploadProgress(progress);
+                            console.log('Upload is ' + progress + '% done');
+                        },
+                        (error) => {
+                            console.error("Error uploading logo: ", error);
+                            setUploadError(`Upload failed: ${error.message}`);
+                            enqueueSnackbar(`Logo upload failed: ${error.message}`, { variant: 'error' });
+                            reject(error);
+                        },
+                        async () => {
+                            try {
+                                // Get the download URL after successful upload
+                                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                                logoFileNameToSave = newLogoFileName;
+                                logoURLToSave = downloadURL; // Store the download URL
+                                setUploadProgress(100);
+                                resolve();
+                            } catch (getUrlError) {
+                                console.error("Error getting download URL: ", getUrlError);
+                                setUploadError(`Upload succeeded but failed to get URL: ${getUrlError.message}`);
+                                enqueueSnackbar(`Logo upload succeeded but failed to get URL: ${getUrlError.message}`, { variant: 'warning' });
+                                reject(getUrlError);
+                            }
+                        }
+                    );
+                });
             }
+
             const carrierData = {
                 name: formData.name,
                 carrierID: formData.carrierID,
                 type: formData.type,
                 enabled: formData.enabled,
-                logoFileName,
+                logoFileName: logoFileNameToSave,
+                logoURL: logoURLToSave, // Store the download URL
                 apiCredentials: {
                     ...formData.apiCredentials,
                     accountNumber: formData.accountNumber,
@@ -279,10 +335,12 @@ const AdminCarriers = () => {
                 },
                 updatedAt: serverTimestamp(),
             };
+
             if (!selectedCarrier) {
                 carrierData.createdAt = serverTimestamp();
                 carrierData.status = 'active';
             }
+
             if (selectedCarrier) {
                 await updateDoc(doc(db, 'carriers', selectedCarrier.id), carrierData);
                 enqueueSnackbar('Carrier updated successfully.', { variant: 'success' });
@@ -293,7 +351,11 @@ const AdminCarriers = () => {
             fetchCarriers();
             handleCloseDialog();
         } catch (err) {
-            setError('Error saving carrier: ' + err.message);
+            if (!uploadError) {
+                setError('Error saving carrier: ' + err.message);
+                enqueueSnackbar(`Error saving carrier: ${err.message}`, { variant: 'error' });
+            }
+            console.error("Error saving carrier: ", err);
         } finally {
             setSaving(false);
         }
@@ -395,7 +457,7 @@ const AdminCarriers = () => {
                         <Card className="carrier-card">
                             <Box sx={{ position: 'relative', width: '100%', mb: 2 }}>
                                 <img
-                                    src={carrier.logoFileName ? `/images/carrier-badges/${carrier.logoFileName}` : '/images/carrier-badges/default.png'}
+                                    src={carrier.logoURL || '/images/carrierLogos/default.png'}
                                     alt={carrier.name}
                                     style={{
                                         width: '100%',
@@ -532,6 +594,19 @@ const AdminCarriers = () => {
                                     <Typography variant="body2" color="text.secondary">
                                         {logoFile ? logoFile.name : 'Drag & drop or click to upload logo'}
                                     </Typography>
+                                    {uploadProgress > 0 && uploadProgress < 100 && (
+                                        <Box sx={{ width: '100%', mt: 1 }}>
+                                            <LinearProgress variant="determinate" value={uploadProgress} />
+                                            <Typography variant="caption" display="block" gutterBottom sx={{ textAlign: 'center' }}>
+                                                {Math.round(uploadProgress)}%
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                    {uploadError && (
+                                        <Typography variant="caption" color="error" sx={{ mt: 1 }}>
+                                            {uploadError}
+                                        </Typography>
+                                    )}
                                 </Box>
                             </Grid>
                             {/* API Endpoints Section */}
