@@ -10,9 +10,11 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, updateDoc, serverTimestamp, collection, addDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
+import { fetchMultiCarrierRates, getEligibleCarriers } from '../../utils/carrierEligibility';
+import { validateUniversalRate } from '../../utils/universalDataModel';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
 import { toCanparRequest } from '../../translators/canpar/translator';
-import { mapEShipPlusToUniversal, mapCanparToUniversal, validateUniversalRate } from '../../utils/universalDataModel';
+import { mapEShipPlusToUniversal, mapCanparToUniversal } from '../../utils/universalDataModel';
 
 // Function to recursively remove undefined values from objects
 const removeUndefinedValues = (obj) => {
@@ -53,6 +55,9 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
     // New state for storing the raw API response from the rating function
     const [rawRateApiResponseData, setRawRateApiResponseData] = useState(null);
+
+    // Add state for multi-carrier loading details
+    const [loadingCarriers, setLoadingCarriers] = useState([]);
 
     useEffect(() => {
         setSelectedRate(formData.selectedRate || null);
@@ -394,18 +399,96 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     }, [styles]);
 
     const fetchRatesInternal = useCallback(async (currentFormDataForRateRequest) => {
-        console.log('fetchRatesInternal triggered');
+        console.log('🌟 Multi-carrier fetchRatesInternal triggered');
         setIsLoading(true);
         setError(null);
         setRatesLoaded(false);
 
         try {
-            // Determine carrier based on shipment type
+            // Use the new smart multi-carrier system with carrier-specific timeout configuration
+            const multiCarrierResult = await fetchMultiCarrierRates(currentFormDataForRateRequest, {
+                progressiveResults: true,   // Return results as they arrive
+                includeFailures: true       // Include failed carriers in results for debugging
+                // Note: Timeout values are now calculated automatically based on carrier-specific timeouts
+                // eShipPlus: 28 seconds, Polaris: 25 seconds, Canpar: 20 seconds
+            });
+
+            console.log('Smart multi-carrier fetch result:', multiCarrierResult);
+
+            if (multiCarrierResult.success && multiCarrierResult.rates.length > 0) {
+                // Validate all rates
+                const validRates = multiCarrierResult.rates.filter(rate => {
+                    const validation = validateUniversalRate(rate);
+                    if (!validation.valid) {
+                        console.warn('Invalid rate found:', validation.errors, rate);
+                        return false;
+                    }
+                    return true;
+                });
+
+                console.log(`✅ Multi-carrier fetch successful: ${validRates.length} valid rates from ${multiCarrierResult.summary.successfulCarriers} carriers`);
+                console.log('Execution summary:', multiCarrierResult.summary);
+
+                // Log carrier breakdown
+                multiCarrierResult.results.forEach(result => {
+                    if (result.success) {
+                        console.log(`✅ ${result.carrier}: ${result.rates.length} rates (${result.responseTime}ms)`);
+                    } else {
+                        console.warn(`❌ ${result.carrier}: ${result.error} (${result.responseTime}ms)`);
+                    }
+                });
+
+                setRates(validRates);
+                setFilteredRates(validRates);
+                updateFormSection('originalRateRequestData', currentFormDataForRateRequest);
+                setRawRateApiResponseData(multiCarrierResult);
+                setRatesLoaded(true);
+
+            } else {
+                // Handle case where no rates were found
+                let errorMessage = 'No rates available from any carrier.';
+
+                if (multiCarrierResult.results.length > 0) {
+                    const errors = multiCarrierResult.results
+                        .filter(r => !r.success)
+                        .map(r => `${r.carrier}: ${r.error}`)
+                        .join('; ');
+
+                    if (errors) {
+                        errorMessage += ` Carrier errors: ${errors}`;
+                    }
+                }
+
+                console.error('❌ Multi-carrier fetch failed:', errorMessage);
+                console.log('Failed results:', multiCarrierResult.results);
+
+                // FALLBACK: Try single-carrier approach if multi-carrier completely fails
+                console.warn('🔄 Attempting fallback to single-carrier rate fetch...');
+                await attemptSingleCarrierFallback(currentFormDataForRateRequest);
+            }
+
+        } catch (error) {
+            console.error("❌ Network or system error in multi-carrier fetch:", error);
+
+            // FALLBACK: Try single-carrier approach on system error
+            console.warn('🔄 Multi-carrier system error, attempting single-carrier fallback...');
+            await attemptSingleCarrierFallback(currentFormDataForRateRequest);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [updateFormSection]);
+
+    // Fallback function for single-carrier rate fetching
+    const attemptSingleCarrierFallback = async (currentFormDataForRateRequest) => {
+        try {
+            console.log('🔄 Executing single-carrier fallback...');
+
+            // Determine carrier based on shipment type (original logic)
             const shipmentType = currentFormDataForRateRequest.shipmentInfo?.shipmentType || 'freight';
             const isFreight = shipmentType === 'freight';
             const isCourier = shipmentType === 'courier';
 
-            console.log(`Shipment type: ${shipmentType}, using ${isFreight ? 'eShipPlus' : 'Canpar'} carrier`);
+            console.log(`Fallback: Shipment type: ${shipmentType}, using ${isFreight ? 'eShipPlus' : 'Canpar'} carrier`);
 
             let rateRequestData;
             let functions;
@@ -418,50 +501,17 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
                 // Auto-fix missing contact fields for eShipPlus
                 if (!rateRequestData.Origin.Contact || rateRequestData.Origin.Contact.trim() === '') {
-                    console.log("Auto-fixing missing origin Contact");
-                    rateRequestData.Origin.Contact =
-                        rateRequestData.Origin.Attention ||
-                        rateRequestData.Origin.Name ||
-                        rateRequestData.Origin.Company ||
-                        "Shipping Department";
+                    rateRequestData.Origin.Contact = "Shipping Department";
                 }
-
                 if (!rateRequestData.Destination.Contact || rateRequestData.Destination.Contact.trim() === '') {
-                    console.log("Auto-fixing missing destination Contact");
-                    rateRequestData.Destination.Contact =
-                        rateRequestData.Destination.Attention ||
-                        rateRequestData.Destination.Name ||
-                        rateRequestData.Destination.Company ||
-                        "Receiving Department";
+                    rateRequestData.Destination.Contact = "Receiving Department";
                 }
-
-                if (!rateRequestData.Origin.SpecialInstructions ||
-                    rateRequestData.Origin.SpecialInstructions.trim() === '') {
+                if (!rateRequestData.Origin.SpecialInstructions) {
                     rateRequestData.Origin.SpecialInstructions = 'none';
                 }
-
-                if (!rateRequestData.Destination.SpecialInstructions ||
-                    rateRequestData.Destination.SpecialInstructions.trim() === '') {
+                if (!rateRequestData.Destination.SpecialInstructions) {
                     rateRequestData.Destination.SpecialInstructions = 'none';
                 }
-
-                // Validate required fields for eShipPlus
-                const requiredFields = [
-                    'Origin.City', 'Origin.PostalCode', 'Origin.Country.Code', 'Origin.Contact',
-                    'Destination.City', 'Destination.PostalCode', 'Destination.Country.Code', 'Destination.Contact'
-                ];
-
-                for (const field of requiredFields) {
-                    const value = field.split('.').reduce((obj, key) => obj?.[key], rateRequestData);
-                    if (!value || value.trim() === '') {
-                        throw new Error(`Missing or invalid ${field.replace(/\./g, ' ').toLowerCase()}`);
-                    }
-                }
-
-                console.group('🚢 eShipPlus Rate Request Data:');
-                console.log('Full request used:', currentFormDataForRateRequest);
-                console.log('Translated request:', rateRequestData);
-                console.groupEnd();
 
                 functions = getFunctions();
                 getRatesFunction = httpsCallable(functions, 'getRatesEShipPlus');
@@ -471,53 +521,22 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 // Use Canpar for courier shipments
                 rateRequestData = toCanparRequest(currentFormDataForRateRequest);
 
-                // Validate required fields for Canpar
-                if (!rateRequestData.shipment.pickup_address.name ||
-                    !rateRequestData.shipment.pickup_address.address_line_1 ||
-                    !rateRequestData.shipment.pickup_address.city ||
-                    !rateRequestData.shipment.pickup_address.province ||
-                    !rateRequestData.shipment.pickup_address.postal_code) {
-                    throw new Error('Missing required pickup address information for Canpar');
-                }
-
-                if (!rateRequestData.shipment.delivery_address.name ||
-                    !rateRequestData.shipment.delivery_address.address_line_1 ||
-                    !rateRequestData.shipment.delivery_address.city ||
-                    !rateRequestData.shipment.delivery_address.province ||
-                    !rateRequestData.shipment.delivery_address.postal_code) {
-                    throw new Error('Missing required delivery address information for Canpar');
-                }
-
-                if (!rateRequestData.shipment.packages || rateRequestData.shipment.packages.length === 0) {
-                    throw new Error('At least one package is required for Canpar');
-                }
-
-                console.group('📦 Canpar Rate Request Data:');
-                console.log('Full request used:', currentFormDataForRateRequest);
-                console.log('Translated request:', rateRequestData);
-                console.groupEnd();
-
                 functions = getFunctions();
                 getRatesFunction = httpsCallable(functions, 'getRatesCanpar');
                 result = await getRatesFunction(rateRequestData);
+            }
 
-            } else {
-                throw new Error(`Unsupported shipment type: ${shipmentType}`);
+            // Safety check for result
+            if (!result || !result.data) {
+                throw new Error('No result returned from carrier API');
             }
 
             const data = result.data;
-            console.log(`Raw ${isFreight ? 'eShipPlus' : 'Canpar'} Response Object:`, data);
 
             if (data.success && data.data) {
                 const availableRates = data.data.availableRates || [];
-                if (!Array.isArray(availableRates)) {
-                    console.error('availableRates is not an array:', availableRates);
-                    setError('Received invalid rate data format from server.');
-                    setRates([]);
-                    setFilteredRates([]);
-                    setRawRateApiResponseData(null);
-                } else {
-                    // Apply data mapping to standardize rate structure
+
+                if (Array.isArray(availableRates) && availableRates.length > 0) {
                     const carrierType = isFreight ? 'ESHIPPLUS' : 'CANPAR';
                     const standardizedRates = availableRates.map(rate => {
                         let standardizedRate;
@@ -527,16 +546,12 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                             standardizedRate = mapCanparToUniversal(rate);
                         }
 
-                        // CRITICAL: Add source carrier metadata for proper booking routing
-                        // This ensures that eShipPlus rates always book through eShipPlus endpoints
-                        // regardless of the actual carrier name (FedEx, UPS, etc.)
                         standardizedRate.sourceCarrier = {
                             key: carrierType,
                             name: isFreight ? 'eShipPlus' : 'Canpar',
                             system: isFreight ? 'eshipplus' : 'canpar'
                         };
 
-                        // Preserve original carrier info for display purposes
                         standardizedRate.displayCarrier = {
                             name: standardizedRate.carrier?.name,
                             id: standardizedRate.carrier?.id,
@@ -546,46 +561,33 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                         return standardizedRate;
                     });
 
-                    // Validate standardized rates
-                    const validRates = standardizedRates.filter(rate => {
-                        const validation = validateUniversalRate(rate);
-                        if (!validation.valid) {
-                            console.warn('Invalid rate found:', validation.errors, rate);
-                            return false;
-                        }
-                        return true;
-                    });
+                    console.log(`✅ Fallback successful: ${standardizedRates.length} rates from ${carrierType}`);
 
-                    console.log(`Standardized ${validRates.length} rates from ${carrierType}`);
-
-                    setRates(validRates);
-                    setFilteredRates(validRates);
+                    setRates(standardizedRates);
+                    setFilteredRates(standardizedRates);
                     updateFormSection('originalRateRequestData', rateRequestData);
                     setRawRateApiResponseData(data.data);
+                    setRatesLoaded(true);
+                    return;
                 }
-                setRatesLoaded(true);
-            } else {
-                const errorMessage = data.error || data?.data?.messages?.map(m => m.Text || m.text).join('; ') || 'Failed to fetch rates due to an unknown API error.';
-                console.error(`Error fetching rates from ${isFreight ? 'eShipPlus' : 'Canpar'} API:`, errorMessage, data);
-                setError(errorMessage);
-                setRates([]);
-                setFilteredRates([]);
-                setRawRateApiResponseData(null);
             }
-        } catch (error) {
-            console.error("Network or function invocation error fetching rates:", error);
-            let detailedMessage = error.message;
-            if (error.details) {
-                detailedMessage += ` Details: ${JSON.stringify(error.details)}`;
-            }
-            setError(`Failed to fetch rates. ${detailedMessage}`);
+
+            // If fallback also fails
+            const errorMessage = data?.error || 'Failed to fetch rates even with fallback method.';
+            console.error('❌ Fallback also failed:', errorMessage);
+            setError(errorMessage);
             setRates([]);
             setFilteredRates([]);
             setRawRateApiResponseData(null);
-        } finally {
-            setIsLoading(false);
+
+        } catch (fallbackError) {
+            console.error('❌ Fallback method also failed:', fallbackError);
+            setError(`Both multi-carrier and fallback methods failed. ${fallbackError.message}`);
+            setRates([]);
+            setFilteredRates([]);
+            setRawRateApiResponseData(null);
         }
-    }, [updateFormSection]);
+    };
 
     useEffect(() => {
         console.log('useEffect for calling fetchRatesInternal triggered. Checking conditions...');
@@ -724,6 +726,22 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         }
         return () => clearInterval(interval);
     }, [isLoading]);
+
+    // Update the loading effect to show eligible carriers
+    useEffect(() => {
+        if (isLoading && formData.shipFrom && formData.shipTo && formData.packages) {
+            // Get eligible carriers to show in loading state
+            const eligible = getEligibleCarriers({
+                shipFrom: formData.shipFrom,
+                shipTo: formData.shipTo,
+                packages: formData.packages,
+                shipmentInfo: formData.shipmentInfo
+            });
+            setLoadingCarriers(eligible.map(c => c.name));
+        } else {
+            setLoadingCarriers([]);
+        }
+    }, [isLoading, formData.shipFrom, formData.shipTo, formData.packages, formData.shipmentInfo]);
 
     // New function to save selected rate to shipmentRates and get its ID
     const saveRateToShipmentRatesCollection = async (universalRate, originalRateRequestForApi, rawFullRateApiResponse) => {
@@ -988,11 +1006,31 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                     <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
                         <CircularProgress size={50} sx={{ mb: 3 }} />
                         <Typography variant="h5" component="p" color="text.secondary" textAlign="center">
-                            Searching All Carrier Rates...
+                            Fetching Multi-Carrier Rates{loadingDots}
                         </Typography>
                         <Typography variant="body2" color="text.tertiary" sx={{ mt: 1 }} textAlign="center">
-                            This may take a moment. Please wait.
+                            Searching {loadingCarriers.length} eligible carriers simultaneously
                         </Typography>
+                        {loadingCarriers.length > 0 && (
+                            <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
+                                {loadingCarriers.map((carrier, index) => (
+                                    <Typography
+                                        key={index}
+                                        variant="caption"
+                                        sx={{
+                                            px: 1.5,
+                                            py: 0.5,
+                                            backgroundColor: 'primary.light',
+                                            color: 'primary.contrastText',
+                                            borderRadius: 1,
+                                            fontSize: '0.75rem'
+                                        }}
+                                    >
+                                        {carrier}
+                                    </Typography>
+                                ))}
+                            </Box>
+                        )}
                     </Grid>
                 </Grid>
                 <Box
@@ -1189,6 +1227,65 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                         </Card>
                     )}
 
+                    {/* Multi-Carrier Summary Section */}
+                    {ratesLoaded && rawRateApiResponseData && rawRateApiResponseData.summary && (
+                        <Card sx={{ mb: 3, bgcolor: 'background.paper' }} elevation={2}>
+                            <CardHeader
+                                title={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="h6">Multi-Carrier Summary</Typography>
+                                    </Box>
+                                }
+                            />
+                            <CardContent>
+                                <Grid container spacing={2}>
+                                    <Grid item xs={6} sm={3}>
+                                        <Typography variant="body2" color="text.secondary">Carriers Contacted</Typography>
+                                        <Typography variant="h6">{rawRateApiResponseData.summary.totalCarriers}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={3}>
+                                        <Typography variant="body2" color="text.secondary">Successful</Typography>
+                                        <Typography variant="h6" color="success.main">{rawRateApiResponseData.summary.successfulCarriers}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={3}>
+                                        <Typography variant="body2" color="text.secondary">Total Rates</Typography>
+                                        <Typography variant="h6">{rawRateApiResponseData.summary.totalRates}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={3}>
+                                        <Typography variant="body2" color="text.secondary">Fetch Time</Typography>
+                                        <Typography variant="h6">{(rawRateApiResponseData.summary.executionTime / 1000).toFixed(1)}s</Typography>
+                                    </Grid>
+                                </Grid>
+
+                                {rawRateApiResponseData.results && rawRateApiResponseData.results.length > 0 && (
+                                    <Box sx={{ mt: 2 }}>
+                                        <Typography variant="subtitle2" sx={{ mb: 1 }}>Carrier Results:</Typography>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                            {rawRateApiResponseData.results.map((result, index) => (
+                                                <Typography
+                                                    key={index}
+                                                    variant="caption"
+                                                    sx={{
+                                                        px: 1.5,
+                                                        py: 0.5,
+                                                        backgroundColor: result.success ? 'success.light' : 'error.light',
+                                                        color: result.success ? 'success.contrastText' : 'error.contrastText',
+                                                        borderRadius: 1,
+                                                        fontSize: '0.75rem'
+                                                    }}
+                                                    title={result.success ? `${result.rates.length} rates in ${result.responseTime}ms` : result.error}
+                                                >
+                                                    {result.success ? '✅' : '❌'} {result.carrier}
+                                                    {result.success && ` (${result.rates.length})`}
+                                                </Typography>
+                                            ))}
+                                        </Box>
+                                    </Box>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
                     {analysisError && (
                         <Paper elevation={2} sx={{ p: 2, my: 2, backgroundColor: 'error.lighter', color: 'error.dark' }}>
                             <Typography>{analysisError}</Typography>
@@ -1206,7 +1303,21 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                         {filteredRates.map((rate) => (
                             <Grid item xs={12} md={6} lg={4} key={rate.quoteId}>
                                 <Card className="card mb-4" elevation={2}>
-                                    <CardHeader title={<Typography variant="h6" component="div">{rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'N/A'}</Typography>} sx={{ pb: 0 }} />
+                                    <CardHeader
+                                        title={
+                                            <Box>
+                                                <Typography variant="h6" component="div">
+                                                    {rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier'}
+                                                </Typography>
+                                                {rate.sourceCarrier?.name && rate.sourceCarrier.name !== (rate.displayCarrier?.name || rate.carrier?.name) && (
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                                        via {rate.sourceCarrier.name}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        }
+                                        sx={{ pb: 0 }}
+                                    />
                                     <CardContent>
                                         <div className="days-container">
                                             <i className="fa-light fa-truck"></i>
@@ -1253,6 +1364,10 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                                 <li>
                                                     <span className="charge-name">Service Mode</span>
                                                     <span className="charge-amount">{rate.serviceMode || rate.service?.name || (typeof rate.service === 'string' ? rate.service : 'N/A')}</span>
+                                                </li>
+                                                <li>
+                                                    <span className="charge-name">Source System</span>
+                                                    <span className="charge-amount">{rate.sourceCarrier?.name || 'Unknown'}</span>
                                                 </li>
 
                                                 {/* Enhanced billing details display */}

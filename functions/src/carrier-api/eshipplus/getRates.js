@@ -280,7 +280,7 @@ console.log('LOG: getRates.js - processRateRequest defined.');
 console.log('LOG: getRates.js - Setting up exports.getRatesEShipPlus.');
 exports.getRatesEShipPlus = onCall({
   cors: true,
-  timeoutSeconds: 60,
+  timeoutSeconds: 30,
   memory: "256MiB",
   region: 'us-central1' // Explicitly set region
 }, async (request) => {

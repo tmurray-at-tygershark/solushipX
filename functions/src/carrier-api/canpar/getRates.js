@@ -689,7 +689,12 @@ async function processCanparRateRequest(data) {
 
 // Export the Cloud Function
 // Force deployment update
-exports.getRatesCanpar = onCall(async (request) => {
+exports.getRatesCanpar = onCall({
+    cors: true,
+    timeoutSeconds: 30, // Added timeout configuration for multi-carrier compatibility
+    memory: "256MiB",
+    region: 'us-central1'
+}, async (request) => {
     try {
         const data = request.data;
         logger.info('getRatesCanpar function called');
