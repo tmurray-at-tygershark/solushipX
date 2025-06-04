@@ -94,6 +94,13 @@ if (carrierApiFunctions && carrierApiFunctions.cancelShipmentEShipPlus) {
     console.warn('LOG-MAIN-INDEX: cancelShipmentEShipPlus not found in carrierApiFunctions module.');
 }
 
+if (carrierApiFunctions && carrierApiFunctions.cancelShipmentCanpar) {
+    exports.cancelShipmentCanpar = carrierApiFunctions.cancelShipmentCanpar;
+    console.log('LOG-MAIN-INDEX: exports.cancelShipmentCanpar defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: cancelShipmentCanpar not found in carrierApiFunctions module.');
+}
+
 if (carrierApiFunctions && carrierApiFunctions.getRatesCanpar) {
     exports.getRatesCanpar = carrierApiFunctions.getRatesCanpar;
     console.log('LOG-MAIN-INDEX: exports.getRatesCanpar defined.');

@@ -2,7 +2,7 @@ const { getRatesEShipPlus } = require('./getRates');
 const { bookRateEShipPlus, bookEShipPlusShipment } = require('./bookRate');
 const { getStatusEShipPlus } = require('./getStatus');
 const { fetchAndTransformEShipPlusHistory } = require('./getHistory');
-const { cancelEShipPlusShipment, processCancelRequest } = require('./cancelShipment');
+const { cancelEShipPlusShipment, processCancelRequest, cancelShipmentEShipPlus } = require('./cancelShipment');
 
 module.exports = {
     getRatesEShipPlus,
@@ -12,4 +12,5 @@ module.exports = {
     fetchAndTransformEShipPlusHistory,
     cancelEShipPlusShipment,
     processCancelRequest,
+    cancelShipmentEShipPlus,
 }; 

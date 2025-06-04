@@ -1242,16 +1242,21 @@ const ShipmentDetail = () => {
                 return;
             }
 
-            // Check if this is an eShipPlus shipment for automatic cancellation
+            // Check carrier type for automatic cancellation
             const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
                 getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
                 getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
-            if (isEShipPlusShipment) {
-                // Handle eShipPlus automatic cancellation
+            const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+                getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+                getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+
+            if (isEShipPlusShipment || isCanparShipment) {
+                // Handle automatic cancellation for supported carriers
                 const bookingReferenceNumber = shipment?.carrierBookingConfirmation?.proNumber ||
                     shipment?.carrierBookingConfirmation?.confirmationNumber ||
                     shipment?.carrierBookingConfirmation?.bookingReferenceNumber ||
+                    shipment?.carrierBookingConfirmation?.shipmentId ||
                     shipment?.bookingReferenceNumber;
 
                 if (!bookingReferenceNumber) {
@@ -1260,13 +1265,17 @@ const ShipmentDetail = () => {
                     return;
                 }
 
-                // Call the eShipPlus cancel cloud function
-                const cancelFunction = httpsCallable(functions, 'cancelShipmentEShipPlus');
+                // Determine which cancel function to call
+                const cancelFunctionName = isEShipPlusShipment ? 'cancelShipmentEShipPlus' : 'cancelShipmentCanpar';
+                const carrierName = isEShipPlusShipment ? 'eShipPlus' : 'CanPar';
+
+                // Call the appropriate carrier cancel cloud function
+                const cancelFunction = httpsCallable(functions, cancelFunctionName);
                 const result = await cancelFunction({ bookingReferenceNumber });
 
                 if (result.data.success && result.data.data.cancelled) {
                     // Successfully cancelled
-                    showSnackbar('Shipment successfully cancelled', 'success');
+                    showSnackbar(`Shipment successfully cancelled with ${carrierName}`, 'success');
 
                     // Update shipment status locally
                     setShipment(prev => ({
@@ -1281,7 +1290,7 @@ const ShipmentDetail = () => {
                             shipment.status,
                             'cancelled',
                             null,
-                            'Shipment cancelled by user via eShipPlus API'
+                            `Shipment cancelled by user via ${carrierName} API`
                         );
                     } catch (eventError) {
                         console.warn('Failed to record cancellation event:', eventError);
@@ -1289,13 +1298,13 @@ const ShipmentDetail = () => {
 
                 } else if (result.data.success && !result.data.data.cancelled) {
                     // Cancellation request failed
-                    showSnackbar(result.data.data.message || 'Shipment cannot be cancelled. Contact your Soluship rep for assistance.', 'error');
+                    showSnackbar(result.data.data.message || `Shipment cannot be cancelled with ${carrierName}. Contact your Soluship rep for assistance.`, 'error');
                 } else {
                     // API call failed
-                    showSnackbar('Failed to cancel shipment. Please contact your Soluship rep for assistance.', 'error');
+                    showSnackbar(`Failed to cancel shipment with ${carrierName}. Please contact your Soluship rep for assistance.`, 'error');
                 }
             } else {
-                // For non-eShipPlus shipments, direct to contact rep
+                // For other carriers, direct to contact rep
                 const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
                 showSnackbar(`Cancellation for ${carrierName} shipments requires manual processing. Please contact your Soluship representative for assistance.`, 'info');
 
@@ -1335,6 +1344,10 @@ const ShipmentDetail = () => {
             getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
             getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
+        const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+            getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+            getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+
         // Debug information - expose to window for debugging
         if (typeof window !== 'undefined') {
             window.shipmentDebug = {
@@ -1342,6 +1355,7 @@ const ShipmentDetail = () => {
                 getBestRateInfo,
                 currentStatus,
                 isEShipPlusShipment,
+                isCanparShipment,
                 canCancel: currentStatus !== 'delivered' &&
                     currentStatus !== 'in_transit' &&
                     currentStatus !== 'in transit' &&
