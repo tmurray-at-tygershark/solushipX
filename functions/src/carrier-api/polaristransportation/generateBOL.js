@@ -351,16 +351,12 @@ function buildExactBOLDocument(doc, bolData) {
  * Draws the exact header section matching the original BOL with SolushipX branding
  */
 function drawExactHeader(doc, bolData) {
-    // Company logo area (top-left) - enhanced for SolushipX branding
-    doc.lineWidth(1)
-       .rect(25, 25, 180, 70)
-       .stroke();
-    
+    // Company logo area (top-left) - REMOVED BOX around logo
     // Load and embed SolushipX logo image
     try {
         const logoPath = path.join(__dirname, '../../assets/SolushipX_black.png');
         if (fs.existsSync(logoPath)) {
-            // Embed the actual logo image
+            // Embed the actual logo image WITHOUT border box
             doc.image(logoPath, 35, 30, {
                 width: 150,
                 height: 60,
@@ -371,68 +367,68 @@ function drawExactHeader(doc, bolData) {
         } else {
             // Fallback to text if image not found
             doc.font('Helvetica-Bold')
-               .fontSize(20)
+               .fontSize(16) // Reduced from 20
                .fillColor('#000000')
                .text('SolushipX', 35, 40);
             
             // Add registered trademark symbol
-            doc.fontSize(8)
-               .text('®', 145, 35);
+            doc.fontSize(6) // Reduced from 8
+               .text('®', 135, 35);
             
             // Company subtitle
             doc.font('Helvetica')
-               .fontSize(10)
-               .text('INTEGRATED CARRIERS', 35, 65)
-               .fontSize(8)
-               .text('Freight Logistics & Transportation', 35, 78);
+               .fontSize(8) // Reduced from 10
+               .text('INTEGRATED CARRIERS', 35, 60)
+               .fontSize(7) // Reduced from 8
+               .text('Freight Logistics & Transportation', 35, 72);
         }
     } catch (error) {
         console.error('Error loading logo image:', error);
         // Fallback to text-based logo
         doc.font('Helvetica-Bold')
-           .fontSize(20)
+           .fontSize(16) // Reduced from 20
            .fillColor('#000000')
            .text('SolushipX', 35, 40);
         
         // Add registered trademark symbol
-        doc.fontSize(8)
-           .text('®', 145, 35);
+        doc.fontSize(6) // Reduced from 8
+           .text('®', 135, 35);
         
         // Company subtitle
         doc.font('Helvetica')
-           .fontSize(10)
-           .text('INTEGRATED CARRIERS', 35, 65)
-           .fontSize(8)
-           .text('Freight Logistics & Transportation', 35, 78);
+           .fontSize(8) // Reduced from 10
+           .text('INTEGRATED CARRIERS', 35, 60)
+           .fontSize(7) // Reduced from 8
+           .text('Freight Logistics & Transportation', 35, 72);
     }
     
     // Professional accent line under logo area
     doc.strokeColor('#000000')
        .lineWidth(2)
-       .moveTo(35, 88)
-       .lineTo(170, 88)
+       .moveTo(35, 83) // Adjusted position
+       .lineTo(170, 83)
        .stroke();
     
-    // Title section (top-right)
+    // Title section (top-right) - FIXED SIZE AND POSITIONING
     doc.font('Helvetica-Bold')
-       .fontSize(18)
+       .fontSize(12) // Reduced from 18 to prevent overflow
        .fillColor('#000000')
-       .text('LTL Bill of Lading- Not Negotiable', 350, 35, {
-           width: 220,
+       .text('LTL Bill of Lading- Not Negotiable', 300, 30, { // Adjusted positioning
+           width: 180, // Reduced width
            align: 'center'
        });
     
-    // BOL Number box with enhanced styling
+    // BOL Number box with enhanced styling - REPOSITIONED
     doc.lineWidth(1)
-       .rect(450, 65, 120, 25)
+       .rect(420, 50, 140, 20) // Adjusted size and position
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(10)
-       .text('BOL Number:', 455, 70)
-       .fontSize(12)
+       .fontSize(8) // Reduced from 10
+       .text('BOL Number:', 425, 55)
+       .fontSize(10) // Reduced from 12
        .fillColor('#000000')
-       .text(bolData.bolNumber, 455, 82);
+       .text(bolData.bolNumber, 425, 65);
     
     // Horizontal separator line
     doc.strokeColor('#000000')
@@ -453,46 +449,46 @@ function drawExactShippingSection(doc, bolData) {
     
     // Ship From header
     doc.font('Helvetica-Bold')
-       .fontSize(10)
+       .fontSize(8) // Reduced from 10
        .fillColor('#FFFFFF')
        .rect(25, 100, 280, 15)
        .fill('#000000')
        .fillColor('#FFFFFF')
        .text('SHIP FROM', 30, 105);
     
-    // Ship From content
+    // Ship From content - REDUCED FONT SIZES
     doc.fillColor('#000000')
        .font('Helvetica')
-       .fontSize(9)
-       .text(bolData.shipFrom.company, 30, 120)
-       .text(`Contact: ${bolData.shipFrom.contact}`, 30, 133)
-       .text(bolData.shipFrom.address1, 30, 146)
-       .text(bolData.shipFrom.address2 || '', 30, 159)
-       .text(`${bolData.shipFrom.city}, ${bolData.shipFrom.state} ${bolData.shipFrom.zip}`, 30, 172);
+       .fontSize(7) // Reduced from 9
+       .text(bolData.shipFrom.company, 30, 118)
+       .text(`Contact: ${bolData.shipFrom.contact}`, 30, 128)
+       .text(bolData.shipFrom.address1, 30, 138)
+       .text(bolData.shipFrom.address2 || '', 30, 148)
+       .text(`${bolData.shipFrom.city}, ${bolData.shipFrom.state} ${bolData.shipFrom.zip}`, 30, 158);
     
     // Ship From timing
-    doc.text(`Open: ${bolData.shipFrom.openTime}`, 200, 120)
-       .text(`Close: ${bolData.shipFrom.closeTime}`, 200, 133)
-       .text(`Phone: ${bolData.shipFrom.phone}`, 200, 146);
+    doc.text(`Open: ${bolData.shipFrom.openTime}`, 200, 118)
+       .text(`Close: ${bolData.shipFrom.closeTime}`, 200, 128)
+       .text(`Phone: ${bolData.shipFrom.phone}`, 200, 138);
     
-    // Ship date and carrier info (right side of Ship From)
+    // Ship date and carrier info (right side of Ship From) - REDUCED FONT SIZES
     doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .text('Ship Date:', 320, 120)
+       .fontSize(7) // Reduced from 9
+       .text('Ship Date:', 320, 118)
        .font('Helvetica')
-       .text(bolData.shipDate, 370, 120);
-    
-    doc.font('Helvetica-Bold')
-       .text('Carrier:', 320, 135)
-       .font('Helvetica')
-       .fontSize(8)
-       .text(bolData.carrier, 370, 135, { width: 200 });
+       .text(bolData.shipDate, 370, 118);
     
     doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .text('Pro Number:', 320, 155)
+       .text('Carrier:', 320, 128)
        .font('Helvetica')
-       .text(bolData.proNumber, 390, 155);
+       .fontSize(6) // Reduced from 8
+       .text(bolData.carrier, 370, 128, { width: 200 });
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7) // Reduced from 9
+       .text('Pro Number:', 320, 145)
+       .font('Helvetica')
+       .text(bolData.proNumber, 390, 145);
     
     // Ship To section
     doc.lineWidth(1)
@@ -501,22 +497,31 @@ function drawExactShippingSection(doc, bolData) {
     
     // Ship To header
     doc.font('Helvetica-Bold')
-       .fontSize(10)
+       .fontSize(8) // Reduced from 10
        .fillColor('#FFFFFF')
        .rect(25, 180, 280, 15)
        .fill('#000000')
        .fillColor('#FFFFFF')
        .text('SHIP TO', 30, 185);
     
-    // Ship To content
+    // Ship To content - FIXED FORMATTING AND REDUCED FONT SIZES
     doc.fillColor('#000000')
        .font('Helvetica')
-       .fontSize(9)
-       .text(bolData.shipTo.company, 30, 200)
-       .text(`Contact: ${bolData.shipTo.contact}`, 30, 213)
-       .text(bolData.shipTo.address1, 30, 226)
-       .text(bolData.shipTo.address2 || '', 30, 239)
-       .text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 30, 252);
+       .fontSize(7) // Reduced from 9
+       .text(bolData.shipTo.company, 30, 198)
+       .text(`Contact: ${bolData.shipTo.contact}`, 30, 208);
+    
+    // FIXED: Properly format address without unnecessary spaces/breaks
+    let addressY = 218;
+    if (bolData.shipTo.address1) {
+        doc.text(bolData.shipTo.address1, 30, addressY);
+        addressY += 10;
+    }
+    if (bolData.shipTo.address2 && bolData.shipTo.address2.trim()) {
+        doc.text(bolData.shipTo.address2, 30, addressY);
+        addressY += 10;
+    }
+    doc.text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 30, addressY);
     
     // References section (right column)
     doc.lineWidth(1)
@@ -525,30 +530,30 @@ function drawExactShippingSection(doc, bolData) {
     
     // References header
     doc.font('Helvetica-Bold')
-       .fontSize(10)
+       .fontSize(8) // Reduced from 10
        .fillColor('#FFFFFF')
        .rect(305, 180, 282, 15)
        .fill('#000000')
        .fillColor('#FFFFFF')
        .text('REFERENCES', 310, 185);
     
-    // References content
+    // References content - REDUCED FONT SIZES
     doc.fillColor('#000000')
        .font('Helvetica-Bold')
-       .fontSize(9)
-       .text('BOL #:', 310, 205)
+       .fontSize(7) // Reduced from 9
+       .text('BOL #:', 310, 200)
        .font('Helvetica')
-       .text(bolData.bolNumber, 350, 205);
+       .text(bolData.bolNumber, 350, 200);
     
     doc.font('Helvetica-Bold')
-       .text('Customer Ref #:', 310, 220)
+       .text('Customer Ref #:', 310, 215)
        .font('Helvetica')
-       .text(bolData.customerRef, 390, 220);
+       .text(bolData.customerRef, 390, 215);
     
     doc.font('Helvetica-Bold')
-       .text('P.O. Number:', 310, 235)
+       .text('P.O. Number:', 310, 230)
        .font('Helvetica')
-       .text('', 380, 235); // Will be populated from shipment data
+       .text('', 380, 230); // Will be populated from shipment data
 }
 
 /**
@@ -562,7 +567,7 @@ function drawExactThirdPartySection(doc, bolData) {
     
     // Third party header
     doc.font('Helvetica-Bold')
-       .fontSize(10)
+       .fontSize(8) // Reduced from 10
        .fillColor('#FFFFFF')
        .rect(25, 260, 562, 15)
        .fill('#000000')
@@ -572,34 +577,34 @@ function drawExactThirdPartySection(doc, bolData) {
     // Third party content
     doc.fillColor('#000000')
        .font('Helvetica')
-       .fontSize(9)
-       .text(bolData.thirdParty.company, 30, 285)
-       .text(bolData.thirdParty.address1, 30, 298)
-       .text(bolData.thirdParty.address2, 30, 311)
-       .text(`${bolData.thirdParty.city}, ${bolData.thirdParty.state} ${bolData.thirdParty.zip}`, 30, 324);
+       .fontSize(7) // Reduced from 9
+       .text(bolData.thirdParty.company, 30, 280)
+       .text(bolData.thirdParty.address1, 30, 290)
+       .text(bolData.thirdParty.address2, 30, 300)
+       .text(`${bolData.thirdParty.city}, ${bolData.thirdParty.state} ${bolData.thirdParty.zip}`, 30, 310);
     
     // Account number (right side)
     doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .text('Account Number:', 400, 285)
+       .fontSize(7) // Reduced from 9
+       .text('Account Number:', 400, 280)
        .font('Helvetica')
-       .text(bolData.thirdParty.accountNumber, 490, 285);
+       .text(bolData.thirdParty.accountNumber, 490, 280);
     
     // Check boxes for freight terms
-    const checkBoxY = 305;
+    const checkBoxY = 300;
     doc.font('Helvetica')
-       .fontSize(8)
+       .fontSize(6) // Reduced from 8
        .text('Freight Charges are:', 400, checkBoxY);
     
     // Draw checkboxes
-    doc.rect(400, checkBoxY + 15, 8, 8).stroke()
-       .text('Prepaid', 415, checkBoxY + 17);
+    doc.rect(400, checkBoxY + 12, 6, 6).stroke() // Reduced size
+       .text('Prepaid', 410, checkBoxY + 14);
     
-    doc.rect(460, checkBoxY + 15, 8, 8).stroke()
-       .text('Collect', 475, checkBoxY + 17);
+    doc.rect(450, checkBoxY + 12, 6, 6).stroke()
+       .text('Collect', 460, checkBoxY + 14);
     
-    doc.rect(520, checkBoxY + 15, 8, 8).stroke()
-       .text('3rd Party', 535, checkBoxY + 17);
+    doc.rect(500, checkBoxY + 12, 6, 6).stroke()
+       .text('3rd Party', 510, checkBoxY + 14);
 }
 
 /**
@@ -613,7 +618,7 @@ function drawExactSpecialInstructions(doc, bolData) {
     
     // Special instructions header
     doc.font('Helvetica-Bold')
-       .fontSize(10)
+       .fontSize(8) // Reduced from 10
        .fillColor('#FFFFFF')
        .rect(25, 340, 562, 15)
        .fill('#000000')
@@ -623,12 +628,12 @@ function drawExactSpecialInstructions(doc, bolData) {
     // Special instructions content
     doc.fillColor('#000000')
        .font('Helvetica')
-       .fontSize(8);
+       .fontSize(6); // Reduced from 8
     
-    let textY = 360;
+    let textY = 355; // Adjusted
     bolData.specialInstructions.forEach((instruction, index) => {
         doc.text(instruction, 30, textY);
-        textY += 12;
+        textY += 10; // Reduced spacing
     });
 }
 
@@ -638,7 +643,7 @@ function drawExactSpecialInstructions(doc, bolData) {
 function drawExactFreightTable(doc, bolData) {
     const tableStartY = 400;
     const tableWidth = 562;
-    const rowHeight = 20;
+    const rowHeight = 18; // Reduced from 20
     
     // Column definitions with exact widths
     const columns = [
@@ -653,23 +658,23 @@ function drawExactFreightTable(doc, bolData) {
     
     // Draw table border
     doc.lineWidth(1)
-       .rect(25, tableStartY, tableWidth, 140)
+       .rect(25, tableStartY, tableWidth, 120) // Reduced height from 140
        .stroke();
     
     // Draw table header
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(6) // Reduced from 8
        .fillColor('#FFFFFF')
-       .rect(25, tableStartY, tableWidth, 25)
+       .rect(25, tableStartY, tableWidth, 20) // Reduced from 25
        .fill('#000000');
     
     let xPos = 25;
     columns.forEach(col => {
         doc.fillColor('#FFFFFF')
-           .text(col.header, xPos + 2, tableStartY + 5, {
+           .text(col.header, xPos + 2, tableStartY + 3, { // Adjusted positioning
                width: col.width - 4,
                align: col.align,
-               height: 20
+               height: 16 // Reduced from 20
            });
         
         // Draw column separators
@@ -677,7 +682,7 @@ function drawExactFreightTable(doc, bolData) {
             doc.strokeColor('#FFFFFF')
                .lineWidth(1)
                .moveTo(xPos, tableStartY)
-               .lineTo(xPos, tableStartY + 25)
+               .lineTo(xPos, tableStartY + 20) // Adjusted
                .stroke();
         }
         
@@ -691,8 +696,8 @@ function drawExactFreightTable(doc, bolData) {
     xPos = 25;
     columns.forEach((col, index) => {
         if (index > 0) {
-            doc.moveTo(xPos, tableStartY + 25)
-               .lineTo(xPos, tableStartY + 140)
+            doc.moveTo(xPos, tableStartY + 20) // Adjusted
+               .lineTo(xPos, tableStartY + 120) // Adjusted
                .stroke();
         }
         xPos += col.width;
@@ -701,18 +706,18 @@ function drawExactFreightTable(doc, bolData) {
     // Draw data rows
     doc.fillColor('#000000')
        .font('Helvetica')
-       .fontSize(8);
+       .fontSize(6); // Reduced from 8
     
-    let dataY = tableStartY + 35;
-    const maxRows = 5; // Ensure we don't exceed table space
+    let dataY = tableStartY + 28; // Adjusted
+    const maxRows = 4; // Reduced to make room for totals
     
     bolData.packages.slice(0, maxRows).forEach((pkg, index) => {
         if (index > 0) {
             // Draw row separator
             doc.strokeColor('#CCCCCC')
                .lineWidth(0.25)
-               .moveTo(25, dataY - 5)
-               .lineTo(587, dataY - 5)
+               .moveTo(25, dataY - 3) // Adjusted
+               .lineTo(587, dataY - 3)
                .stroke();
         }
         
@@ -732,7 +737,7 @@ function drawExactFreightTable(doc, bolData) {
                .text(data, xPos + 2, dataY, {
                    width: columns[colIndex].width - 4,
                    align: columns[colIndex].align,
-                   height: rowHeight - 5
+                   height: rowHeight - 3 // Adjusted
                });
             xPos += columns[colIndex].width;
         });
@@ -740,14 +745,24 @@ function drawExactFreightTable(doc, bolData) {
         dataY += rowHeight;
     });
     
-    // Total weight section (bottom right of table)
-    const totalY = tableStartY + 115;
+    // FIXED: Position totals WITHIN the table at bottom
+    const totalsY = tableStartY + 95; // Position within table
+    
+    // Draw separator line for totals section
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(25, totalsY)
+       .lineTo(587, totalsY)
+       .stroke();
+    
+    // TOTAL PIECES and WEIGHT - PROPERLY POSITIONED AND SIZED
     doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .text('TOTAL PIECES:', 400, totalY)
-       .text(bolData.totalPieces.toString(), 480, totalY)
-       .text('TOTAL WEIGHT:', 400, totalY + 15)
-       .text(`${bolData.totalWeight.toFixed(0)} LBS`, 480, totalY + 15);
+       .fontSize(7) // Reduced from 9
+       .fillColor('#000000')
+       .text('TOTAL PIECES:', 350, totalsY + 5) // Positioned within table
+       .text(bolData.totalPieces.toString(), 430, totalsY + 5)
+       .text('TOTAL WEIGHT:', 350, totalsY + 15)
+       .text(`${bolData.totalWeight.toFixed(0)} LBS`, 430, totalsY + 15);
 }
 
 /**
@@ -756,32 +771,32 @@ function drawExactFreightTable(doc, bolData) {
 function drawExactValueDeclaration(doc, bolData) {
     // Value declaration section
     doc.lineWidth(1)
-       .rect(25, 540, 562, 50)
+       .rect(25, 520, 562, 50) // Adjusted position
        .stroke();
     
     doc.font('Helvetica')
-       .fontSize(7)
-       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 548)
-       .text('The agreed or declared value of the property is specifically stated by the shipper to be not exceeding _____________ per _______________', 30, 560);
+       .fontSize(5) // Reduced from 7
+       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 528)
+       .text('The agreed or declared value of the property is specifically stated by the shipper to be not exceeding _____________ per _______________', 30, 538);
     
     doc.font('Helvetica-Bold')
-       .fontSize(7)
-       .text('NOTE: Liability limitation for loss or damage in this shipment may be applicable. See 49 CFR 370.', 30, 572);
+       .fontSize(5) // Reduced from 7
+       .text('NOTE: Liability limitation for loss or damage in this shipment may be applicable. See 49 CFR 370.', 30, 548);
     
     // COD section (right side)
     doc.lineWidth(0.5)
-       .rect(400, 540, 187, 50)
+       .rect(400, 520, 187, 50) // Adjusted position
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
-       .text('COD', 405, 545);
+       .fontSize(6) // Reduced from 8
+       .text('COD', 405, 525);
     
     doc.font('Helvetica')
-       .fontSize(7)
-       .text('Amount: $ _______________', 405, 558)
-       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 570)
-       .text('Customer check acceptable: ☐', 405, 580);
+       .fontSize(5) // Reduced from 7
+       .text('Amount: $ _______________', 405, 535)
+       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 545)
+       .text('Customer check acceptable: ☐', 405, 555);
 }
 
 /**
@@ -796,11 +811,11 @@ function drawExactTrailerSection(doc, bolData) {
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(7) // Reduced from 8
        .text('TRAILER LOADED:', 30, sectionY + 5);
     
     doc.font('Helvetica')
-       .fontSize(7)
+       .fontSize(6) // Reduced from 7
        .text('☐ by shipper', 30, sectionY + 18)
        .text('☐ by driver', 30, sectionY + 30);
     
@@ -810,11 +825,11 @@ function drawExactTrailerSection(doc, bolData) {
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(7) // Reduced from 8
        .text('FREIGHT COUNTED:', 216, sectionY + 5);
     
     doc.font('Helvetica')
-       .fontSize(7)
+       .fontSize(6) // Reduced from 7
        .text('☐ by shipper', 216, sectionY + 18)
        .text('☐ by driver', 216, sectionY + 30);
     
@@ -824,11 +839,11 @@ function drawExactTrailerSection(doc, bolData) {
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(7) // Reduced from 8
        .text('CONTAINER SEALED:', 402, sectionY + 5);
     
     doc.font('Helvetica')
-       .fontSize(7)
+       .fontSize(6) // Reduced from 7
        .text('☐ by shipper', 402, sectionY + 18)
        .text('☐ by driver', 402, sectionY + 30);
 }
@@ -847,30 +862,32 @@ function drawExactSignatureSection(doc, bolData) {
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(7) // Reduced from 8
        .text('SHIPPER SIGNATURE/DATE', 30, sigY + 5);
     
     doc.font('Helvetica')
-       .fontSize(6)
+       .fontSize(5) // Reduced from 6
        .text('This is to certify that the above named materials are', 30, sigY + 18)
-       .text('properly classified, packaged, marked and labeled,', 30, sigY + 28)
-       .text('and are in proper condition for transportation', 30, sigY + 38)
-       .text('according to the applicable regulations of the', 30, sigY + 48)
-       .text('Department of Transportation.', 30, sigY + 58);
+       .text('properly classified, packaged, marked and labeled,', 30, sigY + 26)
+       .text('and are in proper condition for transportation', 30, sigY + 34)
+       .text('according to the applicable regulations of the', 30, sigY + 42)
+       .text('Department of Transportation.', 30, sigY + 50);
     
-    // Signature line
-    doc.moveTo(30, sigY + 85)
-       .lineTo(200, sigY + 85)
+    // FIXED: Signature lines - draw actual lines instead of problematic characters
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(30, sigY + 75)
+       .lineTo(140, sigY + 75)
        .stroke();
     
-    doc.fontSize(6)
-       .text('Shipper', 30, sigY + 90);
+    doc.fontSize(5)
+       .text('Shipper', 30, sigY + 80);
     
-    doc.moveTo(120, sigY + 85)
-       .lineTo(200, sigY + 85)
+    doc.moveTo(150, sigY + 75)
+       .lineTo(200, sigY + 75)
        .stroke();
     
-    doc.text('Date', 165, sigY + 90);
+    doc.text('Date', 160, sigY + 80);
     
     // Carrier signature section (middle)
     doc.lineWidth(1)
@@ -878,28 +895,30 @@ function drawExactSignatureSection(doc, bolData) {
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(7) // Reduced from 8
        .text('CARRIER SIGNATURE/DATE', 217, sigY + 5);
     
     doc.font('Helvetica')
-       .fontSize(6)
+       .fontSize(5) // Reduced from 6
        .text('Carrier acknowledges receipt of packages and', 217, sigY + 18)
-       .text('required placards. Property described above is', 217, sigY + 28)
-       .text('received in good order, except as noted.', 217, sigY + 38);
+       .text('required placards. Property described above is', 217, sigY + 26)
+       .text('received in good order, except as noted.', 217, sigY + 34);
     
-    // Signature line
-    doc.moveTo(217, sigY + 85)
-       .lineTo(387, sigY + 85)
+    // FIXED: Signature lines - draw actual lines
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(217, sigY + 75)
+       .lineTo(327, sigY + 75)
        .stroke();
     
-    doc.fontSize(6)
-       .text('Carrier', 217, sigY + 90);
+    doc.fontSize(5)
+       .text('Carrier', 217, sigY + 80);
     
-    doc.moveTo(307, sigY + 85)
-       .lineTo(387, sigY + 85)
+    doc.moveTo(337, sigY + 75)
+       .lineTo(387, sigY + 75)
        .stroke();
     
-    doc.text('Date', 352, sigY + 90);
+    doc.text('Date', 347, sigY + 80);
     
     // Consignee signature section (right)
     doc.lineWidth(1)
@@ -907,26 +926,28 @@ function drawExactSignatureSection(doc, bolData) {
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
+       .fontSize(7) // Reduced from 8
        .text('CONSIGNEE SIGNATURE/DATE', 404, sigY + 5);
     
     doc.font('Helvetica')
-       .fontSize(6)
+       .fontSize(5) // Reduced from 6
        .text('Received in good order, except as noted.', 404, sigY + 18);
     
-    // Signature line
-    doc.moveTo(404, sigY + 85)
-       .lineTo(574, sigY + 85)
+    // FIXED: Signature lines - draw actual lines
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(404, sigY + 75)
+       .lineTo(514, sigY + 75)
        .stroke();
     
-    doc.fontSize(6)
-       .text('Consignee', 404, sigY + 90);
+    doc.fontSize(5)
+       .text('Consignee', 404, sigY + 80);
     
-    doc.moveTo(494, sigY + 85)
-       .lineTo(574, sigY + 85)
+    doc.moveTo(524, sigY + 75)
+       .lineTo(574, sigY + 75)
        .stroke();
     
-    doc.text('Date', 539, sigY + 90);
+    doc.text('Date', 534, sigY + 80);
 }
 
 /**
@@ -934,9 +955,9 @@ function drawExactSignatureSection(doc, bolData) {
  */
 function drawExactLegalDisclaimer(doc) {
     doc.font('Helvetica')
-       .fontSize(5)
+       .fontSize(4) // Reduced from 5
        .text('Subject to Section 7 of conditions, if this shipment is to be delivered to the consignee without recourse on the consignor, the consignor shall sign the following statement:', 25, 760)
-       .text('The carrier shall not make delivery of this shipment without payment of freight and all other lawful charges. ________________________ (Signature of consignor)', 25, 770);
+       .text('The carrier shall not make delivery of this shipment without payment of freight and all other lawful charges. ________________________ (Signature of consignor)', 25, 768);
 }
 
 /**
