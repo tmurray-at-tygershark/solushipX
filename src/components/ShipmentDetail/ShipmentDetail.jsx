@@ -2593,7 +2593,7 @@ const ShipmentDetail = () => {
                                                     px: 2
                                                 }}
                                             >
-                                                {actionStates.printBOL.loading ? 'Loading...' : 'BOL'}
+                                                {actionStates.printBOL.loading ? 'Loading...' : 'Print BOL'}
                                             </Button>
                                         )}
 

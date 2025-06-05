@@ -191,12 +191,12 @@ function extractBOLData(shipmentData, shipmentId) {
         proNumber: proNumber,
         customerRef: referenceNumber,
         
-        // Ship From Information - Enhanced extraction
+        // Ship From Information - Enhanced extraction - FIXED to use companyName over nickname
         shipFrom: {
-            company: shipFrom?.name || shipFrom?.company || shipFrom?.Company || 'Unknown Shipper',
-            contact: shipFrom?.contact || shipFrom?.attention || shipFrom?.contactName || '',
-            address1: shipFrom?.address_line_1 || shipFrom?.street || shipFrom?.addressLine1 || shipFrom?.address1 || '',
-            address2: shipFrom?.address_line_2 || shipFrom?.street2 || shipFrom?.addressLine2 || shipFrom?.address2 || '',
+            company: shipFrom?.companyName || shipFrom?.company || shipFrom?.Company || shipFrom?.Description || shipFrom?.name || 'Unknown Shipper',
+            contact: shipFrom?.contact || shipFrom?.attention || shipFrom?.contactName || shipFrom?.Contact || '',
+            address1: shipFrom?.address_line_1 || shipFrom?.street || shipFrom?.addressLine1 || shipFrom?.address1 || shipFrom?.Street || '',
+            address2: shipFrom?.address_line_2 || shipFrom?.street2 || shipFrom?.addressLine2 || shipFrom?.address2 || shipFrom?.StreetExtra || '',
             city: shipFrom?.city || shipFrom?.City || '',
             state: shipFrom?.province || shipFrom?.state || shipFrom?.State || '',
             zip: shipFrom?.postal_code || shipFrom?.postalCode || shipFrom?.zip || shipFrom?.PostalCode || '',
@@ -205,12 +205,12 @@ function extractBOLData(shipmentData, shipmentId) {
             closeTime: shipmentData.shipmentInfo?.latestPickup || '17:00'
         },
         
-        // Ship To Information - Enhanced extraction
+        // Ship To Information - Enhanced extraction - FIXED to use companyName over nickname
         shipTo: {
-            company: shipTo?.name || shipTo?.company || shipTo?.Company || 'Unknown Consignee',
-            contact: shipTo?.contact || shipTo?.attention || shipTo?.contactName || '',
-            address1: shipTo?.address_line_1 || shipTo?.street || shipTo?.addressLine1 || shipTo?.address1 || '',
-            address2: shipTo?.address_line_2 || shipTo?.street2 || shipTo?.addressLine2 || shipTo?.address2 || '',
+            company: shipTo?.companyName || shipTo?.company || shipTo?.Company || shipTo?.Description || shipTo?.name || 'Unknown Consignee',
+            contact: shipTo?.contact || shipTo?.attention || shipTo?.contactName || shipTo?.Contact || '',
+            address1: shipTo?.address_line_1 || shipTo?.street || shipTo?.addressLine1 || shipTo?.address1 || shipTo?.Street || '',
+            address2: shipTo?.address_line_2 || shipTo?.street2 || shipTo?.addressLine2 || shipTo?.address2 || shipTo?.StreetExtra || '',
             city: shipTo?.city || shipTo?.City || '',
             state: shipTo?.province || shipTo?.state || shipTo?.State || '',
             zip: shipTo?.postal_code || shipTo?.postalCode || shipTo?.zip || shipTo?.PostalCode || '',
@@ -307,6 +307,7 @@ async function generateBOLPDF(bolData) {
 
 /**
  * Builds the complete BOL document with exact pixel positioning to match original format
+ * OPTIMIZED FOR 8.5x11 (LETTER SIZE) FORMAT
  * @param {PDFDocument} doc - PDFKit document instance
  * @param {Object} bolData - BOL data
  */
@@ -314,9 +315,9 @@ function buildExactBOLDocument(doc, bolData) {
     // Set default stroke and fill colors
     doc.strokeColor('#000000').fillColor('#000000');
     
-    // Main container border (full page border)
+    // Main container border (full page border) - SIZED FOR 8.5x11
     doc.lineWidth(2)
-       .rect(20, 20, 572, 752)
+       .rect(20, 20, 572, 752) // Standard letter size with margins
        .stroke();
     
     // Header Section (Y: 20-100)
@@ -331,19 +332,19 @@ function buildExactBOLDocument(doc, bolData) {
     // Special Instructions Section (Y: 340-400)
     drawExactSpecialInstructions(doc, bolData);
     
-    // Freight Table Section (Y: 400-540)
+    // Freight Table Section (Y: 400-520) - ADJUSTED HEIGHT
     drawExactFreightTable(doc, bolData);
     
-    // Value Declaration Section (Y: 540-590)
+    // Value Declaration Section (Y: 525-565) - REPOSITIONED
     drawExactValueDeclaration(doc, bolData);
     
-    // Trailer Information Section (Y: 590-640)
+    // Trailer Information Section (Y: 570-620) - REPOSITIONED
     drawExactTrailerSection(doc, bolData);
     
-    // Signature Section (Y: 640-752)
+    // Signature Section (Y: 625-725) - REPOSITIONED
     drawExactSignatureSection(doc, bolData);
     
-    // Legal disclaimer at bottom
+    // Legal disclaimer at bottom (Y: 735-750) - FITS ON PAGE
     drawExactLegalDisclaimer(doc);
 }
 
@@ -409,26 +410,29 @@ function drawExactHeader(doc, bolData) {
        .lineTo(170, 83)
        .stroke();
     
-    // Title section (top-right) - FIXED SIZE AND POSITIONING
+    // Title section (top-right) - FIXED POSITIONING TO PREVENT OVERLAP
     doc.font('Helvetica-Bold')
-       .fontSize(12) // Reduced from 18 to prevent overflow
+       .fontSize(11) // Slightly reduced for better fit
        .fillColor('#000000')
-       .text('LTL Bill of Lading- Not Negotiable', 300, 30, { // Adjusted positioning
-           width: 180, // Reduced width
+       .text('LTL Bill of Lading- Not Negotiable', 280, 25, { // Moved higher and left
+           width: 160, // Reduced width
            align: 'center'
        });
     
-    // BOL Number box with enhanced styling - REPOSITIONED
+    // BOL Number box - REPOSITIONED AND RESIZED TO FIT PROPERLY
     doc.lineWidth(1)
-       .rect(420, 50, 140, 20) // Adjusted size and position
+       .rect(450, 45, 120, 25) // Better positioning and size
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8) // Reduced from 10
-       .text('BOL Number:', 425, 55)
-       .fontSize(10) // Reduced from 12
+       .fontSize(7) // Reduced for better fit
+       .text('BOL Number:', 455, 50)
+       .fontSize(9) // Reduced for better fit in box
        .fillColor('#000000')
-       .text(bolData.bolNumber, 425, 65);
+       .text(bolData.bolNumber, 455, 62, {
+           width: 110, // Ensure text fits in box
+           align: 'left'
+       });
     
     // Horizontal separator line
     doc.strokeColor('#000000')
@@ -456,15 +460,30 @@ function drawExactShippingSection(doc, bolData) {
        .fillColor('#FFFFFF')
        .text('SHIP FROM', 30, 105);
     
-    // Ship From content - REDUCED FONT SIZES
+    // Ship From content - FIXED TO SHOW PROPER COMPANY NAME
     doc.fillColor('#000000')
-       .font('Helvetica')
-       .fontSize(7) // Reduced from 9
-       .text(bolData.shipFrom.company, 30, 118)
-       .text(`Contact: ${bolData.shipFrom.contact}`, 30, 128)
-       .text(bolData.shipFrom.address1, 30, 138)
-       .text(bolData.shipFrom.address2 || '', 30, 148)
-       .text(`${bolData.shipFrom.city}, ${bolData.shipFrom.state} ${bolData.shipFrom.zip}`, 30, 158);
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text(bolData.shipFrom.company, 30, 118);
+    
+    // Only show contact if it exists and is meaningful
+    let yPos = 128;
+    if (bolData.shipFrom.contact && bolData.shipFrom.contact.trim() !== '' && bolData.shipFrom.contact !== bolData.shipFrom.company) {
+        doc.font('Helvetica')
+           .text(`Contact: ${bolData.shipFrom.contact}`, 30, yPos);
+        yPos += 10;
+    }
+    
+    doc.font('Helvetica')
+       .text(bolData.shipFrom.address1, 30, yPos);
+    yPos += 10;
+    
+    if (bolData.shipFrom.address2 && bolData.shipFrom.address2.trim()) {
+        doc.text(bolData.shipFrom.address2, 30, yPos);
+        yPos += 10;
+    }
+    
+    doc.text(`${bolData.shipFrom.city}, ${bolData.shipFrom.state} ${bolData.shipFrom.zip}`, 30, yPos);
     
     // Ship From timing
     doc.text(`Open: ${bolData.shipFrom.openTime}`, 200, 118)
@@ -504,24 +523,31 @@ function drawExactShippingSection(doc, bolData) {
        .fillColor('#FFFFFF')
        .text('SHIP TO', 30, 185);
     
-    // Ship To content - FIXED FORMATTING AND REDUCED FONT SIZES
+    // Ship To content - FIXED TO SHOW PROPER COMPANY NAME
     doc.fillColor('#000000')
-       .font('Helvetica')
-       .fontSize(7) // Reduced from 9
-       .text(bolData.shipTo.company, 30, 198)
-       .text(`Contact: ${bolData.shipTo.contact}`, 30, 208);
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text(bolData.shipTo.company, 30, 198);
+    
+    // Only show contact if it exists and is meaningful
+    let shipToYPos = 208;
+    if (bolData.shipTo.contact && bolData.shipTo.contact.trim() !== '' && bolData.shipTo.contact !== bolData.shipTo.company) {
+        doc.font('Helvetica')
+           .text(`Contact: ${bolData.shipTo.contact}`, 30, shipToYPos);
+        shipToYPos += 10;
+    }
     
     // FIXED: Properly format address without unnecessary spaces/breaks
-    let addressY = 218;
+    doc.font('Helvetica');
     if (bolData.shipTo.address1) {
-        doc.text(bolData.shipTo.address1, 30, addressY);
-        addressY += 10;
+        doc.text(bolData.shipTo.address1, 30, shipToYPos);
+        shipToYPos += 10;
     }
     if (bolData.shipTo.address2 && bolData.shipTo.address2.trim()) {
-        doc.text(bolData.shipTo.address2, 30, addressY);
-        addressY += 10;
+        doc.text(bolData.shipTo.address2, 30, shipToYPos);
+        shipToYPos += 10;
     }
-    doc.text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 30, addressY);
+    doc.text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 30, shipToYPos);
     
     // References section (right column)
     doc.lineWidth(1)
@@ -625,12 +651,12 @@ function drawExactSpecialInstructions(doc, bolData) {
        .fillColor('#FFFFFF')
        .text('SPECIAL INSTRUCTIONS', 30, 345);
     
-    // Special instructions content
+    // Special instructions content - ADDED PADDING ABOVE TEXT
     doc.fillColor('#000000')
        .font('Helvetica')
        .fontSize(6); // Reduced from 8
     
-    let textY = 355; // Adjusted
+    let textY = 360; // Added 5px padding from previous 355
     bolData.specialInstructions.forEach((instruction, index) => {
         doc.text(instruction, 30, textY);
         textY += 10; // Reduced spacing
@@ -769,14 +795,14 @@ function drawExactFreightTable(doc, bolData) {
  * Draws the exact value declaration section
  */
 function drawExactValueDeclaration(doc, bolData) {
-    // Value declaration section
+    // Value declaration section - REPOSITIONED to fit page layout
     doc.lineWidth(1)
-       .rect(25, 520, 562, 50) // Adjusted position
+       .rect(25, 525, 562, 40) // Reduced height and adjusted position
        .stroke();
     
     doc.font('Helvetica')
        .fontSize(5) // Reduced from 7
-       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 528)
+       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 530)
        .text('The agreed or declared value of the property is specifically stated by the shipper to be not exceeding _____________ per _______________', 30, 538);
     
     doc.font('Helvetica-Bold')
@@ -785,25 +811,25 @@ function drawExactValueDeclaration(doc, bolData) {
     
     // COD section (right side)
     doc.lineWidth(0.5)
-       .rect(400, 520, 187, 50) // Adjusted position
+       .rect(400, 525, 187, 40) // Adjusted position and reduced height
        .stroke();
     
     doc.font('Helvetica-Bold')
        .fontSize(6) // Reduced from 8
-       .text('COD', 405, 525);
+       .text('COD', 405, 530);
     
     doc.font('Helvetica')
        .fontSize(5) // Reduced from 7
-       .text('Amount: $ _______________', 405, 535)
-       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 545)
-       .text('Customer check acceptable: ☐', 405, 555);
+       .text('Amount: $ _______________', 405, 540)
+       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 548)
+       .text('Customer check acceptable: ☐', 405, 556);
 }
 
 /**
  * Draws the exact trailer loading section
  */
 function drawExactTrailerSection(doc, bolData) {
-    const sectionY = 590;
+    const sectionY = 570; // Moved up to prevent cutoff
     
     // Trailer loaded section (left)
     doc.lineWidth(1)
@@ -816,8 +842,8 @@ function drawExactTrailerSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(6) // Reduced from 7
-       .text('☐ by shipper', 30, sectionY + 18)
-       .text('☐ by driver', 30, sectionY + 30);
+       .text('_____________ by shipper', 30, sectionY + 18)
+       .text('_____________ by driver', 30, sectionY + 30);
     
     // Freight counted section (middle)
     doc.lineWidth(1)
@@ -830,8 +856,8 @@ function drawExactTrailerSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(6) // Reduced from 7
-       .text('☐ by shipper', 216, sectionY + 18)
-       .text('☐ by driver', 216, sectionY + 30);
+       .text('_____________ by shipper', 216, sectionY + 18)
+       .text('_____________ by driver', 216, sectionY + 30);
     
     // Container sealed section (right)
     doc.lineWidth(1)
@@ -844,16 +870,16 @@ function drawExactTrailerSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(6) // Reduced from 7
-       .text('☐ by shipper', 402, sectionY + 18)
-       .text('☐ by driver', 402, sectionY + 30);
+       .text('_____________ by shipper', 402, sectionY + 18)
+       .text('_____________ by driver', 402, sectionY + 30);
 }
 
 /**
  * Draws the exact signature section
  */
 function drawExactSignatureSection(doc, bolData) {
-    const sigY = 640;
-    const sigHeight = 112;
+    const sigY = 625; // Moved up to prevent cutoff
+    const sigHeight = 100; // Reduced height to fit better
     const colWidth = 187;
     
     // Shipper signature section (left)
@@ -867,27 +893,27 @@ function drawExactSignatureSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(5) // Reduced from 6
-       .text('This is to certify that the above named materials are', 30, sigY + 18)
-       .text('properly classified, packaged, marked and labeled,', 30, sigY + 26)
-       .text('and are in proper condition for transportation', 30, sigY + 34)
-       .text('according to the applicable regulations of the', 30, sigY + 42)
-       .text('Department of Transportation.', 30, sigY + 50);
+       .text('This is to certify that the above named materials are', 30, sigY + 16)
+       .text('properly classified, packaged, marked and labeled,', 30, sigY + 24)
+       .text('and are in proper condition for transportation', 30, sigY + 32)
+       .text('according to the applicable regulations of the', 30, sigY + 40)
+       .text('Department of Transportation.', 30, sigY + 48);
     
     // FIXED: Signature lines - draw actual lines instead of problematic characters
     doc.strokeColor('#000000')
        .lineWidth(0.5)
-       .moveTo(30, sigY + 75)
-       .lineTo(140, sigY + 75)
+       .moveTo(30, sigY + 65)
+       .lineTo(140, sigY + 65)
        .stroke();
     
     doc.fontSize(5)
-       .text('Shipper', 30, sigY + 80);
+       .text('Shipper', 30, sigY + 70);
     
-    doc.moveTo(150, sigY + 75)
-       .lineTo(200, sigY + 75)
+    doc.moveTo(150, sigY + 65)
+       .lineTo(200, sigY + 65)
        .stroke();
     
-    doc.text('Date', 160, sigY + 80);
+    doc.text('Date', 160, sigY + 70);
     
     // Carrier signature section (middle)
     doc.lineWidth(1)
@@ -900,25 +926,25 @@ function drawExactSignatureSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(5) // Reduced from 6
-       .text('Carrier acknowledges receipt of packages and', 217, sigY + 18)
-       .text('required placards. Property described above is', 217, sigY + 26)
-       .text('received in good order, except as noted.', 217, sigY + 34);
+       .text('Carrier acknowledges receipt of packages and', 217, sigY + 16)
+       .text('required placards. Property described above is', 217, sigY + 24)
+       .text('received in good order, except as noted.', 217, sigY + 32);
     
     // FIXED: Signature lines - draw actual lines
     doc.strokeColor('#000000')
        .lineWidth(0.5)
-       .moveTo(217, sigY + 75)
-       .lineTo(327, sigY + 75)
+       .moveTo(217, sigY + 65)
+       .lineTo(327, sigY + 65)
        .stroke();
     
     doc.fontSize(5)
-       .text('Carrier', 217, sigY + 80);
+       .text('Carrier', 217, sigY + 70);
     
-    doc.moveTo(337, sigY + 75)
-       .lineTo(387, sigY + 75)
+    doc.moveTo(337, sigY + 65)
+       .lineTo(387, sigY + 65)
        .stroke();
     
-    doc.text('Date', 347, sigY + 80);
+    doc.text('Date', 347, sigY + 70);
     
     // Consignee signature section (right)
     doc.lineWidth(1)
@@ -931,33 +957,36 @@ function drawExactSignatureSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(5) // Reduced from 6
-       .text('Received in good order, except as noted.', 404, sigY + 18);
+       .text('Received in good order, except as noted.', 404, sigY + 16);
     
     // FIXED: Signature lines - draw actual lines
     doc.strokeColor('#000000')
        .lineWidth(0.5)
-       .moveTo(404, sigY + 75)
-       .lineTo(514, sigY + 75)
+       .moveTo(404, sigY + 65)
+       .lineTo(514, sigY + 65)
        .stroke();
     
     doc.fontSize(5)
-       .text('Consignee', 404, sigY + 80);
+       .text('Consignee', 404, sigY + 70);
     
-    doc.moveTo(524, sigY + 75)
-       .lineTo(574, sigY + 75)
+    doc.moveTo(524, sigY + 65)
+       .lineTo(574, sigY + 65)
        .stroke();
     
-    doc.text('Date', 534, sigY + 80);
+    doc.text('Date', 534, sigY + 70);
 }
 
 /**
  * Draws the exact legal disclaimer at the bottom
  */
 function drawExactLegalDisclaimer(doc) {
+    // Position legal disclaimer to fit on page
+    const disclaimerY = 735; // Positioned to fit within 8.5x11 page
+    
     doc.font('Helvetica')
-       .fontSize(4) // Reduced from 5
-       .text('Subject to Section 7 of conditions, if this shipment is to be delivered to the consignee without recourse on the consignor, the consignor shall sign the following statement:', 25, 760)
-       .text('The carrier shall not make delivery of this shipment without payment of freight and all other lawful charges. ________________________ (Signature of consignor)', 25, 768);
+       .fontSize(5) // Increased from 4 for better readability
+       .text('Subject to Section 7 of conditions, if this shipment is to be delivered to the consignee without recourse on the consignor, the consignor shall sign the following statement:', 25, disclaimerY)
+       .text('The carrier shall not make delivery of this shipment without payment of freight and all other lawful charges. ________________________ (Signature of consignor)', 25, disclaimerY + 10);
 }
 
 /**
