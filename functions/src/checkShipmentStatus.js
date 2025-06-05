@@ -116,7 +116,9 @@ exports.checkShipmentStatus = onRequest(
             let statusResult;
             const carrierName = carrierInfo.name.toLowerCase();
 
-            if (carrierName.includes('eshipplus') || carrierName.includes('eship')) {
+            logger.info(`Checking status for carrier: "${carrierInfo.name}" (normalized: "${carrierName}") with tracking identifier: ${trackingIdentifier}`);
+
+            if (carrierName.includes('eshipplus') || carrierName.includes('eship') || carrierName.includes('e-ship')) {
                 statusResult = await checkEShipPlusStatus(trackingIdentifier, carrierConfig);
             } else if (carrierName.includes('canpar')) {
                 statusResult = await checkCanparStatus(trackingIdentifier, carrierConfig);
@@ -124,7 +126,11 @@ exports.checkShipmentStatus = onRequest(
                 statusResult = await checkFedExStatus(trackingIdentifier, carrierConfig);
             } else if (carrierName.includes('ups')) {
                 statusResult = await checkUPSStatus(trackingIdentifier, carrierConfig);
+            } else if (carrierName.includes('polaris') || carrierInfo.name.includes('POLARISTRANSPORTATION') || carrierConfig?.carrierID === 'POLARISTRANSPORTATION') {
+                logger.info(`Detected Polaris Transportation shipment - calling checkPolarisTransportationStatus`);
+                statusResult = await checkPolarisTransportationStatus(trackingIdentifier, carrierConfig);
             } else {
+                logger.error(`Unsupported carrier detected: "${carrierInfo.name}" (normalized: "${carrierName}")`);
                 return res.status(400).json({
                     success: false,
                     error: `Unsupported carrier: ${carrierInfo.name}`
@@ -243,6 +249,7 @@ async function getCarrierConfig(carrierKey) {
             if (normalized.includes('PUROLATOR')) return 'PUROLATOR';
             if (normalized.includes('CANADA POST')) return 'CANADAPOST';
             if (normalized.includes('USPS')) return 'USPS';
+            if (normalized.includes('POLARIS')) return 'POLARISTRANSPORTATION';
             return normalized;
         };
 
@@ -438,5 +445,335 @@ async function checkUPSStatus(trackingNumber, carrierConfig) {
         trackingUpdates: [],
         carrier: 'UPS',
         message: 'UPS status checking not yet implemented'
+    };
+}
+
+/**
+ * Check Polaris Transportation shipment status
+ */
+async function checkPolarisTransportationStatus(trackingNumber, carrierConfig) {
+    try {
+        logger.info(`Checking Polaris Transportation status for tracking number: ${trackingNumber}`);
+        logger.info(`Carrier config details:`, {
+            hasApiCredentials: !!carrierConfig?.apiCredentials,
+            carrierID: carrierConfig?.carrierID,
+            name: carrierConfig?.name,
+            hostURL: carrierConfig?.apiCredentials?.hostURL,
+            hasEndpoints: !!carrierConfig?.apiCredentials?.endpoints,
+            hasSecret: !!carrierConfig?.apiCredentials?.secret
+        });
+
+        if (!carrierConfig || !carrierConfig.apiCredentials) {
+            throw new Error('Polaris Transportation API credentials not configured');
+        }
+
+        const credentials = carrierConfig.apiCredentials;
+
+        // Get URL components from credentials
+        const baseUrl = credentials.hostURL;
+        const endpoint = credentials.endpoints?.tracking;
+        const apiKey = credentials.secret; // API key is stored in 'secret' field
+        
+        if (!baseUrl) {
+            throw new Error('Polaris Transportation hostURL not configured in carrier settings');
+        }
+        
+        if (!endpoint) {
+            throw new Error('Polaris Transportation tracking endpoint not configured in carrier settings');
+        }
+
+        if (!apiKey) {
+            throw new Error('Polaris Transportation API key (secret) not configured in carrier settings');
+        }
+        
+        // Build full URL with query parameters (GET request)
+        const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+        const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+        const baseApiUrl = `${cleanBaseUrl}${cleanEndpoint}`;
+        
+        // Add query parameters for Polaris API: APIKey and Probill
+        const url = `${baseApiUrl}?APIKey=${encodeURIComponent(apiKey)}&Probill=${encodeURIComponent(trackingNumber)}`;
+
+        logger.info(`Polaris Transportation tracking URL: ${url.replace(apiKey, '[REDACTED]')}`);
+
+        // Make the GET API call (no body, no special headers needed)
+        const response = await axios.get(url, {
+            timeout: 30000,
+            validateStatus: function (status) {
+                return status < 600;
+            }
+        });
+
+        logger.info(`Polaris Transportation response status: ${response.status}`);
+        
+        // Check for HTTP errors
+        if (response.status >= 400) {
+            // Handle test API errors (like JMS ConnectionFactory issues)
+            if (response.status >= 500) {
+                const errorText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+                if (errorText.includes('javax.jms.ConnectionFactory') || errorText.includes('TRACEREST')) {
+                    logger.warn(`Polaris test API error (${response.status}): ${errorText}`);
+                    return {
+                        success: true, // Don't fail the request, just return unknown status
+                        carrier: 'polaris',
+                        trackingNumber,
+                        status: 'unknown',
+                        statusDisplay: 'Test API Unavailable',
+                        lastUpdated: new Date().toISOString(),
+                        message: 'Test API unavailable - status checking will work in production environment'
+                    };
+                }
+            }
+            throw new Error(`API request failed - ${response.status} ${response.statusText}`);
+        }
+
+        const statusData = response.data;
+        logger.info(`Polaris Transportation response data:`, statusData);
+
+        // Handle raw error text responses (test API issues)
+        if (typeof statusData === 'string' && statusData.includes('javax.jms.ConnectionFactory')) {
+            logger.warn(`Polaris test API JMS error: ${statusData}`);
+            return {
+                success: true,
+                carrier: 'polaris',
+                trackingNumber,
+                status: 'unknown',
+                statusDisplay: 'Test API Unavailable',
+                lastUpdated: new Date().toISOString(),
+                message: 'Test API unavailable - status checking will work in production environment'
+            };
+        }
+
+        // If no data or empty response
+        if (!statusData) {
+            logger.warn('Empty response from Polaris Transportation API');
+            return {
+                success: true,
+                carrier: 'polaris',
+                trackingNumber,
+                status: 'unknown',
+                statusDisplay: 'No Response',
+                lastUpdated: new Date().toISOString(),
+                message: 'No tracking data available'
+            };
+        }
+
+        // Check for API errors in the response
+        if (statusData.Error || (statusData.TRACE_API_Response && statusData.TRACE_API_Response.Error)) {
+            throw new Error(`Polaris Transportation API Error: ${statusData.Error || statusData.TRACE_API_Response?.Error || 'Unknown error'}`);
+        }
+
+        // Check if we have the expected response structure
+        if (!statusData.TRACE_API_Response) {
+            throw new Error('Invalid response format from Polaris Transportation API - missing TRACE_API_Response');
+        }
+
+        // Handle "not found" responses from production API
+        const traceResponse = statusData.TRACE_API_Response;
+        if (traceResponse.Message && traceResponse.Message.includes('could not be found')) {
+            logger.info(`Polaris shipment not found: ${traceResponse.Message}`);
+            return {
+                success: true,
+                carrier: 'polaris', 
+                trackingNumber,
+                status: 'unknown',
+                statusDisplay: 'Not Found',
+                lastUpdated: new Date().toISOString(),
+                message: traceResponse.Message || 'Shipment not found in carrier system'
+            };
+        }
+
+        // Handle test responses with all null values
+        if (!traceResponse.Current_Status && !traceResponse.Probill_Number && !traceResponse.Origin) {
+            logger.info('Polaris response contains no tracking data (likely test environment)');
+            return {
+                success: true,
+                carrier: 'polaris',
+                trackingNumber,
+                status: 'unknown', 
+                statusDisplay: 'No Data',
+                lastUpdated: new Date().toISOString(),
+                message: traceResponse.Message || 'No tracking data available (test environment)'
+            };
+        }
+
+        // Map to universal format
+        const universalStatus = mapPolarisStatusToUniversal(statusData, trackingNumber);
+        
+        logger.info(`Mapped Polaris status to:`, { status: universalStatus.status });
+        
+        return {
+            success: true,
+            carrier: 'polaris',
+            trackingNumber,
+            ...universalStatus
+        };
+
+    } catch (error) {
+        logger.error(`Error checking Polaris Transportation status:`, {
+            error: error.message,
+            stack: error.stack,
+            trackingNumber,
+            carrierConfigPresent: !!carrierConfig,
+            apiCredentialsPresent: !!carrierConfig?.apiCredentials
+        });
+        return {
+            success: false,
+            carrier: 'polaris',
+            trackingNumber,
+            error: error.message,
+            status: 'unknown',
+            statusDisplay: 'Unknown'
+        };
+    }
+}
+
+/**
+ * Map Polaris Transportation status response to universal format
+ */
+function mapPolarisStatusToUniversal(polarisData, trackingNumber) {
+    // Status mapping for Polaris Transportation
+    const POLARIS_STATUS_MAP = {
+        // Booking and scheduling statuses
+        'BOOKED': 'booked',
+        'SCHEDULED': 'scheduled',
+        'PICKUP_SCHEDULED': 'scheduled',
+        'READY_FOR_PICKUP': 'scheduled',
+        
+        // In transit statuses
+        'PICKED_UP': 'in_transit',
+        'IN_TRANSIT': 'in_transit',
+        'OUT_FOR_DELIVERY': 'in_transit',
+        'ON_TRUCK': 'in_transit',
+        'AT_TERMINAL': 'in_transit',
+        'CUSTOMS_CLEARED': 'in_transit', // From the example response
+        'CUSTOMS_PROCESSING': 'in_transit',
+        
+        // Delivery statuses
+        'DELIVERED': 'delivered',
+        'COMPLETED': 'delivered',
+        'POD_RECEIVED': 'delivered',
+        
+        // Problem statuses
+        'CANCELLED': 'canceled',
+        'CANCELED': 'canceled',
+        'ON_HOLD': 'on_hold',
+        'DELAYED': 'on_hold',
+        'EXCEPTION': 'on_hold',
+        'DAMAGED': 'on_hold',
+        'REFUSED': 'on_hold',
+        'CUSTOMS_HELD': 'on_hold'
+    };
+
+    // Get the shipment info from the TRACE_API_Response wrapper
+    const traceResponse = polarisData.TRACE_API_Response;
+    
+    if (!traceResponse) {
+        logger.warn('No TRACE_API_Response found in Polaris data');
+        return {
+            trackingNumber,
+            status: 'unknown',
+            statusDisplay: 'Unknown',
+            lastUpdated: new Date().toISOString()
+        };
+    }
+
+    let universalStatus = 'unknown';
+
+    // Determine status from Current_Status field
+    if (traceResponse.Current_Status) {
+        const normalizedStatus = traceResponse.Current_Status.toUpperCase();
+        if (POLARIS_STATUS_MAP[normalizedStatus]) {
+            universalStatus = POLARIS_STATUS_MAP[normalizedStatus];
+        } else {
+            logger.warn(`Unknown Polaris status: ${traceResponse.Current_Status}`);
+            // If we have delivery info, assume delivered
+            if (traceResponse.Actual_Delivery || traceResponse.POD_signed_date) {
+                universalStatus = 'delivered';
+            }
+            // If we have pickup info but no delivery, assume in transit
+            else if (traceResponse.Actual_Pickup) {
+                universalStatus = 'in_transit';
+            }
+        }
+    }
+
+    // Override based on actual delivery/pickup dates
+    if (traceResponse.Actual_Delivery || traceResponse.POD_signed_date) {
+        universalStatus = 'delivered';
+    } else if (traceResponse.Actual_Pickup && universalStatus === 'unknown') {
+        universalStatus = 'in_transit';
+    }
+
+    // Status display names
+    const displayNames = {
+        'draft': 'Draft',
+        'pending': 'Pending',
+        'scheduled': 'Scheduled',
+        'booked': 'Booked',
+        'awaiting_shipment': 'Awaiting Shipment',
+        'in_transit': 'In Transit',
+        'delivered': 'Delivered',
+        'on_hold': 'On Hold',
+        'canceled': 'Canceled',
+        'cancelled': 'Cancelled',
+        'void': 'Void',
+        'unknown': 'Unknown'
+    };
+
+    // Parse dates safely
+    const parseDate = (dateStr) => {
+        if (!dateStr) return null;
+        try {
+            return new Date(dateStr).toISOString();
+        } catch (error) {
+            logger.warn(`Failed to parse date: ${dateStr}`);
+            return null;
+        }
+    };
+
+    return {
+        trackingNumber: traceResponse.Probill_Number || trackingNumber,
+        status: universalStatus,
+        statusDisplay: displayNames[universalStatus] || universalStatus,
+        lastUpdated: new Date().toISOString(),
+        
+        // Delivery information
+        estimatedDelivery: parseDate(traceResponse.Deliver_by),
+        actualDelivery: parseDate(traceResponse.Actual_Delivery),
+        
+        // Pickup information
+        estimatedPickup: parseDate(traceResponse.Pickup_by),
+        actualPickup: parseDate(traceResponse.Actual_Pickup),
+        
+        // Location and status details
+        currentLocation: traceResponse.Current_Location || '',
+        currentStatus: traceResponse.Current_Status || '',
+        
+        // Additional shipment details
+        origin: traceResponse.Origin || '',
+        destination: traceResponse.Destination || '',
+        
+        // Proof of delivery
+        podSignedBy: traceResponse.POD_signed_by || null,
+        podSignedDate: parseDate(traceResponse.POD_signed_date),
+        
+        // Shipment details
+        pallets: traceResponse.Pallets || '',
+        weight: traceResponse.Weight_LBS || '',
+        
+        // Carrier-specific info
+        carrierInfo: {
+            carrierName: 'Polaris Transportation',
+            carrierCode: 'POLT',
+            serviceType: 'LTL Freight',
+            trackingNumber: traceResponse.Probill_Number || trackingNumber,
+            proNumber: traceResponse.Probill_Number || trackingNumber,
+            
+            // Raw response for debugging
+            rawStatus: traceResponse.Current_Status,
+            customsDocReceived: traceResponse.Customs_Doc_Rcv === 'True',
+            trackingUrl: traceResponse.Message || null
+        }
     };
 } 

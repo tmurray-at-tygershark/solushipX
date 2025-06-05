@@ -520,61 +520,30 @@ const Shipments = () => {
 
     // Enhanced search function
     const handleSearch = useCallback(() => {
-        console.log('🔍 Starting search with:', {
-            searchFields,
-            filters,
-            dateRange,
-            selectedTab,
-            allShipmentsCount: allShipments.length
-        });
-
         setLoading(true);
         try {
             let filteredShipments = [...allShipments];
-            console.log('📦 Initial shipments count:', filteredShipments.length);
-
-            // Log a sample shipment to understand the data structure
-            if (filteredShipments.length > 0) {
-                console.log('📋 Sample shipment structure:', {
-                    id: filteredShipments[0].id,
-                    shipmentID: filteredShipments[0].shipmentID,
-                    status: filteredShipments[0].status,
-                    carrier: filteredShipments[0].carrier,
-                    selectedRate: filteredShipments[0].selectedRate,
-                    selectedRateRef: filteredShipments[0].selectedRateRef,
-                    shipTo: filteredShipments[0].shipTo,
-                    shipFrom: filteredShipments[0].shipFrom,
-                    shipmentInfo: filteredShipments[0].shipmentInfo,
-                    trackingNumber: filteredShipments[0].trackingNumber,
-                    referenceNumber: filteredShipments[0].referenceNumber
-                });
-            }
 
             // First apply tab filter
             if (selectedTab === 'all') {
                 // "All" tab should exclude drafts
                 filteredShipments = filteredShipments.filter(s => s.status?.toLowerCase() !== 'draft');
-                console.log('🏷️ After "all" tab filter (exclude drafts):', filteredShipments.length);
             } else if (selectedTab === 'draft') {
                 // Handle draft tab - only show drafts (case-insensitive)
                 filteredShipments = filteredShipments.filter(s => s.status?.toLowerCase() === 'draft');
-                console.log('🏷️ After "draft" tab filter:', filteredShipments.length);
             } else if (selectedTab === 'In Transit') {
                 filteredShipments = filteredShipments.filter(s =>
                     s.status?.toLowerCase() === 'in_transit' ||
                     s.status?.toLowerCase() === 'in transit'
                 );
-                console.log('🏷️ After "In Transit" tab filter:', filteredShipments.length);
             } else if (selectedTab === 'Delivered') {
                 filteredShipments = filteredShipments.filter(s =>
                     s.status?.toLowerCase() === 'delivered'
                 );
-                console.log('🏷️ After "Delivered" tab filter:', filteredShipments.length);
             } else if (selectedTab === 'Awaiting Shipment') {
                 filteredShipments = filteredShipments.filter(s =>
                     s.status?.toLowerCase() === 'scheduled'
                 );
-                console.log('🏷️ After "Awaiting Shipment" tab filter:', filteredShipments.length);
             } else if (selectedTab === 'Cancelled') {
                 // Handle \"Cancelled\" tab - filter by \"cancelled\" or \"void\" status (both spellings)
                 filteredShipments = filteredShipments.filter(s =>
@@ -583,50 +552,33 @@ const Shipments = () => {
                     s.status?.toLowerCase() === 'void' ||
                     s.status?.toLowerCase() === 'voided'
                 );
-                console.log(`📊 After \"Cancelled\" tab filter: ${filteredShipments.length} shipments`);
             }
 
             // Shipment ID search (partial match)
             if (searchFields.shipmentId) {
                 const searchTerm = searchFields.shipmentId.toLowerCase();
-                console.log('🔍 Searching for shipment ID:', searchTerm);
-                const beforeCount = filteredShipments.length;
                 filteredShipments = filteredShipments.filter(shipment => {
                     const shipmentId = (shipment.shipmentID || shipment.id || '').toLowerCase();
-                    const matches = shipmentId.includes(searchTerm);
-                    if (matches) {
-                        console.log('✅ Shipment ID match:', shipmentId, 'contains', searchTerm);
-                    }
-                    return matches;
+                    return shipmentId.includes(searchTerm);
                 });
-                console.log('🔍 After shipment ID filter:', beforeCount, '->', filteredShipments.length);
             }
 
             // Reference Number search
             if (searchFields.referenceNumber) {
                 const searchTerm = searchFields.referenceNumber.toLowerCase();
-                console.log('🔍 Searching for reference number:', searchTerm);
-                const beforeCount = filteredShipments.length;
                 filteredShipments = filteredShipments.filter(shipment => {
                     const refNumber = (
                         shipment.shipmentInfo?.shipperReferenceNumber ||
                         shipment.referenceNumber ||
                         ''
                     ).toLowerCase();
-                    const matches = refNumber.includes(searchTerm);
-                    if (matches) {
-                        console.log('✅ Reference number match:', refNumber, 'contains', searchTerm);
-                    }
-                    return matches;
+                    return refNumber.includes(searchTerm);
                 });
-                console.log('🔍 After reference number filter:', beforeCount, '->', filteredShipments.length);
             }
 
             // Tracking Number search
             if (searchFields.trackingNumber) {
                 const searchTerm = searchFields.trackingNumber.toLowerCase();
-                console.log('🔍 Searching for tracking number:', searchTerm);
-                const beforeCount = filteredShipments.length;
                 filteredShipments = filteredShipments.filter(shipment => {
                     // Enhanced eShipPlus detection
                     const carrierName = shipment.selectedRate?.carrier ||
@@ -648,14 +600,6 @@ const Shipments = () => {
                         carrierName.toLowerCase().includes('old dominion') ||
                         carrierName.toLowerCase().includes('saia') ||
                         carrierName.toLowerCase().includes('ltl');
-
-                    console.log(`🔍 Checking shipment ${shipment.id} for tracking "${searchTerm}":`, {
-                        isEShipPlus,
-                        displayCarrierId: shipment.selectedRate?.displayCarrierId || shipment.selectedRateRef?.displayCarrierId,
-                        sourceCarrierName: shipment.selectedRate?.sourceCarrierName || shipment.selectedRateRef?.sourceCarrierName,
-                        carrier: carrierName,
-                        enhancedDetection: carrierName.toLowerCase().includes('freight') ? 'Detected as freight carrier' : 'Not a freight carrier'
-                    });
 
                     // Standard tracking number fields
                     const trackingNumber = (
@@ -683,76 +627,20 @@ const Shipments = () => {
                         ''
                     ).toLowerCase() : '';
 
-                    console.log(`🔍 Tracking data for shipment ${shipment.id}:`, {
-                        trackingNumber: trackingNumber || 'N/A',
-                        bookingReferenceNumber: bookingReferenceNumber || 'N/A',
-                        isEShipPlus,
-                        searchTerm,
-
-                        // Log all the fields we're checking
-                        rawTrackingFields: {
-                            'shipment.trackingNumber': shipment.trackingNumber,
-                            'selectedRate.trackingNumber': shipment.selectedRate?.trackingNumber,
-                            'selectedRate.TrackingNumber': shipment.selectedRate?.TrackingNumber,
-                            'selectedRateRef.trackingNumber': shipment.selectedRateRef?.trackingNumber,
-                            'selectedRateRef.TrackingNumber': shipment.selectedRateRef?.TrackingNumber,
-                            'carrierTrackingData.trackingNumber': shipment.carrierTrackingData?.trackingNumber,
-                            'carrierBookingConfirmation.trackingNumber': shipment.carrierBookingConfirmation?.trackingNumber,
-                            'carrierBookingConfirmation.proNumber': shipment.carrierBookingConfirmation?.proNumber
-                        },
-
-                        rawBookingFields: isEShipPlus ? {
-                            'shipment.bookingReferenceNumber': shipment.bookingReferenceNumber,
-                            'selectedRate.BookingReferenceNumber': shipment.selectedRate?.BookingReferenceNumber,
-                            'selectedRate.bookingReferenceNumber': shipment.selectedRate?.bookingReferenceNumber,
-                            'selectedRateRef.BookingReferenceNumber': shipment.selectedRateRef?.BookingReferenceNumber,
-                            'selectedRateRef.bookingReferenceNumber': shipment.selectedRateRef?.bookingReferenceNumber,
-                            'carrierTrackingData.bookingReferenceNumber': shipment.carrierTrackingData?.bookingReferenceNumber,
-                            'carrierBookingConfirmation.bookingReference': shipment.carrierBookingConfirmation?.bookingReference,
-                            'carrierBookingConfirmation.confirmationNumber': shipment.carrierBookingConfirmation?.confirmationNumber
-                        } : 'Not eShipPlus'
-                    });
-
                     // Check both tracking number and booking reference (for eShipPlus)
                     const trackingMatches = trackingNumber.includes(searchTerm);
                     const bookingMatches = isEShipPlus && bookingReferenceNumber.includes(searchTerm);
-                    const matches = trackingMatches || bookingMatches;
-
-                    if (matches) {
-                        console.log('✅ Tracking/Booking number match:', {
-                            shipmentId: shipment.id,
-                            isEShipPlus,
-                            trackingNumber: trackingNumber || 'N/A',
-                            bookingReferenceNumber: bookingReferenceNumber || 'N/A',
-                            searchTerm,
-                            trackingMatches,
-                            bookingMatches
-                        });
-                    } else {
-                        console.log('❌ No tracking/booking match:', {
-                            shipmentId: shipment.id,
-                            isEShipPlus,
-                            trackingNumber: trackingNumber || 'N/A',
-                            bookingReferenceNumber: bookingReferenceNumber || 'N/A',
-                            searchTerm
-                        });
-                    }
-
-                    return matches;
+                    return trackingMatches || bookingMatches;
                 });
-                console.log('🔍 After tracking number filter:', beforeCount, '->', filteredShipments.length);
             }
 
             // Carrier filter with eShipPlus sub-carriers
             if (filters.carrier !== 'all') {
-                console.log('🔍 Filtering by carrier:', filters.carrier);
-                const beforeCount = filteredShipments.length;
                 const selectedCarrier = carrierOptions
                     .flatMap(g => g.carriers)
                     .find(c => c.id === filters.carrier);
 
                 if (selectedCarrier) {
-                    console.log(`📊 Selected carrier config:`, selectedCarrier);
                     filteredShipments = filteredShipments.filter(shipment => {
                         // Get carrier name from various sources
                         const carrierName = shipment.selectedRateRef?.carrier ||
@@ -765,8 +653,6 @@ const Shipments = () => {
                             shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
                             shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
                             carrierName?.toLowerCase().includes('eshipplus');
-
-                        console.log(`📊 Checking shipment ${shipment.id}: carrier="${carrierName}", isEShipPlus=${isEShipPlus}`);
 
                         if (selectedCarrier.id.startsWith('eShipPlus_')) {
                             // For eShipPlus carriers, use more specific matching
@@ -802,89 +688,47 @@ const Shipments = () => {
                                         matches = normalizeCarrierName(carrierName).includes(selectedCarrier.normalized);
                                 }
                             }
-
-                            if (matches) {
-                                console.log(`✅ eShipPlus carrier match: ${carrierName} matches ${selectedCarrier.name}`);
-                            }
                             return matches;
                         } else {
                             // For regular carriers, check if it's NOT eShipPlus and matches the carrier
                             const matches = !isEShipPlus &&
                                 carrierName &&
                                 normalizeCarrierName(carrierName).includes(selectedCarrier.normalized);
-                            if (matches) {
-                                console.log(`✅ Regular carrier match: ${carrierName} contains ${selectedCarrier.normalized}`);
-                            }
                             return matches;
                         }
                     });
                 }
-                console.log(`📊 After carrier filter (${filters.carrier}): ${beforeCount} -> ${filteredShipments.length}`);
             }
 
             // Date range filter
             if (dateRange[0] && dateRange[1]) {
-                console.log('🔍 Filtering by date range:', dateRange[0].format('YYYY-MM-DD'), 'to', dateRange[1].format('YYYY-MM-DD'));
-                const beforeCount = filteredShipments.length;
-
                 // Set start date to beginning of day and end date to end of day
                 const startDate = dateRange[0].startOf('day').toDate();
                 const endDate = dateRange[1].endOf('day').toDate();
-
-                console.log('🔍 Date range in UTC:', {
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString()
-                });
 
                 filteredShipments = filteredShipments.filter(shipment => {
                     const shipmentDate = shipment.createdAt?.toDate
                         ? shipment.createdAt.toDate()
                         : new Date(shipment.createdAt);
-
-                    console.log('🔍 Checking shipment date:', {
-                        shipmentId: shipment.id,
-                        shipmentDate: shipmentDate.toISOString(),
-                        startDate: startDate.toISOString(),
-                        endDate: endDate.toISOString(),
-                        isAfterStart: shipmentDate >= startDate,
-                        isBeforeEnd: shipmentDate <= endDate
-                    });
-
-                    const matches = shipmentDate >= startDate && shipmentDate <= endDate;
-                    if (matches) {
-                        console.log('✅ Date range match:', shipmentDate.toISOString());
-                    } else {
-                        console.log('❌ Date range NO match:', shipmentDate.toISOString());
-                    }
-                    return matches;
+                    return shipmentDate >= startDate && shipmentDate <= endDate;
                 });
-                console.log('🔍 After date range filter:', beforeCount, '->', filteredShipments.length);
             }
 
             // Customer search
             if (searchFields.customerName) {
                 const searchTerm = searchFields.customerName.toLowerCase();
-                console.log('🔍 Searching for customer:', searchTerm);
-                const beforeCount = filteredShipments.length;
                 filteredShipments = filteredShipments.filter(shipment => {
                     const customerName = (
                         customers[shipment.shipTo?.customerID] ||
                         shipment.shipTo?.company ||
                         ''
                     ).toLowerCase();
-                    const matches = customerName.includes(searchTerm);
-                    if (matches) {
-                        console.log('✅ Customer match:', customerName, 'contains', searchTerm);
-                    }
-                    return matches;
+                    return customerName.includes(searchTerm);
                 });
-                console.log(`📊 After customer filter: ${beforeCount} -> ${filteredShipments.length}`);
             }
 
             // Origin/Destination search
             if (searchFields.origin || searchFields.destination) {
-                console.log('🔍 Searching for origin/destination:', searchFields.origin, '/', searchFields.destination);
-                const beforeCount = filteredShipments.length;
                 filteredShipments = filteredShipments.filter(shipment => {
                     const originMatch = !searchFields.origin || (
                         Object.values(shipment.shipFrom || {})
@@ -898,20 +742,14 @@ const Shipments = () => {
                             .toLowerCase()
                             .includes(searchFields.destination.toLowerCase())
                     );
-                    const matches = originMatch && destinationMatch;
-                    if (matches) {
-                        console.log('✅ Origin/Destination match for shipment:', shipment.id);
-                    }
-                    return matches;
+                    return originMatch && destinationMatch;
                 });
-                console.log('🔍 After origin/destination filter:', beforeCount, '->', filteredShipments.length);
             }
 
-            console.log('✅ Final filtered shipments count:', filteredShipments.length);
             setShipments(filteredShipments);
             setTotalCount(filteredShipments.length);
         } catch (error) {
-            console.error('❌ Error in search:', error);
+            console.error('Error in search:', error);
         } finally {
             setLoading(false);
         }
@@ -1002,7 +840,6 @@ const Shipments = () => {
     // Remove generateMockShipments and replace loadShipments with Firestore logic
     const loadShipments = async () => {
         if (!companyIdForAddress && !companyCtxLoading) {
-            console.log("Shipments.jsx: Waiting for companyIdForAddress or company context to finish loading.");
             setLoading(false);
             setShipments([]); // Clear shipments if no companyId
             setAllShipments([]); // Clear all shipments for stats
@@ -1010,7 +847,6 @@ const Shipments = () => {
             return;
         }
         if (!companyIdForAddress && companyCtxLoading) {
-            console.log("Shipments.jsx: Company context is loading, waiting for companyIdForAddress.");
             setLoading(true); // Keep loading true while company context loads
             return;
         }
@@ -1023,18 +859,11 @@ const Shipments = () => {
             return;
         }
 
-        console.log(`📊 loadShipments called with companyIdForAddress: ${companyIdForAddress}`);
-        console.log(`📊 Current filters:`, filters);
-        console.log(`📊 Current dateRange:`, dateRange);
-        console.log(`📊 Current selectedTab:`, selectedTab);
-
         setLoading(true);
         try {
             let shipmentsRef = collection(db, 'shipments');
             // Build Firestore query
             let q = query(shipmentsRef, where('companyID', '==', companyIdForAddress), orderBy('createdAt', 'desc'));
-
-            console.log(`📊 Firestore query: companyID == ${companyIdForAddress}`);
 
             // Note: Status filter will be applied client-side to handle cancelled/void grouping
 
@@ -1045,11 +874,8 @@ const Shipments = () => {
                 ...doc.data()
             }));
 
-            console.log(`📊 Firestore returned ${shipmentsData.length} shipments`);
-
             // Apply status filter (client-side to handle cancelled/void grouping)
             if (filters.status !== 'all') {
-                const beforeCount = shipmentsData.length;
                 if (filters.status === 'cancelled') {
                     // For cancelled filter, include both cancelled and void shipments
                     shipmentsData = shipmentsData.filter(shipment => {
@@ -1065,44 +891,15 @@ const Shipments = () => {
                         shipment.status?.toLowerCase() === filters.status.toLowerCase()
                     );
                 }
-                console.log(`📊 After status filter (${filters.status}): ${beforeCount} -> ${shipmentsData.length}`);
-            }
-
-            // Log first few shipments for debugging
-            if (shipmentsData.length > 0) {
-                console.log(`📊 First shipment structure:`, {
-                    id: shipmentsData[0].id,
-                    shipmentID: shipmentsData[0].shipmentID,
-                    status: shipmentsData[0].status,
-                    companyID: shipmentsData[0].companyID,
-                    createdAt: shipmentsData[0].createdAt,
-                    carrier: shipmentsData[0].carrier,
-                    selectedRate: shipmentsData[0].selectedRate,
-                    selectedRateRef: shipmentsData[0].selectedRateRef,
-                    shipTo: shipmentsData[0].shipTo,
-                    shipFrom: shipmentsData[0].shipFrom,
-                    shipmentType: shipmentsData[0].shipmentType, // Check root level
-                    shipmentInfo: shipmentsData[0].shipmentInfo // Check nested level
-                });
-
-                // Log shipment types found to understand the data structure
-                const shipmentTypes = shipmentsData.map(s => ({
-                    id: s.id,
-                    rootShipmentType: s.shipmentType,
-                    nestedShipmentType: s.shipmentInfo?.shipmentType
-                })).slice(0, 5);
-                console.log(`📊 Sample shipment types found:`, shipmentTypes);
             }
 
             // Apply carrier filter (client-side to check both carrier and selectedRate.carrier)
             if (filters.carrier !== 'all') {
-                const beforeCount = shipmentsData.length;
                 const selectedCarrier = carrierOptions
                     .flatMap(g => g.carriers)
                     .find(c => c.id === filters.carrier);
 
                 if (selectedCarrier) {
-                    console.log(`📊 Selected carrier config:`, selectedCarrier);
                     shipmentsData = shipmentsData.filter(shipment => {
                         // Get carrier name from various sources
                         const carrierName = shipment.selectedRateRef?.carrier ||
@@ -1115,8 +912,6 @@ const Shipments = () => {
                             shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
                             shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
                             carrierName?.toLowerCase().includes('eshipplus');
-
-                        console.log(`📊 Checking shipment ${shipment.id}: carrier="${carrierName}", isEShipPlus=${isEShipPlus}`);
 
                         if (selectedCarrier.id.startsWith('eShipPlus_')) {
                             // For eShipPlus carriers, use more specific matching
@@ -1152,29 +947,20 @@ const Shipments = () => {
                                         matches = normalizeCarrierName(carrierName).includes(selectedCarrier.normalized);
                                 }
                             }
-
-                            if (matches) {
-                                console.log(`✅ eShipPlus carrier match: ${carrierName} matches ${selectedCarrier.name}`);
-                            }
                             return matches;
                         } else {
                             // For regular carriers, check if it's NOT eShipPlus and matches the carrier
                             const matches = !isEShipPlus &&
                                 carrierName &&
                                 normalizeCarrierName(carrierName).includes(selectedCarrier.normalized);
-                            if (matches) {
-                                console.log(`✅ Regular carrier match: ${carrierName} contains ${selectedCarrier.normalized}`);
-                            }
                             return matches;
                         }
                     });
                 }
-                console.log(`📊 After carrier filter (${filters.carrier}): ${beforeCount} -> ${shipmentsData.length}`);
             }
 
             // Apply shipment type filter (client-side to check correct field path)
             if (filters.shipmentType !== 'all') {
-                const beforeCount = shipmentsData.length;
                 shipmentsData = shipmentsData.filter(shipment => {
                     // Check both root level and nested shipmentInfo.shipmentType
                     const rootShipmentType = shipment.shipmentType;
@@ -1210,102 +996,47 @@ const Shipments = () => {
 
                     return false;
                 });
-                console.log(`📊 After shipment type filter (${filters.shipmentType}): ${beforeCount} -> ${shipmentsData.length}`);
             }
 
             // Apply date range filter
             if (dateRange[0] && dateRange[1]) {
-                const beforeCount = shipmentsData.length;
-
                 // Set start date to beginning of day and end date to end of day
                 const startDate = dateRange[0].startOf('day').toDate();
                 const endDate = dateRange[1].endOf('day').toDate();
 
-                console.log(`📊 Date range filter: ${dateRange[0].format('YYYY-MM-DD')} to ${dateRange[1].format('YYYY-MM-DD')}`);
-                console.log('📊 Date range in UTC:', {
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString()
-                });
-
                 shipmentsData = shipmentsData.filter(shipment => {
                     const shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
-
-                    console.log('📊 Checking shipment date:', {
-                        shipmentId: shipment.id,
-                        shipmentDate: shipmentDate.toISOString(),
-                        matches: shipmentDate >= startDate && shipmentDate <= endDate
-                    });
-
                     return shipmentDate >= startDate && shipmentDate <= endDate;
                 });
-                console.log(`📊 After date range filter: ${beforeCount} -> ${shipmentsData.length}`);
             }
 
             // Apply shipment number filter
             if (shipmentNumber) {
-                const beforeCount = shipmentsData.length;
                 shipmentsData = shipmentsData.filter(shipment =>
                     (shipment.shipmentId || shipment.id || '').toLowerCase().includes(shipmentNumber.toLowerCase())
                 );
-                console.log(`📊 After shipment number filter: ${beforeCount} -> ${shipmentsData.length}`);
             }
 
             // Apply customer filter
             if (selectedCustomer) {
-                const beforeCount = shipmentsData.length;
                 shipmentsData = shipmentsData.filter(shipment =>
                     shipment.companyName === selectedCustomer || shipment.customerId === selectedCustomer
                 );
-                console.log(`📊 After customer filter: ${beforeCount} -> ${shipmentsData.length}`);
             }
-
-            // Apply general search filter
-            // REMOVED: searchTerm functionality - wildcard search was deleted
-            /*
-            if (searchTerm) {
-                const beforeCount = shipmentsData.length;
-                const searchableFields = ['shipmentId', 'id', 'companyName', 'shippingAddress', 'deliveryAddress', 'carrier', 'shipmentType', 'status'];
-                shipmentsData = shipmentsData.filter(shipment =>
-                    searchableFields.some(field => {
-                        const value = shipment[field];
-                        if (!value) return false;
-                        if (typeof value === 'string' || typeof value === 'number') {
-                            return String(value).toLowerCase().includes(searchTerm.toLowerCase());
-                        }
-                        // For address objects
-                        if ((field === 'shippingAddress' || field === 'deliveryAddress') && typeof value === 'object') {
-                            return Object.values(value).join(' ').toLowerCase().includes(searchTerm.toLowerCase());
-                        }
-                        return false;
-                    }) ||
-                    // Also search in selectedRate.carrier
-                    (shipment.selectedRateRef?.carrier &&
-                        String(shipment.selectedRateRef.carrier).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                    // Also search in fetched carrier data
-                    (carrierData[shipment.id]?.carrier &&
-                        String(carrierData[shipment.id].carrier).toLowerCase().includes(searchTerm.toLowerCase()))
-                );
-                console.log(`📊 After search term filter: ${beforeCount} -> ${shipmentsData.length}`);
-            }
-            */
 
             // Store the full unfiltered dataset for stats calculation
-            console.log(`📊 Setting allShipments to ${shipmentsData.length} shipments`);
             setAllShipments(shipmentsData);
 
             // Filter by tab - exclude drafts from "All" tab
             if (selectedTab === 'all') {
                 // "All" tab should exclude drafts (case-insensitive)
                 shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() !== 'draft');
-                console.log(`📊 After "all" tab filter: ${shipmentsData.length} shipments`);
             } else if (selectedTab === 'draft') {
                 // Handle draft tab - only show drafts (case-insensitive)
                 shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'draft');
-                console.log(`📊 After "draft" tab filter: ${shipmentsData.length} shipments`);
             } else if (selectedTab === 'Awaiting Shipment') {
                 // Handle "Awaiting Shipment" tab - filter by "scheduled" status
                 shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'scheduled');
-                console.log(`📊 After "Awaiting Shipment" tab filter: ${shipmentsData.length} shipments`);
             } else if (selectedTab === 'Cancelled') {
                 // Handle "Cancelled" tab - filter by "cancelled" status (both spellings)
                 shipmentsData = shipmentsData.filter(s =>
@@ -1314,12 +1045,10 @@ const Shipments = () => {
                     s.status?.toLowerCase() === 'void' ||
                     s.status?.toLowerCase() === 'voided'
                 );
-                console.log(`📊 After \"Cancelled\" tab filter: ${shipmentsData.length} shipments`);
             } else {
                 // Handle other specific status tabs (In Transit, Delivered, etc.)
                 // Use case-insensitive comparison for other statuses too
                 shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === selectedTab.toLowerCase());
-                console.log(`📊 After "${selectedTab}" tab filter: ${shipmentsData.length} shipments`);
             }
 
             // Apply sorting
@@ -1338,21 +1067,17 @@ const Shipments = () => {
 
             setTotalCount(shipmentsData.length);
             // Pagination
-            const startIndex = page * rowsPerPage;
-            const endIndex = startIndex + rowsPerPage;
             const paginatedData = rowsPerPage === -1
                 ? shipmentsData // Show all if rowsPerPage is -1 (All option selected)
                 : shipmentsData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
-            console.log(`📊 Final paginated data: ${paginatedData.length} shipments (page ${page}, rowsPerPage ${rowsPerPage})`);
             setShipments(paginatedData);
 
             // Fetch carrier data for the loaded shipments
             const shipmentIds = paginatedData.map(shipment => shipment.id);
-            console.log(`📊 Fetching carrier data for ${shipmentIds.length} shipments`);
             await fetchCarrierData(shipmentIds);
         } catch (error) {
-            console.error('❌ Error loading shipments:', error);
+            console.error('Error loading shipments:', error);
             setShipments([]);
             setAllShipments([]);
             setTotalCount(0);
@@ -1376,11 +1101,7 @@ const Shipments = () => {
 
     // Debug print dialog state changes
     useEffect(() => {
-        console.log('🖨️ Print dialog state changed:', {
-            printDialogOpen,
-            printType,
-            selectedShipment: selectedShipment ? selectedShipment.id : null
-        });
+        // Print dialog state tracking removed for cleaner console
     }, [printDialogOpen, printType, selectedShipment]);
 
     // Handle status chip display
@@ -1558,27 +1279,19 @@ const Shipments = () => {
 
     // Print functionality
     const handlePrintLabel = (shipment) => {
-        console.log('🖨️ handlePrintLabel called with shipment:', shipment);
-        console.log('🖨️ Setting selectedShipment to:', shipment);
         setSelectedShipment(shipment);
         setPrintType('label');
-        console.log('🖨️ Opening print dialog for label');
         setPrintDialogOpen(true);
         // Keep the selected shipment when closing the action menu
         handleActionMenuClose(true);
-        console.log('🖨️ Print dialog should be opening for label');
     };
 
     const handlePrintBOL = (shipment) => {
-        console.log('🖨️ handlePrintBOL called with shipment:', shipment);
-        console.log('🖨️ Setting selectedShipment to:', shipment);
         setSelectedShipment(shipment);
         setPrintType('bol');
-        console.log('🖨️ Opening print dialog for BOL');
         setPrintDialogOpen(true);
         // Keep the selected shipment when closing the action menu
         handleActionMenuClose(true);
-        console.log('🖨️ Print dialog should be opening for BOL');
     };
 
     const generateAndDownloadLabel = async (format = 'PDF') => {
@@ -1586,9 +1299,6 @@ const Shipments = () => {
 
         setIsGeneratingLabel(true);
         try {
-            console.log(`🖨️ Generating ${printType} for shipment:`, selectedShipment.id);
-            console.log(`🖨️ Selected shipment data:`, selectedShipment);
-
             // Use the same approach as ShipmentDetail.jsx
             // First, get all documents for the shipment
             const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
@@ -1596,8 +1306,6 @@ const Shipments = () => {
                 shipmentId: selectedShipment.id,
                 organized: true // Request organized structure
             });
-
-            console.log(`🖨️ Documents result:`, documentsResult);
 
             if (!documentsResult.data || !documentsResult.data.success) {
                 throw new Error(documentsResult.data?.error || 'Failed to fetch shipment documents');
@@ -1643,8 +1351,6 @@ const Shipments = () => {
                 }
             }
 
-            console.log(`🖨️ Found target document:`, targetDocument);
-
             // Now get the download URL for the document
             const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
             const urlResult = await getDocumentDownloadUrlFunction({
@@ -1652,25 +1358,21 @@ const Shipments = () => {
                 shipmentId: selectedShipment.id
             });
 
-            console.log(`🖨️ Download URL result:`, urlResult);
-
             if (!urlResult.data || !urlResult.data.success) {
                 throw new Error(urlResult.data?.error || 'Failed to get document download URL');
             }
 
             // Open the document in the PDF viewer modal
             const downloadUrl = urlResult.data.downloadUrl;
-            console.log(`🖨️ Opening document URL in modal:`, downloadUrl);
 
             setCurrentPdfUrl(downloadUrl);
             setCurrentPdfTitle(`${printType === 'bol' ? 'BOL' : 'Label'} - ${selectedShipment.shipmentID || selectedShipment.id}`);
             setPdfViewerOpen(true);
 
-            console.log(`🖨️ ${printType} opened successfully in modal`);
             setPrintDialogOpen(false);
             setSelectedShipment(null); // Clear selected shipment after successful completion
         } catch (error) {
-            console.error(`🖨️ Error generating ${printType}:`, error);
+            console.error(`Error generating ${printType}:`, error);
 
             // More specific error messages
             if (error.code === 'functions/deadline-exceeded') {
@@ -1707,69 +1409,215 @@ const Shipments = () => {
         try {
             setRefreshingStatus(prev => new Set([...prev, shipment.id]));
 
-            // Log the full shipment object for debugging
-            console.log('Attempting to refresh status for shipment:', {
-                id: shipment.id,
-                status: shipment.status,
-                carrier: shipment.carrier,
-                selectedRate: shipment.selectedRate,
-                selectedRateRef: shipment.selectedRateRef,
-                trackingNumber: shipment.trackingNumber,
-                bookingReferenceNumber: shipment.bookingReferenceNumber,
-                carrierBookingConfirmation: shipment.carrierBookingConfirmation
-            });
+            // Use the actual shipment ID, not the Firestore document ID
+            const actualShipmentId = shipment.shipmentID || shipment.shipmentId || shipment.id;
 
-            // Determine the carrier from various possible sources
-            let carrier = carrierData[shipment.id]?.carrier ||
-                shipment.selectedRateRef?.carrier ||
-                shipment.selectedRate?.carrier ||
-                shipment.selectedRate?.CarrierName ||
-                shipment.carrier ||
-                shipment.shipmentInfo?.carrier;
+            // Fetch detailed carrier data for this specific shipment (similar to ShipmentDetail)
+            let carrierConfig = null;
+            let getBestRateInfo = null;
 
-            // Get tracking information early so we can use it for carrier detection
-            // For general tracking numbers
-            const trackingNumber = shipment.trackingNumber ||
-                shipment.selectedRate?.trackingNumber ||
-                shipment.selectedRate?.TrackingNumber ||
-                shipment.selectedRateRef?.trackingNumber ||
-                shipment.selectedRateRef?.TrackingNumber ||
-                shipment.carrierTrackingData?.trackingNumber ||
-                shipment.carrierBookingConfirmation?.trackingNumber ||
-                shipment.carrierBookingConfirmation?.proNumber;
+            try {
+                // Fetch detailed rate info like ShipmentDetail does
+                const shipmentRatesRef = collection(db, 'shipmentRates');
+                const q = query(shipmentRatesRef, where('shipmentId', '==', actualShipmentId));
+                const querySnapshot = await getDocs(q);
 
-            // For booking references (eShipPlus)
-            const bookingReferenceNumber = shipment.bookingReferenceNumber ||
-                shipment.selectedRate?.BookingReferenceNumber ||
-                shipment.selectedRate?.bookingReferenceNumber ||
-                shipment.selectedRateRef?.BookingReferenceNumber ||
-                shipment.selectedRateRef?.bookingReferenceNumber ||
-                shipment.carrierTrackingData?.bookingReferenceNumber ||
-                shipment.carrierBookingConfirmation?.bookingReference ||
-                shipment.carrierBookingConfirmation?.confirmationNumber;
+                if (!querySnapshot.empty) {
+                    const ratesDoc = querySnapshot.docs[0];
+                    const ratesData = ratesDoc.data();
 
-            // Check if this is an eShipPlus shipment
-            const isEShipPlusShipment =
-                carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
-                carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
-                shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
-                shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
-                shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
-                shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
-                carrier?.toLowerCase().includes('eshipplus');
+                    // Get the selected rate (similar to getBestRateInfo in ShipmentDetail)
+                    if (ratesData.selectedRate) {
+                        getBestRateInfo = ratesData.selectedRate;
+                    } else if (ratesData.rates && ratesData.selectedRateIndex !== undefined) {
+                        getBestRateInfo = ratesData.rates[ratesData.selectedRateIndex];
+                    } else if (ratesData.rates && ratesData.rates.length > 0) {
+                        getBestRateInfo = ratesData.rates[0];
+                    }
+                }
 
-            // Extract carrier from different sources with eShipPlus override
+                // Also try to get carrier config from shipment's selected rate
+                if (!getBestRateInfo && shipment.selectedRate) {
+                    getBestRateInfo = shipment.selectedRate;
+                } else if (!getBestRateInfo && shipment.selectedRateRef) {
+                    getBestRateInfo = shipment.selectedRateRef;
+                }
+
+                // Fetch carrier configuration if we have a carrier
+                if (getBestRateInfo?.carrier || shipment.carrier) {
+                    const carrierName = getBestRateInfo?.carrier || shipment.carrier;
+                    const carriersRef = collection(db, 'carriers');
+                    let carrierQuery;
+
+                    // Try to find carrier by name first
+                    carrierQuery = query(carriersRef, where('name', '==', carrierName), where('enabled', '==', true), limit(1));
+                    let carrierSnapshot = await getDocs(carrierQuery);
+
+                    // If not found by name, try by carrierID
+                    if (carrierSnapshot.empty) {
+                        const normalizedName = carrierName.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                        carrierQuery = query(carriersRef, where('carrierID', '==', normalizedName), where('enabled', '==', true), limit(1));
+                        carrierSnapshot = await getDocs(carrierQuery);
+                    }
+
+                    if (!carrierSnapshot.empty) {
+                        carrierConfig = carrierSnapshot.docs[0].data();
+                    }
+                }
+            } catch (dataFetchError) {
+                console.warn('Could not fetch detailed carrier data:', dataFetchError);
+            }
+
+            // Use ShipmentDetail.jsx approach for carrier detection
+            const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
+                carrierConfig?.name?.toLowerCase().includes('canpar') ||
+                carrierConfig?.carrierID === 'CANPAR';
+
+            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                carrierConfig?.name?.toLowerCase().includes('eshipplus') ||
+                carrierConfig?.carrierID === 'ESHIPPLUS' ||
+                // Enhanced detection for freight carriers that typically use eShipPlus
+                (getBestRateInfo?.carrier && (
+                    getBestRateInfo.carrier.toLowerCase().includes('ward trucking') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('fedex freight') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('road runner') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('estes') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('yrc') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('xpo') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('old dominion') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('saia') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('ltl') ||
+                    getBestRateInfo.carrier.toLowerCase().includes('freight')
+                )) ||
+                // Also check shipment carrier field
+                (shipment.carrier && (
+                    shipment.carrier.toLowerCase().includes('ward trucking') ||
+                    shipment.carrier.toLowerCase().includes('fedex freight') ||
+                    shipment.carrier.toLowerCase().includes('road runner') ||
+                    shipment.carrier.toLowerCase().includes('estes') ||
+                    shipment.carrier.toLowerCase().includes('yrc') ||
+                    shipment.carrier.toLowerCase().includes('xpo') ||
+                    shipment.carrier.toLowerCase().includes('old dominion') ||
+                    shipment.carrier.toLowerCase().includes('saia') ||
+                    shipment.carrier.toLowerCase().includes('ltl') ||
+                    shipment.carrier.toLowerCase().includes('freight')
+                ));
+
+            // Determine the correct tracking number based on carrier (like ShipmentDetail)
+            let trackingNumber;
+            let bookingReferenceNumber;
+
+            if (isCanparShipment) {
+                // For Canpar, use the trackingNumber (barcode)
+                trackingNumber = shipment.trackingNumber ||
+                    shipment.selectedRate?.TrackingNumber ||
+                    shipment.selectedRate?.Barcode ||
+                    shipment.carrierBookingConfirmation?.trackingNumber;
+
+                console.log('Canpar refresh status - using barcode:', trackingNumber);
+            } else if (isEShipPlusShipment) {
+                // For eShipPlus, use the booking reference number
+                bookingReferenceNumber = shipment.bookingReferenceNumber ||
+                    shipment.selectedRate?.BookingReferenceNumber ||
+                    shipment.carrierBookingConfirmation?.bookingReferenceNumber ||
+                    shipment.carrierBookingConfirmation?.confirmationNumber ||  // ← KEY FIX: This is where Ward Trucking stores the booking reference
+                    shipment.carrierBookingConfirmation?.bookingReference ||
+                    shipment.carrierBookingConfirmation?.proNumber ||
+                    getBestRateInfo?.BookingReferenceNumber ||
+                    getBestRateInfo?.bookingReferenceNumber;
+
+                console.log('eShipPlus refresh status - using booking reference:', bookingReferenceNumber);
+
+                // Fallback: If no booking reference found, try tracking number for eShipPlus
+                if (!bookingReferenceNumber) {
+                    trackingNumber = shipment.trackingNumber ||
+                        shipment.selectedRate?.TrackingNumber ||
+                        shipment.carrierBookingConfirmation?.trackingNumber ||
+                        getBestRateInfo?.TrackingNumber;
+                    console.log('eShipPlus fallback - no booking reference found, trying tracking number:', trackingNumber);
+                }
+            } else {
+                // For other carriers, use the tracking number
+                trackingNumber = shipment.trackingNumber ||
+                    shipment.selectedRate?.TrackingNumber ||
+                    shipment.carrierBookingConfirmation?.trackingNumber;
+
+                console.log('Standard refresh status - using tracking number:', trackingNumber);
+            }
+
+            // Determine carrier name (like ShipmentDetail)
+            let carrier = carrierConfig?.name ||
+                getBestRateInfo?.carrier ||
+                shipment.carrier;
+
+            // Override carrier name for eShipPlus to ensure we use the integration carrier
             if (isEShipPlusShipment) {
                 carrier = 'eShipPlus';
-                console.log('Detected eShipPlus shipment, overriding carrier to eShipPlus');
-            } else if (!carrier) {
-                // Try to get carrier from other sources
-                carrier = carrierData[shipment.id]?.carrier ||
-                    shipment.selectedRateRef?.carrier ||
-                    shipment.selectedRate?.carrier ||
-                    shipment.carrier ||
-                    shipment.selectedRate?.CarrierName ||
-                    shipment.carrierBookingConfirmation?.carrier;
+                console.log('Overriding carrier name to eShipPlus for integration carrier');
+            }
+
+            // Build request body like ShipmentDetail does
+            const requestBody = {
+                shipmentId: shipment.id,
+                trackingNumber: trackingNumber,
+                carrier: carrier
+            };
+
+            // Only add bookingReferenceNumber if it exists
+            if (bookingReferenceNumber) {
+                requestBody.bookingReferenceNumber = bookingReferenceNumber;
+            } else if (isEShipPlusShipment && trackingNumber) {
+                // For eShipPlus, if we have tracking number but no booking reference, 
+                // use tracking number as booking reference since some eShipPlus carriers use this pattern
+                requestBody.bookingReferenceNumber = trackingNumber;
+                console.log('eShipPlus: Using tracking number as booking reference:', trackingNumber);
+            }
+
+            // Add carrierID if available (for cloud function to identify carrier) - THIS WAS MISSING!
+            if (carrierConfig?.carrierID) {
+                requestBody.carrierID = carrierConfig.carrierID;
+            }
+
+            console.log('Refreshing shipment status with:', requestBody);
+            console.log('Debug: Firestore doc ID:', shipment.id, 'Actual shipment ID:', actualShipmentId);
+            console.log('Debug: Ward Trucking carrier info:', {
+                getBestRateInfo: getBestRateInfo ? {
+                    carrier: getBestRateInfo.carrier,
+                    displayCarrierId: getBestRateInfo.displayCarrierId,
+                    sourceCarrierName: getBestRateInfo.sourceCarrierName
+                } : null,
+                carrierConfig: carrierConfig ? {
+                    name: carrierConfig.name,
+                    carrierID: carrierConfig.carrierID
+                } : null,
+                isEShipPlusShipment,
+                isCanparShipment
+            });
+            console.log('Debug: Shipment fields available:', Object.keys(shipment));
+            console.log('Debug: Looking for booking reference in:', {
+                shipment_bookingReferenceNumber: shipment.bookingReferenceNumber,
+                selectedRate_BookingReferenceNumber: shipment.selectedRate?.BookingReferenceNumber,
+                selectedRateRef_BookingReferenceNumber: shipment.selectedRateRef?.BookingReferenceNumber,
+                carrierBookingConfirmation_bookingReferenceNumber: shipment.carrierBookingConfirmation?.bookingReferenceNumber,
+                carrierBookingConfirmation_confirmationNumber: shipment.carrierBookingConfirmation?.confirmationNumber,
+                carrierBookingConfirmation_proNumber: shipment.carrierBookingConfirmation?.proNumber,
+                getBestRateInfo_BookingReferenceNumber: getBestRateInfo?.BookingReferenceNumber,
+                getBestRateInfo_bookingReferenceNumber: getBestRateInfo?.bookingReferenceNumber
+            });
+            console.log('Debug: Looking for tracking number in:', {
+                shipment_trackingNumber: shipment.trackingNumber,
+                selectedRate_TrackingNumber: shipment.selectedRate?.TrackingNumber,
+                selectedRateRef_TrackingNumber: shipment.selectedRateRef?.TrackingNumber,
+                carrierBookingConfirmation_trackingNumber: shipment.carrierBookingConfirmation?.trackingNumber,
+                getBestRateInfo_TrackingNumber: getBestRateInfo?.TrackingNumber,
+                getBestRateInfo_trackingNumber: getBestRateInfo?.trackingNumber
+            });
+            if (getBestRateInfo) {
+                console.log('Debug: Full getBestRateInfo object:', getBestRateInfo);
+            }
+            if (shipment.carrierBookingConfirmation) {
+                console.log('Debug: Full carrierBookingConfirmation object:', shipment.carrierBookingConfirmation);
             }
 
             if (!carrier) {
@@ -1778,81 +1626,18 @@ const Shipments = () => {
                 return;
             }
 
-            const normalizeCarrier = (carrierName) => {
-                const normalized = carrierName.toLowerCase();
-                if (normalized.includes('canpar')) return 'Canpar';
-                if (normalized.includes('eship') || normalized.includes('e-ship')) return 'eShipPlus';
-                // For eShipPlus sub-carriers
-                if (normalized.includes('fedex freight')) return 'eShipPlus';
-                if (normalized.includes('freight')) return 'eShipPlus'; // Generic freight often means eShipPlus
-                // Standard carriers
-                if (normalized.includes('fedex')) return 'FedEx';
-                if (normalized.includes('ups')) return 'UPS';
-                if (normalized.includes('dhl')) return 'DHL';
-                if (normalized.includes('purolator')) return 'Purolator';
-                if (normalized.includes('canada post')) return 'Canada Post';
-                if (normalized.includes('usps')) return 'USPS';
-                return carrierName; // Return original if no match
-            };
-
-            const normalizedCarrier = normalizeCarrier(carrier);
-
-            // For Canpar specific barcode
-            const canparBarcode = shipment.selectedRate?.Barcode ||
-                shipment.selectedRateRef?.Barcode ||
-                shipment.carrierBookingConfirmation?.trackingNumber;
-
-            console.log('Found tracking information:', {
-                trackingNumber,
-                bookingReferenceNumber,
-                canparBarcode,
-                carrier: normalizedCarrier
-            });
-
-            // Determine which identifier to use based on carrier
-            let identifierToUse = trackingNumber;
-            const carrierLower = normalizedCarrier.toLowerCase();
-
-            if (carrierLower.includes('eshipplus') || carrierLower.includes('eship')) {
-                identifierToUse = bookingReferenceNumber || trackingNumber;
-                if (!identifierToUse) {
-                    console.error(`Cannot refresh status for eShipPlus shipment ${shipment.id}: No booking reference found`);
-                    alert('Cannot refresh status: No booking reference available for this eShipPlus shipment.');
-                    return;
-                }
-            } else if (carrierLower.includes('canpar')) {
-                identifierToUse = canparBarcode || trackingNumber;
-                if (!identifierToUse) {
-                    console.error(`Cannot refresh status for Canpar shipment ${shipment.id}: No barcode/tracking number found`);
-                    alert('Cannot refresh status: No barcode available for this Canpar shipment.');
-                    return;
-                }
-            } else if (!trackingNumber && !bookingReferenceNumber) {
-                console.error(`Cannot refresh status for shipment ${shipment.id}: No tracking information found`, {
-                    shipmentData: shipment,
-                    carrierData: carrierData[shipment.id]
-                });
+            if (!trackingNumber && !bookingReferenceNumber) {
+                console.error(`Cannot refresh status for shipment ${shipment.id}: No tracking information found`);
                 alert('Cannot refresh status: No tracking number or booking reference available for this shipment.');
                 return;
             }
-
-            console.log(`Refreshing status for shipment ${shipment.id}`, {
-                carrier: normalizedCarrier,
-                trackingNumber: identifierToUse,
-                bookingReferenceNumber: carrierLower.includes('eship') ? identifierToUse : bookingReferenceNumber
-            });
 
             const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    shipmentId: shipment.id,
-                    carrier: normalizedCarrier,
-                    trackingNumber: trackingNumber || identifierToUse || '',
-                    bookingReferenceNumber: bookingReferenceNumber || (carrierLower.includes('eship') ? identifierToUse : '') || ''
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
@@ -1914,7 +1699,6 @@ const Shipments = () => {
     // Add refresh on page focus to catch status updates when returning from other pages
     useEffect(() => {
         const handleFocus = () => {
-            console.log('📱 Page focused - refreshing shipments to catch any status updates');
             if (!authLoading && !companyCtxLoading && companyIdForAddress) {
                 loadShipments();
             }
@@ -1922,7 +1706,6 @@ const Shipments = () => {
 
         const handleVisibilityChange = () => {
             if (!document.hidden) {
-                console.log('📱 Page visible - refreshing shipments to catch any status updates');
                 if (!authLoading && !companyCtxLoading && companyIdForAddress) {
                     loadShipments();
                 }
@@ -1931,7 +1714,6 @@ const Shipments = () => {
 
         // Also listen for back/forward navigation events
         const handlePopState = () => {
-            console.log('📱 Navigation back/forward detected - refreshing shipments');
             if (!authLoading && !companyCtxLoading && companyIdForAddress) {
                 loadShipments();
             }
@@ -1953,7 +1735,6 @@ const Shipments = () => {
         const refreshOnMount = () => {
             // Check if we're navigating from another route (has history state)
             if (window.history.state || performance.getEntriesByType('navigation')[0]?.type === 'back_forward') {
-                console.log('📱 Detected navigation return - refreshing shipments for status updates');
                 if (!authLoading && !companyCtxLoading && companyIdForAddress) {
                     // Small delay to ensure the page has settled
                     setTimeout(() => {
@@ -2699,7 +2480,6 @@ const Shipments = () => {
             <Dialog
                 open={printDialogOpen}
                 onClose={() => {
-                    console.log('🖨️ Print dialog closing');
                     setPrintDialogOpen(false);
                     setSelectedShipment(null); // Clear selected shipment when dialog closes
                 }}
@@ -2716,10 +2496,6 @@ const Shipments = () => {
                             : 'Generate and download the shipping label for this shipment.'
                         }
                     </Typography>
-                    {/* Debug logging */}
-                    {console.log('🖨️ Print dialog rendering - selectedShipment:', selectedShipment)}
-                    {console.log('🖨️ Print dialog rendering - printDialogOpen:', printDialogOpen)}
-                    {console.log('🖨️ Print dialog rendering - printType:', printType)}
 
                     {selectedShipment ? (
                         <Box sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
@@ -2781,7 +2557,6 @@ const Shipments = () => {
                 <DialogActions>
                     <Button
                         onClick={() => {
-                            console.log('🖨️ Cancel button clicked');
                             setPrintDialogOpen(false);
                             setSelectedShipment(null); // Clear selected shipment when cancelled
                         }}
@@ -2791,7 +2566,6 @@ const Shipments = () => {
                     </Button>
                     <Button
                         onClick={() => {
-                            console.log('🖨️ Print button clicked, calling generateAndDownloadLabel');
                             generateAndDownloadLabel('PDF');
                         }}
                         variant="contained"
