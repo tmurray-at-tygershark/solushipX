@@ -222,6 +222,37 @@ exports.getShipmentDocuments = onCall({
                     }
                     
                     return false;
+                }).sort((a, b) => {
+                    // Priority sorting: Generated BOLs first, then by creation date (newest first)
+                    
+                    // Priority 1: Generated BOLs (isGeneratedBOL flag)
+                    const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.eshipplus?.generated === true;
+                    const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.eshipplus?.generated === true;
+                    
+                    if (aIsGenerated && !bIsGenerated) return -1; // a comes first
+                    if (!aIsGenerated && bIsGenerated) return 1;  // b comes first
+                    
+                    // Priority 2: BOLs that replace API BOLs
+                    const aReplacesApi = a.replacesApiBOL === true || a.metadata?.eshipplus?.replacesApiBol === true;
+                    const bReplacesApi = b.replacesApiBOL === true || b.metadata?.eshipplus?.replacesApiBol === true;
+                    
+                    if (aReplacesApi && !bReplacesApi) return -1;
+                    if (!aReplacesApi && bReplacesApi) return 1;
+                    
+                    // Priority 3: BOLs with generated filename patterns
+                    const aHasGeneratedFilename = (a.filename || '').includes('eshipplus-bol') || 
+                                                 (a.filename || '').includes('polaris-bol');
+                    const bHasGeneratedFilename = (b.filename || '').includes('eshipplus-bol') || 
+                                                 (b.filename || '').includes('polaris-bol');
+                    
+                    if (aHasGeneratedFilename && !bHasGeneratedFilename) return -1;
+                    if (!aHasGeneratedFilename && bHasGeneratedFilename) return 1;
+                    
+                    // Priority 4: Sort by creation date (newest first)
+                    const aDate = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                    const bDate = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                    
+                    return new Date(bDate) - new Date(aDate);
                 }),
                 invoice: allDocs.filter(doc => {
                     if (doc.docType === 3 || doc.documentType === 'invoice') {

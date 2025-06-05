@@ -50,7 +50,78 @@ exports.bookRateUniversal = onCall(async (request) => {
             case 'eshipplus':
             case 'eship':
                 console.log('bookRateUniversal: Routing to eShipPlus booking');
-                bookingResult = await bookEShipPlusShipment(rateRequestData, draftFirestoreDocId, selectedRateDocumentId);
+                
+                // Transform packages to Items array for eShipPlus
+                const transformedRateRequestData = {
+                    ...rateRequestData,
+                    // Transform Origin address
+                    Origin: {
+                        Description: rateRequestData.Origin?.Description || rateRequestData.shipFrom?.company || rateRequestData.shipFrom?.name || '',
+                        Street: rateRequestData.Origin?.Street || rateRequestData.shipFrom?.street || '',
+                        StreetExtra: rateRequestData.Origin?.StreetExtra || rateRequestData.shipFrom?.street2 || '',
+                        PostalCode: rateRequestData.Origin?.PostalCode || rateRequestData.shipFrom?.postalCode || rateRequestData.shipFrom?.zipPostal || '',
+                        City: rateRequestData.Origin?.City || rateRequestData.shipFrom?.city || '',
+                        State: rateRequestData.Origin?.State || rateRequestData.shipFrom?.state || '',
+                        Country: rateRequestData.Origin?.Country || { 
+                            Code: rateRequestData.shipFrom?.country || 'US',
+                            Name: rateRequestData.shipFrom?.country === 'CA' ? 'Canada' : 'United States',
+                            UsesPostalCode: true
+                        },
+                        Contact: rateRequestData.Origin?.Contact || rateRequestData.shipFrom?.contactName || rateRequestData.shipFrom?.attention || '',
+                        Phone: rateRequestData.Origin?.Phone || rateRequestData.shipFrom?.phone || rateRequestData.shipFrom?.contactPhone || '',
+                        Email: rateRequestData.Origin?.Email || rateRequestData.shipFrom?.email || rateRequestData.shipFrom?.contactEmail || '',
+                        Fax: rateRequestData.Origin?.Fax || '',
+                        Mobile: rateRequestData.Origin?.Mobile || '',
+                        SpecialInstructions: rateRequestData.Origin?.SpecialInstructions || rateRequestData.shipFrom?.specialInstructions || 'none'
+                    },
+                    // Transform Destination address
+                    Destination: {
+                        Description: rateRequestData.Destination?.Description || rateRequestData.shipTo?.company || rateRequestData.shipTo?.name || '',
+                        Street: rateRequestData.Destination?.Street || rateRequestData.shipTo?.street || '',
+                        StreetExtra: rateRequestData.Destination?.StreetExtra || rateRequestData.shipTo?.street2 || '',
+                        PostalCode: rateRequestData.Destination?.PostalCode || rateRequestData.shipTo?.postalCode || rateRequestData.shipTo?.zipPostal || '',
+                        City: rateRequestData.Destination?.City || rateRequestData.shipTo?.city || '',
+                        State: rateRequestData.Destination?.State || rateRequestData.shipTo?.state || '',
+                        Country: rateRequestData.Destination?.Country || { 
+                            Code: rateRequestData.shipTo?.country || 'US',
+                            Name: rateRequestData.shipTo?.country === 'CA' ? 'Canada' : 'United States',
+                            UsesPostalCode: true
+                        },
+                        Contact: rateRequestData.Destination?.Contact || rateRequestData.shipTo?.contactName || rateRequestData.shipTo?.attention || '',
+                        Phone: rateRequestData.Destination?.Phone || rateRequestData.shipTo?.phone || rateRequestData.shipTo?.contactPhone || '',
+                        Email: rateRequestData.Destination?.Email || rateRequestData.shipTo?.email || rateRequestData.shipTo?.contactEmail || '',
+                        Fax: rateRequestData.Destination?.Fax || '',
+                        Mobile: rateRequestData.Destination?.Mobile || '',
+                        SpecialInstructions: rateRequestData.Destination?.SpecialInstructions || rateRequestData.shipTo?.specialInstructions || 'none'
+                    },
+                    Items: (rateRequestData.packages || []).map(pkg => ({
+                        Weight: parseFloat(pkg.weight) || 0,
+                        PackagingQuantity: parseInt(pkg.packagingQuantity || pkg.quantity) || 1,
+                        SaidToContain: parseInt(pkg.saidToContain || pkg.packagingQuantity || pkg.quantity) || 1,
+                        Height: parseFloat(pkg.height) || 0,
+                        Width: parseFloat(pkg.width) || 0,
+                        Length: parseFloat(pkg.length) || 0,
+                        Stackable: typeof pkg.stackable === 'boolean' ? pkg.stackable : true,
+                        HazardousMaterial: pkg.hazardous || false,
+                        DeclaredValue: parseFloat(pkg.declaredValue || pkg.value) || 0,
+                        Description: pkg.itemDescription || pkg.description || "Package",
+                        Comment: "",
+                        NationalMotorFreightClassification: "",
+                        HarmonizedTariffSchedule: "",
+                        Packaging: {
+                            Key: parseInt(pkg.packaging?.key || pkg.packaging?.PackagingType) || 258,
+                            PackageName: pkg.packaging?.PackageName || "Pallets",
+                            DefaultLength: parseFloat(pkg.packaging?.DefaultLength) || 0,
+                            DefaultHeight: parseFloat(pkg.packaging?.DefaultHeight) || 0,
+                            DefaultWidth: parseFloat(pkg.packaging?.DefaultWidth) || 0
+                        },
+                        FreightClass: {
+                            FreightClass: parseFloat(pkg.freightClass) || 50.0
+                        }
+                    }))
+                };
+                
+                bookingResult = await bookEShipPlusShipment(transformedRateRequestData, draftFirestoreDocId, selectedRateDocumentId);
                 break;
 
             case 'canpar':

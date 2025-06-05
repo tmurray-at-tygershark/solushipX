@@ -647,7 +647,8 @@ const ShipmentDetail = () => {
         printLabel: { loading: false, error: null },
         printBOL: { loading: false, error: null },
         printShipment: { loading: false, error: null },
-        refreshStatus: { loading: false, error: null }
+        refreshStatus: { loading: false, error: null },
+        generateBOL: { loading: false, error: null }
     });
 
     // PDF Viewer Modal state
@@ -964,18 +965,177 @@ const ShipmentDetail = () => {
             setActionLoading('printBOL', true);
             showSnackbar('Loading Bill of Lading...', 'info');
 
+            // Check if this is an eShipPlus shipment
+            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                carrierData?.name?.toLowerCase().includes('eshipplus') ||
+                carrierData?.carrierID === 'ESHIPPLUS';
+
             const bolDocuments = shipmentDocuments.bol || [];
-            if (bolDocuments.length === 0) {
-                throw new Error('No Bill of Lading available for this shipment');
+
+            // For eShipPlus shipments, ALWAYS use generated BOL without prompts
+            if (isEShipPlusShipment) {
+                if (bolDocuments.length > 0) {
+                    // Enhanced BOL selection with priority for generated BOL
+                    console.log('🔍 eShipPlus BOL Selection - Available BOL documents:', bolDocuments.map(doc => ({
+                        id: doc.id,
+                        filename: doc.filename,
+                        isGeneratedBOL: doc.isGeneratedBOL,
+                        replacesApiBOL: doc.replacesApiBOL,
+                        docType: doc.docType,
+                        carrier: doc.carrier,
+                        metadata: {
+                            eshipplus: doc.metadata?.eshipplus,
+                            documentType: doc.metadata?.documentType,
+                            documentCategory: doc.metadata?.documentCategory
+                        }
+                    })));
+
+                    // Priority 1: Look for explicitly generated BOL with our flags
+                    let generatedBOL = bolDocuments.find(doc =>
+                        doc.isGeneratedBOL === true &&
+                        doc.replacesApiBOL === true &&
+                        doc.metadata?.eshipplus?.generated === true
+                    );
+
+                    // Priority 2: Look for BOL with generated filename pattern
+                    if (!generatedBOL) {
+                        generatedBOL = bolDocuments.find(doc =>
+                            doc.filename?.includes('eshipplus-bol') &&
+                            doc.carrier?.toLowerCase().includes('eshipplus')
+                        );
+                    }
+
+                    // Priority 3: Look for BOL with generated metadata
+                    if (!generatedBOL) {
+                        generatedBOL = bolDocuments.find(doc =>
+                            doc.metadata?.eshipplus?.bolGenerated === true ||
+                            doc.metadata?.documentSubType === 'generated-bol'
+                        );
+                    }
+
+                    // Priority 4: Look for BOL with docType 1 and eShipPlus carrier (our generated BOL)
+                    if (!generatedBOL) {
+                        generatedBOL = bolDocuments.find(doc =>
+                            doc.docType === 1 &&
+                            doc.carrier?.toLowerCase().includes('eshipplus') &&
+                            !doc.filename?.toLowerCase().includes('api')
+                        );
+                    }
+
+                    // Fallback: Use first BOL but log warning
+                    if (!generatedBOL && bolDocuments.length > 0) {
+                        console.warn('⚠️ Could not find generated eShipPlus BOL, using first available BOL:', bolDocuments[0]);
+                        generatedBOL = bolDocuments[0];
+                    }
+
+                    if (generatedBOL) {
+                        console.log('✅ Selected eShipPlus BOL document:', {
+                            id: generatedBOL.id,
+                            filename: generatedBOL.filename,
+                            isGeneratedBOL: generatedBOL.isGeneratedBOL,
+                            carrier: generatedBOL.carrier
+                        });
+
+                        showSnackbar('Opening generated BOL...', 'success');
+
+                        // Use PDF modal instead of new tab
+                        await viewPdfInModal(
+                            generatedBOL.id,
+                            generatedBOL.filename,
+                            `Generated BOL - ${shipment?.shipmentID}`,
+                            'printBOL'
+                        );
+                    } else {
+                        showSnackbar('No BOL document found', 'error');
+                    }
+                } else {
+                    // No BOL exists - it should have been auto-generated during booking
+                    showSnackbar('BOL not available yet. Please try refreshing the page, as BOL generation may still be in progress.', 'warning');
+                }
+
+                setActionLoading('printBOL', false);
+                return;
             }
 
-            const bol = bolDocuments[0];
-            await viewPdfInModal(bol.id, bol.filename, `BOL - ${shipment?.shipmentID}`, 'printBOL');
+            // For Polaris Transportation (non-eShipPlus), keep existing logic
+            if (bolDocuments.length > 0) {
+                // Check if there's a generated BOL
+                const generatedBOL = bolDocuments.find(doc =>
+                    doc.filename?.includes('polaris-bol') ||
+                    doc.metadata?.polaris?.generated
+                );
+
+                if (generatedBOL) {
+                    showSnackbar('Opening generated BOL...', 'success');
+                    window.open(generatedBOL.downloadUrl, '_blank');
+                } else {
+                    // Open the first available BOL document
+                    showSnackbar('Opening BOL document...', 'success');
+                    window.open(bolDocuments[0].downloadUrl, '_blank');
+                }
+            } else {
+                // No BOL documents exist - offer to generate one (for Polaris)
+                const shouldGenerate = window.confirm(
+                    'No BOL document found. Would you like to generate a professional BOL document?'
+                );
+
+                if (shouldGenerate) {
+                    await generatePolarisTransportationBOLDocument();
+                } else {
+                    showSnackbar('BOL generation cancelled', 'info');
+                }
+            }
+
         } catch (error) {
             console.error('Error printing BOL:', error);
-            showSnackbar('Failed to load BOL: ' + error.message, 'error');
+            showSnackbar(`Failed to print BOL: ${error.message}`, 'error');
         } finally {
             setActionLoading('printBOL', false);
+        }
+    };
+
+    // Helper function to generate eShipPlus BOL
+    const generateEShipPlusBOLDocument = async () => {
+        try {
+            setActionLoading('generateBOL', true);
+            showSnackbar('Generating professional BOL...', 'info');
+
+            const generateEShipPlusBOLFunction = httpsCallable(functions, 'generateEShipPlusBOL');
+
+            const confirmationNumber = shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                shipment?.carrierBookingConfirmation?.proNumber ||
+                shipment?.shipmentID;
+
+            const result = await generateEShipPlusBOLFunction({
+                shipmentId: confirmationNumber,
+                firebaseDocId: shipment?.id
+            });
+
+            if (result.data && result.data.success) {
+                showSnackbar('Professional BOL generated successfully!', 'success');
+
+                // Refresh documents to show the new BOL
+                await fetchShipmentDocuments();
+
+                // Auto-open the generated BOL
+                const documentId = result.data.data.documentId;
+                await viewPdfInModal(
+                    documentId,
+                    result.data.data.fileName,
+                    `Generated BOL - ${shipment?.shipmentID}`,
+                    'printBOL'
+                );
+
+            } else {
+                throw new Error(result.data?.error || 'Failed to generate BOL');
+            }
+
+        } catch (error) {
+            console.error('Error generating eShipPlus BOL:', error);
+            showSnackbar('Failed to generate BOL: ' + error.message, 'error');
+        } finally {
+            setActionLoading('generateBOL', false);
         }
     };
 
@@ -1403,6 +1563,32 @@ const ShipmentDetail = () => {
                     other: documents.other?.length || 0,
                     allDocuments: Object.values(documents).flat().length
                 });
+
+                // Enhanced BOL debugging for eShipPlus shipments
+                if (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                    getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                    carrierData?.name?.toLowerCase().includes('eshipplus')) {
+
+                    console.log('🔍 eShipPlus Shipment - BOL Document Analysis:', {
+                        totalBOLDocuments: documents.bol?.length || 0,
+                        bolDocuments: documents.bol?.map(doc => ({
+                            id: doc.id,
+                            filename: doc.filename,
+                            docType: doc.docType,
+                            carrier: doc.carrier,
+                            isGeneratedBOL: doc.isGeneratedBOL,
+                            replacesApiBOL: doc.replacesApiBOL,
+                            source: doc.source,
+                            createdAt: doc.createdAt,
+                            metadata: {
+                                eshipplus: doc.metadata?.eshipplus,
+                                documentType: doc.metadata?.documentType,
+                                documentCategory: doc.metadata?.documentCategory,
+                                documentSubType: doc.metadata?.documentSubType
+                            }
+                        })) || []
+                    });
+                }
 
                 // Fallback: If no labels detected but we have "other" documents that might be labels
                 if (documents.labels?.length === 0 && documents.other?.length > 0) {
@@ -2518,6 +2704,50 @@ const ShipmentDetail = () => {
         }
     }, [shipment, shipmentEvents]);
 
+    // Helper function to generate Polaris Transportation BOL
+    const generatePolarisTransportationBOLDocument = async () => {
+        try {
+            setActionLoading('generateBOL', true);
+            showSnackbar('Generating professional BOL...', 'info');
+
+            const generatePolarisTransportationBOLFunction = httpsCallable(functions, 'generatePolarisTransportationBOL');
+
+            const confirmationNumber = shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                shipment?.carrierBookingConfirmation?.proNumber ||
+                shipment?.shipmentID;
+
+            const result = await generatePolarisTransportationBOLFunction({
+                shipmentId: confirmationNumber,
+                firebaseDocId: shipment?.id
+            });
+
+            if (result.data && result.data.success) {
+                showSnackbar('Professional BOL generated successfully!', 'success');
+
+                // Refresh documents to show the new BOL
+                await fetchShipmentDocuments();
+
+                // Auto-open the generated BOL
+                const documentId = result.data.data.documentId;
+                await viewPdfInModal(
+                    documentId,
+                    result.data.data.fileName,
+                    `Generated BOL - ${shipment?.shipmentID}`,
+                    'printBOL'
+                );
+
+            } else {
+                throw new Error(result.data?.error || 'Failed to generate BOL');
+            }
+
+        } catch (error) {
+            console.error('Error generating Polaris Transportation BOL:', error);
+            showSnackbar('Failed to generate BOL: ' + error.message, 'error');
+        } finally {
+            setActionLoading('generateBOL', false);
+        }
+    };
+
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -2586,7 +2816,7 @@ const ShipmentDetail = () => {
                                                 onClick={handlePrintBOL}
                                                 startIcon={actionStates.printBOL.loading ?
                                                     <CircularProgress size={16} /> : <DescriptionIcon />}
-                                                disabled={actionStates.printBOL.loading || shipmentDocuments.bol?.length === 0}
+                                                disabled={actionStates.printBOL.loading}
                                                 sx={{
                                                     textTransform: 'none',
                                                     fontWeight: 500,
@@ -2611,6 +2841,39 @@ const ShipmentDetail = () => {
                                         >
                                             {actionStates.printShipment.loading ? 'Generating...' : 'Print Shipment'}
                                         </Button>
+
+                                        {/* Document Status Indicator */}
+                                        {(documentsLoading || actionStates.generateBOL.loading) && (
+                                            <Chip
+                                                size="small"
+                                                label={actionStates.generateBOL.loading ? "Generating BOL..." : "Loading documents..."}
+                                                icon={<CircularProgress size={16} />}
+                                                variant="outlined"
+                                                sx={{ ml: 1 }}
+                                            />
+                                        )}
+
+                                        {documentsError && (
+                                            <Chip
+                                                size="small"
+                                                label="Document error"
+                                                color="error"
+                                                variant="outlined"
+                                                sx={{ ml: 1 }}
+                                                onClick={() => fetchShipmentDocuments()}
+                                                clickable
+                                            />
+                                        )}
+
+                                        {!documentsLoading && !documentsError && !actionStates.generateBOL.loading && shipment?.status !== 'draft' && (
+                                            <Chip
+                                                size="small"
+                                                label={`${(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0)} docs`}
+                                                color={(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0) > 0 ? "success" : "default"}
+                                                variant="outlined"
+                                                sx={{ ml: 1 }}
+                                            />
+                                        )}
                                     </Box>
                                 </Box>
 

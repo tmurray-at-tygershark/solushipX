@@ -608,13 +608,32 @@ async function processBookingRequest(data) {
 
         logger.info('Successfully processed booking with eShipPlus REST API. Transformed Confirmation:', JSON.stringify(bookingConfirmationResult, null, 2));
 
-        // Process shipping documents with document manager
+        // Process ALL shipping documents normally (including API BOL - we'll overwrite it later)
         let processedDocuments = [];
         let documentProcessingError = null;
+        let apiBolDocumentId = null; // Track API BOL document ID for overwriting
         
         if (bookingConfirmationResult.rawShippingDocuments && bookingConfirmationResult.rawShippingDocuments.length > 0) {
             try {
-                logger.info(`Processing ${bookingConfirmationResult.rawShippingDocuments.length} documents for shipment ${draftFirestoreDocId}`);
+                logger.info(`📄 Processing ${bookingConfirmationResult.rawShippingDocuments.length} documents for shipment ${draftFirestoreDocId}`);
+                
+                // Find the API BOL document so we can overwrite it later
+                const apiBolDocument = bookingConfirmationResult.rawShippingDocuments.find(doc => {
+                    const docType = doc.docType || doc.documentType || doc.type || '';
+                    const fileName = (doc.filename || doc.name || '').toLowerCase();
+                    
+                    return docType === 1 || 
+                           docType === 3 ||
+                           docType === 'bol' || 
+                           fileName.includes('bol') ||
+                           fileName.includes('bill');
+                });
+                
+                if (apiBolDocument) {
+                    // Use a predictable document ID that we can overwrite
+                    apiBolDocumentId = `${draftFirestoreDocId}_bol_generated`;
+                    logger.info(`📋 Found API BOL: ${apiBolDocument.filename || apiBolDocument.name} - will be overwritten with our generated BOL`);
+                }
                 
                 const bookingContext = {
                     proNumber: bookingConfirmationResult.proNumber,
@@ -626,17 +645,58 @@ async function processBookingRequest(data) {
                 processedDocuments = await processCarrierDocuments(
                     draftFirestoreDocId,
                     'eshipplus',
-                    bookingConfirmationResult.rawShippingDocuments,
+                    bookingConfirmationResult.rawShippingDocuments, // Process ALL documents normally
                     bookingContext
                 );
                 
-                logger.info(`Successfully processed ${processedDocuments.length} documents`);
+                logger.info(`✅ Successfully processed ${processedDocuments.length} documents`);
             } catch (docError) {
-                // Log error but don't fail the entire booking
                 logger.error('Error processing shipping documents:', docError);
                 documentProcessingError = docError.message;
-                // Continue with booking even if document processing fails
             }
+        }
+
+        // Generate eShipPlus BOL to replace API BOL
+        let bolGenerationResult = null;
+        try {
+            logger.info('🚀 Generating eShipPlus BOL to replace API BOL...');
+            
+            // Import the internal BOL generation function
+            const { generateEShipPlusBOLInternal } = require('./generateBOL');
+            
+            const shipmentId = bookingConfirmationResult.confirmationNumber || bookingConfirmationResult.proNumber || draftFirestoreDocId;
+            
+            logger.info('📋 BOL generation parameters:', {
+                shipmentId,
+                firebaseDocId: draftFirestoreDocId,
+                overwriteDocumentId: apiBolDocumentId
+            });
+            
+            // Call BOL generation internal function directly
+            const bolGenerationResponse = await generateEShipPlusBOLInternal(
+                shipmentId,
+                draftFirestoreDocId,
+                apiBolDocumentId
+            );
+            
+            if (bolGenerationResponse && bolGenerationResponse.success) {
+                bolGenerationResult = bolGenerationResponse.data;
+                logger.info('✅ Successfully generated eShipPlus BOL - API BOL has been overwritten:', {
+                    documentId: bolGenerationResult.documentId,
+                    fileName: bolGenerationResult.fileName,
+                    overwrittenApiDoc: !!apiBolDocumentId
+                });
+            } else {
+                logger.warn('⚠️ eShipPlus BOL generation failed:', {
+                    error: bolGenerationResponse?.error || 'Unknown error'
+                });
+            }
+            
+        } catch (bolError) {
+            logger.error('❌ Error generating eShipPlus BOL:', {
+                error: bolError.message,
+                shipmentId: draftFirestoreDocId
+            });
         }
 
         // Firestore updates
