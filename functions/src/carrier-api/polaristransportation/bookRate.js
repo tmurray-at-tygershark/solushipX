@@ -1,349 +1,723 @@
-const functions = require('firebase-functions');
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const logger = require("firebase-functions/logger");
-const axios = require('axios');
+const { getCarrierApiConfig, validateCarrierEndpoints, sanitizePostalCode } = require('../../utils');
 const admin = require('firebase-admin');
-const dayjs = require('dayjs');
-const { getCarrierApiConfig, validateCarrierEndpoints } = require('../../utils');
+
+// Get Firestore instance
+const db = admin.firestore();
 
 /**
- * Helper to safely access nested properties
+ * Books a shipment with Polaris Transportation using their OrderSubmittion API
+ * @param {Object} rateRequestData - Original rate request data
+ * @param {string} draftFirestoreDocId - Firestore document ID of the draft shipment
+ * @param {string} selectedRateDocumentId - Document ID of the selected rate
+ * @returns {Object} Booking confirmation data
  */
-const safeAccess = (obj, path, defaultValue = null) => {
-    const keys = path.split('.');
-    let current = obj;
-    for (const key of keys) {
-        if (current && typeof current === 'object' && key in current) {
-            current = current[key];
-        } else {
-            return defaultValue;
+async function bookPolarisTransportationShipment(rateRequestData, draftFirestoreDocId, selectedRateDocumentId) {
+    console.log('bookPolarisTransportationShipment: Starting Polaris Transportation booking process');
+    console.log('bookPolarisTransportationShipment: rateRequestData:', JSON.stringify(rateRequestData, null, 2));
+    console.log('bookPolarisTransportationShipment: draftFirestoreDocId:', draftFirestoreDocId);
+    console.log('bookPolarisTransportationShipment: selectedRateDocumentId:', selectedRateDocumentId);
+
+    try {
+        // Get Polaris Transportation API configuration
+        const polarisConfig = await getCarrierApiConfig('POLARISTRANSPORTATION', 'booking');
+        console.log('bookPolarisTransportationShipment: Retrieved Polaris Transportation config');
+
+        // Validate that booking endpoint exists
+        validateCarrierEndpoints(polarisConfig.credentials, ['booking']);
+
+        // Get the selected rate details
+        const rateDoc = await db.collection('shipmentRates').doc(selectedRateDocumentId).get();
+        if (!rateDoc.exists) {
+            throw new Error(`Selected rate document ${selectedRateDocumentId} not found`);
         }
-    }
-    return current;
-};
+        const selectedRate = rateDoc.data();
+        console.log('bookPolarisTransportationShipment: Retrieved selected rate:', JSON.stringify(selectedRate, null, 2));
 
-/**
- * Create Polaris Transportation auth headers
- * @param {Object} credentials - Carrier credentials
- * @returns {Object} - Headers object
- */
-function createPolarisAuthHeaders(credentials) {
-    return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Username': credentials.username || '',
-        'Authorization': `Bearer ${credentials.accountNumber || ''}`,
-    };
+        // Get the draft shipment details
+        const shipmentDoc = await db.collection('shipments').doc(draftFirestoreDocId).get();
+        if (!shipmentDoc.exists) {
+            throw new Error(`Draft shipment ${draftFirestoreDocId} not found`);
+        }
+        const shipmentData = shipmentDoc.data();
+        console.log('bookPolarisTransportationShipment: Retrieved shipment data');
+
+        // Build the Polaris Transportation booking request
+        const bookingRequest = buildPolarisTransportationBookingRequest(rateRequestData, selectedRate, polarisConfig, draftFirestoreDocId);
+        console.log('bookPolarisTransportationShipment: Built booking request');
+
+        // Make the API call
+        const response = await makePolarisTransportationBookingRequest(bookingRequest, polarisConfig);
+        console.log('bookPolarisTransportationShipment: Received API response');
+
+        // Parse and validate the response
+        const bookingResult = parsePolarisTransportationBookingResponse(response);
+        console.log('bookPolarisTransportationShipment: Parsed booking result:', JSON.stringify(bookingResult, null, 2));
+
+        // Update the shipment document with booking confirmation
+        await updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate);
+
+        // Record the status change event from draft to booked
+        try {
+            const { recordStatusChange } = require('../../utils/shipmentEvents');
+            await recordStatusChange(
+                draftFirestoreDocId,
+                'draft',
+                'booked',
+                null,
+                'Shipment successfully booked with Polaris Transportation carrier'
+            );
+            console.log(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> booked`);
+        } catch (eventError) {
+            console.error('Error recording status change event:', eventError);
+            // Don't fail the booking process for event recording errors
+        }
+
+        // Update the rate document with booking status
+        await db.collection('shipmentRates').doc(selectedRateDocumentId).update({
+            status: 'booked',
+            bookingConfirmation: bookingResult,
+            bookedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('bookPolarisTransportationShipment: Successfully completed booking process');
+        return {
+            success: true,
+            data: bookingResult
+        };
+
+    } catch (error) {
+        console.error('bookPolarisTransportationShipment: Error during booking process:', error);
+        
+        // Update rate document with error status if possible
+        if (selectedRateDocumentId) {
+            try {
+                await db.collection('shipmentRates').doc(selectedRateDocumentId).update({
+                    status: 'booking_failed',
+                    bookingError: error.message,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (updateError) {
+                console.error('bookPolarisTransportationShipment: Failed to update rate document with error:', updateError);
+            }
+        }
+
+        return {
+            success: false,
+            error: error.message,
+            data: {
+                messages: [{ text: error.message }]
+            }
+        };
+    }
 }
 
 /**
- * Transform booking request to Polaris Transportation format
- * @param {Object} data - Universal format booking request
- * @returns {Object} - Polaris Transportation formatted request
+ * Builds the Polaris Transportation booking request
  */
-function transformToPolarisBookingFormat(data) {
+function buildPolarisTransportationBookingRequest(rateRequestData, selectedRate, polarisConfig, shipmentId) {
+    console.log('buildPolarisTransportationBookingRequest: Building booking request');
+    console.log('buildPolarisTransportationBookingRequest: rateRequestData structure:', JSON.stringify(rateRequestData, null, 2));
+
+    // Handle multiple possible data structures
+    let shipFrom, shipTo, packages, referenceNumber;
+    
+    // Try universal format first (pickup_address/delivery_address)
+    if (rateRequestData.shipment) {
+        const shipmentData = rateRequestData.shipment;
+        shipFrom = shipmentData.pickup_address;
+        shipTo = shipmentData.delivery_address;
+        packages = shipmentData.packages;
+        referenceNumber = shipmentData.reference || rateRequestData.referenceNumber;
+    }
+    // Try direct format (shipFrom/shipTo)
+    else if (rateRequestData.shipFrom || rateRequestData.shipTo) {
+        shipFrom = rateRequestData.shipFrom;
+        shipTo = rateRequestData.shipTo;
+        packages = rateRequestData.packages;
+        referenceNumber = rateRequestData.referenceNumber;
+    }
+    // Try Origin/Destination format
+    else if (rateRequestData.Origin || rateRequestData.Destination) {
+        // Convert Origin/Destination to our expected format
+        shipFrom = rateRequestData.Origin ? {
+            name: rateRequestData.Origin.Description || rateRequestData.Origin.Company || '',
+            address_line_1: rateRequestData.Origin.Street || '',
+            address_line_2: rateRequestData.Origin.StreetExtra || '',
+            city: rateRequestData.Origin.City || '',
+            province: rateRequestData.Origin.State || '',
+            postal_code: rateRequestData.Origin.PostalCode || '',
+            country: rateRequestData.Origin.Country?.Code || rateRequestData.Origin.Country || 'CA',
+            contact: rateRequestData.Origin.Contact || '',
+            phone: rateRequestData.Origin.Phone || '',
+            email: rateRequestData.Origin.Email || '',
+            special_instructions: rateRequestData.Origin.SpecialInstructions || ''
+        } : null;
+        
+        shipTo = rateRequestData.Destination ? {
+            name: rateRequestData.Destination.Description || rateRequestData.Destination.Company || '',
+            address_line_1: rateRequestData.Destination.Street || '',
+            address_line_2: rateRequestData.Destination.StreetExtra || '',
+            city: rateRequestData.Destination.City || '',
+            province: rateRequestData.Destination.State || '',
+            postal_code: rateRequestData.Destination.PostalCode || '',
+            country: rateRequestData.Destination.Country?.Code || rateRequestData.Destination.Country || 'US',
+            contact: rateRequestData.Destination.Contact || '',
+            phone: rateRequestData.Destination.Phone || '',
+            email: rateRequestData.Destination.Email || '',
+            special_instructions: rateRequestData.Destination.SpecialInstructions || ''
+        } : null;
+        
+        packages = rateRequestData.Items || [];
+        referenceNumber = rateRequestData.ReferenceNumber || rateRequestData.referenceNumber;
+    }
+    else {
+        throw new Error('Unable to extract shipment data from request. Expected shipment.pickup_address/delivery_address, shipFrom/shipTo, or Origin/Destination format.');
+    }
+    
+    console.log('buildPolarisTransportationBookingRequest: Extracted shipFrom:', shipFrom);
+    console.log('buildPolarisTransportationBookingRequest: Extracted shipTo:', shipTo);
+    console.log('buildPolarisTransportationBookingRequest: Extracted packages:', packages);
+    
+    // Validate critical address information
+    if (!shipFrom || !shipTo) {
+        throw new Error('Both pickup (shipFrom) and delivery (shipTo) addresses are required for Polaris Transportation booking');
+    }
+    
+    // Validate pickup address has minimum required fields (check multiple field name formats)
+    const fromCity = shipFrom?.city;
+    const fromPostalCode = shipFrom?.postal_code || shipFrom?.postalCode;
+    console.log('buildPolarisTransportationBookingRequest: Pickup validation - city:', fromCity, 'postalCode:', fromPostalCode);
+    console.log('buildPolarisTransportationBookingRequest: Pickup address fields available:', Object.keys(shipFrom || {}));
+    if (!fromCity || !fromPostalCode) {
+        throw new Error('Pickup address must have at least city and postal code for Polaris Transportation booking');
+    }
+    
+    // Validate delivery address has minimum required fields (check multiple field name formats)
+    const toCity = shipTo?.city;
+    const toPostalCode = shipTo?.postal_code || shipTo?.postalCode;
+    console.log('buildPolarisTransportationBookingRequest: Delivery validation - city:', toCity, 'postalCode:', toPostalCode);
+    console.log('buildPolarisTransportationBookingRequest: Delivery address fields available:', Object.keys(shipTo || {}));
+    if (!toCity || !toPostalCode) {
+        throw new Error('Delivery address must have at least city and postal code for Polaris Transportation booking');
+    }
+    
+    // Extract reference number from multiple possible sources
+    if (!referenceNumber) {
+        referenceNumber = rateRequestData.shipmentInfo?.shipperReferenceNumber || 
+                         rateRequestData.shipmentID || 
+                         shipmentId || 
+                         `REF-${Date.now()}`;
+    }
+    
+    // Extract contact information with multiple fallbacks
+    const contactName = shipFrom?.contact || shipFrom?.name || 'Shipping Department';
+    const contactEmail = shipFrom?.email || polarisConfig.credentials.defaultEmail || 'shipping@solushipx.com';
+    
+    // Format pickup and delivery dates
+    const shipDate = rateRequestData.shipmentInfo?.shipmentDate || 
+                    rateRequestData.shipmentDate || 
+                    rateRequestData.ShipmentDate || 
+                    new Date();
+    const pickupDate = new Date(shipDate);
+    const deliveryDate = new Date(shipDate);
+    deliveryDate.setDate(deliveryDate.getDate() + (selectedRate?.transitDays || selectedRate?.transit?.days || 5));
+    
+    // Format times with proper timezone handling
+    const formatDateTime = (date, time = '13:00') => {
+        const [hours, minutes] = time.split(':');
+        const formattedDate = new Date(date);
+        formattedDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        return formattedDate.toISOString();
+    };
+    
+    // Pickup times (13:00-17:00 default)
+    const pickupFromTime = formatDateTime(pickupDate, '13:00');
+    const pickupToTime = formatDateTime(pickupDate, '17:00');
+    
+    // Delivery times (09:00-17:00 default)  
+    const deliverFromTime = formatDateTime(deliveryDate, '09:00');
+    const deliverToTime = formatDateTime(deliveryDate, '17:00');
+    
+    // Build driver notes from special instructions (as per user requirements)
+    const buildDriverNotes = () => {
+        // Extract pickup/origin special instructions from multiple possible sources
+        const originInstructions = shipFrom?.special_instructions || 
+                                  shipFrom?.specialInstructions || 
+                                  shipFrom?.instructions || 
+                                  shipFrom?.notes ||
+                                  rateRequestData.shipFrom?.specialInstructions ||
+                                  rateRequestData.Origin?.SpecialInstructions;
+        
+        // Extract delivery/destination special instructions from multiple possible sources
+        const destInstructions = shipTo?.special_instructions || 
+                                shipTo?.specialInstructions || 
+                                shipTo?.instructions || 
+                                shipTo?.notes ||
+                                rateRequestData.shipTo?.specialInstructions ||
+                                rateRequestData.Destination?.SpecialInstructions;
+        
+        // Clean and trim the instructions (remove empty strings, whitespace-only strings)
+        const cleanOriginInstructions = originInstructions?.trim() || '';
+        const cleanDestInstructions = destInstructions?.trim() || '';
+        
+        // If no instructions at all, return empty array
+        if (!cleanOriginInstructions && !cleanDestInstructions) {
+            return []; // Empty array if no instructions
+        }
+        
+        // Build the combined note text with clear labels
+        let noteText = '';
+        
+        if (cleanOriginInstructions) {
+            noteText += `PICKUP SPECIAL INSTRUCTIONS: ${cleanOriginInstructions}`;
+        }
+        
+        if (cleanDestInstructions) {
+            if (noteText) {
+                noteText += '.  '; // Use period and two spaces for better separation
+            }
+            noteText += `DELIVERY SPECIAL INSTRUCTIONS: ${cleanDestInstructions}`;
+        }
+        
+        // Ensure the note ends with a period if it doesn't already
+        if (noteText && !noteText.endsWith('.')) {
+            noteText += '.';
+        }
+        
+        console.log('buildDriverNotes: Combined instructions:', noteText);
+        
+        return [{
+            Type: 'Driver_note',
+            Text: noteText
+        }];
+    };
+    
+    // Build trace values for reference numbers (as per user requirements)
+    const traceValues = referenceNumber ? [{
+        Type: 'Ref No',
+        Value: referenceNumber
+    }] : [];
+    
+    // Map service features to ship instructions (using default values for now)
+    const buildShipInstructions = () => {
+        // TODO: Can enhance this based on shipment service requirements
+        return {
+            Inside_Pickup_YN: 'N',
+            Residential_Pickup_YN: shipFrom?.residential ? 'Y' : 'N',
+            Lifgate_Pickup_YN: 'N',
+            Inside_Delivery_YN: 'N',
+            Residential_Delivery_YN: shipTo?.residential ? 'Y' : 'N',
+            Lifgate_Delivery_YN: 'N',
+            Appointment_Delivery_YN: 'N',
+            Call_Ahead_YN: 'N',
+            Do_Not_Stack_YN: 'N',
+            Fragile_YN: 'N',
+            Straight_truck_Pickup_Required_YN: 'N',
+            Straight_truck_Delivery_Required_YN: 'N',
+            CSA_YN: 'N',
+            Barn_Door_YN: 'N',
+            In_Bond_YN: 'N',
+            Limited_Access_Pickup_YN: 'N',
+            Limited_Access_Delivery_YN: 'N'
+        };
+    };
+    
+    // Transform packages to detail lines
+    const detailLines = packages.map((pkg, index) => ({
+        Seq: (index + 1).toString(),
+        Description: pkg.description || pkg.commodity_description || pkg.Description || 'General Freight',
+        Pallets: parseInt(pkg.quantity || pkg.PackagingQuantity || 1),
+        TotalWeight: parseFloat(pkg.weight || pkg.reported_weight || pkg.Weight || 0).toFixed(2),
+        Skid_Dimension1: {
+            Length: parseInt(pkg.length || pkg.Length || 48),
+            Width: parseInt(pkg.width || pkg.Width || 40),
+            Height: parseInt(pkg.height || pkg.Height || 48)
+        }
+    }));
+    
+    // Validate that we have at least one package with valid data
+    if (!packages || packages.length === 0) {
+        throw new Error('At least one package is required for Polaris Transportation booking');
+    }
+    
+    // Validate each package has required minimum data
+    for (let i = 0; i < detailLines.length; i++) {
+        const detail = detailLines[i];
+        if (!detail.Description || detail.Description.trim() === '') {
+            throw new Error(`Package ${i + 1} is missing a description`);
+        }
+        if (detail.Pallets < 1) {
+            throw new Error(`Package ${i + 1} must have at least 1 pallet/piece`);
+        }
+        if (parseFloat(detail.TotalWeight) <= 0) {
+            throw new Error(`Package ${i + 1} must have a weight greater than 0`);
+        }
+    }
+    
+    // Build the complete Polaris Transportation booking request
     const bookingRequest = {
-        AccountNumber: data.accountNumber || "000605",
-        OrderNumber: data.orderNumber || data.ReferenceNumber || data.referenceNumber || '',
-        OrderDate: data.orderDate || dayjs().format('YYYY-MM-DD'),
-        ShipDate: data.shipDate || data.ShipmentDate || dayjs().format('YYYY-MM-DD'),
-        RequestedPickupDate: data.requestedPickupDate || data.EarliestPickup?.Time || '',
-        RequestedDeliveryDate: data.requestedDeliveryDate || data.EarliestDelivery?.Time || '',
-        
-        // Shipper information
-        Shipper: {
-            Company: data.Origin?.Description || data.Origin?.Company || '',
-            Address: data.Origin?.Street || '',
-            Address2: data.Origin?.StreetExtra || data.Origin?.Street2 || '',
-            City: data.Origin?.City || '',
-            State: data.Origin?.State || '',
-            PostalCode: data.Origin?.PostalCode || '',
-            Country: data.Origin?.Country?.Code || data.Origin?.Country || 'CA',
-            Contact: data.Origin?.Contact || '',
-            Phone: data.Origin?.Phone || '',
-            Email: data.Origin?.Email || '',
-            SpecialInstructions: data.Origin?.SpecialInstructions || ''
-        },
-        
-        // Consignee information
-        Consignee: {
-            Company: data.Destination?.Description || data.Destination?.Company || '',
-            Address: data.Destination?.Street || '',
-            Address2: data.Destination?.StreetExtra || data.Destination?.Street2 || '',
-            City: data.Destination?.City || '',
-            State: data.Destination?.State || '',
-            PostalCode: data.Destination?.PostalCode || '',
-            Country: data.Destination?.Country?.Code || data.Destination?.Country || 'CA',
-            Contact: data.Destination?.Contact || '',
-            Phone: data.Destination?.Phone || '',
-            Email: data.Destination?.Email || '',
-            SpecialInstructions: data.Destination?.SpecialInstructions || ''
-        },
-        
-        // Commodities/Items
-        Commodities: (data.Items || []).map((item, index) => ({
-            LineNumber: index + 1,
-            Description: item.Description || 'General Freight',
-            Weight: parseFloat(item.Weight || 0),
-            Length: parseInt(item.Length || 0),
-            Width: parseInt(item.Width || 0),
-            Height: parseInt(item.Height || 0),
-            Quantity: parseInt(item.PackagingQuantity || 1),
-            FreightClass: item.FreightClass?.FreightClass || item.FreightClass || '70',
-            DeclaredValue: parseFloat(item.DeclaredValue || 0),
-            Stackable: item.Stackable || false,
-            HazardousMaterial: item.HazardousMaterial || false
-        })),
-        
-        // Services and options
-        Services: data.Services || ['Standard'],
-        PaymentTerms: data.PaymentTerms || 'Prepaid',
-        BillTo: data.BillTo || 'Shipper',
-        
-        // Rate information if available
-        RateQuoteId: data.selectedRate?.quoteId || data.quoteId || '',
-        CarrierName: data.selectedRate?.carrierName || 'Polaris Transportation',
-        ServiceType: data.selectedRate?.serviceType || 'Standard LTL',
-        TotalCharges: parseFloat(data.selectedRate?.totalCharges || 0),
-        Currency: data.selectedRate?.currency || 'CAD'
+        OrderSubmittion: {
+            Shipment_id: shipmentId, // Use the SolushipX shipment ID as per user requirements
+            Contact_name: contactName,
+            Contact_email: contactEmail,
+            Pickup_FromTime: pickupFromTime,
+            Pickup_ToTime: pickupToTime,
+            Deliver_FromTime: deliverFromTime,
+            Deliver_ToTime: deliverToTime,
+            Shipper: {
+                name: shipFrom?.name || shipFrom?.company || 'Unknown Shipper',
+                street1: shipFrom?.address_line_1 || shipFrom?.street || shipFrom?.addressLine1 || '',
+                street2: shipFrom?.address_line_2 || shipFrom?.street2 || shipFrom?.addressLine2 || '',
+                city: shipFrom?.city || '',
+                province: shipFrom?.province || shipFrom?.state || '',
+                postalcode: sanitizePostalCode(shipFrom?.postal_code || shipFrom?.postalCode || ''),
+                country: shipFrom?.country || 'CA',
+                contact: shipFrom?.contact || shipFrom?.attention || contactName,
+                phone: shipFrom?.phone || ''
+            },
+            Consignee: {
+                name: shipTo?.name || shipTo?.company || 'Unknown Consignee',
+                street1: shipTo?.address_line_1 || shipTo?.street || shipTo?.addressLine1 || '',
+                street2: shipTo?.address_line_2 || shipTo?.street2 || shipTo?.addressLine2 || '',
+                city: shipTo?.city || '',
+                province: shipTo?.province || shipTo?.state || '',
+                postalcode: sanitizePostalCode(shipTo?.postal_code || shipTo?.postalCode || ''),
+                country: shipTo?.country || 'US',
+                contact: shipTo?.contact || shipTo?.attention || 'Receiving Department',
+                phone: shipTo?.phone || ''
+            },
+            CustomsBroker: {
+                name: 'Vandergrift' // Default customs broker for Polaris Transportation
+            },
+            ShipInstructions: buildShipInstructions(),
+            Notes: buildDriverNotes(),
+            TraceValues: traceValues,
+            DetailLines: detailLines
+        }
     };
 
-    logger.info('Transformed booking request for Polaris Transportation:', bookingRequest);
+    console.log('buildPolarisTransportationBookingRequest: Request built successfully');
+    console.log('buildPolarisTransportationBookingRequest: Final request summary:', {
+        shipmentId: bookingRequest.OrderSubmittion.Shipment_id,
+        contactName: bookingRequest.OrderSubmittion.Contact_name,
+        detailLinesCount: bookingRequest.OrderSubmittion.DetailLines?.length || 0,
+        hasShipper: !!bookingRequest.OrderSubmittion.Shipper,
+        hasConsignee: !!bookingRequest.OrderSubmittion.Consignee,
+        hasNotes: bookingRequest.OrderSubmittion.Notes?.length > 0,
+        hasTraceValues: bookingRequest.OrderSubmittion.TraceValues?.length > 0
+    });
+    
     return bookingRequest;
 }
 
 /**
- * Transform Polaris Transportation booking response to universal format
- * @param {Object} apiResponse - Raw API response from Polaris Transportation
- * @returns {Object} - Transformed response in universal format
+ * Makes the API request to Polaris Transportation booking endpoint
  */
-function transformPolarisBookingResponseToUniversal(apiResponse) {
-    if (!apiResponse) return null;
-
-    logger.info('Transforming Polaris Transportation booking response:', apiResponse);
-
-    return {
-        success: true,
-        bookingReference: safeAccess(apiResponse, 'OrderNumber') || safeAccess(apiResponse, 'BookingReference'),
-        shipmentNumber: safeAccess(apiResponse, 'ShipmentNumber') || safeAccess(apiResponse, 'TrackingNumber'),
-        trackingNumber: safeAccess(apiResponse, 'TrackingNumber') || safeAccess(apiResponse, 'ProNumber'),
-        carrierName: 'Polaris Transportation',
-        carrierScac: 'POLT',
-        serviceType: safeAccess(apiResponse, 'ServiceType') || 'Standard LTL',
-        estimatedDeliveryDate: safeAccess(apiResponse, 'EstimatedDelivery'),
-        estimatedPickupDate: safeAccess(apiResponse, 'EstimatedPickup'),
-        totalCharges: parseFloat(safeAccess(apiResponse, 'TotalCharges') || 0),
-        currency: safeAccess(apiResponse, 'Currency') || 'CAD',
-        status: 'booked',
-        statusDisplay: 'Booked',
-        createdAt: new Date().toISOString(),
-        rawResponse: apiResponse
+async function makePolarisTransportationBookingRequest(bookingRequest, polarisConfig) {
+    console.log('makePolarisTransportationBookingRequest: Making API call to Polaris Transportation');
+    
+    // Import fetch for Node.js environment
+    const fetch = (await import('node-fetch')).default;
+    
+    // Validate credentials before proceeding
+    if (!polarisConfig.credentials.secret) {
+        throw new Error('Polaris Transportation is not properly configured. Missing API key (secret) in carrier settings. Please contact support to configure the API credentials.');
+    }
+    
+    // Use the apiUrl from the carrier config and append API key as query parameter
+    const apiUrlWithKey = `${polarisConfig.apiUrl}?APIKey=${polarisConfig.credentials.secret}`;
+    console.log(`makePolarisTransportationBookingRequest: Using API URL: ${polarisConfig.apiUrl}?APIKey=***`);
+    
+    // Create request options
+    const requestOptions = {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(bookingRequest),
+        timeout: 30000 // 30 second timeout
     };
+
+    console.log('makePolarisTransportationBookingRequest: Request options configured for API call');
+
+    try {
+        const response = await fetch(apiUrlWithKey, requestOptions);
+        
+        console.log(`makePolarisTransportationBookingRequest: Received response with status: ${response.status}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('makePolarisTransportationBookingRequest: API error response:', errorText);
+            throw new Error(`Polaris Transportation API error: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const responseText = await response.text();
+        console.log('makePolarisTransportationBookingRequest: Received response from Polaris Transportation API');
+        
+        // Log response in chunks to avoid truncation (similar to Canpar)
+        const chunkSize = 800;
+        for (let i = 0; i < responseText.length; i += chunkSize) {
+            console.log(`makePolarisTransportationBookingRequest: Response chunk ${Math.floor(i/chunkSize) + 1}:`, responseText.slice(i, i + chunkSize));
+        }
+        
+        // Parse JSON response
+        let responseData;
+        try {
+            responseData = JSON.parse(responseText);
+            console.log('makePolarisTransportationBookingRequest: Successfully parsed JSON response');
+        } catch (parseError) {
+            console.error('makePolarisTransportationBookingRequest: Failed to parse JSON response:', parseError);
+            console.error('makePolarisTransportationBookingRequest: Raw response text:', responseText);
+            throw new Error(`Failed to parse Polaris Transportation response as JSON: ${parseError.message}`);
+        }
+        
+        return responseData;
+        
+    } catch (error) {
+        console.error('makePolarisTransportationBookingRequest: Request failed:', error);
+        
+        // Handle different types of errors
+        if (error.name === 'AbortError') {
+            throw new Error('Polaris Transportation API request timed out. Please try again.');
+        } else if (error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
+            throw new Error('Unable to connect to Polaris Transportation API. Please check your network connection.');
+        } else if (error.message.includes('Invalid API key') || error.message.includes('Unauthorized')) {
+            throw new Error('Polaris Transportation API authentication failed. Please check your API credentials.');
+        } else {
+            // Re-throw the original error if it's already formatted or unknown
+            throw error;
+        }
+    }
 }
 
 /**
- * Book shipment with Polaris Transportation
- * @param {Object} data - Booking request data
- * @returns {Promise<Object>} - Booking response
+ * Parses the Polaris Transportation booking response
  */
-async function bookPolarisTransportationShipment(data) {
-    logger.info('Polaris Transportation booking shipment with data keys:', data ? Object.keys(data) : 'No data');
-    
+function parsePolarisTransportationBookingResponse(apiResponse) {
+    console.log('parsePolarisTransportationBookingResponse: Parsing response');
+    console.log('parsePolarisTransportationBookingResponse: Response type:', typeof apiResponse);
+    console.log('parsePolarisTransportationBookingResponse: Has OE_Response:', !!apiResponse?.OE_Response);
+
     try {
-        // Skip API key validation in development
-        const skipApiKeyValidation = process.env.NODE_ENV === 'development' || process.env.SKIP_API_KEY_VALIDATION === 'true';
+        const response = apiResponse.OE_Response;
         
-        if (!skipApiKeyValidation && data.apiKey) {
-            const isValidApiKey = await validateApiKey(data.apiKey);
-            if (!isValidApiKey) {
-                throw new functions.https.HttpsError('unauthenticated', 'Invalid API key');
-            }
-        }
-
-        // Remove API key from request data
-        const { apiKey: userApiKey, ...bookingRequestData } = data;
-
-        // Validate required fields
-        const validationError = validatePolarisBookingRequest(bookingRequestData);
-        if (validationError) {
-            logger.error('Booking validation error:', validationError);
-            throw new functions.https.HttpsError('invalid-argument', validationError);
-        }
-
-        // Get carrier API configuration
-        const carrierConfig = await getCarrierApiConfig('POLARISTRANSPORTATION', 'booking');
-        const { apiUrl, credentials } = carrierConfig;
-        
-        // Validate that the carrier has the required endpoints
-        if (!validateCarrierEndpoints(credentials, ['booking'])) {
-            throw new functions.https.HttpsError('internal', 'Polaris Transportation carrier missing required booking endpoint configuration');
+        if (!response) {
+            throw new Error('Invalid response format: Missing OE_Response');
         }
         
-        logger.info(`Using Polaris Transportation Booking API URL: ${apiUrl}`);
-
-        // Create auth headers
-        const authHeaders = createPolarisAuthHeaders(credentials);
-        logger.info('Polaris Transportation booking auth headers created');
-
-        // Transform request data to Polaris Transportation format
-        const polarisBookingRequest = transformToPolarisBookingFormat(bookingRequestData);
-
-        // Make the API request
-        const response = await axios.post(apiUrl, polarisBookingRequest, {
-            headers: authHeaders,
-            timeout: 60000, // 60 second timeout for booking requests
-            validateStatus: function (status) {
-                return status >= 200 && status < 600;
-            }
-        });
-
-        logger.info(`Polaris Transportation Booking API Response Status: ${response.status}`);
+        // Check for errors (Error: "N" means no error, "Y" means error)
+        if (response.Error === 'Y' || response.error === 'Y') {
+            const errorMessage = response.Message || response.message || 'Unknown booking error';
+            throw new Error(`Polaris Transportation booking failed: ${errorMessage}`);
+        }
         
-        if (response.status >= 400) {
-            let errorMessage = `Polaris Transportation Booking API Error: HTTP Status ${response.status}`;
-            let errorDetailsForClient = { rawResponse: 'See function logs for full details.' };
-
-            if (response.data) {
-                if (typeof response.data === 'object') {
-                    errorDetailsForClient = response.data;
-                    if (response.data.Error || response.data.ErrorMessage) {
-                        errorMessage += ` Error: ${response.data.Error || response.data.ErrorMessage}`;
-                    }
-                } else if (typeof response.data === 'string' && response.data.length < 1024) {
-                    errorMessage += ` Response: ${response.data}`;
-                    errorDetailsForClient = { rawResponse: response.data };
-                }
-            }
+        // Extract booking confirmation data based on actual response structure
+        const bookingData = {
+            // Core booking information (using actual field names)
+            // NOTE: Order_Number is the carrier confirmation number (like eShipPlus ProNumber/BolNumber)
+            // This is different from Canpar which uses separate barcode for tracking
+            confirmationNumber: response.Order_Number,
+            trackingNumber: response.Order_Number, // Polaris uses same Order_Number for tracking (like eShipPlus)
+            shipmentId: response.Order_Number,
+            orderNumber: response.Order_Number,
             
-            logger.error("Full Polaris Transportation Booking Error Response: ", errorMessage, { fullResponse: response.data });
-            throw new functions.https.HttpsError('internal', errorMessage, errorDetailsForClient);
-        }
+            // Carrier information
+            carrier: 'Polaris Transportation',
+            carrierCode: 'POLARISTRANSPORTATION',
+            carrierName: 'Polaris Transportation',
+            customerName: response.Customer_Name,
+            
+            // Service information
+            serviceType: 'LTL',
+            
+            // Dates (using actual field names)
+            shippingDate: response.Pickup_Date,
+            estimatedDeliveryDate: response.Delivery_Date,
+            pickupDate: response.Pickup_Date,
+            deliveryDate: response.Delivery_Date,
+            
+            // Transit information (using actual field names)
+            transitTime: parseInt(response.Service_Days || 0),
+            transitDays: parseInt(response.Service_Days || 0),
+            transitTimeGuaranteed: false,
+            
+            // Charges breakdown (using actual field names from response)
+            currency: response.Currency || 'CAD',
+            freightCharge: parseFloat(response.Base_Charge || 0),
+            fuelSurcharge: parseFloat(response.Fuel_Charge || 0),
+            fuelCharge: parseFloat(response.Fuel_Charge || 0),
+            fuelChargePercentage: parseFloat(response.Fuel_Charge_Percentage || 0),
+            borderCharge: parseFloat(response.Border_Charge || 0),
+            arbitraryChargeTotal: parseFloat(response.Arbitrary_Charge_Total || 0),
+            additionalServicesTotal: parseFloat(response.Additional_Services_Total || 0),
+            
+            // Map to standard charge fields (similar to Canpar structure)
+            taxCharge1: parseFloat(response.Border_Charge || 0), // Border charges as tax1
+            taxCharge2: parseFloat(response.Additional_Services_Total || 0), // Additional services as tax2
+            subtotal: parseFloat(response.Total_Charge || 0) - parseFloat(response.Additional_Services_Total || 0),
+            total: parseFloat(response.Total_Charge || 0),
+            totalCharges: parseFloat(response.Total_Charge || 0),
+            
+            // Weight and dimensions (using actual field names)
+            billedWeight: parseFloat(response.Total_Weight_lbs || 0),
+            totalWeight: parseFloat(response.Total_Weight_lbs || 0),
+            billedWeightUnit: 'lbs', // Response shows "Total_Weight_lbs"
+            
+            // Package information (using actual field names)
+            pallets: parseInt(response.Pallets || 0),
+            freightClass: response.Class,
+            
+            // Address information (using actual field names)
+            fromPostalCode: response.From_PC_ZIP,
+            toPostalCode: response.To_PC_ZIP,
+            zone: '',
+            
+            // Terms and conditions
+            terms: response.Terms,
+            
+            // Status and message information
+            status: 'confirmed',
+            message: response.Message || 'Booking confirmed successfully',
+            bookingSuccess: true,
+            
+            // Additional metadata
+            bookingDate: new Date().toISOString(),
+            bookedAt: new Date().toISOString(),
+            bookingMethod: 'polaris_api',
+            
+            // Standard fields for compatibility with other carriers
+            proNumber: response.Order_Number,
+            bookingReferenceNumber: response.Order_Number,
+            
+            // Detailed billing breakdown (for compatibility with other carriers)
+            billingDetails: [
+                {
+                    name: 'Base Charge',
+                    amount: parseFloat(response.Base_Charge || 0),
+                    description: 'Freight charges'
+                },
+                {
+                    name: 'Fuel Charge',
+                    amount: parseFloat(response.Fuel_Charge || 0),
+                    description: `Fuel surcharge (${response.Fuel_Charge_Percentage || 0}%)`
+                },
+                {
+                    name: 'Border Charge', 
+                    amount: parseFloat(response.Border_Charge || 0),
+                    description: 'Cross-border processing charges'
+                },
+                {
+                    name: 'Additional Services',
+                    amount: parseFloat(response.Additional_Services_Total || 0),
+                    description: 'Additional service charges'
+                }
+            ].filter(item => item.amount > 0), // Only include charges that exist
+            
+            // Additional services breakdown
+            additionalServices: response.Additional_Services || {},
+            
+            // Package information (normalized like other carriers)
+            packages: [],
+            
+            // Addresses (normalized like other carriers)
+            pickupAddress: null,
+            deliveryAddress: null,
+            
+            // Raw response for debugging and auditing
+            rawResponse: apiResponse
+        };
 
-        // Check for API-level errors in successful response
-        if (response.data && (response.data.Error || response.data.Success === false)) {
-            const errorMessage = `Polaris Transportation Booking API indicated an error: ${response.data.Error || 'Unknown error'}`;
-            logger.error(errorMessage, { fullResponse: response.data });
-            throw new functions.https.HttpsError('failed-precondition', errorMessage, response.data);
-        }
-
-        const transformedResponse = transformPolarisBookingResponseToUniversal(response.data);
-        
-        if (!transformedResponse || !transformedResponse.success) {
-            logger.error('Failed to transform Polaris Transportation booking response:', response.data);
-            throw new functions.https.HttpsError('internal', 'Failed to process booking response from Polaris Transportation API.');
-        }
-
-        logger.info('Successfully booked shipment with Polaris Transportation:', {
-            bookingReference: transformedResponse.bookingReference,
-            shipmentNumber: transformedResponse.shipmentNumber,
-            trackingNumber: transformedResponse.trackingNumber
+        console.log('parsePolarisTransportationBookingResponse: Extracted booking summary:', {
+            confirmationNumber: bookingData.confirmationNumber,
+            orderNumber: bookingData.orderNumber,
+            totalCharges: bookingData.totalCharges,
+            currency: bookingData.currency,
+            transitDays: bookingData.transitDays,
+            billedWeight: bookingData.billedWeight,
+            pallets: bookingData.pallets,
+            success: bookingData.bookingSuccess
         });
-
-        return transformedResponse;
+        
+        return bookingData;
 
     } catch (error) {
-        logger.error('Error in Polaris Transportation booking:', error.message, error.stack);
-        
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
-        throw new functions.https.HttpsError('internal', error.message || 'An internal error occurred while booking the shipment.');
+        console.error('parsePolarisTransportationBookingResponse: Error parsing response:', error);
+        throw new Error(`Failed to parse Polaris Transportation booking response: ${error.message}`);
     }
 }
 
 /**
- * Validate Polaris Transportation booking request
- * @param {Object} data - Request data to validate
- * @returns {string|null} - Error message or null if valid
+ * Updates the shipment document with booking confirmation data
  */
-function validatePolarisBookingRequest(data) {
-    logger.info('Validating Polaris Transportation booking request:', data);
+async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate) {
+    console.log('updateShipmentWithBookingData: Updating shipment document');
+
+    // CRITICAL FIX: Fetch existing shipment data to preserve shipmentInfo (same as other carriers)
+    const existingShipmentDoc = await db.collection('shipments').doc(draftFirestoreDocId).get();
+    const existingShipmentData = existingShipmentDoc.data();
     
-    if (!data) return 'Request body is required';
+    console.log('updateShipmentWithBookingData: Preserving existing shipmentInfo:', existingShipmentData?.shipmentInfo);
 
-    // Check origin/shipper
-    if (!data.Origin) return 'Origin/Shipper address is required';
-    if (!data.Origin.Street) return 'Origin street is required';
-    if (!data.Origin.City) return 'Origin city is required';
-    if (!data.Origin.State) return 'Origin state/province is required';
-    if (!data.Origin.PostalCode) return 'Origin postal code is required';
-    if (!data.Origin.Contact) return 'Origin contact name is required';
+    const updateData = {
+        status: 'booked',
+        carrierBookingConfirmation: {
+            confirmationNumber: bookingResult.confirmationNumber,
+            trackingNumber: bookingResult.trackingNumber,
+            shipmentId: bookingResult.shipmentId,
+            carrier: bookingResult.carrier,
+            carrierCode: bookingResult.carrierCode,
+            serviceType: bookingResult.serviceType,
+            estimatedDeliveryDate: bookingResult.estimatedDeliveryDate,
+            shippingDate: bookingResult.shippingDate,
+            
+            // Charges
+            totalCharges: bookingResult.total,
+            freightCharge: bookingResult.freightCharge,
+            fuelSurcharge: bookingResult.fuelSurcharge,
+            taxCharge1: bookingResult.taxCharge1,
+            taxCharge2: bookingResult.taxCharge2,
+            subtotal: bookingResult.subtotal,
+            
+            // Transit
+            transitTime: bookingResult.transitTime,
+            transitTimeGuaranteed: bookingResult.transitTimeGuaranteed,
+            
+            // Weight
+            billedWeight: bookingResult.billedWeight,
+            billedWeightUnit: bookingResult.billedWeightUnit,
+            
+            // Booking metadata
+            bookedAt: admin.firestore.FieldValue.serverTimestamp(),
+            bookingMethod: 'polaris_api'
+        },
+        
+        // Update selected rate reference with booking confirmation
+        selectedRateRef: {
+            ...selectedRate,
+            bookingConfirmation: bookingResult,
+            status: 'booked'
+        },
+        
+        // CRITICAL FIX: Explicitly preserve shipmentInfo data (same as other carriers)
+        shipmentInfo: {
+            ...existingShipmentData?.shipmentInfo,
+            // Ensure shipperReferenceNumber is preserved or set to shipmentID as fallback
+            shipperReferenceNumber: existingShipmentData?.shipmentInfo?.shipperReferenceNumber || 
+                                   existingShipmentData?.shipmentID || 
+                                   ''
+        },
+        
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
 
-    // Check destination/consignee
-    if (!data.Destination) return 'Destination/Consignee address is required';
-    if (!data.Destination.Street) return 'Destination street is required';
-    if (!data.Destination.City) return 'Destination city is required';
-    if (!data.Destination.State) return 'Destination state/province is required';
-    if (!data.Destination.PostalCode) return 'Destination postal code is required';
-    if (!data.Destination.Contact) return 'Destination contact name is required';
+    console.log('updateShipmentWithBookingData: Update data with preserved shipmentInfo:', JSON.stringify(updateData.shipmentInfo, null, 2));
 
-    // Check items/commodities
-    if (!Array.isArray(data.Items) || data.Items.length === 0) return 'At least one item/commodity is required';
-    
-    for (const [index, item] of data.Items.entries()) {
-        if (!item.Description) return `Description is required for item ${index + 1}`;
-        if (!item.Weight || isNaN(parseFloat(item.Weight)) || parseFloat(item.Weight) <= 0) {
-            return `Valid weight is required for item ${index + 1}`;
-        }
-        if (!item.Length || isNaN(parseInt(item.Length)) || parseInt(item.Length) <= 0) {
-            return `Valid length is required for item ${index + 1}`;
-        }
-        if (!item.Width || isNaN(parseInt(item.Width)) || parseInt(item.Width) <= 0) {
-            return `Valid width is required for item ${index + 1}`;
-        }
-        if (!item.Height || isNaN(parseInt(item.Height)) || parseInt(item.Height) <= 0) {
-            return `Valid height is required for item ${index + 1}`;
-        }
-    }
-
-    return null;
+    await db.collection('shipments').doc(draftFirestoreDocId).update(updateData);
+    console.log('updateShipmentWithBookingData: Shipment document updated successfully');
 }
 
-/**
- * Validate API key
- * @param {string} apiKey - API key to validate
- * @returns {Promise<boolean>} - Whether API key is valid
- */
-async function validateApiKey(apiKey) {
-    try {
-        // For development, always accept the development API key
-        if (process.env.NODE_ENV === 'development' && apiKey === 'development-api-key') {
-            return true;
-        }
-        
-        // Check in Firestore for API key
-        const db = admin.firestore();
-        const apiKeysRef = db.collection('apiKeys');
-        const snapshot = await apiKeysRef.where('key', '==', apiKey).where('active', '==', true).limit(1).get();
-        
-        return !snapshot.empty;
-    } catch (error) {
-        logger.error('Error validating API key:', error);
-        return false;
-    }
-}
-
-/**
- * Export v2 callable function for Firebase Cloud Functions
- */
-exports.bookPolarisTransportationShipment = onCall({
-    cors: true,
-    timeoutSeconds: 60,
-    memory: "256MiB",
-    region: 'us-central1'
-}, async (request) => {
-    logger.info('bookPolarisTransportationShipment onCall handler invoked. Auth context:', request.auth ? 'Present' : 'Absent');
-    
-    try {
-        return await bookPolarisTransportationShipment(request.data);
-    } catch (error) {
-        if (error.code && error.httpErrorCode) {
-            logger.error(`HttpsError: Code - ${error.code}, Message - ${error.message}, Details - ${JSON.stringify(error.details)}`);
-        }
-        
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
-        throw new functions.https.HttpsError('internal', error.message || 'Internal server error during booking request.', {stack: error.stack});
-    }
-}); 
+module.exports = {
+    bookPolarisTransportationShipment
+}; 

@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { bookEShipPlusShipment } = require('./carrier-api/eshipplus/bookRate');
 const { bookCanparShipment } = require('./carrier-api/canpar/bookRate');
+const { bookPolarisTransportationShipment } = require('./carrier-api/polaristransportation/bookRate');
 const { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } = require('./utils/shipmentEvents');
 
 // Get Firestore instance
@@ -55,6 +56,13 @@ exports.bookRateUniversal = onCall(async (request) => {
             case 'canpar':
                 console.log('bookRateUniversal: Routing to Canpar booking');
                 bookingResult = await bookCanparShipment(rateRequestData, draftFirestoreDocId, selectedRateDocumentId);
+                break;
+
+            case 'polaristransportation':
+            case 'polaris':
+            case 'polaristransport':
+                console.log('bookRateUniversal: Routing to Polaris Transportation booking');
+                bookingResult = await bookPolarisTransportationShipment(rateRequestData, draftFirestoreDocId, selectedRateDocumentId);
                 break;
 
             default:
@@ -115,24 +123,52 @@ function determineCarrierFromRate(selectedRate) {
             console.log('determineCarrierFromRate: Routing to Canpar based on sourceCarrierSystem');
             return 'canpar';
         }
+        if (sourceSystem === 'polaristransportation' || sourceSystem === 'polaris') {
+            console.log('determineCarrierFromRate: Routing to Polaris Transportation based on sourceCarrierSystem');
+            return 'polaristransportation';
+        }
     }
     
-    // PRIORITY 2: Check legacy sourceCarrier field
-    if (selectedRate.sourceCarrier) {
+    // PRIORITY 2: Check sourceCarrier object (modern format from frontend translator)
+    if (selectedRate.sourceCarrier && typeof selectedRate.sourceCarrier === 'object') {
+        const sourceCarrierObj = selectedRate.sourceCarrier;
+        const sourceSystem = (sourceCarrierObj.system || sourceCarrierObj.key || sourceCarrierObj.name || '').toLowerCase().trim();
+        console.log('determineCarrierFromRate: Found sourceCarrier object with system:', sourceSystem);
+        
+        if (sourceSystem === 'eshipplus' || sourceSystem === 'eship') {
+            console.log('determineCarrierFromRate: Routing to eShipPlus based on sourceCarrier.system');
+            return 'eshipplus';
+        }
+        if (sourceSystem === 'canpar') {
+            console.log('determineCarrierFromRate: Routing to Canpar based on sourceCarrier.system');
+            return 'canpar';
+        }
+        if (sourceSystem === 'polaristransportation' || sourceSystem === 'polaris') {
+            console.log('determineCarrierFromRate: Routing to Polaris Transportation based on sourceCarrier.system');
+            return 'polaristransportation';
+        }
+    }
+    
+    // PRIORITY 3: Check legacy sourceCarrier field (string format)
+    if (selectedRate.sourceCarrier && typeof selectedRate.sourceCarrier === 'string') {
         const sourceCarrier = selectedRate.sourceCarrier.toLowerCase().trim();
-        console.log('determineCarrierFromRate: Found sourceCarrier:', sourceCarrier);
+        console.log('determineCarrierFromRate: Found legacy sourceCarrier string:', sourceCarrier);
         
         if (sourceCarrier === 'eshipplus' || sourceCarrier === 'eship') {
-            console.log('determineCarrierFromRate: Routing to eShipPlus based on sourceCarrier');
+            console.log('determineCarrierFromRate: Routing to eShipPlus based on legacy sourceCarrier');
             return 'eshipplus';
         }
         if (sourceCarrier === 'canpar') {
-            console.log('determineCarrierFromRate: Routing to Canpar based on sourceCarrier');
+            console.log('determineCarrierFromRate: Routing to Canpar based on legacy sourceCarrier');
             return 'canpar';
+        }
+        if (sourceCarrier === 'polaristransportation' || sourceCarrier === 'polaris') {
+            console.log('determineCarrierFromRate: Routing to Polaris Transportation based on legacy sourceCarrier');
+            return 'polaristransportation';
         }
     }
     
-    // PRIORITY 3: Fallback to checking various carrier fields (legacy support)
+    // PRIORITY 4: Fallback to checking various carrier fields (legacy support)
     console.log('determineCarrierFromRate: No source carrier found, falling back to carrier name detection');
     const carrierFields = [
         selectedRate.carrier,
@@ -163,6 +199,10 @@ function determineCarrierFromRate(selectedRate) {
             if (carrier.includes('canpar')) {
                 console.log('determineCarrierFromRate: Routing to Canpar based on carrier name');
                 return 'canpar';
+            }
+            if (carrier.includes('polaris') || carrier.includes('polaristransportation')) {
+                console.log('determineCarrierFromRate: Routing to Polaris Transportation based on carrier name');
+                return 'polaristransportation';
             }
             
             // If no specific mapping found, this might be a sub-carrier
