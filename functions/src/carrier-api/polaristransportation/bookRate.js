@@ -417,8 +417,8 @@ function buildPolarisTransportationBookingRequest(rateRequestData, selectedRate,
 async function makePolarisTransportationBookingRequest(bookingRequest, polarisConfig) {
     console.log('makePolarisTransportationBookingRequest: Making API call to Polaris Transportation');
     
-    // Import fetch for Node.js environment
-    const fetch = (await import('node-fetch')).default;
+    // Import axios for better timeout and error handling (consistent with eShipPlus)
+    const axios = require('axios');
     
     // Validate credentials before proceeding
     if (!polarisConfig.credentials.secret) {
@@ -429,48 +429,42 @@ async function makePolarisTransportationBookingRequest(bookingRequest, polarisCo
     const apiUrlWithKey = `${polarisConfig.apiUrl}?APIKey=${polarisConfig.credentials.secret}`;
     console.log(`makePolarisTransportationBookingRequest: Using API URL: ${polarisConfig.apiUrl}?APIKey=***`);
     
-    // Create request options
-    const requestOptions = {
+    // Create request options for axios (better timeout handling than node-fetch)
+    const requestConfig = {
         method: 'POST',
+        url: apiUrlWithKey,
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         },
-        body: JSON.stringify(bookingRequest),
-        timeout: 30000 // 30 second timeout
+        data: bookingRequest,
+        timeout: 60000, // 60 second timeout for booking requests (longer than rate requests)
+        validateStatus: function (status) {
+            return status >= 200 && status < 600; // Accept all status codes for better error handling
+        }
     };
 
-    console.log('makePolarisTransportationBookingRequest: Request options configured for API call');
+    console.log('makePolarisTransportationBookingRequest: Request configured with axios for reliable timeout handling');
 
     try {
-        const response = await fetch(apiUrlWithKey, requestOptions);
+        const response = await axios(requestConfig);
         
         console.log(`makePolarisTransportationBookingRequest: Received response with status: ${response.status}`);
         
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('makePolarisTransportationBookingRequest: API error response:', errorText);
-            throw new Error(`Polaris Transportation API error: ${response.status} ${response.statusText} - ${errorText}`);
+        if (!response.status || response.status >= 400) {
+            const errorData = response.data || 'No response data';
+            console.error('makePolarisTransportationBookingRequest: API error response:', errorData);
+            throw new Error(`Polaris Transportation API error: ${response.status} ${response.statusText} - ${typeof errorData === 'string' ? errorData : JSON.stringify(errorData)}`);
         }
 
-        const responseText = await response.text();
+        const responseData = response.data;
         console.log('makePolarisTransportationBookingRequest: Received response from Polaris Transportation API');
         
         // Log response in chunks to avoid truncation (similar to Canpar)
+        const responseText = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
         const chunkSize = 800;
         for (let i = 0; i < responseText.length; i += chunkSize) {
             console.log(`makePolarisTransportationBookingRequest: Response chunk ${Math.floor(i/chunkSize) + 1}:`, responseText.slice(i, i + chunkSize));
-        }
-        
-        // Parse JSON response
-        let responseData;
-        try {
-            responseData = JSON.parse(responseText);
-            console.log('makePolarisTransportationBookingRequest: Successfully parsed JSON response');
-        } catch (parseError) {
-            console.error('makePolarisTransportationBookingRequest: Failed to parse JSON response:', parseError);
-            console.error('makePolarisTransportationBookingRequest: Raw response text:', responseText);
-            throw new Error(`Failed to parse Polaris Transportation response as JSON: ${parseError.message}`);
         }
         
         return responseData;
@@ -478,16 +472,23 @@ async function makePolarisTransportationBookingRequest(bookingRequest, polarisCo
     } catch (error) {
         console.error('makePolarisTransportationBookingRequest: Request failed:', error);
         
-        // Handle different types of errors
-        if (error.name === 'AbortError') {
-            throw new Error('Polaris Transportation API request timed out. Please try again.');
-        } else if (error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
-            throw new Error('Unable to connect to Polaris Transportation API. Please check your network connection.');
-        } else if (error.message.includes('Invalid API key') || error.message.includes('Unauthorized')) {
-            throw new Error('Polaris Transportation API authentication failed. Please check your API credentials.');
+        // Handle different types of errors with better categorization
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            throw new Error('Polaris Transportation API request timed out after 60 seconds. The carrier API may be experiencing delays. Please try again in a few minutes.');
+        } else if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+            throw new Error('Unable to connect to Polaris Transportation API. Please check your network connection or try again later.');
+        } else if (error.response && error.response.status === 401) {
+            throw new Error('Polaris Transportation API authentication failed. Please check your API credentials in carrier settings.');
+        } else if (error.response && error.response.status >= 500) {
+            throw new Error('Polaris Transportation API is experiencing server issues. Please try again later.');
+        } else if (error.response && error.response.data) {
+            // API returned an error response
+            const errorData = error.response.data;
+            const errorMessage = typeof errorData === 'string' ? errorData : JSON.stringify(errorData);
+            throw new Error(`Polaris Transportation API error: ${error.response.status} - ${errorMessage}`);
         } else {
             // Re-throw the original error if it's already formatted or unknown
-            throw error;
+            throw new Error(`Polaris Transportation booking failed: ${error.message}`);
         }
     }
 }

@@ -1309,11 +1309,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                                 <Typography variant="h6" component="div">
                                                     {rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier'}
                                                 </Typography>
-                                                {rate.sourceCarrier?.name && rate.sourceCarrier.name !== (rate.displayCarrier?.name || rate.carrier?.name) && (
-                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                                        via {rate.sourceCarrier.name}
-                                                    </Typography>
-                                                )}
                                             </Box>
                                         }
                                         sx={{ pb: 0 }}
@@ -1336,11 +1331,6 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                             </div>
                                             <div className="rate-carrier">
                                                 <span className="carrier-name">{rate.displayCarrier?.name || rate.carrier?.name || 'Unknown Carrier'}</span>
-                                                {rate.sourceCarrier?.name && rate.sourceCarrier.name !== (rate.displayCarrier?.name || rate.carrier?.name) && (
-                                                    <span className="source-carrier-name" style={{ fontSize: '0.8em', color: '#6c757d', display: 'block' }}>
-                                                        via {rate.sourceCarrier.name}
-                                                    </span>
-                                                )}
                                             </div>
                                         </div>
                                         {(rate.transit?.guaranteed || rate.guaranteedService) && (rate.pricing?.guarantee || rate.guaranteeCharge) !== undefined && (

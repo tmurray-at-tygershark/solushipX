@@ -1,0 +1,18 @@
+SolushipX Logo Information
+==========================
+
+File: SolushipX_black.png
+Type: PNG Image
+Usage: BOL Header Logo
+Dimensions: Scaled to fit 100x40 pixels in BOL
+Position: Top-left header section of Polaris Transportation BOL
+
+Description: 
+- Black "SolushipX" text with stylized X containing arrow design
+- Registered trademark symbol (®)
+- Professional branding for freight documentation
+
+Integration: 
+- Replaces placeholder circle in BOL header
+- Positioned at coordinates (30, 35) with 100x40 sizing
+- Maintains aspect ratio for professional appearance 

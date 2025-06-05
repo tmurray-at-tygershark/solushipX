@@ -2561,96 +2561,56 @@ const ShipmentDetail = () => {
 
                                     {/* Enhanced Action Buttons */}
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                        <ButtonGroup variant="outlined" size="small">
-                                            {/* Print Label Button - Show for all non-draft shipments */}
-                                            {shipment?.status !== 'draft' && !documentsLoading && (
-                                                <Button
-                                                    onClick={handlePrintLabelClick}
-                                                    startIcon={actionStates.printLabel.loading ?
-                                                        <CircularProgress size={16} /> : <PrintIcon />}
-                                                    disabled={actionStates.printLabel.loading}
-                                                    sx={{
-                                                        textTransform: 'none',
-                                                        fontWeight: 500,
-                                                        px: 2,
-                                                        minWidth: 140
-                                                    }}
-                                                    color={shipmentDocuments.labels?.length > 0 ? 'primary' : 'secondary'}
-                                                >
-                                                    {actionStates.printLabel.loading ?
-                                                        'Loading...' :
-                                                        (shipmentDocuments.labels?.length > 0 ?
-                                                            'Print Labels' :
-                                                            'Check Documents')
-                                                    }
-                                                </Button>
-                                            )}
-
-                                            {/* BOL Button - For Freight shipments */}
-                                            {isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && (
-                                                <Button
-                                                    onClick={handlePrintBOL}
-                                                    startIcon={actionStates.printBOL.loading ?
-                                                        <CircularProgress size={16} /> : <DescriptionIcon />}
-                                                    disabled={actionStates.printBOL.loading || shipmentDocuments.bol?.length === 0}
-                                                    sx={{
-                                                        textTransform: 'none',
-                                                        fontWeight: 500,
-                                                        px: 2
-                                                    }}
-                                                >
-                                                    {actionStates.printBOL.loading ? 'Loading...' : 'BOL'}
-                                                </Button>
-                                            )}
-
-                                            {/* Print Shipment - Always available */}
+                                        {/* Print Label Button - Only show when labels exist */}
+                                        {!isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && shipmentDocuments.labels?.length > 0 && (
                                             <Button
-                                                onClick={handlePrintShipment}
-                                                startIcon={actionStates.printShipment.loading ?
-                                                    <CircularProgress size={16} /> : <LocalShippingIcon />}
-                                                disabled={actionStates.printShipment.loading}
+                                                onClick={handlePrintLabelClick}
+                                                startIcon={actionStates.printLabel.loading ?
+                                                    <CircularProgress size={16} /> : <PrintIcon />}
+                                                disabled={actionStates.printLabel.loading}
+                                                sx={{
+                                                    textTransform: 'none',
+                                                    fontWeight: 500,
+                                                    px: 2,
+                                                    minWidth: 140
+                                                }}
+                                                color="primary"
+                                            >
+                                                {actionStates.printLabel.loading ? 'Loading...' : 'Print Labels'}
+                                            </Button>
+                                        )}
+
+                                        {/* BOL Button - For Freight shipments */}
+                                        {isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && (
+                                            <Button
+                                                onClick={handlePrintBOL}
+                                                startIcon={actionStates.printBOL.loading ?
+                                                    <CircularProgress size={16} /> : <DescriptionIcon />}
+                                                disabled={actionStates.printBOL.loading || shipmentDocuments.bol?.length === 0}
                                                 sx={{
                                                     textTransform: 'none',
                                                     fontWeight: 500,
                                                     px: 2
                                                 }}
                                             >
-                                                {actionStates.printShipment.loading ? 'Generating...' : 'Print Shipment'}
+                                                {actionStates.printBOL.loading ? 'Loading...' : 'BOL'}
                                             </Button>
-                                        </ButtonGroup>
-
-                                        {/* Document Status Indicator */}
-                                        {documentsLoading && (
-                                            <Chip
-                                                size="small"
-                                                label="Loading documents..."
-                                                icon={<CircularProgress size={16} />}
-                                                variant="outlined"
-                                                sx={{ ml: 1 }}
-                                            />
                                         )}
 
-                                        {documentsError && (
-                                            <Chip
-                                                size="small"
-                                                label="Document error"
-                                                color="error"
-                                                variant="outlined"
-                                                sx={{ ml: 1 }}
-                                                onClick={() => fetchShipmentDocuments()}
-                                                clickable
-                                            />
-                                        )}
-
-                                        {!documentsLoading && !documentsError && shipment?.status !== 'draft' && (
-                                            <Chip
-                                                size="small"
-                                                label={`${(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0)} docs`}
-                                                color={(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0) > 0 ? "success" : "default"}
-                                                variant="outlined"
-                                                sx={{ ml: 1 }}
-                                            />
-                                        )}
+                                        {/* Print Shipment - Always available */}
+                                        <Button
+                                            onClick={handlePrintShipment}
+                                            startIcon={actionStates.printShipment.loading ?
+                                                <CircularProgress size={16} /> : <LocalShippingIcon />}
+                                            disabled={actionStates.printShipment.loading}
+                                            sx={{
+                                                textTransform: 'none',
+                                                fontWeight: 500,
+                                                px: 2
+                                            }}
+                                        >
+                                            {actionStates.printShipment.loading ? 'Generating...' : 'Print Shipment'}
+                                        </Button>
                                     </Box>
                                 </Box>
 

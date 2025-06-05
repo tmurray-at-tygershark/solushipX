@@ -721,9 +721,26 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                         console.warn('No Canpar shipment ID found in booking response');
                         setBookingStep('completed'); // Move to completed without label generation
                     }
+                } else if (carrierName && (carrierName.toLowerCase().includes('polaris') || carrierName.toLowerCase().includes('polaristransportation'))) {
+                    console.log('Polaris Transportation booking detected, preparing to generate BOL...');
+
+                    // Extract Polaris shipment ID from booking response (Order_Number)
+                    const polarisOrderNumber = bookingDetails.orderNumber ||
+                        bookingDetails.confirmationNumber ||
+                        bookingDetails.shipmentId ||
+                        bookingDetails.id;
+
+                    if (polarisOrderNumber) {
+                        console.log('Polaris order number:', polarisOrderNumber);
+                        // Generate BOL after successful booking
+                        generatePolarisBOL(polarisOrderNumber, docIdToProcess, carrierName);
+                    } else {
+                        console.warn('No Polaris order number found in booking response');
+                        setBookingStep('completed'); // Move to completed without BOL generation
+                    }
                 } else {
-                    console.log('Non-Canpar booking, proceeding to completion');
-                    setBookingStep('completed'); // Move to completed step in dialog for non-Canpar carriers
+                    console.log('Non-Canpar/Non-Polaris booking, proceeding to completion');
+                    setBookingStep('completed'); // Move to completed step in dialog for other carriers
                 }
 
                 // Optionally, call onNext to move to the next step in the main stepper
@@ -807,6 +824,51 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
         } catch (error) {
             console.error('Error generating Canpar label:', error);
             setLabelGenerationStatus(`Error generating label: ${error.message}`);
+            // Still move to completed step but show error
+            setBookingStep('completed');
+        } finally {
+            setIsGeneratingLabel(false);
+        }
+    };
+
+    // NEW: Generate Polaris Transportation BOL after booking
+    const generatePolarisBOL = async (polarisOrderNumber, docIdToProcess, carrierName) => {
+        console.log('generatePolarisBOL called with order number:', polarisOrderNumber);
+        setIsGeneratingLabel(true);
+        setLabelGenerationStatus('Preparing to generate BOL...');
+        setBookingStep('generating_label');
+
+        try {
+            setLabelGenerationStatus('Generating Bill of Lading...');
+            console.log('Calling generatePolarisTransportationBOL Firebase function...');
+
+            const functionsInstance = getFunctions();
+            const generateBOLFunction = httpsCallable(functionsInstance, 'generatePolarisTransportationBOL');
+
+            const payload = {
+                shipmentId: polarisOrderNumber,
+                firebaseDocId: docIdToProcess,
+                carrier: carrierName
+            };
+
+            console.log('BOL generation payload:', payload);
+            const result = await generateBOLFunction(payload);
+            console.log('BOL generation result:', result);
+
+            if (result.data && result.data.success) {
+                console.log('BOL generated successfully:', result.data);
+                setLabelGenerationStatus('Bill of Lading generated successfully!');
+                setBookingStep('completed');
+            } else {
+                const errorMessage = result.data?.error || 'Failed to generate BOL';
+                console.error('BOL generation failed:', errorMessage);
+                setLabelGenerationStatus(`BOL generation failed: ${errorMessage}`);
+                // Still move to completed step but show warning
+                setBookingStep('completed');
+            }
+        } catch (error) {
+            console.error('Error generating Polaris BOL:', error);
+            setLabelGenerationStatus(`Error generating BOL: ${error.message}`);
             // Still move to completed step but show error
             setBookingStep('completed');
         } finally {
@@ -1559,7 +1621,10 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                         <>
                                             <CircularProgress size={60} sx={{ mb: 3, color: '#1a237e' }} />
                                             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                                Generating Shipping Label...
+                                                {labelGenerationStatus.includes('BOL') || labelGenerationStatus.includes('Bill of Lading')
+                                                    ? 'Generating Bill of Lading...'
+                                                    : 'Generating Shipping Label...'
+                                                }
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                                                 {labelGenerationStatus}
@@ -1580,10 +1645,10 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                             <Typography variant="h6" sx={{ fontWeight: 600, color: '#1a237e', mb: 2 }}>
                                                 {shipmentId}
                                             </Typography>
-                                            {/* Show label generation status if applicable */}
+                                            {/* Show document generation status if applicable */}
                                             {labelGenerationStatus && (
                                                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                                    Label Status: {labelGenerationStatus}
+                                                    Document Status: {labelGenerationStatus}
                                                 </Typography>
                                             )}
                                             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 2 }}>
