@@ -121,6 +121,7 @@ import {
 } from '@mui/lab';
 import { getRateDetailsByDocumentId, getRatesForShipment } from '../../utils/rateUtils';
 import { getShipmentEvents, recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES, recordStatusChange, recordTrackingUpdate, listenToShipmentEvents, subscribeToShipmentEvents } from "../../utils/shipmentEvents";
+import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate';
 import './ShipmentDetail.css';
 
 // Define libraries array as a static constant outside the component
@@ -702,6 +703,19 @@ const ShipmentDetail = () => {
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
     const [cancelLoading, setCancelLoading] = useState(false);
 
+    // Replace the old refresh status logic with smart status update
+    const {
+        loading: smartUpdateLoading,
+        error: smartUpdateError,
+        updateResult,
+        performSmartUpdate,
+        forceRefresh: forceSmartRefresh,
+        getUpdateStatusMessage,
+        clearUpdateState,
+        hasUpdates,
+        wasSkipped
+    } = useSmartStatusUpdate(shipment?.id, shipment);
+
     useEffect(() => {
         if (!shipment?.id && !shipment?.shipmentID) {
             setHistoryLoading(false);
@@ -1182,202 +1196,121 @@ const ShipmentDetail = () => {
     };
 
     /**
-     * Refresh shipment status from carrier
+     * Refresh shipment status using smart status update system
      */
     const handleRefreshStatus = async () => {
         try {
-            setActionLoading('refreshStatus', true);
+            // Clear any previous update state
+            clearUpdateState();
+
+            // Show initial loading message
             showSnackbar('Checking shipment status...', 'info');
 
-            // Store previous status for comparison
-            const prevStatus = shipment?.status;
+            // Use the smart status update system
+            const result = await forceSmartRefresh();
 
-            // Helper to check for duplicate status event
-            const isDuplicateStatusEvent = (status, reason) => {
-                if (!shipmentEvents || shipmentEvents.length === 0) return false;
-                const lastEvent = shipmentEvents.find(e => e.eventType === 'status_update');
-                if (!lastEvent) return false;
-                return (
-                    lastEvent.statusChange?.to === status &&
-                    (reason ? lastEvent.statusChange?.reason === reason : true)
-                );
-            };
+            if (result && result.success) {
+                if (result.statusChanged) {
+                    // Status changed - update local state and show success
+                    setShipment(prev => ({
+                        ...prev,
+                        status: result.newStatus,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString(),
+                        carrierTrackingData: result.carrierData || prev.carrierTrackingData
+                    }));
 
-            // Check if this is a Canpar shipment
-            const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                carrierData?.name?.toLowerCase().includes('canpar') ||
-                carrierData?.carrierID === 'CANPAR';
+                    showSnackbar(
+                        `Status updated: ${result.previousStatus} → ${result.newStatus}`,
+                        'success'
+                    );
 
-            // Check if this is an eShipPlus shipment
+                    // If tracking updates were also received, mention them
+                    if (result.trackingUpdatesCount > 0) {
+                        setTimeout(() => {
+                            showSnackbar(
+                                `${result.trackingUpdatesCount} new tracking events added to history`,
+                                'info'
+                            );
+                        }, 2000);
+                    }
+                } else if (result.skipped) {
+                    // Update was skipped due to intelligent rules
+                    showSnackbar(result.reason || 'Status check skipped', 'info');
+                } else if (result.updated) {
+                    // Status confirmed but no change
+                    setShipment(prev => ({
+                        ...prev,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString(),
+                        carrierTrackingData: result.carrierData || prev.carrierTrackingData
+                    }));
+
+                    if (result.trackingUpdatesCount > 0) {
+                        showSnackbar(
+                            `Status confirmed. ${result.trackingUpdatesCount} new tracking events added.`,
+                            'success'
+                        );
+                    } else {
+                        showSnackbar('Status confirmed - no new updates', 'success');
+                    }
+                }
+
+                // Handle eShipPlus history refresh if applicable
+                await handleEShipPlusHistoryRefresh();
+
+            } else {
+                // Handle error case
+                const errorMessage = result?.error || smartUpdateError || 'Failed to refresh status';
+                showSnackbar(`Failed to check status: ${errorMessage}`, 'error');
+            }
+
+        } catch (error) {
+            console.error('Error in smart status refresh:', error);
+            showSnackbar('Failed to refresh status. Please try again.', 'error');
+        }
+    };
+
+    /**
+     * Handle eShipPlus-specific history refresh
+     */
+    const handleEShipPlusHistoryRefresh = async () => {
+        try {
+            // Check if this is an eShipPlus shipment with confirmation number
             const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
                 getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
                 carrierData?.name?.toLowerCase().includes('eshipplus') ||
                 carrierData?.carrierID === 'ESHIPPLUS';
 
-            // Determine the correct tracking number based on carrier
-            let trackingNumber;
-            let bookingReferenceNumber;
+            if (isEShipPlusShipment && shipment?.carrierBookingConfirmation?.confirmationNumber) {
+                setIsRefreshingHistory(true);
+                showSnackbar('Fetching detailed eShipPlus history...', 'info');
 
-            if (isCanparShipment) {
-                // For Canpar, use the trackingNumber (barcode)
-                trackingNumber = shipment.trackingNumber ||
-                    shipment.selectedRate?.TrackingNumber ||
-                    shipment.selectedRate?.Barcode ||
-                    shipment.carrierBookingConfirmation?.trackingNumber;
-
-                console.log('Canpar refresh status - using barcode:', trackingNumber);
-            } else if (isEShipPlusShipment) {
-                // For eShipPlus, use the booking reference number
-                bookingReferenceNumber = shipment.bookingReferenceNumber ||
-                    shipment.selectedRate?.BookingReferenceNumber ||
-                    shipment.carrierBookingConfirmation?.bookingReferenceNumber;
-
-                console.log('eShipPlus refresh status - using booking reference:', bookingReferenceNumber);
-            } else {
-                // For other carriers, use the tracking number
-                trackingNumber = shipment.trackingNumber ||
-                    shipment.selectedRate?.TrackingNumber ||
-                    shipment.carrierBookingConfirmation?.trackingNumber;
-
-                console.log('Standard refresh status - using tracking number:', trackingNumber);
-            }
-
-            // Determine carrier name
-            let carrier = carrierData?.name ||
-                getBestRateInfo?.carrier ||
-                shipment.carrier;
-
-            // Override carrier name for eShipPlus to ensure we use the integration carrier
-            if (isEShipPlusShipment) {
-                carrier = 'eShipPlus';
-                console.log('Overriding carrier name to eShipPlus for integration carrier');
-            }
-
-            const requestBody = {
-                shipmentId: shipment.id,
-                trackingNumber: trackingNumber,
-                carrier: carrier
-            };
-
-            // Only add bookingReferenceNumber if it exists
-            if (bookingReferenceNumber) {
-                requestBody.bookingReferenceNumber = bookingReferenceNumber;
-            }
-
-            // Add carrierID if available (for cloud function to identify carrier)
-            if (carrierData?.carrierID) {
-                requestBody.carrierID = carrierData.carrierID;
-            }
-
-            console.log('Refreshing shipment status with:', requestBody);
-
-            const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                // Update local shipment state with new status
-                setShipment(prev => {
-                    const newStatus = result.status;
-
-                    // Record status change if status has changed
-                    if (prevStatus && newStatus && prevStatus !== newStatus) {
-                        // Special handling for booked to scheduled transition
-                        const reason = prevStatus === 'booked' && newStatus === 'scheduled'
-                            ? 'Shipment scheduled for pickup'
-                            : 'Status updated via tracking refresh';
-                        if (!isDuplicateStatusEvent(newStatus, reason)) {
-                            recordStatusChange(
-                                shipment.id || shipment.shipmentID,
-                                prevStatus,
-                                newStatus,
-                                null,
-                                reason
-                            );
-                        }
-                    }
-
-                    // Record initial status if this is the first status update
-                    if (!prevStatus && (newStatus === 'pending' || newStatus === 'booked')) {
-                        if (!isDuplicateStatusEvent(newStatus, 'Initial status set')) {
-                            recordStatusChange(
-                                shipment.id || shipment.shipmentID,
-                                'created',
-                                newStatus,
-                                null,
-                                'Initial status set'
-                            );
-                        }
-                    }
-
-                    // Record tracking update with carrier data
-                    if (result.trackingUpdates && result.trackingUpdates.length > 0) {
-                        recordTrackingUpdate(
-                            shipment.id || shipment.shipmentID,
-                            result.trackingUpdates,
-                            carrier
-                        );
-                    }
-
-                    return {
-                        ...prev,
-                        status: newStatus,
-                        statusLastChecked: new Date().toISOString(),
-                        carrierTrackingData: {
-                            ...result,
-                            lastChecked: new Date().toISOString() // Add timestamp for when we last checked
-                        },
-                        estimatedDelivery: result.estimatedDelivery ? new Date(result.estimatedDelivery) : prev.estimatedDelivery,
-                        actualDelivery: result.actualDelivery ? new Date(result.actualDelivery) : prev.actualDelivery
-                    };
+                const getHistoryEShipPlusCallable = httpsCallable(functions, 'getHistoryEShipPlus');
+                const historyResult = await getHistoryEShipPlusCallable({
+                    shipmentNumber: shipment.carrierBookingConfirmation.confirmationNumber
                 });
 
-                showSnackbar(`Status updated: ${result.statusDisplay || result.status}`, 'success');
-            } else {
-                showSnackbar(`Failed to check status: ${result.error}`, 'error');
-            }
-
-            // If it's an eShipPlus shipment and has a confirmationNumber
-            if (isEShipPlusShipment && shipment.carrierBookingConfirmation?.confirmationNumber) {
-                setIsRefreshingHistory(true); // Indicate history refresh start
-                showSnackbar('Fetching detailed eShipPlus history...', 'info');
-                try {
-                    const getHistoryEShipPlusCallable = httpsCallable(functions, 'getHistoryEShipPlus'); // Reverted name
-                    // eShipPlus uses 'ShipmentNumber' which corresponds to our 'confirmationNumber' from booking
-                    const historyResult = await getHistoryEShipPlusCallable({ shipmentNumber: shipment.carrierBookingConfirmation.confirmationNumber });
-
-                    if (historyResult.data.success && historyResult.data.trackingUpdates && historyResult.data.trackingUpdates.length > 0) {
-                        // Record these new tracking updates.
-                        await recordTrackingUpdate(
-                            shipment.id,
-                            historyResult.data.trackingUpdates,
-                            'eShipPlus' // Use proper carrier name instead of EVENT_SOURCES.CARRIER_API
-                        );
-                        showSnackbar(`Fetched ${historyResult.data.trackingUpdates.length} new eShipPlus history events.`, 'success');
-                    } else if (historyResult.data.success) {
-                        showSnackbar('No new history events found for eShipPlus shipment.', 'info');
-                    } else {
-                        showSnackbar(historyResult.data.error || 'Failed to fetch eShipPlus history.', 'error');
-                        console.error("Error fetching eShipPlus history:", historyResult.data.error);
-                    }
-                } catch (historyError) {
-                    console.error('Error calling getHistoryEShipPlus callable:', historyError); // Reverted log message
-                    showSnackbar(`Error fetching eShipPlus history: ${historyError.message}`, 'error');
-                } finally {
-                    setIsRefreshingHistory(false); // Indicate history refresh end
+                if (historyResult.data.success && historyResult.data.trackingUpdates && historyResult.data.trackingUpdates.length > 0) {
+                    // The smart status update system will handle deduplication
+                    await recordTrackingUpdate(
+                        shipment.id,
+                        historyResult.data.trackingUpdates,
+                        'eShipPlus'
+                    );
+                    showSnackbar(`Fetched ${historyResult.data.trackingUpdates.length} new eShipPlus history events.`, 'success');
+                } else if (historyResult.data.success) {
+                    showSnackbar('No new history events found for eShipPlus shipment.', 'info');
+                } else {
+                    showSnackbar(historyResult.data.error || 'Failed to fetch eShipPlus history.', 'error');
+                    console.error("Error fetching eShipPlus history:", historyResult.data.error);
                 }
             }
-        } catch (error) {
-            console.error('Error refreshing status:', error);
-            showSnackbar('Failed to refresh status. Please try again.', 'error');
+        } catch (historyError) {
+            console.error('Error calling getHistoryEShipPlus callable:', historyError);
+            showSnackbar(`Error fetching eShipPlus history: ${historyError.message}`, 'error');
         } finally {
-            setActionLoading('refreshStatus', false);
+            setIsRefreshingHistory(false);
         }
     };
 
@@ -3094,14 +3027,14 @@ const ShipmentDetail = () => {
                                                                 <IconButton
                                                                     size="small"
                                                                     onClick={handleRefreshStatus}
-                                                                    disabled={actionStates.refreshStatus.loading || shipment?.status === 'draft'}
+                                                                    disabled={smartUpdateLoading || actionStates.refreshStatus.loading || shipment?.status === 'draft'}
                                                                     sx={{
                                                                         padding: '4px',
                                                                         '&:hover': { bgcolor: 'action.hover' }
                                                                     }}
                                                                     title="Refresh status"
                                                                 >
-                                                                    {actionStates.refreshStatus.loading ?
+                                                                    {smartUpdateLoading || actionStates.refreshStatus.loading ?
                                                                         <CircularProgress size={14} /> :
                                                                         <RefreshIcon sx={{ fontSize: 16 }} />
                                                                     }
@@ -4492,6 +4425,12 @@ const ShipmentDetail = () => {
                     }}
                 >
                     {snackbar.message}
+                    {/* Show additional smart update info if available */}
+                    {updateResult && hasUpdates && (
+                        <Box sx={{ mt: 1, fontSize: '0.875rem', opacity: 0.9 }}>
+                            {getUpdateStatusMessage()}
+                        </Box>
+                    )}
                 </Alert>
             </Snackbar>
         </LoadScript >

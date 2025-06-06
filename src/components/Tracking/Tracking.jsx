@@ -31,7 +31,8 @@ import {
     CalendarMonth as CalendarIcon,
     HelpOutline as HelpOutlineIcon,
     ContentCopy as ContentCopyIcon,
-    QrCode as QrCodeIcon
+    QrCode as QrCodeIcon,
+    Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, functions } from '../../firebase'; // Firebase setup
@@ -40,6 +41,7 @@ import { httpsCallable } from 'firebase/functions';
 import ShipmentTimeline from './ShipmentTimeline';
 import StatusChip from '../StatusChip/StatusChip'; // Import StatusChip
 import { listenToShipmentEvents } from '../../utils/shipmentEvents'; // Import shipment events utilities
+import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate'; // Import smart status update hook
 import QRCode from 'qrcode'; // Import QR code library
 
 // Helper functions (copied from ShipmentDetail.jsx)
@@ -219,6 +221,17 @@ const Tracking = () => {
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
     const [qrCodeLoading, setQrCodeLoading] = useState(false);
 
+    // Add smart status update hook
+    const {
+        loading: smartUpdateLoading,
+        error: smartUpdateError,
+        updateResult,
+        performSmartUpdate,
+        getUpdateStatusMessage,
+        clearUpdateState,
+        hasUpdates
+    } = useSmartStatusUpdate(shipmentData?.id, shipmentData);
+
     // Copy to clipboard function
     const copyToClipboard = async (text, label) => {
         try {
@@ -257,6 +270,45 @@ const Tracking = () => {
         }
     };
 
+    // Enhanced refresh status function using smart update system
+    const handleRefreshStatus = async () => {
+        if (!shipmentData?.id) {
+            console.warn('Cannot refresh status: no shipment data available');
+            return;
+        }
+
+        try {
+            clearUpdateState();
+            console.log(`🔄 Refreshing status for tracking ${currentTrackingId} using smart update system`);
+
+            const result = await performSmartUpdate(true); // Force update for manual refresh
+
+            if (result && result.success) {
+                if (result.statusChanged) {
+                    // Status changed - update local state
+                    setShipmentData(prev => ({
+                        ...prev,
+                        status: result.newStatus,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString()
+                    }));
+
+                    console.log(`✅ Status updated for ${currentTrackingId}: ${result.previousStatus} → ${result.newStatus}`);
+                } else if (result.updated) {
+                    // Status confirmed but no change
+                    setShipmentData(prev => ({
+                        ...prev,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString()
+                    }));
+                }
+            }
+
+        } catch (error) {
+            console.error('Error refreshing tracking status:', error);
+        }
+    };
+
     useEffect(() => {
         if (initialTrackingIdentifier) {
             setTrackingNumberInput(initialTrackingIdentifier);
@@ -267,7 +319,7 @@ const Tracking = () => {
     // Listen to shipment events when we have shipment data (like ShipmentDetail)
     useEffect(() => {
         if (!shipmentData?.shipmentID && !shipmentData?.id) {
-            setShipmentEvents([]); // Clear events if no shipment ID
+            setShipmentEvents([]); // Clear events if no ID
             return;
         }
 
@@ -632,6 +684,37 @@ const Tracking = () => {
                         <Grid container spacing={3}>
                             {/* Left Column: Tracking Details */}
                             <Grid item xs={12} md={4}>
+                                {/* Enhanced header with smart refresh button */}
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                        Shipment Details
+                                    </Typography>
+                                    {shipmentData?.status !== 'draft' && shipmentData?.status !== 'delivered' && (
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleRefreshStatus}
+                                            disabled={smartUpdateLoading}
+                                            title="Refresh status (smart update)"
+                                            sx={{
+                                                '&:hover': { bgcolor: 'action.hover' }
+                                            }}
+                                        >
+                                            {smartUpdateLoading ? (
+                                                <CircularProgress size={16} />
+                                            ) : (
+                                                <RefreshIcon sx={{ fontSize: 18 }} />
+                                            )}
+                                        </IconButton>
+                                    )}
+                                </Box>
+
+                                {/* Smart update status message */}
+                                {hasUpdates && (
+                                    <Alert severity="info" sx={{ mb: 2, fontSize: '0.875rem' }}>
+                                        {getUpdateStatusMessage()}
+                                    </Alert>
+                                )}
+
                                 {/* QR Code Section - Moved to top and full width */}
                                 <Box sx={{ mb: 3 }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import {
     Box,
     Paper,
@@ -35,7 +35,16 @@ import {
     Grid,
     ListSubheader,
     Autocomplete,
-    Tooltip
+    Tooltip,
+    Container,
+    Skeleton,
+    Alert,
+    Collapse,
+    Link as MuiLink,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    Divider
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -57,7 +66,15 @@ import {
     PictureAsPdf as PictureAsPdfIcon,
     FileDownload as FileDownloadIcon,
     Close as CloseIcon,
-    ContentCopy as ContentCopyIcon
+    ContentCopy as ContentCopyIcon,
+    LocalShipping as LocalShippingIcon,
+    Description as DescriptionIcon,
+    Warning as WarningIcon,
+    CheckCircle as CheckCircleIcon,
+    Cancel as CancelIcon,
+    Schedule as ScheduleIcon,
+    Assignment as AssignmentIcon,
+    ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
@@ -71,6 +88,8 @@ import { collection, getDocs, query, where, orderBy, limit, startAfter, doc, get
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
 import Snackbar from '@mui/material/Snackbar';
+import StatusChip from '../StatusChip/StatusChip';
+import { useBatchStatusUpdate } from '../../hooks/useSmartStatusUpdate';
 
 // Add formatAddress function (copied from admin view)
 const formatAddress = (address, label = '', searchTerm = '') => {
@@ -98,125 +117,6 @@ const formatAddress = (address, label = '', searchTerm = '') => {
         </span>
     );
 };
-
-// Extract StatusChip component for reusability (from Dashboard)
-const StatusChip = React.memo(({ status }) => {
-    const getStatusConfig = (status) => {
-        switch (status?.toLowerCase()) {
-            // Draft/Initial States - Grey
-            case 'draft':
-                return {
-                    color: '#64748b',
-                    bgcolor: '#f1f5f9',
-                    label: 'Draft'
-                };
-            case 'unknown':
-                return {
-                    color: '#6b7280',
-                    bgcolor: '#f9fafb',
-                    label: 'Unknown'
-                };
-
-            // Early Processing - Light Grey
-            case 'pending':
-            case 'created':
-                return {
-                    color: '#d97706',
-                    bgcolor: '#fef3c7',
-                    label: 'Pending'
-                };
-
-            // Scheduled - Light Blue
-            case 'scheduled':
-                return {
-                    color: '#7c3aed',
-                    bgcolor: '#ede9fe',
-                    label: 'Scheduled'
-                };
-
-            // Confirmed - Blue
-            case 'booked':
-                return {
-                    color: '#2563eb',
-                    bgcolor: '#dbeafe',
-                    label: 'Booked'
-                };
-
-            // Ready to Ship - Orange
-            case 'awaiting pickup':
-            case 'awaiting shipment':
-            case 'awaiting_shipment':
-            case 'label_created':
-                return {
-                    color: '#ea580c',
-                    bgcolor: '#fed7aa',
-                    label: 'Awaiting Shipment'
-                };
-
-            // In Motion - Purple
-            case 'in transit':
-            case 'in_transit':
-                return {
-                    color: '#7c2d92',
-                    bgcolor: '#f3e8ff',
-                    label: 'In Transit'
-                };
-
-            // Success - Green (Reserved for completion)
-            case 'delivered':
-                return {
-                    color: '#16a34a',
-                    bgcolor: '#dcfce7',
-                    label: 'Delivered'
-                };
-
-            // Problem States - Red variants
-            case 'on hold':
-            case 'on_hold':
-                return {
-                    color: '#dc2626',
-                    bgcolor: '#fee2e2',
-                    label: 'On Hold'
-                };
-            case 'cancelled':
-            case 'canceled':
-            case 'void':
-            case 'voided':
-                return {
-                    color: '#b91c1c',
-                    bgcolor: '#fecaca',
-                    label: 'Cancelled'
-                };
-
-            default:
-                return {
-                    color: '#6b7280',
-                    bgcolor: '#f9fafb',
-                    label: status || 'Unknown'
-                };
-        }
-    };
-
-    const { color, bgcolor, label } = getStatusConfig(status);
-
-    return (
-        <Chip
-            label={label}
-            sx={{
-                color: color,
-                bgcolor: bgcolor,
-                borderRadius: '16px',
-                fontWeight: 500,
-                fontSize: '0.75rem',
-                height: '24px',
-                '& .MuiChip-label': {
-                    px: 2
-                }
-            }}
-            size="small"
-        />
-    );
-});
 
 // Helper function to capitalize shipment type
 const capitalizeShipmentType = (type) => {
@@ -405,9 +305,29 @@ const Shipments = () => {
     // Add state for snackbar
     const [snackbarOpen, setSnackbarOpen] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
+    const [snackbarSeverity, setSnackbarSeverity] = useState('info');
 
     // Add state to track if we should refresh on mount (when returning from other pages)
     const [shouldRefreshOnMount, setShouldRefreshOnMount] = useState(false);
+
+    // Replace single refresh status with batch smart update system
+    const {
+        batchLoading,
+        batchResults,
+        batchErrors,
+        updateMultipleShipments,
+        clearBatchState,
+        completedCount,
+        errorCount,
+        hasErrors
+    } = useBatchStatusUpdate();
+
+    const [updateProgress, setUpdateProgress] = useState({
+        show: false,
+        completed: 0,
+        total: 0,
+        current: ''
+    });
 
     // Helper function to normalize carrier names for comparison
     const normalizeCarrierName = useCallback((name) => {
@@ -1403,290 +1323,117 @@ const Shipments = () => {
     };
 
     /**
-     * Refresh status for a specific shipment
+     * Enhanced refresh status using smart status update system
      */
     const handleRefreshShipmentStatus = async (shipment) => {
         try {
             setRefreshingStatus(prev => new Set([...prev, shipment.id]));
 
-            // Use the actual shipment ID, not the Firestore document ID
-            const actualShipmentId = shipment.shipmentID || shipment.shipmentId || shipment.id;
+            console.log(`🔄 Refreshing status for shipment ${shipment.shipmentID} using smart update system`);
 
-            // Fetch detailed carrier data for this specific shipment (similar to ShipmentDetail)
-            let carrierConfig = null;
-            let getBestRateInfo = null;
+            // Use batch update for single shipment
+            const result = await updateMultipleShipments([shipment.id], {
+                maxConcurrent: 1,
+                force: false, // Use intelligent deduplication
+                onProgress: (progress) => {
+                    console.log(`Status update progress for ${shipment.shipmentID}:`, progress);
+                }
+            });
 
-            try {
-                // Fetch detailed rate info like ShipmentDetail does
-                const shipmentRatesRef = collection(db, 'shipmentRates');
-                const q = query(shipmentRatesRef, where('shipmentId', '==', actualShipmentId));
-                const querySnapshot = await getDocs(q);
+            const shipmentResult = result.results[shipment.id];
+            const shipmentError = result.errors[shipment.id];
 
-                if (!querySnapshot.empty) {
-                    const ratesDoc = querySnapshot.docs[0];
-                    const ratesData = ratesDoc.data();
+            if (shipmentResult && shipmentResult.success) {
+                if (shipmentResult.statusChanged) {
+                    // Status changed - update local state
+                    setShipments(prevShipments =>
+                        prevShipments.map(s =>
+                            s.id === shipment.id
+                                ? {
+                                    ...s,
+                                    status: shipmentResult.newStatus,
+                                    statusLastChecked: new Date().toISOString(),
+                                    lastSmartUpdate: new Date().toISOString()
+                                }
+                                : s
+                        )
+                    );
 
-                    // Get the selected rate (similar to getBestRateInfo in ShipmentDetail)
-                    if (ratesData.selectedRate) {
-                        getBestRateInfo = ratesData.selectedRate;
-                    } else if (ratesData.rates && ratesData.selectedRateIndex !== undefined) {
-                        getBestRateInfo = ratesData.rates[ratesData.selectedRateIndex];
-                    } else if (ratesData.rates && ratesData.rates.length > 0) {
-                        getBestRateInfo = ratesData.rates[0];
+                    // Also update allShipments for stats
+                    setAllShipments(prevShipments =>
+                        prevShipments.map(s =>
+                            s.id === shipment.id
+                                ? {
+                                    ...s,
+                                    status: shipmentResult.newStatus,
+                                    statusLastChecked: new Date().toISOString(),
+                                    lastSmartUpdate: new Date().toISOString()
+                                }
+                                : s
+                        )
+                    );
+
+                    console.log(`✅ Status updated for ${shipment.shipmentID}: ${shipmentResult.previousStatus} → ${shipmentResult.newStatus}`);
+
+                    showSnackbar(
+                        `Status updated: ${shipmentResult.previousStatus} → ${shipmentResult.newStatus}`,
+                        'success'
+                    );
+
+                    if (shipmentResult.trackingUpdatesCount > 0) {
+                        showSnackbar(
+                            `${shipmentResult.trackingUpdatesCount} new tracking events added`,
+                            'info'
+                        );
+                    }
+                } else if (shipmentResult.skipped) {
+                    console.log(`⏭️  Status update skipped for ${shipment.shipmentID}: ${shipmentResult.reason}`);
+                    showSnackbar(shipmentResult.reason || 'Status check skipped', 'info');
+                } else if (shipmentResult.updated) {
+                    // Status confirmed but no change
+                    setShipments(prevShipments =>
+                        prevShipments.map(s =>
+                            s.id === shipment.id
+                                ? {
+                                    ...s,
+                                    statusLastChecked: new Date().toISOString(),
+                                    lastSmartUpdate: new Date().toISOString()
+                                }
+                                : s
+                        )
+                    );
+
+                    setAllShipments(prevShipments =>
+                        prevShipments.map(s =>
+                            s.id === shipment.id
+                                ? {
+                                    ...s,
+                                    statusLastChecked: new Date().toISOString(),
+                                    lastSmartUpdate: new Date().toISOString()
+                                }
+                                : s
+                        )
+                    );
+
+                    if (shipmentResult.trackingUpdatesCount > 0) {
+                        showSnackbar(
+                            `Status confirmed. ${shipmentResult.trackingUpdatesCount} new tracking events added.`,
+                            'success'
+                        );
+                    } else {
+                        showSnackbar('Status confirmed - no new updates', 'success');
                     }
                 }
-
-                // Also try to get carrier config from shipment's selected rate
-                if (!getBestRateInfo && shipment.selectedRate) {
-                    getBestRateInfo = shipment.selectedRate;
-                } else if (!getBestRateInfo && shipment.selectedRateRef) {
-                    getBestRateInfo = shipment.selectedRateRef;
-                }
-
-                // Fetch carrier configuration if we have a carrier
-                if (getBestRateInfo?.carrier || shipment.carrier) {
-                    const carrierName = getBestRateInfo?.carrier || shipment.carrier;
-                    const carriersRef = collection(db, 'carriers');
-                    let carrierQuery;
-
-                    // Try to find carrier by name first
-                    carrierQuery = query(carriersRef, where('name', '==', carrierName), where('enabled', '==', true), limit(1));
-                    let carrierSnapshot = await getDocs(carrierQuery);
-
-                    // If not found by name, try by carrierID
-                    if (carrierSnapshot.empty) {
-                        const normalizedName = carrierName.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                        carrierQuery = query(carriersRef, where('carrierID', '==', normalizedName), where('enabled', '==', true), limit(1));
-                        carrierSnapshot = await getDocs(carrierQuery);
-                    }
-
-                    if (!carrierSnapshot.empty) {
-                        carrierConfig = carrierSnapshot.docs[0].data();
-                    }
-                }
-            } catch (dataFetchError) {
-                console.warn('Could not fetch detailed carrier data:', dataFetchError);
-            }
-
-            // Use ShipmentDetail.jsx approach for carrier detection
-            const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                carrierConfig?.name?.toLowerCase().includes('canpar') ||
-                carrierConfig?.carrierID === 'CANPAR';
-
-            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
-                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-                carrierConfig?.name?.toLowerCase().includes('eshipplus') ||
-                carrierConfig?.carrierID === 'ESHIPPLUS' ||
-                // Enhanced detection for freight carriers that typically use eShipPlus
-                (getBestRateInfo?.carrier && (
-                    getBestRateInfo.carrier.toLowerCase().includes('ward trucking') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('fedex freight') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('road runner') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('estes') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('yrc') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('xpo') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('old dominion') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('saia') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('ltl') ||
-                    getBestRateInfo.carrier.toLowerCase().includes('freight')
-                )) ||
-                // Also check shipment carrier field
-                (shipment.carrier && (
-                    shipment.carrier.toLowerCase().includes('ward trucking') ||
-                    shipment.carrier.toLowerCase().includes('fedex freight') ||
-                    shipment.carrier.toLowerCase().includes('road runner') ||
-                    shipment.carrier.toLowerCase().includes('estes') ||
-                    shipment.carrier.toLowerCase().includes('yrc') ||
-                    shipment.carrier.toLowerCase().includes('xpo') ||
-                    shipment.carrier.toLowerCase().includes('old dominion') ||
-                    shipment.carrier.toLowerCase().includes('saia') ||
-                    shipment.carrier.toLowerCase().includes('ltl') ||
-                    shipment.carrier.toLowerCase().includes('freight')
-                ));
-
-            // Determine the correct tracking number based on carrier (like ShipmentDetail)
-            let trackingNumber;
-            let bookingReferenceNumber;
-
-            if (isCanparShipment) {
-                // For Canpar, use the trackingNumber (barcode)
-                trackingNumber = shipment.trackingNumber ||
-                    shipment.selectedRate?.TrackingNumber ||
-                    shipment.selectedRate?.Barcode ||
-                    shipment.carrierBookingConfirmation?.trackingNumber;
-
-                console.log('Canpar refresh status - using barcode:', trackingNumber);
-            } else if (isEShipPlusShipment) {
-                // For eShipPlus, use the booking reference number
-                bookingReferenceNumber = shipment.bookingReferenceNumber ||
-                    shipment.selectedRate?.BookingReferenceNumber ||
-                    shipment.carrierBookingConfirmation?.bookingReferenceNumber ||
-                    shipment.carrierBookingConfirmation?.confirmationNumber ||  // ← KEY FIX: This is where Ward Trucking stores the booking reference
-                    shipment.carrierBookingConfirmation?.bookingReference ||
-                    shipment.carrierBookingConfirmation?.proNumber ||
-                    getBestRateInfo?.BookingReferenceNumber ||
-                    getBestRateInfo?.bookingReferenceNumber;
-
-                console.log('eShipPlus refresh status - using booking reference:', bookingReferenceNumber);
-
-                // Fallback: If no booking reference found, try tracking number for eShipPlus
-                if (!bookingReferenceNumber) {
-                    trackingNumber = shipment.trackingNumber ||
-                        shipment.selectedRate?.TrackingNumber ||
-                        shipment.carrierBookingConfirmation?.trackingNumber ||
-                        getBestRateInfo?.TrackingNumber;
-                    console.log('eShipPlus fallback - no booking reference found, trying tracking number:', trackingNumber);
-                }
+            } else if (shipmentError) {
+                console.error(`❌ Error updating ${shipment.shipmentID}:`, shipmentError);
+                showSnackbar(`Failed to check status: ${shipmentError}`, 'error');
             } else {
-                // For other carriers, use the tracking number
-                trackingNumber = shipment.trackingNumber ||
-                    shipment.selectedRate?.TrackingNumber ||
-                    shipment.carrierBookingConfirmation?.trackingNumber;
-
-                console.log('Standard refresh status - using tracking number:', trackingNumber);
-            }
-
-            // Determine carrier name (like ShipmentDetail)
-            let carrier = carrierConfig?.name ||
-                getBestRateInfo?.carrier ||
-                shipment.carrier;
-
-            // Override carrier name for eShipPlus to ensure we use the integration carrier
-            if (isEShipPlusShipment) {
-                carrier = 'eShipPlus';
-                console.log('Overriding carrier name to eShipPlus for integration carrier');
-            }
-
-            // Build request body like ShipmentDetail does
-            const requestBody = {
-                shipmentId: shipment.id,
-                trackingNumber: trackingNumber,
-                carrier: carrier
-            };
-
-            // Only add bookingReferenceNumber if it exists
-            if (bookingReferenceNumber) {
-                requestBody.bookingReferenceNumber = bookingReferenceNumber;
-            } else if (isEShipPlusShipment && trackingNumber) {
-                // For eShipPlus, if we have tracking number but no booking reference, 
-                // use tracking number as booking reference since some eShipPlus carriers use this pattern
-                requestBody.bookingReferenceNumber = trackingNumber;
-                console.log('eShipPlus: Using tracking number as booking reference:', trackingNumber);
-            }
-
-            // Add carrierID if available (for cloud function to identify carrier) - THIS WAS MISSING!
-            if (carrierConfig?.carrierID) {
-                requestBody.carrierID = carrierConfig.carrierID;
-            }
-
-            console.log('Refreshing shipment status with:', requestBody);
-            console.log('Debug: Firestore doc ID:', shipment.id, 'Actual shipment ID:', actualShipmentId);
-            console.log('Debug: Ward Trucking carrier info:', {
-                getBestRateInfo: getBestRateInfo ? {
-                    carrier: getBestRateInfo.carrier,
-                    displayCarrierId: getBestRateInfo.displayCarrierId,
-                    sourceCarrierName: getBestRateInfo.sourceCarrierName
-                } : null,
-                carrierConfig: carrierConfig ? {
-                    name: carrierConfig.name,
-                    carrierID: carrierConfig.carrierID
-                } : null,
-                isEShipPlusShipment,
-                isCanparShipment
-            });
-            console.log('Debug: Shipment fields available:', Object.keys(shipment));
-            console.log('Debug: Looking for booking reference in:', {
-                shipment_bookingReferenceNumber: shipment.bookingReferenceNumber,
-                selectedRate_BookingReferenceNumber: shipment.selectedRate?.BookingReferenceNumber,
-                selectedRateRef_BookingReferenceNumber: shipment.selectedRateRef?.BookingReferenceNumber,
-                carrierBookingConfirmation_bookingReferenceNumber: shipment.carrierBookingConfirmation?.bookingReferenceNumber,
-                carrierBookingConfirmation_confirmationNumber: shipment.carrierBookingConfirmation?.confirmationNumber,
-                carrierBookingConfirmation_proNumber: shipment.carrierBookingConfirmation?.proNumber,
-                getBestRateInfo_BookingReferenceNumber: getBestRateInfo?.BookingReferenceNumber,
-                getBestRateInfo_bookingReferenceNumber: getBestRateInfo?.bookingReferenceNumber
-            });
-            console.log('Debug: Looking for tracking number in:', {
-                shipment_trackingNumber: shipment.trackingNumber,
-                selectedRate_TrackingNumber: shipment.selectedRate?.TrackingNumber,
-                selectedRateRef_TrackingNumber: shipment.selectedRateRef?.TrackingNumber,
-                carrierBookingConfirmation_trackingNumber: shipment.carrierBookingConfirmation?.trackingNumber,
-                getBestRateInfo_TrackingNumber: getBestRateInfo?.TrackingNumber,
-                getBestRateInfo_trackingNumber: getBestRateInfo?.trackingNumber
-            });
-            if (getBestRateInfo) {
-                console.log('Debug: Full getBestRateInfo object:', getBestRateInfo);
-            }
-            if (shipment.carrierBookingConfirmation) {
-                console.log('Debug: Full carrierBookingConfirmation object:', shipment.carrierBookingConfirmation);
-            }
-
-            if (!carrier) {
-                console.error('Cannot refresh status: No carrier information found for shipment', shipment.id);
-                alert('Cannot refresh status: No carrier information available for this shipment.');
-                return;
-            }
-
-            if (!trackingNumber && !bookingReferenceNumber) {
-                console.error(`Cannot refresh status for shipment ${shipment.id}: No tracking information found`);
-                alert('Cannot refresh status: No tracking number or booking reference available for this shipment.');
-                return;
-            }
-
-            const response = await fetch('https://checkshipmentstatus-xedyh5vw7a-uc.a.run.app', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || `HTTP error! status: ${response.status}`);
-            }
-
-            if (result.success) {
-                // Update the shipment in the local state
-                setShipments(prevShipments =>
-                    prevShipments.map(s =>
-                        s.id === shipment.id
-                            ? {
-                                ...s,
-                                status: result.status,
-                                statusLastChecked: new Date().toISOString(),
-                                carrierTrackingData: result,
-                                trackingNumber: trackingNumber || s.trackingNumber,
-                                bookingReferenceNumber: bookingReferenceNumber || s.bookingReferenceNumber
-                            }
-                            : s
-                    )
-                );
-
-                // Also update allShipments for stats
-                setAllShipments(prevShipments =>
-                    prevShipments.map(s =>
-                        s.id === shipment.id
-                            ? {
-                                ...s,
-                                status: result.status,
-                                statusLastChecked: new Date().toISOString(),
-                                carrierTrackingData: result,
-                                trackingNumber: trackingNumber || s.trackingNumber,
-                                bookingReferenceNumber: bookingReferenceNumber || s.bookingReferenceNumber
-                            }
-                            : s
-                    )
-                );
-
-                console.log(`Status updated for shipment ${shipment.id}: ${result.statusDisplay || result.status}`);
-            } else {
-                throw new Error(result.error || 'Failed to check status');
+                showSnackbar('Failed to check status - no response', 'error');
             }
 
         } catch (error) {
-            console.error('Error refreshing shipment status:', error);
-            alert(`Failed to refresh status: ${error.message}`);
+            console.error('Error in smart status refresh:', error);
+            showSnackbar(`Failed to refresh status: ${error.message}`, 'error');
         } finally {
             setRefreshingStatus(prev => {
                 const newSet = new Set(prev);
@@ -1694,6 +1441,131 @@ const Shipments = () => {
                 return newSet;
             });
         }
+    };
+
+    /**
+     * Refresh status for multiple selected shipments
+     */
+    const handleBatchRefreshStatus = async () => {
+        if (selected.length === 0) {
+            showSnackbar('No shipments selected for status refresh', 'warning');
+            return;
+        }
+
+        const activeShipments = shipments.filter(s =>
+            selected.includes(s.id) &&
+            s.status !== 'draft' &&
+            s.status !== 'delivered' &&
+            s.status !== 'cancelled'
+        );
+
+        if (activeShipments.length === 0) {
+            showSnackbar('No active shipments selected (excluding drafts, delivered, and cancelled)', 'warning');
+            return;
+        }
+
+        try {
+            clearBatchState();
+            setUpdateProgress({
+                show: true,
+                completed: 0,
+                total: activeShipments.length,
+                current: ''
+            });
+
+            const shipmentIds = activeShipments.map(s => s.id);
+
+            console.log(`🔄 Starting batch status update for ${shipmentIds.length} shipments`);
+
+            const result = await updateMultipleShipments(shipmentIds, {
+                maxConcurrent: 3,
+                force: false,
+                onProgress: (progress) => {
+                    setUpdateProgress(prev => ({
+                        ...prev,
+                        completed: progress.completed,
+                        current: progress.currentBatch?.[0]?.shipmentId || ''
+                    }));
+                }
+            });
+
+            // Process results and update local state
+            let updatedCount = 0;
+            let erroredCount = 0;
+
+            for (const shipmentId of shipmentIds) {
+                const shipmentResult = batchResults[shipmentId];
+                const shipmentError = batchErrors[shipmentId];
+
+                if (shipmentResult && shipmentResult.success) {
+                    if (shipmentResult.statusChanged || shipmentResult.updated) {
+                        // Update local state
+                        setShipments(prevShipments =>
+                            prevShipments.map(s =>
+                                s.id === shipmentId
+                                    ? {
+                                        ...s,
+                                        status: shipmentResult.newStatus || s.status,
+                                        statusLastChecked: new Date().toISOString(),
+                                        lastSmartUpdate: new Date().toISOString()
+                                    }
+                                    : s
+                            )
+                        );
+
+                        setAllShipments(prevShipments =>
+                            prevShipments.map(s =>
+                                s.id === shipmentId
+                                    ? {
+                                        ...s,
+                                        status: shipmentResult.newStatus || s.status,
+                                        statusLastChecked: new Date().toISOString(),
+                                        lastSmartUpdate: new Date().toISOString()
+                                    }
+                                    : s
+                            )
+                        );
+
+                        if (shipmentResult.statusChanged) {
+                            updatedCount++;
+                        }
+                    }
+                } else if (shipmentError) {
+                    erroredCount++;
+                }
+            }
+
+            // Show batch results
+            if (updatedCount > 0) {
+                showSnackbar(`${updatedCount} shipment(s) updated successfully`, 'success');
+            }
+
+            if (erroredCount > 0) {
+                showSnackbar(`${erroredCount} shipment(s) failed to update`, 'error');
+            }
+
+            if (updatedCount === 0 && erroredCount === 0) {
+                showSnackbar('All shipments checked - no status changes found', 'info');
+            }
+
+            console.log(`✅ Batch update completed: ${updatedCount} updated, ${erroredCount} errors`);
+
+        } catch (error) {
+            console.error('Error in batch status refresh:', error);
+            showSnackbar(`Batch refresh failed: ${error.message}`, 'error');
+        } finally {
+            setUpdateProgress({ show: false, completed: 0, total: 0, current: '' });
+            setSelected([]); // Clear selection after batch operation
+        }
+    };
+
+    /**
+     * Enhanced snackbar function with better message handling
+     */
+    const showSnackbar = (message, severity = 'info') => {
+        setSnackbarMessage(message);
+        setSnackbarSeverity(severity);
+        setSnackbarOpen(true);
     };
 
     // Add refresh on page focus to catch status updates when returning from other pages

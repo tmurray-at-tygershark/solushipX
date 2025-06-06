@@ -54,6 +54,10 @@ const { getShipmentDocuments, getDocumentDownloadUrl } = require('./src/getShipm
 const { checkShipmentStatus } = require('./src/checkShipmentStatus');
 const eshipPlusApi = require('./src/carrier-api/eshipplus');
 
+// Import new smart status update and polling functions
+const { pollActiveShipments } = require('./src/shipment-polling/pollActiveShipments');
+const { smartStatusUpdate, forceStatusRefresh } = require('./src/shipment-polling/smartStatusUpdate');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -82,6 +86,11 @@ exports.adminGetUsersAuthData = adminGetUsersAuthData;
 exports.getShipmentDocuments = getShipmentDocuments;
 exports.getDocumentDownloadUrl = getDocumentDownloadUrl;
 exports.checkShipmentStatus = checkShipmentStatus;
+
+// Export new smart status update and polling functions
+exports.pollActiveShipments = pollActiveShipments;
+exports.smartStatusUpdate = smartStatusUpdate;
+exports.forceStatusRefresh = forceStatusRefresh;
 
 // Helper function to map HTTP status codes to Firebase HttpsError codes
 // See: https://firebase.google.com/docs/reference/functions/providers_https_.httpserrorcode
