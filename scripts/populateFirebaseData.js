@@ -22,7 +22,7 @@ const shipments = [
     shipmentID: 'SHIP001',
     status: 'In Transit',
     shipmentInfo: {
-      shipmentType: 'LTL',
+      shipmentType: 'freight',
       referenceNumber: 'REF001',
       shipmentDate: '2024-03-15',
       earliestPickup: '2024-03-15 09:00',

@@ -212,7 +212,7 @@ const CreateShipmentContent = () => {
                 packages: [{}],
                 shipmentInfo: {
                     shipmentDate: new Date().toISOString().split('T')[0],
-                    shipmentType: 'LTL' // Add default shipment type
+                    shipmentType: 'freight' // Add default shipment type
                 }
             };
 
@@ -328,7 +328,7 @@ const CreateShipmentContent = () => {
 
                                 // ShipmentInfo with proper fallbacks
                                 shipmentInfo: {
-                                    shipmentType: draftData.shipmentInfo?.shipmentType || 'LTL',
+                                    shipmentType: draftData.shipmentInfo?.shipmentType || 'freight',
                                     internationalShipment: draftData.shipmentInfo?.internationalShipment || false,
                                     shipperReferenceNumber: draftData.shipmentInfo?.shipperReferenceNumber || '',
                                     bookingReferenceNumber: draftData.shipmentInfo?.bookingReferenceNumber || '',

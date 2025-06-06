@@ -42,7 +42,7 @@ export const initialFormState = {
     },
     // ShipmentInfo data
     shipmentInfo: {
-        shipmentType: 'LTL',
+        shipmentType: 'freight',
         internationalShipment: false,
         shipperReferenceNumber: '',
         bookingReferenceNumber: '',
