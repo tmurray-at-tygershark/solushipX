@@ -89,7 +89,8 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
 import Snackbar from '@mui/material/Snackbar';
 import StatusChip from '../StatusChip/StatusChip';
-import { useBatchStatusUpdate } from '../../hooks/useSmartStatusUpdate';
+import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
+import StatusUpdateProgress from '../StatusUpdateProgress/StatusUpdateProgress';
 
 // Add formatAddress function (copied from admin view)
 const formatAddress = (address, label = '', searchTerm = '') => {
@@ -302,25 +303,31 @@ const Shipments = () => {
         destination: ''
     });
 
-    // Add state for snackbar
-    const [snackbarOpen, setSnackbarOpen] = useState(false);
-    const [snackbarMessage, setSnackbarMessage] = useState('');
-    const [snackbarSeverity, setSnackbarSeverity] = useState('info');
+    // Enhanced snackbar for user feedback (copied from ShipmentDetail.jsx)
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
 
     // Add state to track if we should refresh on mount (when returning from other pages)
     const [shouldRefreshOnMount, setShouldRefreshOnMount] = useState(false);
 
-    // Replace single refresh status with batch smart update system
+    // Carrier-agnostic status update system
     const {
-        batchLoading,
-        batchResults,
-        batchErrors,
+        isUpdating,
+        updateProgress: statusUpdateProgress,
+        results: statusUpdateResults,
+        updateSingleShipment,
         updateMultipleShipments,
-        clearBatchState,
-        completedCount,
-        errorCount,
-        hasErrors
-    } = useBatchStatusUpdate();
+        clearState: clearStatusUpdateState,
+        getCarrierInfo,
+        isEligibleForUpdate,
+        getUpdateStats
+    } = useCarrierAgnosticStatusUpdate();
+
+    // Status update progress dialog state
+    const [statusProgressDialogOpen, setStatusProgressDialogOpen] = useState(false);
 
     const [updateProgress, setUpdateProgress] = useState({
         show: false,
@@ -1323,116 +1330,86 @@ const Shipments = () => {
     };
 
     /**
-     * Enhanced refresh status using smart status update system
+     * Enhanced single shipment status refresh using carrier-agnostic system
      */
     const handleRefreshShipmentStatus = async (shipment) => {
         try {
             setRefreshingStatus(prev => new Set([...prev, shipment.id]));
 
-            console.log(`🔄 Refreshing status for shipment ${shipment.shipmentID} using smart update system`);
+            console.log(`🔄 Refreshing status for shipment ${shipment.shipmentID || shipment.id} using carrier-agnostic system`);
 
-            // Use batch update for single shipment
-            const result = await updateMultipleShipments([shipment.id], {
-                maxConcurrent: 1,
-                force: false, // Use intelligent deduplication
-                onProgress: (progress) => {
-                    console.log(`Status update progress for ${shipment.shipmentID}:`, progress);
-                }
+            // Check if shipment is eligible for update
+            if (!isEligibleForUpdate(shipment)) {
+                const carrierInfo = getCarrierInfo(shipment);
+                const reason = !carrierInfo.trackingValue ?
+                    'No tracking information available' :
+                    'Shipment not eligible for status update';
+
+                showSnackbar(reason, 'warning');
+                return;
+            }
+
+            // Use single shipment update
+            const result = await updateSingleShipment(shipment, {
+                force: false,
+                timeout: 30000
             });
 
-            const shipmentResult = result.results[shipment.id];
-            const shipmentError = result.errors[shipment.id];
-
-            if (shipmentResult && shipmentResult.success) {
-                if (shipmentResult.statusChanged) {
+            if (result.success) {
+                if (result.statusChanged) {
                     // Status changed - update local state
-                    setShipments(prevShipments =>
-                        prevShipments.map(s =>
-                            s.id === shipment.id
-                                ? {
-                                    ...s,
-                                    status: shipmentResult.newStatus,
-                                    statusLastChecked: new Date().toISOString(),
-                                    lastSmartUpdate: new Date().toISOString()
-                                }
-                                : s
-                        )
-                    );
+                    const updateShipment = (s) => s.id === shipment.id ? {
+                        ...s,
+                        status: result.newStatus,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString()
+                    } : s;
 
-                    // Also update allShipments for stats
-                    setAllShipments(prevShipments =>
-                        prevShipments.map(s =>
-                            s.id === shipment.id
-                                ? {
-                                    ...s,
-                                    status: shipmentResult.newStatus,
-                                    statusLastChecked: new Date().toISOString(),
-                                    lastSmartUpdate: new Date().toISOString()
-                                }
-                                : s
-                        )
-                    );
+                    setShipments(prevShipments => prevShipments.map(updateShipment));
+                    setAllShipments(prevShipments => prevShipments.map(updateShipment));
 
-                    console.log(`✅ Status updated for ${shipment.shipmentID}: ${shipmentResult.previousStatus} → ${shipmentResult.newStatus}`);
-
+                    console.log(`✅ Status updated for ${shipment.shipmentID}: ${result.previousStatus} → ${result.newStatus}`);
                     showSnackbar(
-                        `Status updated: ${shipmentResult.previousStatus} → ${shipmentResult.newStatus}`,
+                        `Status updated: ${result.previousStatus} → ${result.newStatus}`,
                         'success'
                     );
 
-                    if (shipmentResult.trackingUpdatesCount > 0) {
+                    if (result.trackingUpdatesCount > 0) {
                         showSnackbar(
-                            `${shipmentResult.trackingUpdatesCount} new tracking events added`,
+                            `${result.trackingUpdatesCount} new tracking events added`,
                             'info'
                         );
                     }
-                } else if (shipmentResult.skipped) {
-                    console.log(`⏭️  Status update skipped for ${shipment.shipmentID}: ${shipmentResult.reason}`);
-                    showSnackbar(shipmentResult.reason || 'Status check skipped', 'info');
-                } else if (shipmentResult.updated) {
+                } else if (result.updated) {
                     // Status confirmed but no change
-                    setShipments(prevShipments =>
-                        prevShipments.map(s =>
-                            s.id === shipment.id
-                                ? {
-                                    ...s,
-                                    statusLastChecked: new Date().toISOString(),
-                                    lastSmartUpdate: new Date().toISOString()
-                                }
-                                : s
-                        )
-                    );
+                    const updateShipment = (s) => s.id === shipment.id ? {
+                        ...s,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString()
+                    } : s;
 
-                    setAllShipments(prevShipments =>
-                        prevShipments.map(s =>
-                            s.id === shipment.id
-                                ? {
-                                    ...s,
-                                    statusLastChecked: new Date().toISOString(),
-                                    lastSmartUpdate: new Date().toISOString()
-                                }
-                                : s
-                        )
-                    );
+                    setShipments(prevShipments => prevShipments.map(updateShipment));
+                    setAllShipments(prevShipments => prevShipments.map(updateShipment));
 
-                    if (shipmentResult.trackingUpdatesCount > 0) {
+                    if (result.trackingUpdatesCount > 0) {
                         showSnackbar(
-                            `Status confirmed. ${shipmentResult.trackingUpdatesCount} new tracking events added.`,
+                            `Status confirmed. ${result.trackingUpdatesCount} new tracking events added.`,
                             'success'
                         );
                     } else {
-                        showSnackbar('Status confirmed - no new updates', 'success');
+                        showSnackbar('Status confirmed - no changes detected', 'success');
                     }
                 }
-            } else if (shipmentError) {
-                console.error(`❌ Error updating ${shipment.shipmentID}:`, shipmentError);
-                showSnackbar(`Failed to check status: ${shipmentError}`, 'error');
+            } else if (result.skipped) {
+                console.log(`⏭️ Status update skipped for ${shipment.shipmentID}: ${result.reason}`);
+                showSnackbar(result.reason || 'Status check skipped', 'info');
             } else {
-                showSnackbar('Failed to check status - no response', 'error');
+                console.error(`❌ Error updating ${shipment.shipmentID}:`, result.error);
+                showSnackbar(`Failed to check status: ${result.error}`, 'error');
             }
 
         } catch (error) {
-            console.error('Error in smart status refresh:', error);
+            console.error('Error in status refresh:', error);
             showSnackbar(`Failed to refresh status: ${error.message}`, 'error');
         } finally {
             setRefreshingStatus(prev => {
@@ -1444,7 +1421,7 @@ const Shipments = () => {
     };
 
     /**
-     * Refresh status for multiple selected shipments
+     * Refresh status for multiple selected shipments with enhanced progress tracking
      */
     const handleBatchRefreshStatus = async () => {
         if (selected.length === 0) {
@@ -1452,120 +1429,138 @@ const Shipments = () => {
             return;
         }
 
-        const activeShipments = shipments.filter(s =>
-            selected.includes(s.id) &&
-            s.status !== 'draft' &&
-            s.status !== 'delivered' &&
-            s.status !== 'cancelled'
-        );
+        // Filter to only eligible shipments
+        const selectedShipments = shipments.filter(s => selected.includes(s.id));
+        const eligibleShipments = selectedShipments.filter(s => isEligibleForUpdate(s));
 
-        if (activeShipments.length === 0) {
-            showSnackbar('No active shipments selected (excluding drafts, delivered, and cancelled)', 'warning');
+        if (eligibleShipments.length === 0) {
+            const ineligibleReasons = selectedShipments
+                .filter(s => !isEligibleForUpdate(s))
+                .map(s => {
+                    const carrierInfo = getCarrierInfo(s);
+                    return !carrierInfo.trackingValue ?
+                        `${s.shipmentID || s.id}: No tracking info` :
+                        `${s.shipmentID || s.id}: Terminal status (${s.status})`;
+                });
+
+            showSnackbar(
+                `No eligible shipments for update. ${ineligibleReasons.join(', ')}`,
+                'warning'
+            );
             return;
         }
 
         try {
-            clearBatchState();
-            setUpdateProgress({
-                show: true,
-                completed: 0,
-                total: activeShipments.length,
-                current: ''
-            });
+            // Clear previous state and show progress dialog
+            clearStatusUpdateState();
+            setStatusProgressDialogOpen(true);
 
-            const shipmentIds = activeShipments.map(s => s.id);
+            console.log(`🔄 Starting batch status update for ${eligibleShipments.length} eligible shipments out of ${selectedShipments.length} selected`);
 
-            console.log(`🔄 Starting batch status update for ${shipmentIds.length} shipments`);
-
-            const result = await updateMultipleShipments(shipmentIds, {
+            const result = await updateMultipleShipments(eligibleShipments, {
                 maxConcurrent: 3,
                 force: false,
+                retryFailedAttempts: 1,
                 onProgress: (progress) => {
-                    setUpdateProgress(prev => ({
-                        ...prev,
-                        completed: progress.completed,
-                        current: progress.currentBatch?.[0]?.shipmentId || ''
-                    }));
+                    console.log(`Batch progress: ${progress.completed}/${progress.total} completed`);
                 }
             });
 
             // Process results and update local state
-            let updatedCount = 0;
-            let erroredCount = 0;
+            const updateStats = getUpdateStats();
+            let statusChangedCount = 0;
 
-            for (const shipmentId of shipmentIds) {
-                const shipmentResult = batchResults[shipmentId];
-                const shipmentError = batchErrors[shipmentId];
+            for (const [shipmentId, shipmentResult] of Object.entries(statusUpdateResults)) {
+                if (shipmentResult.success && (shipmentResult.statusChanged || shipmentResult.updated)) {
+                    // Update local state
+                    const updateShipment = (s) => s.id === shipmentId ? {
+                        ...s,
+                        status: shipmentResult.newStatus || s.status,
+                        statusLastChecked: new Date().toISOString(),
+                        lastSmartUpdate: new Date().toISOString()
+                    } : s;
 
-                if (shipmentResult && shipmentResult.success) {
-                    if (shipmentResult.statusChanged || shipmentResult.updated) {
-                        // Update local state
-                        setShipments(prevShipments =>
-                            prevShipments.map(s =>
-                                s.id === shipmentId
-                                    ? {
-                                        ...s,
-                                        status: shipmentResult.newStatus || s.status,
-                                        statusLastChecked: new Date().toISOString(),
-                                        lastSmartUpdate: new Date().toISOString()
-                                    }
-                                    : s
-                            )
-                        );
+                    setShipments(prevShipments => prevShipments.map(updateShipment));
+                    setAllShipments(prevShipments => prevShipments.map(updateShipment));
 
-                        setAllShipments(prevShipments =>
-                            prevShipments.map(s =>
-                                s.id === shipmentId
-                                    ? {
-                                        ...s,
-                                        status: shipmentResult.newStatus || s.status,
-                                        statusLastChecked: new Date().toISOString(),
-                                        lastSmartUpdate: new Date().toISOString()
-                                    }
-                                    : s
-                            )
-                        );
-
-                        if (shipmentResult.statusChanged) {
-                            updatedCount++;
-                        }
+                    if (shipmentResult.statusChanged) {
+                        statusChangedCount++;
                     }
-                } else if (shipmentError) {
-                    erroredCount++;
                 }
             }
 
-            // Show batch results
-            if (updatedCount > 0) {
-                showSnackbar(`${updatedCount} shipment(s) updated successfully`, 'success');
-            }
+            // Show summary results
+            if (result.success) {
+                console.log(`✅ Batch update completed:`, updateStats);
 
-            if (erroredCount > 0) {
-                showSnackbar(`${erroredCount} shipment(s) failed to update`, 'error');
-            }
+                if (statusChangedCount > 0) {
+                    showSnackbar(`${statusChangedCount} shipment(s) had status changes`, 'success');
+                }
 
-            if (updatedCount === 0 && erroredCount === 0) {
-                showSnackbar('All shipments checked - no status changes found', 'info');
-            }
+                if (updateStats.failed > 0) {
+                    showSnackbar(`${updateStats.failed} shipment(s) failed to update`, 'error');
+                }
 
-            console.log(`✅ Batch update completed: ${updatedCount} updated, ${erroredCount} errors`);
+                if (statusChangedCount === 0 && updateStats.failed === 0) {
+                    showSnackbar('All shipments checked - no status changes found', 'info');
+                }
+            } else {
+                showSnackbar(`Batch update failed: ${result.message}`, 'error');
+            }
 
         } catch (error) {
             console.error('Error in batch status refresh:', error);
             showSnackbar(`Batch refresh failed: ${error.message}`, 'error');
         } finally {
-            setUpdateProgress({ show: false, completed: 0, total: 0, current: '' });
-            setSelected([]); // Clear selection after batch operation
+            // Keep the progress dialog open for user to review results
+            // Don't clear selection here - let user decide
         }
     };
 
     /**
-     * Enhanced snackbar function with better message handling
+     * Handle retry of failed shipments from batch update
+     */
+    const handleRetryFailedUpdates = async () => {
+        const failedShipments = shipments.filter(s => {
+            const result = statusUpdateResults[s.id];
+            return result && !result.success && !result.skipped;
+        });
+
+        if (failedShipments.length === 0) {
+            showSnackbar('No failed shipments to retry', 'info');
+            return;
+        }
+
+        try {
+            console.log(`🔄 Retrying ${failedShipments.length} failed shipments`);
+
+            const result = await updateMultipleShipments(failedShipments, {
+                maxConcurrent: 2, // Lower concurrency for retries
+                force: true, // Force retry
+                retryFailedAttempts: 2,
+                onProgress: (progress) => {
+                    console.log(`Retry progress: ${progress.completed}/${progress.total} completed`);
+                }
+            });
+
+            const updateStats = getUpdateStats();
+
+            if (result.success) {
+                showSnackbar(`Retry completed: ${updateStats.successful} successful, ${updateStats.failed} still failed`,
+                    updateStats.failed > 0 ? 'warning' : 'success');
+            }
+
+        } catch (error) {
+            console.error('Error in retry:', error);
+            showSnackbar(`Retry failed: ${error.message}`, 'error');
+        }
+    };
+
+    /**
+     * Enhanced snackbar function with better message handling (copied from ShipmentDetail.jsx)
      */
     const showSnackbar = (message, severity = 'info') => {
-        setSnackbarMessage(message);
-        setSnackbarSeverity(severity);
-        setSnackbarOpen(true);
+        setSnackbar({ open: true, message, severity });
     };
 
     // Add refresh on page focus to catch status updates when returning from other pages
@@ -1643,6 +1638,21 @@ const Shipments = () => {
                                 Shipments
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 2 }}>
+                                {selected.length > 0 && (
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={isUpdating ? <CircularProgress size={16} /> : <RefreshIcon />}
+                                        onClick={handleBatchRefreshStatus}
+                                        disabled={isUpdating}
+                                        sx={{
+                                            color: '#059669',
+                                            borderColor: '#10b981',
+                                            '&:hover': { borderColor: '#059669', bgcolor: '#f0fdf4' }
+                                        }}
+                                    >
+                                        Update Status ({selected.length})
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outlined"
                                     startIcon={<ExportIcon />}
@@ -1720,8 +1730,13 @@ const Shipments = () => {
                                                 ...prev,
                                                 referenceNumber: e.target.value
                                             }))}
-                                            placeholder="Reference or PO number"
+                                            placeholder="PO-4334534"
                                             InputProps={{
+                                                startAdornment: (
+                                                    <InputAdornment position="start">
+                                                        <AssignmentIcon sx={{ color: '#64748b' }} />
+                                                    </InputAdornment>
+                                                ),
                                                 endAdornment: searchFields.referenceNumber && (
                                                     <InputAdornment position="end">
                                                         <IconButton
@@ -2165,8 +2180,7 @@ const Shipments = () => {
                                                                                 size="small"
                                                                                 onClick={() => {
                                                                                     navigator.clipboard.writeText(trackingNumber);
-                                                                                    setSnackbarMessage('Tracking number copied!');
-                                                                                    setSnackbarOpen(true);
+                                                                                    showSnackbar('Tracking number copied!', 'success');
                                                                                 }}
                                                                                 sx={{ padding: '2px' }}
                                                                                 title="Copy tracking number"
@@ -2565,13 +2579,42 @@ const Shipments = () => {
                 </DialogContent>
             </Dialog>
 
-            <Snackbar
-                open={snackbarOpen}
-                autoHideDuration={2000}
-                onClose={() => setSnackbarOpen(false)}
-                message={snackbarMessage}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            {/* Status Update Progress Dialog */}
+            <StatusUpdateProgress
+                open={statusProgressDialogOpen}
+                onClose={() => setStatusProgressDialogOpen(false)}
+                updateProgress={statusUpdateProgress}
+                isUpdating={isUpdating}
+                results={statusUpdateResults}
+                updateStats={getUpdateStats()}
+                onCancel={() => {
+                    // Cancel ongoing updates if possible
+                    setStatusProgressDialogOpen(false);
+                }}
+                onRetryErrors={handleRetryFailedUpdates}
             />
+
+            {/* Enhanced Snackbar for User Feedback (copied from ShipmentDetail.jsx) */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={snackbar.severity === 'error' ? 8000 : 4000}
+                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert
+                    onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                    severity={snackbar.severity}
+                    variant="filled"
+                    sx={{
+                        width: '100%',
+                        borderRadius: 2,
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+                    }}
+                >
+                    {snackbar.message}
+                    {/* Enhanced status update integration could be added here in the future */}
+                </Alert>
+            </Snackbar>
         </div>
     );
 };

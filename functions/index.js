@@ -56,6 +56,7 @@ const eshipPlusApi = require('./src/carrier-api/eshipplus');
 
 // Import new smart status update and polling functions
 const { pollActiveShipments } = require('./src/shipment-polling/pollActiveShipments');
+const { backgroundStatusPoll } = require('./src/shipment-polling/backgroundStatusPoll');
 const { smartStatusUpdate, forceStatusRefresh } = require('./src/shipment-polling/smartStatusUpdate');
 
 // Export Callable functions
@@ -89,6 +90,7 @@ exports.checkShipmentStatus = checkShipmentStatus;
 
 // Export new smart status update and polling functions
 exports.pollActiveShipments = pollActiveShipments;
+exports.backgroundStatusPoll = backgroundStatusPoll;
 exports.smartStatusUpdate = smartStatusUpdate;
 exports.forceStatusRefresh = forceStatusRefresh;
 

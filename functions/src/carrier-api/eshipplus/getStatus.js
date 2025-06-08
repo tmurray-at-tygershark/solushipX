@@ -242,26 +242,52 @@ function mapEShipPlusStatusToUniversal(eshipData) {
         }
     }
 
-    // Prepare tracking events from check calls
-    const trackingEvents = (eshipData.CheckCalls || []).map(call => ({
-        date: call.EventDate || call.CallDate,
-        location: '', // eShip Plus doesn't provide location in check calls
-        description: getCheckCallDescription(call.StatusCode, call.CallNotes),
-        statusCode: call.StatusCode,
-        carrierCode: call.StatusCode
-    })).filter(event => event.date && event.date !== '')
+    // Helper function to fix obvious date errors (like 2025 instead of 2024)
+    const fixDateYear = (dateStr) => {
+        if (!dateStr) return dateStr;
+        
+        const currentYear = new Date().getFullYear();
+        const nextYear = currentYear + 1;
+        
+        // If the date is more than 1 year in the future, it's likely a year error
+        // Common issue: API returns 2025 instead of 2024
+        if (dateStr.includes(`${nextYear}`) || dateStr.includes(`${currentYear + 2}`)) {
+            logger.warn(`Detected likely year error in eShipPlus date: ${dateStr}, correcting to ${currentYear}`);
+            return dateStr.replace(new RegExp(`${nextYear}|${currentYear + 2}`, 'g'), currentYear.toString());
+        }
+        
+        return dateStr;
+    };
+
+    // Prepare tracking events from check calls with date correction
+    const trackingEvents = (eshipData.CheckCalls || []).map(call => {
+        let eventDate = call.EventDate || call.CallDate;
+        
+        // Fix obvious year errors
+        eventDate = fixDateYear(eventDate);
+        
+        return {
+            date: eventDate,
+            location: '', // eShip Plus doesn't provide location in check calls
+            description: getCheckCallDescription(call.StatusCode, call.CallNotes),
+            statusCode: call.StatusCode,
+            carrierCode: call.StatusCode
+        };
+    }).filter(event => event.date && event.date !== '')
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    // Calculate estimated delivery (use estimate if no actual delivery)
+    // Calculate estimated delivery (use estimate if no actual delivery) with date correction
     let estimatedDelivery = null;
     if (eshipData.EstimateDeliveryDate && eshipData.EstimateDeliveryDate !== '1753-01-01T00:00:00') {
-        estimatedDelivery = new Date(eshipData.EstimateDeliveryDate).toISOString();
+        const correctedDate = fixDateYear(eshipData.EstimateDeliveryDate);
+        estimatedDelivery = new Date(correctedDate).toISOString();
     }
 
-    // Calculate actual delivery
+    // Calculate actual delivery with date correction
     let actualDelivery = null;
     if (eshipData.ActualDeliveryDate && eshipData.ActualDeliveryDate !== '1753-01-01T00:00:00') {
-        actualDelivery = new Date(eshipData.ActualDeliveryDate).toISOString();
+        const correctedDate = fixDateYear(eshipData.ActualDeliveryDate);
+        actualDelivery = new Date(correctedDate).toISOString();
     }
 
     return {
@@ -279,11 +305,11 @@ function mapEShipPlusStatusToUniversal(eshipData) {
             trackingNumber: eshipData.Pro || eshipData.ShipmentNumber
         },
         shipmentDates: {
-            created: eshipData.DateCreated ? new Date(eshipData.DateCreated).toISOString() : null,
+            created: eshipData.DateCreated ? new Date(fixDateYear(eshipData.DateCreated)).toISOString() : null,
             estimatedPickup: eshipData.EstimatePickupDate && eshipData.EstimatePickupDate !== '1753-01-01T00:00:00' 
-                ? new Date(eshipData.EstimatePickupDate).toISOString() : null,
+                ? new Date(fixDateYear(eshipData.EstimatePickupDate)).toISOString() : null,
             actualPickup: eshipData.ActualPickupDate && eshipData.ActualPickupDate !== '1753-01-01T00:00:00'
-                ? new Date(eshipData.ActualPickupDate).toISOString() : null,
+                ? new Date(fixDateYear(eshipData.ActualPickupDate)).toISOString() : null,
             estimatedDelivery,
             actualDelivery
         },

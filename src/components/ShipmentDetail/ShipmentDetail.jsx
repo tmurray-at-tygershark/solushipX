@@ -1292,13 +1292,83 @@ const ShipmentDetail = () => {
                 });
 
                 if (historyResult.data.success && historyResult.data.trackingUpdates && historyResult.data.trackingUpdates.length > 0) {
-                    // The smart status update system will handle deduplication
-                    await recordTrackingUpdate(
-                        shipment.id,
-                        historyResult.data.trackingUpdates,
-                        'eShipPlus'
-                    );
-                    showSnackbar(`Fetched ${historyResult.data.trackingUpdates.length} new eShipPlus history events.`, 'success');
+                    // Enhanced validation that uses existing eShipPlus translation logic
+                    const validTrackingUpdates = historyResult.data.trackingUpdates.filter(update => {
+                        // More lenient timestamp validation - allow future dates since eShipPlus API sometimes has year errors
+                        const updateTimestamp = new Date(update.timestamp);
+                        const now = new Date();
+                        const twoYearsAgo = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
+                        const twoYearsFromNow = new Date(now.getFullYear() + 2, now.getMonth(), now.getDate());
+
+                        const hasValidTimestamp = updateTimestamp >= twoYearsAgo && updateTimestamp <= twoYearsFromNow;
+
+                        // Check for placeholder/invalid tracking numbers
+                        const trackingNumber = update.trackingNumber || update.proNumber || '';
+                        const hasValidTrackingNumber = trackingNumber &&
+                            !trackingNumber.includes('WWW0000000') &&
+                            !trackingNumber.includes('PLACEHOLDER') &&
+                            !trackingNumber.match(/^[W]{3}[0]+$/); // Pattern like WWW0000000
+
+                        // Use existing eShipPlus status code mapping logic instead of filtering
+                        const statusCode = update.statusCode || update.rawStatusCode || '';
+                        const status = update.status || update.description || '';
+
+                        // Define valid eShipPlus status codes (from existing getStatus.js logic)
+                        const validStatusCodes = [
+                            'AF', 'CP', 'X3', 'X8', 'BA', 'L1', 'AN', 'AM', 'P1', 'X6', 'X4', 'B6', 'C1', 'BC', 'CD',
+                            'I1', 'K1', 'OA', 'R1', 'AR', 'RL', 'CL', 'AG', 'AH', 'AJ', 'AV', 'X1', 'X2', 'X5', 'S1',
+                            'D1', 'J1', 'A3', 'A7', 'A9', 'AP', 'SD', 'CA', 'PR', 'AI', 'XB', 'OO', 'AA'
+                        ];
+
+                        // Check if we have a valid status code OR meaningful status description
+                        const hasValidStatus = (statusCode && validStatusCodes.includes(statusCode)) ||
+                            (status && status.length > 2 && status !== 'undefined' && status !== 'null');
+
+                        // More lenient validation - only require valid status, be flexible with timestamps and tracking numbers
+                        const isValid = hasValidTimestamp && hasValidStatus;
+
+                        if (!isValid) {
+                            console.log(`🚫 Filtering out invalid eShipPlus tracking update:`, {
+                                timestamp: update.timestamp,
+                                timestampValid: hasValidTimestamp,
+                                trackingNumber: trackingNumber,
+                                trackingNumberValid: hasValidTrackingNumber,
+                                statusCode: statusCode,
+                                status: status,
+                                statusValid: hasValidStatus,
+                                update: update
+                            });
+                        } else {
+                            console.log(`✅ Accepting valid eShipPlus tracking update:`, {
+                                timestamp: update.timestamp,
+                                statusCode: statusCode,
+                                status: status,
+                                trackingNumber: trackingNumber
+                            });
+                        }
+
+                        return isValid;
+                    });
+
+                    if (validTrackingUpdates.length > 0) {
+                        // The smart status update system will handle deduplication
+                        await recordTrackingUpdate(
+                            shipment.id,
+                            validTrackingUpdates,
+                            'eShipPlus'
+                        );
+                        showSnackbar(`Fetched ${validTrackingUpdates.length} valid eShipPlus history events.`, 'success');
+
+                        // Log filtered count if any were removed
+                        const filteredCount = historyResult.data.trackingUpdates.length - validTrackingUpdates.length;
+                        if (filteredCount > 0) {
+                            console.log(`🧹 Filtered out ${filteredCount} invalid eShipPlus tracking updates`);
+                        }
+                    } else {
+                        const totalCount = historyResult.data.trackingUpdates.length;
+                        console.log(`🚫 All ${totalCount} eShipPlus tracking updates were invalid and filtered out`);
+                        showSnackbar('eShipPlus history contained only invalid data - no updates recorded.', 'warning');
+                    }
                 } else if (historyResult.data.success) {
                     showSnackbar('No new history events found for eShipPlus shipment.', 'info');
                 } else {
