@@ -74,7 +74,8 @@ import {
     Cancel as CancelIcon,
     Schedule as ScheduleIcon,
     Assignment as AssignmentIcon,
-    ExpandMore as ExpandMoreIcon
+    ExpandMore as ExpandMoreIcon,
+    QrCode as QrCodeIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
@@ -89,8 +90,16 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
 import Snackbar from '@mui/material/Snackbar';
 import StatusChip from '../StatusChip/StatusChip';
+import EnhancedStatusFilter from '../StatusChip/EnhancedStatusFilter';
 import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
 import StatusUpdateProgress from '../StatusUpdateProgress/StatusUpdateProgress';
+import {
+    legacyToEnhanced,
+    enhancedToLegacy,
+    getEnhancedStatus,
+    ENHANCED_STATUSES,
+    STATUS_GROUPS
+} from '../../utils/enhancedStatusModel';
 
 // Add formatAddress function (copied from admin view)
 const formatAddress = (address, label = '', searchTerm = '') => {
@@ -497,6 +506,12 @@ const Shipments = () => {
                     const refNumber = (
                         shipment.shipmentInfo?.shipperReferenceNumber ||
                         shipment.referenceNumber ||
+                        shipment.shipperReferenceNumber ||
+                        shipment.selectedRate?.referenceNumber ||
+                        shipment.selectedRateRef?.referenceNumber ||
+                        shipment.carrierBookingConfirmation?.referenceNumber ||
+                        shipment.carrierBookingConfirmation?.bookingReference ||
+                        shipment.carrierBookingConfirmation?.proNumber ||
                         ''
                     ).toLowerCase();
                     return refNumber.includes(searchTerm);
@@ -1259,6 +1274,16 @@ const Shipments = () => {
                     const potentialLabels = allDocs.filter(doc => {
                         const filename = (doc.filename || '').toLowerCase();
                         const documentType = (doc.documentType || '').toLowerCase();
+                        const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
+
+                        // Exclude any BOL documents, including generated ones
+                        if (filename.includes('bol') ||
+                            filename.includes('billoflading') ||
+                            filename.includes('bill-of-lading') ||
+                            documentType.includes('bol') ||
+                            isGeneratedBOL) {
+                            return false;
+                        }
 
                         return filename.includes('label') ||
                             filename.includes('shipping') ||
@@ -1614,6 +1639,20 @@ const Shipments = () => {
         refreshOnMount();
     }, []); // Only run on mount
 
+    // --- Automatic polling for shipment statuses ---
+    useEffect(() => {
+        const interval = setInterval(() => {
+            // Only poll for shipments that are not in a terminal state
+            const terminalStates = ['delivered', 'cancelled', 'void', 'canceled', 'voided'];
+            shipments.forEach((shipment) => {
+                if (!terminalStates.includes((shipment.status || '').toLowerCase())) {
+                    handleRefreshShipmentStatus(shipment);
+                }
+            });
+        }, 60000); // 60 seconds
+        return () => clearInterval(interval);
+    }, [shipments]);
+
     return (
         <div className="shipments-container">
             <div className="breadcrumb-container">
@@ -1694,16 +1733,18 @@ const Shipments = () => {
                                         <TextField
                                             fullWidth
                                             label="Shipment ID"
+                                            placeholder="Search by Shipment ID (e.g. SH-12345)"
                                             value={searchFields.shipmentId}
-                                            onChange={(e) => setSearchFields(prev => ({
-                                                ...prev,
-                                                shipmentId: e.target.value
-                                            }))}
-                                            placeholder="Full or partial ID"
+                                            onChange={(e) => setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }))}
+                                            size="small"
+                                            sx={{
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
                                             InputProps={{
                                                 startAdornment: (
                                                     <InputAdornment position="start">
-                                                        <SearchIcon sx={{ color: '#64748b' }} />
+                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
                                                     </InputAdornment>
                                                 ),
                                                 endAdornment: searchFields.shipmentId && (
@@ -1725,16 +1766,18 @@ const Shipments = () => {
                                         <TextField
                                             fullWidth
                                             label="Reference Number"
+                                            placeholder="Search by reference number"
                                             value={searchFields.referenceNumber}
-                                            onChange={(e) => setSearchFields(prev => ({
-                                                ...prev,
-                                                referenceNumber: e.target.value
-                                            }))}
-                                            placeholder="PO-4334534"
+                                            onChange={(e) => setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                                            size="small"
+                                            sx={{
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
                                             InputProps={{
                                                 startAdornment: (
                                                     <InputAdornment position="start">
-                                                        <AssignmentIcon sx={{ color: '#64748b' }} />
+                                                        <DescriptionIcon sx={{ fontSize: '14px', color: '#64748b' }} />
                                                     </InputAdornment>
                                                 ),
                                                 endAdornment: searchFields.referenceNumber && (
@@ -1756,13 +1799,20 @@ const Shipments = () => {
                                         <TextField
                                             fullWidth
                                             label="Tracking / PRO Number"
+                                            placeholder="Search by tracking number"
                                             value={searchFields.trackingNumber}
-                                            onChange={(e) => setSearchFields(prev => ({
-                                                ...prev,
-                                                trackingNumber: e.target.value
-                                            }))}
-                                            placeholder="Tracking or PRO number"
+                                            onChange={(e) => setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }))}
+                                            size="small"
+                                            sx={{
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
                                             InputProps={{
+                                                startAdornment: (
+                                                    <InputAdornment position="start">
+                                                        <QrCodeIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                    </InputAdornment>
+                                                ),
                                                 endAdornment: searchFields.trackingNumber && (
                                                     <InputAdornment position="end">
                                                         <IconButton
@@ -1783,26 +1833,33 @@ const Shipments = () => {
                                             <DateRangePicker
                                                 value={dateRange}
                                                 onChange={(newValue) => setDateRange(newValue)}
-                                                localeText={{ start: 'From', end: 'To' }}
+                                                label="Date Range"
                                                 slotProps={{
                                                     textField: {
                                                         size: "small",
                                                         fullWidth: true,
                                                         variant: "outlined",
                                                         sx: {
-                                                            '& .MuiInputBase-root': {
-                                                                height: '56px', // Match other TextField heights
-                                                            }
+                                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        },
+                                                        InputProps: {
+                                                            startAdornment: (
+                                                                <InputAdornment position="start">
+                                                                    <CalendarIcon sx={{ color: '#64748b' }} />
+                                                                </InputAdornment>
+                                                            )
                                                         }
                                                     },
                                                     actionBar: {
                                                         actions: ['clear', 'today', 'accept']
+                                                    },
+                                                    separator: {
+                                                        children: ''
                                                     }
                                                 }}
                                                 calendars={2}
-                                                sx={{
-                                                    width: '100%'
-                                                }}
+                                                sx={{ width: '100%' }}
                                             />
                                         </LocalizationProvider>
                                     </Grid>
@@ -1819,15 +1876,37 @@ const Shipments = () => {
                                             value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
                                             onChange={(event, newValue) => setSelectedCustomer(newValue?.id || '')}
                                             renderInput={(params) => (
-                                                <TextField {...params} label="Customer" placeholder="Search customers" />
+                                                <TextField
+                                                    {...params}
+                                                    label="Customer"
+                                                    placeholder="Search customers"
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiOutlinedInput-root': { minHeight: '40px' }
+                                                    }}
+                                                />
                                             )}
+                                            sx={{
+                                                '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiOutlinedInput-root': { minHeight: '40px' },
+                                                fontSize: '12px',
+                                                minHeight: '40px',
+                                                display: 'flex',
+                                                alignItems: 'center'
+                                            }}
+                                            ListboxProps={{
+                                                sx: { fontSize: '12px' }
+                                            }}
                                         />
                                     </Grid>
 
                                     {/* Carrier Selection with Sub-carriers */}
                                     <Grid item xs={12} sm={6} md={3}>
                                         <FormControl fullWidth>
-                                            <InputLabel>Carrier</InputLabel>
+                                            <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
                                             <Select
                                                 value={filters.carrier}
                                                 onChange={(e) => setFilters(prev => ({
@@ -1835,12 +1914,18 @@ const Shipments = () => {
                                                     carrier: e.target.value
                                                 }))}
                                                 label="Carrier"
+                                                sx={{ fontSize: '12px' }}
+                                                MenuProps={{
+                                                    PaperProps: {
+                                                        sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                    }
+                                                }}
                                             >
-                                                <MenuItem value="all">All Carriers</MenuItem>
+                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
                                                 {carrierOptions.map((group) => [
-                                                    <ListSubheader key={group.group}>{group.group}</ListSubheader>,
+                                                    <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
                                                     ...group.carriers.map((carrier) => (
-                                                        <MenuItem key={carrier.id} value={carrier.id}>
+                                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
                                                             {carrier.name}
                                                         </MenuItem>
                                                     ))
@@ -1852,7 +1937,7 @@ const Shipments = () => {
                                     {/* Shipment Type */}
                                     <Grid item xs={12} sm={6} md={2}>
                                         <FormControl fullWidth>
-                                            <InputLabel>Type</InputLabel>
+                                            <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
                                             <Select
                                                 value={filters.shipmentType}
                                                 onChange={(e) => setFilters(prev => ({
@@ -1860,55 +1945,68 @@ const Shipments = () => {
                                                     shipmentType: e.target.value
                                                 }))}
                                                 label="Type"
+                                                sx={{ fontSize: '12px' }}
+                                                MenuProps={{
+                                                    PaperProps: {
+                                                        sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                    }
+                                                }}
                                             >
-                                                <MenuItem value="all">All Types</MenuItem>
-                                                <MenuItem value="courier">Courier</MenuItem>
-                                                <MenuItem value="freight">Freight</MenuItem>
+                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
+                                                <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
                                             </Select>
                                         </FormControl>
                                     </Grid>
 
-                                    {/* Status Filter */}
+                                    {/* Enhanced Status Filter */}
                                     <Grid item xs={12} sm={6} md={2}>
-                                        <FormControl fullWidth>
-                                            <InputLabel>Status</InputLabel>
-                                            <Select
-                                                value={filters.status}
-                                                onChange={(e) => setFilters(prev => ({
-                                                    ...prev,
-                                                    status: e.target.value
-                                                }))}
-                                                label="Status"
-                                            >
-                                                <MenuItem value="all">All Statuses</MenuItem>
-                                                <MenuItem value="scheduled">Scheduled</MenuItem>
-                                                <MenuItem value="booked">Booked</MenuItem>
-                                                <MenuItem value="in_transit">In Transit</MenuItem>
-                                                <MenuItem value="delivered">Delivered</MenuItem>
-                                                <MenuItem value="cancelled">Cancelled</MenuItem>
-                                            </Select>
-                                        </FormControl>
+                                        <EnhancedStatusFilter
+                                            value={filters.enhancedStatus || ''}
+                                            onChange={(value) => setFilters(prev => ({
+                                                ...prev,
+                                                enhancedStatus: value,
+                                                // Keep legacy status for backward compatibility
+                                                status: value ? enhancedToLegacy(value) : 'all'
+                                            }))}
+                                            label="Shipment Status"
+                                            showGroups={true}
+                                            showSearch={true}
+                                            fullWidth={true}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiSelect-select': { fontSize: '12px' },
+                                                '& .MuiMenuItem-root': { fontSize: '12px' }
+                                            }}
+                                        />
                                     </Grid>
 
                                     {/* Clear Filters Button */}
-                                    <Grid item xs={12} sm={6} md={2}>
-                                        <Button
-                                            fullWidth
-                                            variant="outlined"
-                                            onClick={handleClearFilters}
-                                            startIcon={<ClearIcon />}
-                                            sx={{
-                                                borderColor: '#e2e8f0',
-                                                color: '#64748b',
-                                                '&:hover': {
-                                                    borderColor: '#cbd5e1',
-                                                    bgcolor: '#f8fafc'
-                                                }
-                                            }}
-                                        >
-                                            Clear Filters
-                                        </Button>
-                                    </Grid>
+                                    {(Object.values(searchFields).some(val => val !== '') ||
+                                        filters.carrier !== 'all' ||
+                                        filters.shipmentType !== 'all' ||
+                                        filters.status !== 'all' ||
+                                        dateRange[0] || dateRange[1]) && (
+                                            <Grid item xs={12} sm={6} md={1}>
+                                                <Button
+                                                    fullWidth
+                                                    variant="outlined"
+                                                    onClick={handleClearFilters}
+                                                    startIcon={<ClearIcon />}
+                                                    sx={{
+                                                        borderColor: '#e2e8f0',
+                                                        color: '#64748b',
+                                                        '&:hover': {
+                                                            borderColor: '#cbd5e1',
+                                                            bgcolor: '#f8fafc'
+                                                        }
+                                                    }}
+                                                >
+                                                    Clear
+                                                </Button>
+                                            </Grid>
+                                        )}
                                 </Grid>
 
                                 {/* Active Filters Display */}
@@ -1969,7 +2067,11 @@ const Shipments = () => {
 
                             {/* Shipments Table */}
                             <TableContainer>
-                                <Table>
+                                <Table sx={{
+                                    '& .MuiTableCell-root': { fontSize: '12px' },
+                                    '& .MuiTypography-root': { fontSize: '12px' },
+                                    '& .shipment-link': { fontSize: '12px' },
+                                }}>
                                     <TableHead>
                                         <TableRow>
                                             <TableCell padding="checkbox">
@@ -2019,102 +2121,79 @@ const Shipments = () => {
                                                         />
                                                     </TableCell>
                                                     <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
+                                                        sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '14px' }}
                                                     >
-                                                        {shipment.status === 'draft' ? (
-                                                            <Link
-                                                                to={`/create-shipment/shipment-info/${shipment.id}`}
-                                                                className="shipment-link"
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            {shipment.status === 'draft' ? (
+                                                                <Link
+                                                                    to={`/create-shipment/shipment-info/${shipment.id}`}
+                                                                    className="shipment-link"
+                                                                >
+                                                                    {highlightSearchTerm(
+                                                                        shipment.shipmentID || shipment.id,
+                                                                        searchFields.shipmentId
+                                                                    )}
+                                                                </Link>
+                                                            ) : (
+                                                                <Link
+                                                                    to={`/shipment/${shipment.shipmentID || shipment.id}`}
+                                                                    className="shipment-link"
+                                                                >
+                                                                    {highlightSearchTerm(
+                                                                        shipment.shipmentID || shipment.id,
+                                                                        searchFields.shipmentId
+                                                                    )}
+                                                                </Link>
+                                                            )}
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
+                                                                    showSnackbar('Shipment ID copied!', 'success');
+                                                                }}
+                                                                sx={{ padding: '2px' }}
+                                                                title="Copy shipment ID"
                                                             >
-                                                                {highlightSearchTerm(
-                                                                    shipment.shipmentID || shipment.id,
-                                                                    searchFields.shipmentId
-                                                                )}
-                                                            </Link>
-                                                        ) : (
-                                                            <Link
-                                                                to={`/shipment/${shipment.shipmentID || shipment.id}`}
-                                                                className="shipment-link"
-                                                            >
-                                                                {highlightSearchTerm(
-                                                                    shipment.shipmentID || shipment.id,
-                                                                    searchFields.shipmentId
-                                                                )}
-                                                            </Link>
-                                                        )}
+                                                                <ContentCopyIcon sx={{ fontSize: '0.875rem', color: '#64748b' }} />
+                                                            </IconButton>
+                                                        </Box>
                                                     </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
-                                                        {formatDateTime(shipment.createdAt)}
+                                                    <TableCell sx={{ verticalAlign: 'top', textAlign: 'left' }}>
+                                                        {shipment.createdAt?.toDate
+                                                            ? formatDateTime(shipment.createdAt)
+                                                            : shipment.date
+                                                                ? formatDateTime(shipment.date)
+                                                                : 'N/A'}
                                                     </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
-                                                        {highlightSearchTerm(
-                                                            shipment.shipTo?.customerID ?
-                                                                customers[shipment.shipTo.customerID] ||
-                                                                shipment.shipTo?.company || 'N/A'
-                                                                : shipment.shipTo?.company || 'N/A',
-                                                            searchFields.customerName
-                                                        )}
+                                                    <TableCell sx={{ verticalAlign: 'top', textAlign: 'left' }}>
+                                                        {shipment.shipTo?.customerID
+                                                            ? customers[shipment.shipTo.customerID] || shipment.shipTo?.company || 'N/A'
+                                                            : shipment.shipTo?.company || 'N/A'}
                                                     </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
-                                                        {formatRoute(
-                                                            shipment.shipFrom || shipment.shipfrom,
-                                                            shipment.shipTo || shipment.shipto,
-                                                            searchFields.origin,
-                                                            searchFields.destination
-                                                        )}
+                                                    <TableCell sx={{ verticalAlign: 'top', textAlign: 'left' }}>
+                                                        {formatRoute(shipment.shipFrom || shipment.shipfrom, shipment.shipTo || shipment.shipto)}
                                                     </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
-                                                        {(() => {
-                                                            const carrier = getShipmentCarrier(shipment);
-
-                                                            // Get service type
-                                                            const serviceType = shipment.selectedRateRef?.service ||
-                                                                shipment.selectedRate?.service ||
-                                                                carrierData[shipment.id]?.service;
-
-                                                            // Get tracking number for non-draft shipments
-                                                            let trackingNumber = null;
-                                                            if (shipment.status?.toLowerCase() !== 'draft') {
-                                                                // Enhanced eShipPlus detection for tracking
-                                                                const carrierName = shipment.selectedRate?.carrier ||
+                                                    <TableCell sx={{ verticalAlign: 'top', textAlign: 'left' }}>
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                            {/* Carrier Name */}
+                                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                                {carrierData[shipment.id]?.carrier ||
                                                                     shipment.selectedRateRef?.carrier ||
-                                                                    shipment.carrier || '';
-
-                                                                const isEShipPlus =
-                                                                    shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
-                                                                    shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
-                                                                    shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
-                                                                    shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
-                                                                    carrierName.toLowerCase().includes('freight') ||
-                                                                    carrierName.toLowerCase().includes('fedex freight') ||
-                                                                    carrierName.toLowerCase().includes('road runner') ||
-                                                                    carrierName.toLowerCase().includes('estes') ||
-                                                                    carrierName.toLowerCase().includes('yrc') ||
-                                                                    carrierName.toLowerCase().includes('xpo') ||
-                                                                    carrierName.toLowerCase().includes('old dominion') ||
-                                                                    carrierName.toLowerCase().includes('saia') ||
-                                                                    carrierName.toLowerCase().includes('ltl');
-
-                                                                // Standard tracking number
-                                                                const standardTracking = shipment.trackingNumber ||
+                                                                    shipment.selectedRate?.carrier ||
+                                                                    shipment.carrier || 'N/A'}
+                                                            </Typography>
+                                                            {/* Tracking/Confirmation/PRO Number with Copy Icon */}
+                                                            {(() => {
+                                                                // Find the most relevant tracking/confirmation number
+                                                                const trackingNumber = shipment.trackingNumber ||
                                                                     shipment.selectedRate?.trackingNumber ||
                                                                     shipment.selectedRate?.TrackingNumber ||
                                                                     shipment.selectedRateRef?.trackingNumber ||
                                                                     shipment.selectedRateRef?.TrackingNumber ||
                                                                     shipment.carrierTrackingData?.trackingNumber ||
                                                                     shipment.carrierBookingConfirmation?.trackingNumber ||
-                                                                    shipment.carrierBookingConfirmation?.proNumber;
-
-                                                                // For eShipPlus, also check booking reference
-                                                                const bookingReference = isEShipPlus ? (
+                                                                    shipment.carrierBookingConfirmation?.proNumber ||
+                                                                    shipment.carrierBookingConfirmation?.confirmationNumber ||
                                                                     shipment.bookingReferenceNumber ||
                                                                     shipment.selectedRate?.BookingReferenceNumber ||
                                                                     shipment.selectedRate?.bookingReferenceNumber ||
@@ -2122,85 +2201,49 @@ const Shipments = () => {
                                                                     shipment.selectedRateRef?.bookingReferenceNumber ||
                                                                     shipment.carrierTrackingData?.bookingReferenceNumber ||
                                                                     shipment.carrierBookingConfirmation?.bookingReference ||
-                                                                    shipment.carrierBookingConfirmation?.confirmationNumber
-                                                                ) : null;
-
-                                                                trackingNumber = standardTracking || bookingReference;
-                                                            }
-
-                                                            return (
-                                                                <div>
-                                                                    {/* Carrier Name */}
-                                                                    <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>
-                                                                        {highlightSearchTerm(
-                                                                            carrier.name,
-                                                                            filters.carrier !== 'all' ?
-                                                                                filters.carrier.replace('eShipPlus_', '') : ''
-                                                                        )}
-                                                                    </div>
-
-                                                                    {/* Service Type */}
-                                                                    {serviceType && (
-                                                                        <div style={{
-                                                                            fontSize: '0.75rem',
-                                                                            color: '#64748b',
-                                                                            marginTop: '2px'
-                                                                        }}>
-                                                                            {serviceType}
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Tracking Number (only for non-draft shipments) */}
-                                                                    {trackingNumber && (
-                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, marginTop: '4px' }}>
-                                                                            <Link
-                                                                                to={`/tracking/${encodeURIComponent(trackingNumber)}`}
-                                                                                style={{ textDecoration: 'none' }}
-                                                                            >
-                                                                                <Typography
-                                                                                    variant="body2"
-                                                                                    sx={{
-                                                                                        fontSize: '0.75rem',
-                                                                                        color: '#059669',
-                                                                                        fontFamily: 'monospace',
-                                                                                        cursor: 'pointer',
-                                                                                        '&:hover': {
-                                                                                            textDecoration: 'underline',
-                                                                                            color: '#047857'
-                                                                                        }
-                                                                                    }}
-                                                                                >
-                                                                                    {highlightSearchTerm(
-                                                                                        trackingNumber,
-                                                                                        searchFields.trackingNumber
-                                                                                    )}
-                                                                                </Typography>
-                                                                            </Link>
+                                                                    shipment.carrierBookingConfirmation?.confirmationNumber ||
+                                                                    '';
+                                                                if (trackingNumber) {
+                                                                    return (
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                            <QrCodeIcon sx={{ fontSize: '12px', color: '#64748b' }} />
+                                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                                                                {trackingNumber}
+                                                                            </Typography>
                                                                             <IconButton
                                                                                 size="small"
                                                                                 onClick={() => {
                                                                                     navigator.clipboard.writeText(trackingNumber);
-                                                                                    showSnackbar('Tracking number copied!', 'success');
+                                                                                    showSnackbar('Tracking/PRO/Confirmation number copied!', 'success');
                                                                                 }}
                                                                                 sx={{ padding: '2px' }}
-                                                                                title="Copy tracking number"
+                                                                                title="Copy tracking/confirmation number"
                                                                             >
                                                                                 <ContentCopyIcon sx={{ fontSize: '0.875rem', color: '#64748b' }} />
                                                                             </IconButton>
                                                                         </Box>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()}
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
+                                                            {/* Reference Number */}
+                                                            {shipment.referenceNumber && (
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                                                    Ref: {shipment.referenceNumber}
+                                                                </Typography>
+                                                            )}
+                                                            {/* Service Level */}
+                                                            {carrierData[shipment.id]?.service && (
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                                                    {carrierData[shipment.id].service}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
                                                     </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
+                                                    <TableCell sx={{ verticalAlign: 'top', textAlign: 'left' }}>
                                                         {capitalizeShipmentType(shipment.shipmentInfo?.shipmentType)}
                                                     </TableCell>
-                                                    <TableCell
-                                                        sx={{ verticalAlign: 'top', textAlign: 'left' }}
-                                                    >
+                                                    <TableCell sx={{ verticalAlign: 'top', textAlign: 'left' }}>
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                             <StatusChip status={shipment.status} />
                                                             {shipment.status !== 'draft' && (
@@ -2285,77 +2328,56 @@ const Shipments = () => {
                         <Menu
                             anchorEl={actionMenuAnchorEl}
                             open={Boolean(actionMenuAnchorEl)}
-                            onClose={handleActionMenuClose}
+                            onClose={() => handleActionMenuClose()}
+                            PaperProps={{
+                                sx: {
+                                    '& .MuiMenuItem-root': { fontSize: '12px' }
+                                }
+                            }}
                         >
-                            {/* Conditional menu items based on shipment status */}
-                            {selectedShipment?.status === 'draft' ? (
-                                // Draft shipments: Show only Edit and Delete options
-                                <>
-                                    <MenuItem onClick={() => {
-                                        handleActionMenuClose();
-                                        if (selectedShipment) {
-                                            // Navigate to draft editing
-                                            navigate(`/create-shipment/shipment-info/${selectedShipment.id}`);
-                                        }
-                                    }}>
-                                        <ListItemIcon>
-                                            <EditIcon fontSize="small" />
-                                        </ListItemIcon>
-                                        Edit
-                                    </MenuItem>
-                                    <MenuItem onClick={() => {
-                                        if (selectedShipment) {
-                                            handleDeleteDraftWithDialog(selectedShipment);
-                                        }
-                                    }}>
-                                        <ListItemIcon>
-                                            <DeleteIcon fontSize="small" />
-                                        </ListItemIcon>
-                                        Delete
-                                    </MenuItem>
-                                </>
-                            ) : (
-                                // Non-draft shipments: Show View Details and print options
-                                <>
-                                    <MenuItem onClick={() => {
-                                        handleActionMenuClose();
-                                        if (selectedShipment) {
-                                            // Navigate to shipment details
-                                            const shipmentId = selectedShipment.shipmentID || selectedShipment.id;
-                                            navigate(`/shipment/${shipmentId}`);
-                                        }
-                                    }}>
-                                        <ListItemIcon>
-                                            <VisibilityIcon fontSize="small" />
-                                        </ListItemIcon>
-                                        View Details
-                                    </MenuItem>
-
-                                    <MenuItem onClick={() => {
-                                        if (selectedShipment) {
-                                            handlePrintLabel(selectedShipment);
-                                        }
-                                    }}>
-                                        <ListItemIcon>
-                                            <PrintIcon fontSize="small" />
-                                        </ListItemIcon>
-                                        Print Label
-                                    </MenuItem>
-
-                                    {/* Show Print BOL option only for freight shipments */}
-                                    {selectedShipment && isFreightShipment(selectedShipment) && (
-                                        <MenuItem onClick={() => {
-                                            if (selectedShipment) {
-                                                handlePrintBOL(selectedShipment);
-                                            }
-                                        }}>
-                                            <ListItemIcon>
-                                                <PrintIcon fontSize="small" />
-                                            </ListItemIcon>
-                                            Print BOL
-                                        </MenuItem>
-                                    )}
-                                </>
+                            <MenuItem onClick={() => {
+                                handleActionMenuClose();
+                                navigate(`/shipment/${selectedShipment?.shipmentID || selectedShipment?.id}`);
+                            }}>
+                                <ListItemIcon>
+                                    <VisibilityIcon sx={{ fontSize: '14px' }} />
+                                </ListItemIcon>
+                                View Details
+                            </MenuItem>
+                            {selectedShipment?.status === 'draft' && (
+                                <MenuItem onClick={() => {
+                                    handleActionMenuClose();
+                                    navigate(`/create-shipment/shipment-info/${selectedShipment.id}`);
+                                }}>
+                                    <ListItemIcon>
+                                        <EditIcon sx={{ fontSize: '14px' }} />
+                                    </ListItemIcon>
+                                    Edit Draft
+                                </MenuItem>
+                            )}
+                            {selectedShipment?.status === 'draft' && (
+                                <MenuItem onClick={() => handleDeleteDraftWithDialog(selectedShipment)}>
+                                    <ListItemIcon>
+                                        <DeleteIcon sx={{ fontSize: '14px' }} />
+                                    </ListItemIcon>
+                                    Delete Draft
+                                </MenuItem>
+                            )}
+                            {selectedShipment?.status !== 'draft' && (
+                                <MenuItem onClick={() => handlePrintLabel(selectedShipment)}>
+                                    <ListItemIcon>
+                                        <PrintIcon sx={{ fontSize: '14px' }} />
+                                    </ListItemIcon>
+                                    Print Label
+                                </MenuItem>
+                            )}
+                            {selectedShipment?.status !== 'draft' && (
+                                <MenuItem onClick={() => handlePrintBOL(selectedShipment)}>
+                                    <ListItemIcon>
+                                        <DescriptionIcon sx={{ fontSize: '14px' }} />
+                                    </ListItemIcon>
+                                    Print BOL
+                                </MenuItem>
                             )}
                         </Menu>
                     </Box>
@@ -2615,7 +2637,7 @@ const Shipments = () => {
                     {/* Enhanced status update integration could be added here in the future */}
                 </Alert>
             </Snackbar>
-        </div>
+        </div >
     );
 };
 

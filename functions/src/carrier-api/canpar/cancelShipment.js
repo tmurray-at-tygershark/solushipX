@@ -34,10 +34,24 @@ async function cancelCanparShipment(bookingReferenceNumber, credentials) {
             hasAccountNumber: !!finalCredentials.accountNumber
         });
 
+        // Log the complete request details
+        console.log('Canpar Void Shipment Request Details:', {
+            apiUrl,
+            username: finalCredentials.username,
+            bookingReferenceNumber,
+            timestamp: new Date().toISOString()
+        });
+
         // Build SOAP request for CanPar void shipment
         const soapRequest = buildCanparVoidSoapEnvelope(bookingReferenceNumber, finalCredentials);
         
         logger.info('CanPar SOAP request created successfully');
+
+        // Log the complete SOAP request
+        console.log('Canpar Void Shipment SOAP Request:', {
+            soapRequest,
+            timestamp: new Date().toISOString()
+        });
 
         // Make the API call
         const response = await axios.post(apiUrl, soapRequest, {
@@ -55,6 +69,15 @@ async function cancelCanparShipment(bookingReferenceNumber, credentials) {
 
         logger.info(`CanPar cancel response status: ${response.status}`);
         
+        // Log the complete response
+        console.log('Canpar Void Shipment Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+            data: response.data,
+            timestamp: new Date().toISOString()
+        });
+
         // Check for HTTP errors
         if (response.status >= 400) {
             throw new Error(`API request failed - ${response.status} ${response.statusText}`);
@@ -69,10 +92,23 @@ async function cancelCanparShipment(bookingReferenceNumber, credentials) {
         const parsedResponse = await parseStringPromise(cancelResponseXml);
         logger.info(`CanPar parsed response:`, JSON.stringify(parsedResponse, null, 2));
 
+        // Log the parsed response
+        console.log('Canpar Void Shipment Parsed Response:', {
+            parsedResult: parsedResponse,
+            timestamp: new Date().toISOString()
+        });
+
         // Map to universal format
         const universalResponse = mapCanparCancelToUniversal(parsedResponse, bookingReferenceNumber);
         
         logger.info(`Mapped to universal cancel response:`, { universalResponse });
+
+        // Log the mapped response
+        console.log('Canpar Void Shipment Mapped Response:', {
+            mappedResponse: universalResponse,
+            timestamp: new Date().toISOString()
+        });
+
         return universalResponse;
 
     } catch (error) {
@@ -88,20 +124,21 @@ async function cancelCanparShipment(bookingReferenceNumber, credentials) {
  * @returns {string} - SOAP XML request
  */
 function buildCanparVoidSoapEnvelope(shipmentId, credentials) {
-    return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                  xmlns:ws="http://ws.business.canshipws.canpar.com"
-                  xmlns:xsd="http://dto.canshipws.canpar.com/xsd">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <ws:voidShipment>
-      <ws:request>
-        <xsd:user_id>${credentials.username}</xsd:user_id>
-        <xsd:password>${credentials.password}</xsd:password>
-        <xsd:id>${shipmentId}</xsd:id>
-      </ws:request>
-    </ws:voidShipment>
-  </soapenv:Body>
-</soapenv:Envelope>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>
+      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                       xmlns:ws="http://ws.business.canshipws.canpar.com"
+                       xmlns:xsd="http://dto.canshipws.canpar.com/xsd">
+        <soapenv:Header/>
+        <soapenv:Body>
+          <ws:voidShipment>
+            <ws:request>
+              <xsd:user_id>${credentials.username}</xsd:user_id>
+              <xsd:password>${credentials.password}</xsd:password>
+              <xsd:id>${shipmentId}</xsd:id>
+            </ws:request>
+          </ws:voidShipment>
+        </soapenv:Body>
+      </soapenv:Envelope>`;
 }
 
 /**
@@ -143,8 +180,16 @@ function mapCanparCancelToUniversal(canparData, bookingReferenceNumber) {
         // Check for errors in the response
         const error = voidResponse?.['ax29:error'];
         
-        if (error && error[0] && error[0].$ && error[0].$.nil !== 'true') {
-            // There is an error
+        // If error is null (xsi:nil="true"), it means success
+        if (error && error[0] && error[0].$ && error[0].$['xsi:nil'] === 'true') {
+            universalResponse.success = true;
+            universalResponse.cancelled = true;
+            universalResponse.message = 'Shipment successfully cancelled with CanPar';
+            return universalResponse;
+        }
+        
+        // If there is an error (xsi:nil="false" or error message present)
+        if (error && error[0] && error[0].$ && error[0].$['xsi:nil'] !== 'true') {
             universalResponse.success = true; // API call succeeded
             universalResponse.cancelled = false;
             universalResponse.canCancel = false;
@@ -155,16 +200,6 @@ function mapCanparCancelToUniversal(canparData, bookingReferenceNumber) {
             
             return universalResponse;
         }
-        
-        // Check if error is null (success case)
-        if (error && error[0] && error[0].$ && error[0].$.nil === 'true') {
-            // No error means success
-            universalResponse.success = true;
-            universalResponse.cancelled = true;
-            universalResponse.message = 'Shipment successfully cancelled with CanPar';
-            
-            return universalResponse;
-        }
 
         // If we can't determine the error status clearly, check for other success indicators
         // In some cases, the absence of error node might indicate success
@@ -172,7 +207,6 @@ function mapCanparCancelToUniversal(canparData, bookingReferenceNumber) {
             universalResponse.success = true;
             universalResponse.cancelled = true;
             universalResponse.message = 'Shipment successfully cancelled with CanPar';
-            
             return universalResponse;
         }
 

@@ -57,7 +57,7 @@ const eshipPlusApi = require('./src/carrier-api/eshipplus');
 // Import new smart status update and polling functions
 const { pollActiveShipments } = require('./src/shipment-polling/pollActiveShipments');
 const { backgroundStatusPoll } = require('./src/shipment-polling/backgroundStatusPoll');
-const { smartStatusUpdate, forceStatusRefresh } = require('./src/shipment-polling/smartStatusUpdate');
+const { smartStatusUpdate, forceStatusRefresh, performSmartStatusUpdate } = require('./src/shipment-polling/smartStatusUpdate');
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
@@ -93,6 +93,7 @@ exports.pollActiveShipments = pollActiveShipments;
 exports.backgroundStatusPoll = backgroundStatusPoll;
 exports.smartStatusUpdate = smartStatusUpdate;
 exports.forceStatusRefresh = forceStatusRefresh;
+exports.performSmartStatusUpdate = performSmartStatusUpdate;
 
 // Helper function to map HTTP status codes to Firebase HttpsError codes
 // See: https://firebase.google.com/docs/reference/functions/providers_https_.httpserrorcode

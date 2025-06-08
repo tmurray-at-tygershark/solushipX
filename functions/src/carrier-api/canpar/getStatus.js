@@ -213,6 +213,42 @@ function extractCanparTrackingData(xmlData) {
             return key ? getXmlValue(result, key) : null;
         };
         
+        // Extract events array - this is where the real status information is
+        const eventsKey = Object.keys(result).find(k => k.includes('events'));
+        const events = [];
+        
+        if (eventsKey && result[eventsKey]) {
+            const eventsData = result[eventsKey];
+            const eventsArray = Array.isArray(eventsData) ? eventsData : [eventsData];
+            
+            eventsArray.forEach(event => {
+                if (event) {
+                    const eventCodeKey = Object.keys(event).find(k => k.includes('code'));
+                    const eventDescKey = Object.keys(event).find(k => k.includes('code_description_en'));
+                    const eventDateKey = Object.keys(event).find(k => k.includes('local_date_time'));
+                    const eventCommentKey = Object.keys(event).find(k => k.includes('comment'));
+                    
+                    const statusCode = eventCodeKey ? getXmlValue(event, eventCodeKey) : null;
+                    const description = eventDescKey ? getXmlValue(event, eventDescKey) : null;
+                    const dateTime = eventDateKey ? getXmlValue(event, eventDateKey) : null;
+                    const comment = eventCommentKey ? getXmlValue(event, eventCommentKey) : null;
+                    
+                    if (statusCode) {
+                        events.push({
+                            code: statusCode,
+                            description: description,
+                            dateTime: dateTime,
+                            comment: comment,
+                            timestamp: parseCanparDateTime(dateTime)
+                        });
+                    }
+                }
+            });
+        }
+        
+        // Sort events by timestamp (newest first)
+        events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
         return {
             barcode: extractField('barcode'),
             delivered: extractField('delivered') === 'true',
@@ -226,13 +262,42 @@ function extractCanparTrackingData(xmlData) {
             signedBy: extractField('signed_by'),
             trackingUrlEn: extractField('tracking_url_en'),
             trackingUrlFr: extractField('tracking_url_fr'),
-            consigneeAddress: extractField('consignee_address')
+            consigneeAddress: extractField('consignee_address'),
+            events: events // Add events array
         };
         
     } catch (error) {
         logger.error('Error extracting Canpar tracking data:', error);
         logger.error('Error stack:', error.stack);
         return { error: 'Failed to parse tracking response: ' + error.message };
+    }
+}
+
+/**
+ * Parse Canpar date time format (YYYYMMDD HHMMSS) to ISO string
+ * @param {string} canparDateTime - Date time in format "20250606 153901"
+ * @returns {string} - ISO date string
+ */
+function parseCanparDateTime(canparDateTime) {
+    if (!canparDateTime || typeof canparDateTime !== 'string') {
+        return new Date().toISOString();
+    }
+    
+    try {
+        // Format: "20250606 153901"
+        const dateStr = canparDateTime.trim();
+        const year = dateStr.substring(0, 4);
+        const month = dateStr.substring(4, 6);
+        const day = dateStr.substring(6, 8);
+        const hour = dateStr.substring(9, 11);
+        const minute = dateStr.substring(11, 13);
+        const second = dateStr.substring(13, 15);
+        
+        const isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
+        return new Date(isoString).toISOString();
+    } catch (error) {
+        logger.error('Error parsing Canpar date time:', error);
+        return new Date().toISOString();
     }
 }
 
@@ -260,42 +325,90 @@ function getXmlValue(obj, key) {
  * @returns {Object} - Universal status format
  */
 function mapCanparStatusToUniversal(canparData) {
-    // Determine status based on available information
+    // Import the carrier status mappings
+    const { mapCarrierStatusToEnhanced } = require('../../../src/utils/carrierStatusMappings');
+    
     let universalStatus = 'unknown';
     let statusSource = 'default';
+    let enhancedStatusId = 230; // Default to 'Any/Unknown'
+    let latestEvent = null;
 
+    // Check delivered flag first - it's authoritative for delivery status
     if (canparData.delivered === true) {
         universalStatus = 'delivered';
+        enhancedStatusId = 30; // Enhanced status for delivered
         statusSource = 'delivered_flag';
-    } else if (canparData.shippingDate) {
-        universalStatus = 'in_transit';
-        statusSource = 'shipping_date';
-    } else if (canparData.barcode) {
-        universalStatus = 'scheduled';
-        statusSource = 'barcode_exists';
+        logger.info('Canpar delivered flag is true - marking as delivered regardless of latest event');
+    }
+    // Only use events for non-delivered statuses (pickup, transit, out-for-delivery)
+    else if (canparData.events && canparData.events.length > 0) {
+        latestEvent = canparData.events[0]; // Already sorted by newest first
+        const statusCode = latestEvent.code?.trim(); // Handle codes with spaces like "WC "
+        
+        if (statusCode) {
+            enhancedStatusId = mapCarrierStatusToEnhanced(statusCode, 'CANPAR');
+            statusSource = 'event_code';
+            
+            // Map enhanced status ID to legacy status names for backward compatibility
+            universalStatus = mapEnhancedToLegacyStatus(enhancedStatusId);
+            
+            logger.info(`Mapped Canpar event code "${statusCode}" to enhanced status ${enhancedStatusId} (${universalStatus})`);
+        }
+    }
+    
+    // Fallback logic if neither delivered flag nor events are available
+    if (universalStatus === 'unknown') {
+        if (canparData.shippingDate) {
+            universalStatus = 'in_transit';
+            enhancedStatusId = 20; // Enhanced status for in transit
+            statusSource = 'shipping_date';
+        } else if (canparData.barcode) {
+            universalStatus = 'scheduled';
+            enhancedStatusId = 16; // Enhanced status for scheduled
+            statusSource = 'barcode_exists';
+        }
     }
 
-    // Prepare tracking events
+    // Prepare tracking events from Canpar events data
     const trackingEvents = [];
     
-    if (canparData.shippingDate) {
-        trackingEvents.push({
-            date: canparData.shippingDate,
-            location: '',
-            description: 'Shipment picked up by Canpar',
-            statusCode: 'PICKUP',
-            carrierCode: 'PICKUP'
+    if (canparData.events && canparData.events.length > 0) {
+        canparData.events.forEach(event => {
+            trackingEvents.push({
+                date: event.timestamp,
+                location: '', // Canpar includes location in address object - could extract if needed
+                description: event.description || event.code,
+                comment: event.comment,
+                statusCode: event.code,
+                carrierCode: event.code,
+                enhancedStatusId: mapCarrierStatusToEnhanced(event.code?.trim(), 'CANPAR')
+            });
         });
     }
     
-    if (canparData.delivered) {
-        trackingEvents.push({
-            date: new Date().toISOString(), // Canpar doesn't provide delivery timestamp
-            location: canparData.consigneeAddress || '',
-            description: canparData.signedBy ? `Delivered - Signed by: ${canparData.signedBy}` : 'Delivered',
-            statusCode: 'DELIVERED',
-            carrierCode: 'DELIVERED'
-        });
+    // Add fallback events if no events in response
+    if (trackingEvents.length === 0) {
+        if (canparData.shippingDate) {
+            trackingEvents.push({
+                date: canparData.shippingDate,
+                location: '',
+                description: 'Shipment picked up by Canpar',
+                statusCode: 'PICKUP',
+                carrierCode: 'PICKUP',
+                enhancedStatusId: 19
+            });
+        }
+        
+        if (canparData.delivered) {
+            trackingEvents.push({
+                date: new Date().toISOString(),
+                location: canparData.consigneeAddress || '',
+                description: canparData.signedBy ? `Delivered - Signed by: ${canparData.signedBy}` : 'Delivered',
+                statusCode: 'DELIVERED',
+                carrierCode: 'DELIVERED',
+                enhancedStatusId: 30
+            });
+        }
     }
 
     // Calculate estimated delivery
@@ -304,10 +417,14 @@ function mapCanparStatusToUniversal(canparData) {
         estimatedDelivery = new Date(canparData.estimatedDeliveryDate).toISOString();
     }
 
-    // Calculate actual delivery (if delivered but no specific date provided)
+    // Calculate actual delivery
     let actualDelivery = null;
     if (canparData.delivered) {
-        actualDelivery = new Date().toISOString(); // Use current time as fallback
+        // Try to get delivery date from events, fallback to current time
+        const deliveryEvent = canparData.events?.find(e => 
+            e.code === 'NSR' || e.code?.includes('DELIVERED')
+        );
+        actualDelivery = deliveryEvent ? deliveryEvent.timestamp : new Date().toISOString();
     }
 
     return {
@@ -315,7 +432,8 @@ function mapCanparStatusToUniversal(canparData) {
         trackingNumber: canparData.barcode,
         status: universalStatus,
         statusDisplay: getStatusDisplayName(universalStatus),
-        lastUpdated: new Date().toISOString(),
+        enhancedStatusId: enhancedStatusId, // Add enhanced status ID
+        lastUpdated: latestEvent ? latestEvent.timestamp : new Date().toISOString(),
         estimatedDelivery,
         actualDelivery,
         carrierInfo: {
@@ -345,12 +463,31 @@ function mapCanparStatusToUniversal(canparData) {
             barcode: canparData.barcode,
             delivered: canparData.delivered,
             referenceNum: canparData.referenceNum,
+            latestEventCode: latestEvent?.code || null,
             trackingUrls: {
                 en: canparData.trackingUrlEn,
                 fr: canparData.trackingUrlFr
-            }
+            },
+            allEvents: canparData.events
         }
     };
+}
+
+/**
+ * Map enhanced status ID to legacy status names for backward compatibility
+ * @param {number} enhancedStatusId - Enhanced status ID
+ * @returns {string} - Legacy status name
+ */
+function mapEnhancedToLegacyStatus(enhancedStatusId) {
+    const legacyMapping = {
+        19: 'picked_up',           // Picked up
+        26: 'in_transit',          // At terminal / Sort facility  
+        23: 'out_for_delivery',    // With courier
+        30: 'delivered',           // Delivered
+        16: 'scheduled'            // Scheduled
+    };
+    
+    return legacyMapping[enhancedStatusId] || 'in_transit';
 }
 
 /**

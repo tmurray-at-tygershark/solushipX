@@ -20,7 +20,8 @@ import {
     Edit as EditIcon,
     CalendarToday as CalendarIcon,
     HelpOutline as HelpOutlineIcon,
-    CheckCircleOutline as CheckCircleOutlineIcon
+    CheckCircleOutline as CheckCircleOutlineIcon,
+    Info as InfoIcon
 } from '@mui/icons-material';
 
 // Consistent helper functions (can be moved to a utils file later)
@@ -50,24 +51,43 @@ const getStatusColor = (status) => {
     if (s.includes('exception') || s.includes('issue') || s.includes('on hold') || s.includes('on_hold')) return 'error.main';
     if (s.includes('pending') || s.includes('created')) return 'warning.main';
     if (s.includes('scheduled')) return 'info.main';
-    if (s.includes('booked')) return 'secondary.main'; // Or another color
+    if (s.includes('booked')) return 'secondary.main';
     if (s.includes('cancelled') || s.includes('canceled') || s.includes('void')) return 'error.dark';
     if (s.includes('draft')) return 'grey.500';
     return 'action.active';
 };
 
 const getStatusIcon = (status) => {
-    const s = status?.toLowerCase() || '';
+    if (!status) return <HelpOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+    // Normalize: remove common prefixes and trim
+    let s = status.toLowerCase().trim();
+    // Remove 'status updated:' or 'status updated -' prefix
+    s = s.replace(/^status updated[:\-]?\s*/i, '');
+    // Remove 'shipment booking confirmed' prefix
+    if (s.startsWith('shipment booking confirmed')) s = 'booking confirmed';
+    // Remove 'status:' prefix
+    s = s.replace(/^status[:\-]?\s*/i, '');
+
+    // Status update events
+    if (status.toLowerCase().includes('status updated') || status.toLowerCase().includes('status_update')) return <InfoIcon sx={{ fontSize: '1.2rem' }} />;
+    // Booking events
+    if (s.includes('booking confirmed') || s.includes('booking_confirmed')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+    // Status-specific icons
     if (s.includes('delivered')) return <CheckCircleIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('in transit') || s.includes('in_transit') || s.includes('picked up') || s.includes('departed') || s.includes('arrived')) return <LocalShippingIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('awaiting_shipment') || s.includes('awaiting shipment') || s.includes('label_created')) return <AccessTimeIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('on_hold') || s.includes('on hold') || s.includes('exception') || s.includes('issue')) return <ErrorOutlineIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('canceled') || s.includes('cancelled') || s.includes('void')) return <CancelIcon sx={{ fontSize: '1.2rem' }} />;
+    if (s.includes('in transit') || s.includes('in_transit') || s.includes('picked up') || s.includes('departed') || s.includes('arrived'))
+        return <LocalShippingIcon sx={{ fontSize: '1.2rem' }} />;
+    if (s.includes('awaiting_shipment') || s.includes('awaiting shipment') || s.includes('label_created'))
+        return <AccessTimeIcon sx={{ fontSize: '1.2rem' }} />;
+    if (s.includes('on_hold') || s.includes('on hold') || s.includes('exception') || s.includes('issue'))
+        return <ErrorOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+    if (s.includes('canceled') || s.includes('cancelled') || s.includes('void'))
+        return <CancelIcon sx={{ fontSize: '1.2rem' }} />;
     if (s.includes('draft')) return <EditIcon sx={{ fontSize: '1.2rem' }} />;
     if (s.includes('booked')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem' }} />;
     if (s.includes('scheduled')) return <CalendarIcon sx={{ fontSize: '1.2rem' }} />;
     if (s.includes('pending') || s.includes('created')) return <AccessTimeIcon sx={{ fontSize: '1.2rem' }} />;
-    return <RadioButtonUncheckedIcon sx={{ fontSize: '1.2rem' }} />;
+    // Default icon for unknown status
+    return <HelpOutlineIcon sx={{ fontSize: '1.2rem' }} />;
 };
 
 
@@ -124,7 +144,7 @@ const ShipmentTimeline = ({ events }) => {
                         <TimelineDot
                             sx={{
                                 bgcolor: getStatusColor(event.status || event.eventType),
-                                color: 'common.white', // Ensure icon color contrasts with dot
+                                color: 'common.white',
                             }}
                         >
                             {getStatusIcon(event.status || event.eventType)}
@@ -137,7 +157,7 @@ const ShipmentTimeline = ({ events }) => {
                             borderRadius: 2,
                             border: '1px solid',
                             borderColor: 'divider',
-                            bgcolor: index === 0 ? 'action.hover' : 'background.paper', // Highlight latest event
+                            bgcolor: index === 0 ? 'action.hover' : 'background.paper',
                         }}>
                             <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
                                 {event.status || event.title || 'Status Unavailable'}

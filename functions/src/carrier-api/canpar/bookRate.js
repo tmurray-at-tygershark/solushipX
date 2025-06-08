@@ -122,7 +122,10 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
 
     // Extract shipment data from the correct structure
     const shipmentData = rateRequestData.shipment || rateRequestData;
-    const { pickup_address: shipFrom, delivery_address: shipTo, packages } = shipmentData;
+    // Support both shipFrom/shipTo and pickup_address/delivery_address
+    const shipFrom = shipmentData.pickup_address || rateRequestData.pickup_address || shipmentData.shipFrom || rateRequestData.shipFrom;
+    const shipTo = shipmentData.delivery_address || rateRequestData.delivery_address || shipmentData.shipTo || rateRequestData.shipTo;
+    const packages = shipmentData.packages || rateRequestData.packages;
     
     console.log('buildCanparBookingRequest: Extracted shipFrom:', shipFrom);
     console.log('buildCanparBookingRequest: Extracted shipTo:', shipTo);
@@ -139,9 +142,9 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
     const signatureRequired = rateRequestData.shipmentInfo?.signatureRequired !== undefined ? rateRequestData.shipmentInfo.signatureRequired : true;
     const nsr = !signatureRequired;
     
-    // Sanitize postal codes
-    const fromPostalCode = sanitizePostalCode(shipFrom.postal_code);
-    const toPostalCode = sanitizePostalCode(shipTo.postal_code);
+    // Sanitize postal codes - handle both camelCase and snake_case formats
+    const fromPostalCode = sanitizePostalCode(shipFrom.postal_code || shipFrom.postalCode || shipFrom.zipPostal);
+    const toPostalCode = sanitizePostalCode(shipTo.postal_code || shipTo.postalCode || shipTo.zipPostal);
 
     // Format shipping date (today if not specified)
     const shippingDate = shipmentData.shipping_date ? 
@@ -180,7 +183,7 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
                <xsd:service_type>${serviceType}</xsd:service_type>
                <xsd:shipment_status>R</xsd:shipment_status>
                <xsd:reported_weight_unit>L</xsd:reported_weight_unit>
-          <xsd:nsr>${nsr}</xsd:nsr>
+               <xsd:nsr>${nsr}</xsd:nsr>
                <xsd:dimention_unit>I</xsd:dimention_unit>
                <xsd:print_format>PDF</xsd:print_format>
                <xsd:thermal>false</xsd:thermal>
@@ -188,10 +191,10 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
 
                <xsd:pickup_address>
                   <xsd:name>${shipFrom.name || ''}</xsd:name>
-                  <xsd:address_line_1>${shipFrom.address_line_1 || ''}</xsd:address_line_1>
-                  <xsd:address_line_2>${shipFrom.address_line_2 || ''}</xsd:address_line_2>
+                  <xsd:address_line_1>${shipFrom.address_line_1 || shipFrom.street || ''}</xsd:address_line_1>
+                  <xsd:address_line_2>${shipFrom.address_line_2 || shipFrom.street2 || ''}</xsd:address_line_2>
                   <xsd:city>${shipFrom.city || ''}</xsd:city>
-                  <xsd:province>${shipFrom.province || ''}</xsd:province>
+                  <xsd:province>${shipFrom.province || shipFrom.state || ''}</xsd:province>
                   <xsd:country>${shipFrom.country || 'CA'}</xsd:country>
                   <xsd:postal_code>${fromPostalCode}</xsd:postal_code>
                   <xsd:phone>${shipFrom.phone || ''}</xsd:phone>
@@ -200,10 +203,10 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
 
                <xsd:delivery_address>
                   <xsd:name>${shipTo.name || ''}</xsd:name>
-                  <xsd:address_line_1>${shipTo.address_line_1 || ''}</xsd:address_line_1>
-                  <xsd:address_line_2>${shipTo.address_line_2 || ''}</xsd:address_line_2>
+                  <xsd:address_line_1>${shipTo.address_line_1 || shipTo.street || ''}</xsd:address_line_1>
+                  <xsd:address_line_2>${shipTo.address_line_2 || shipTo.street2 || ''}</xsd:address_line_2>
                   <xsd:city>${shipTo.city || ''}</xsd:city>
-                  <xsd:province>${shipTo.province || ''}</xsd:province>
+                  <xsd:province>${shipTo.province || shipTo.state || ''}</xsd:province>
                   <xsd:country>${shipTo.country || 'CA'}</xsd:country>
                   <xsd:postal_code>${toPostalCode}</xsd:postal_code>
                   <xsd:phone>${shipTo.phone || ''}</xsd:phone>

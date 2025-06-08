@@ -979,123 +979,81 @@ const ShipmentDetail = () => {
             setActionLoading('printBOL', true);
             showSnackbar('Loading Bill of Lading...', 'info');
 
-            // Check if this is an eShipPlus shipment
-            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
-                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-                carrierData?.name?.toLowerCase().includes('eshipplus') ||
-                carrierData?.carrierID === 'ESHIPPLUS';
-
             const bolDocuments = shipmentDocuments.bol || [];
 
-            // For eShipPlus shipments, ALWAYS use generated BOL without prompts
-            if (isEShipPlusShipment) {
-                if (bolDocuments.length > 0) {
-                    // Enhanced BOL selection with priority for generated BOL
-                    console.log('🔍 eShipPlus BOL Selection - Available BOL documents:', bolDocuments.map(doc => ({
-                        id: doc.id,
-                        filename: doc.filename,
-                        isGeneratedBOL: doc.isGeneratedBOL,
-                        replacesApiBOL: doc.replacesApiBOL,
-                        docType: doc.docType,
-                        carrier: doc.carrier,
-                        metadata: {
-                            eshipplus: doc.metadata?.eshipplus,
-                            documentType: doc.metadata?.documentType,
-                            documentCategory: doc.metadata?.documentCategory
-                        }
-                    })));
-
-                    // Priority 1: Look for explicitly generated BOL with our flags
-                    let generatedBOL = bolDocuments.find(doc =>
-                        doc.isGeneratedBOL === true &&
-                        doc.replacesApiBOL === true &&
-                        doc.metadata?.eshipplus?.generated === true
-                    );
-
-                    // Priority 2: Look for BOL with generated filename pattern
-                    if (!generatedBOL) {
-                        generatedBOL = bolDocuments.find(doc =>
-                            doc.filename?.includes('eshipplus-bol') &&
-                            doc.carrier?.toLowerCase().includes('eshipplus')
-                        );
-                    }
-
-                    // Priority 3: Look for BOL with generated metadata
-                    if (!generatedBOL) {
-                        generatedBOL = bolDocuments.find(doc =>
-                            doc.metadata?.eshipplus?.bolGenerated === true ||
-                            doc.metadata?.documentSubType === 'generated-bol'
-                        );
-                    }
-
-                    // Priority 4: Look for BOL with docType 1 and eShipPlus carrier (our generated BOL)
-                    if (!generatedBOL) {
-                        generatedBOL = bolDocuments.find(doc =>
-                            doc.docType === 1 &&
-                            doc.carrier?.toLowerCase().includes('eshipplus') &&
-                            !doc.filename?.toLowerCase().includes('api')
-                        );
-                    }
-
-                    // Fallback: Use first BOL but log warning
-                    if (!generatedBOL && bolDocuments.length > 0) {
-                        console.warn('⚠️ Could not find generated eShipPlus BOL, using first available BOL:', bolDocuments[0]);
-                        generatedBOL = bolDocuments[0];
-                    }
-
-                    if (generatedBOL) {
-                        console.log('✅ Selected eShipPlus BOL document:', {
-                            id: generatedBOL.id,
-                            filename: generatedBOL.filename,
-                            isGeneratedBOL: generatedBOL.isGeneratedBOL,
-                            carrier: generatedBOL.carrier
-                        });
-
-                        showSnackbar('Opening generated BOL...', 'success');
-
-                        // Use PDF modal instead of new tab
-                        await viewPdfInModal(
-                            generatedBOL.id,
-                            generatedBOL.filename,
-                            `Generated BOL - ${shipment?.shipmentID}`,
-                            'printBOL'
-                        );
-                    } else {
-                        showSnackbar('No BOL document found', 'error');
-                    }
-                } else {
-                    // No BOL exists - it should have been auto-generated during booking
-                    showSnackbar('BOL not available yet. Please try refreshing the page, as BOL generation may still be in progress.', 'warning');
-                }
-
-                setActionLoading('printBOL', false);
-                return;
-            }
-
-            // For Polaris Transportation (non-eShipPlus), keep existing logic
             if (bolDocuments.length > 0) {
-                // Check if there's a generated BOL
-                const generatedBOL = bolDocuments.find(doc =>
-                    doc.filename?.includes('polaris-bol') ||
-                    doc.metadata?.polaris?.generated
+                // Enhanced BOL selection with priority for generated BOL
+                console.log('🔍 BOL Selection - Available BOL documents:', bolDocuments.map(doc => ({
+                    id: doc.id,
+                    filename: doc.filename,
+                    isGeneratedBOL: doc.isGeneratedBOL,
+                    replacesApiBOL: doc.replacesApiBOL,
+                    docType: doc.docType,
+                    carrier: doc.carrier,
+                    metadata: doc.metadata
+                })));
+
+                // Priority 1: Look for explicitly generated BOL with our flags
+                let generatedBOL = bolDocuments.find(doc =>
+                    doc.isGeneratedBOL === true ||
+                    doc.metadata?.generated === true ||
+                    doc.metadata?.eshipplus?.generated === true ||
+                    doc.metadata?.polaris?.generated === true ||
+                    doc.metadata?.canpar?.generated === true
                 );
 
+                // Priority 2: Look for BOL with generated filename pattern
+                if (!generatedBOL) {
+                    generatedBOL = bolDocuments.find(doc =>
+                        doc.filename?.includes('-bol') ||
+                        doc.filename?.includes('generated-bol') ||
+                        doc.filename?.includes('professional-bol')
+                    );
+                }
+
                 if (generatedBOL) {
+                    console.log('✅ Selected generated BOL document:', {
+                        id: generatedBOL.id,
+                        filename: generatedBOL.filename,
+                        isGeneratedBOL: generatedBOL.isGeneratedBOL,
+                        carrier: generatedBOL.carrier
+                    });
+
                     showSnackbar('Opening generated BOL...', 'success');
-                    window.open(generatedBOL.downloadUrl, '_blank');
+
+                    // Use PDF modal instead of new tab
+                    await viewPdfInModal(
+                        generatedBOL.id,
+                        generatedBOL.filename,
+                        `Generated BOL - ${shipment?.shipmentID}`,
+                        'printBOL'
+                    );
                 } else {
-                    // Open the first available BOL document
+                    // No generated BOL found, use the first available BOL
                     showSnackbar('Opening BOL document...', 'success');
-                    window.open(bolDocuments[0].downloadUrl, '_blank');
+                    await viewPdfInModal(
+                        bolDocuments[0].id,
+                        bolDocuments[0].filename,
+                        `BOL - ${shipment?.shipmentID}`,
+                        'printBOL'
+                    );
                 }
             } else {
-                // No BOL documents exist - offer to generate one (for Polaris)
+                // No BOL documents exist - offer to generate one
                 const shouldGenerate = window.confirm(
                     'No BOL document found. Would you like to generate a professional BOL document?'
                 );
 
                 if (shouldGenerate) {
-                    await generatePolarisTransportationBOLDocument();
+                    // Check carrier type and call appropriate generation function
+                    const carrierName = carrierData?.name?.toLowerCase() || '';
+                    if (carrierName.includes('eshipplus')) {
+                        await generateEShipPlusBOLDocument();
+                    } else if (carrierName.includes('polaris')) {
+                        await generatePolarisTransportationBOLDocument();
+                    } else {
+                        showSnackbar('BOL generation not available for this carrier', 'warning');
+                    }
                 } else {
                     showSnackbar('BOL generation cancelled', 'info');
                 }
@@ -1212,13 +1170,22 @@ const ShipmentDetail = () => {
             if (result && result.success) {
                 if (result.statusChanged) {
                     // Status changed - update local state and show success
-                    setShipment(prev => ({
-                        ...prev,
-                        status: result.newStatus,
-                        statusLastChecked: new Date().toISOString(),
-                        lastSmartUpdate: new Date().toISOString(),
-                        carrierTrackingData: result.carrierData || prev.carrierTrackingData
-                    }));
+                    setShipment(prev => {
+                        const updatedShipment = {
+                            ...prev,
+                            status: result.newStatus,
+                            statusLastChecked: new Date().toISOString(),
+                            lastSmartUpdate: new Date().toISOString(),
+                            carrierTrackingData: result.carrierData || prev.carrierTrackingData
+                        };
+
+                        // Force a re-render by updating the state
+                        setTimeout(() => {
+                            setShipment(updatedShipment);
+                        }, 0);
+
+                        return updatedShipment;
+                    });
 
                     showSnackbar(
                         `Status updated: ${result.previousStatus} → ${result.newStatus}`,
@@ -1239,12 +1206,21 @@ const ShipmentDetail = () => {
                     showSnackbar(result.reason || 'Status check skipped', 'info');
                 } else if (result.updated) {
                     // Status confirmed but no change
-                    setShipment(prev => ({
-                        ...prev,
-                        statusLastChecked: new Date().toISOString(),
-                        lastSmartUpdate: new Date().toISOString(),
-                        carrierTrackingData: result.carrierData || prev.carrierTrackingData
-                    }));
+                    setShipment(prev => {
+                        const updatedShipment = {
+                            ...prev,
+                            statusLastChecked: new Date().toISOString(),
+                            lastSmartUpdate: new Date().toISOString(),
+                            carrierTrackingData: result.carrierData || prev.carrierTrackingData
+                        };
+
+                        // Force a re-render by updating the state
+                        setTimeout(() => {
+                            setShipment(updatedShipment);
+                        }, 0);
+
+                        return updatedShipment;
+                    });
 
                     if (result.trackingUpdatesCount > 0) {
                         showSnackbar(
@@ -1586,8 +1562,7 @@ const ShipmentDetail = () => {
                             metadata: {
                                 eshipplus: doc.metadata?.eshipplus,
                                 documentType: doc.metadata?.documentType,
-                                documentCategory: doc.metadata?.documentCategory,
-                                documentSubType: doc.metadata?.documentSubType
+                                documentCategory: doc.metadata?.documentCategory
                             }
                         })) || []
                     });
@@ -2685,27 +2660,35 @@ const ShipmentDetail = () => {
     }, [shipment?.id, shipment?.status, fetchShipmentDocuments]);
 
     // On initial load, after shipment is loaded and set, check if status is 'pending' or 'booked' and if no event exists, log it:
-    useEffect(() => {
-        if (shipment && shipment.status && (shipment.status === 'pending' || shipment.status === 'booked')) {
-            // Check if a status_update event already exists marking the transition from 'created' to the current status.
-            const hasCreationToCurrentStatusEvent = (shipmentEvents || []).some(event =>
-                event.eventType === 'status_update' &&
-                event.statusChange &&
-                event.statusChange.from === 'created' &&
-                event.statusChange.to === shipment.status
-            );
+    // useEffect(() => {
+    //     if (shipment && shipment.status && (shipment.status === 'pending' || shipment.status === 'booked')) {
+    //         // Check if a status_update event already exists marking the transition from 'created' to the current status.
+    //         const hasCreationToCurrentStatusEvent = (shipmentEvents || []).some(event =>
+    //             event.eventType === 'status_update' &&
+    //             event.statusChange &&
+    //             event.statusChange.from === 'created' &&
+    //             event.statusChange.to === shipment.status
+    //         );
 
-            if (!hasCreationToCurrentStatusEvent) {
-                recordStatusChange(
-                    shipment.id || shipment.shipmentID,
-                    'created', // fromStatus
-                    shipment.status, // toStatus
-                    null, // userData - consider adding user info if available
-                    'Initial status set on shipment creation or booking' // reason
-                );
-            }
+    //         if (!hasCreationToCurrentStatusEvent) {
+    //             recordStatusChange(
+    //                 shipment.id || shipment.shipmentID,
+    //                 'created', // fromStatus
+    //                 shipment.status, // toStatus
+    //                 null, // userData - consider adding user info if available
+    //                 'Initial status set on shipment creation or booking' // reason
+    //             );
+    //         }
+    //     }
+    // }, [shipment, shipmentEvents]);
+
+    // Add this after the other useEffect hooks
+    useEffect(() => {
+        if (shipment?.status) {
+            // Force a re-render when status changes
+            setShipment(prev => ({ ...prev }));
         }
-    }, [shipment, shipmentEvents]);
+    }, [shipment?.status]);
 
     // Helper function to generate Polaris Transportation BOL
     const generatePolarisTransportationBOLDocument = async () => {
@@ -3348,30 +3331,51 @@ const ShipmentDetail = () => {
                                                                         Shipping Labels
                                                                     </Typography>
                                                                     <Grid container spacing={1}>
-                                                                        {shipmentDocuments.labels.map((label) => (
-                                                                            <Grid item key={label.id}>
-                                                                                <Chip
-                                                                                    icon={<PictureAsPdfIcon />}
-                                                                                    label={label.filename || 'Label'}
-                                                                                    onClick={() => viewPdfInModal(label.id, label.filename, 'Shipping Label')}
-                                                                                    clickable
-                                                                                    color="primary"
-                                                                                    variant="outlined"
-                                                                                />
-                                                                            </Grid>
-                                                                        ))}
+                                                                        {shipmentDocuments.labels
+                                                                            .filter(label => {
+                                                                                const filename = (label.filename || '').toLowerCase();
+                                                                                const docType = (label.documentType || '').toLowerCase();
+                                                                                const isBOL = label.isGeneratedBOL === true ||
+                                                                                    label.metadata?.generated === true ||
+                                                                                    label.metadata?.eshipplus?.generated === true ||
+                                                                                    label.metadata?.polaris?.generated === true ||
+                                                                                    label.metadata?.canpar?.generated === true ||
+                                                                                    filename.includes('bol') ||
+                                                                                    filename.includes('bill-of-lading') ||
+                                                                                    filename.includes('bill_of_lading') ||
+                                                                                    filename.includes('billoflading') ||
+                                                                                    docType.includes('bol') ||
+                                                                                    docType.includes('bill of lading');
+                                                                                return !isBOL;
+                                                                            })
+                                                                            .map((label) => (
+                                                                                <Grid item key={label.id}>
+                                                                                    <Chip
+                                                                                        icon={<PictureAsPdfIcon />}
+                                                                                        label={label.filename || 'Label'}
+                                                                                        onClick={() => viewPdfInModal(label.id, label.filename, 'Shipping Label')}
+                                                                                        clickable
+                                                                                        color="primary"
+                                                                                        variant="outlined"
+                                                                                    />
+                                                                                </Grid>
+                                                                            ))}
                                                                     </Grid>
                                                                 </Grid>
                                                             )}
 
                                                             {/* BOL */}
-                                                            {shipmentDocuments.bol?.length > 0 && (
-                                                                <Grid item xs={12}>
-                                                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-                                                                        Bill of Lading
-                                                                    </Typography>
-                                                                    <Grid container spacing={1}>
-                                                                        {shipmentDocuments.bol.map((bol) => (
+                                                            <Grid item xs={12}>
+                                                                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                                                                    Bill of Lading
+                                                                </Typography>
+                                                                <Grid container spacing={1}>
+                                                                    {shipmentDocuments.bol
+                                                                        .filter(bol => {
+                                                                            const filename = (bol.filename || '').toUpperCase();
+                                                                            return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
+                                                                        })
+                                                                        .map((bol) => (
                                                                             <Grid item key={bol.id}>
                                                                                 <Chip
                                                                                     icon={<DescriptionIcon />}
@@ -3383,9 +3387,8 @@ const ShipmentDetail = () => {
                                                                                 />
                                                                             </Grid>
                                                                         ))}
-                                                                    </Grid>
                                                                 </Grid>
-                                                            )}
+                                                            </Grid>
 
                                                             {/* Other Documents */}
                                                             {shipmentDocuments.other?.length > 0 && (
@@ -4405,6 +4408,10 @@ const ShipmentDetail = () => {
                             getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
                             getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
+                        const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+                            getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+                            getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+
                         const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
 
                         return (
@@ -4427,21 +4434,56 @@ const ShipmentDetail = () => {
                                     })()}
                                 </Typography>
 
-                                {isEShipPlusShipment ? (
-                                    <Alert severity="warning" sx={{ mt: 2 }}>
-                                        This action will immediately cancel the shipment with eShipPlus. This cannot be undone.
-                                    </Alert>
-                                ) : (
-                                    <Alert severity="info" sx={{ mt: 2 }}>
-                                        <Typography variant="body2" sx={{ mb: 1 }}>
-                                            <strong>Manual Processing Required:</strong>
-                                        </Typography>
-                                        <Typography variant="body2">
-                                            Cancellation for {carrierName} shipments requires manual processing by your Soluship representative.
-                                            This will mark the shipment as cancelled in the system and notify your rep to process the cancellation with the carrier.
-                                        </Typography>
-                                    </Alert>
-                                )}
+                                {(() => {
+                                    const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                                        getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                                        getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+
+                                    const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+                                        getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+                                        getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+
+                                    const hasCancellationEndpoint = isEShipPlusShipment || isCanparShipment;
+                                    const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
+
+                                    return (
+                                        <>
+                                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                                Are you sure you want to cancel this shipment?
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                <strong>Shipment ID:</strong> {shipment?.shipmentID}
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                <strong>Carrier:</strong> {carrierName}
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                                <strong>Tracking Number:</strong> {(() => {
+                                                    return shipment?.carrierBookingConfirmation?.proNumber ||
+                                                        shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                                        shipment?.trackingNumber ||
+                                                        'N/A';
+                                                })()}
+                                            </Typography>
+
+                                            {hasCancellationEndpoint ? (
+                                                <Alert severity="warning" sx={{ mt: 2 }}>
+                                                    This action will immediately cancel the shipment with {carrierName}. This cannot be undone.
+                                                </Alert>
+                                            ) : (
+                                                <Alert severity="info" sx={{ mt: 2 }}>
+                                                    <Typography variant="body2" sx={{ mb: 1 }}>
+                                                        <strong>Manual Processing Required:</strong>
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        Cancellation for {carrierName} shipments requires manual processing by your Soluship representative.
+                                                        This will mark the shipment as cancelled in the system and notify your rep to process the cancellation with the carrier.
+                                                    </Typography>
+                                                </Alert>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </>
                         );
                     })()}
@@ -4471,7 +4513,11 @@ const ShipmentDetail = () => {
                                 getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
                                 getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
-                            return isEShipPlusShipment ? 'Cancel Shipment' : 'Request Cancellation';
+                            const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+                                getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+                                getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+
+                            return (isEShipPlusShipment || isCanparShipment) ? 'Cancel Shipment' : 'Request Cancellation';
                         })()}
                     </Button>
                 </DialogActions>

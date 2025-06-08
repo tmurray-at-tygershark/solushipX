@@ -994,8 +994,8 @@ function drawExactLegalDisclaimer(doc) {
  */
 async function storeBOLDocument(pdfBuffer, shipmentId, firebaseDocId) {
     try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const fileName = `polaris-bol-${shipmentId}-${timestamp}.pdf`;
+        // Use the new naming convention: SOLUSHIP-SHIPMENTID-BOL.pdf
+        const fileName = `SOLUSHIP-${shipmentId}-BOL.pdf`;
         const bucket = storage.bucket();
         
         // Use unified storage path

@@ -207,52 +207,54 @@ exports.getShipmentDocuments = onCall({
                     return false;
                 }),
                 bol: allDocs.filter(doc => {
+                    // First check for the new naming convention
+                    const filename = (doc.filename || '').toUpperCase();
+                    if (filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF')) {
+                        return true;
+                    }
+                    
+                    // Fallback to legacy BOL detection
                     if (doc.docType === 1 || doc.documentType === 'bol') {
                         return true;
                     }
                     
-                    // Enhanced BOL detection
-                    const filename = (doc.filename || '').toLowerCase();
-                    if (filename.includes('bol') || 
-                        filename.includes('bill-of-lading') ||
-                        filename.includes('bill_of_lading') ||
-                        filename.includes('billoflading') ||  // eShipPlus format
+                    // Enhanced BOL detection for legacy documents
+                    const lowerFilename = filename.toLowerCase();
+                    if (lowerFilename.includes('bol') || 
+                        lowerFilename.includes('bill-of-lading') ||
+                        lowerFilename.includes('bill_of_lading') ||
+                        lowerFilename.includes('billoflading') ||
                         doc.metadata?.documentType === 'bill_of_lading') {
                         return true;
                     }
                     
                     return false;
                 }).sort((a, b) => {
-                    // Priority sorting: Generated BOLs first, then by creation date (newest first)
+                    // Priority sorting: SOLUSHIP BOLs first, then generated BOLs, then by creation date
                     
-                    // Priority 1: Generated BOLs (isGeneratedBOL flag)
+                    // Priority 1: SOLUSHIP naming convention
+                    const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                    const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                    
+                    if (aIsSoluship && !bIsSoluship) return -1;
+                    if (!aIsSoluship && bIsSoluship) return 1;
+                    
+                    // Priority 2: Generated BOLs
                     const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.eshipplus?.generated === true;
                     const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.eshipplus?.generated === true;
                     
-                    if (aIsGenerated && !bIsGenerated) return -1; // a comes first
-                    if (!aIsGenerated && bIsGenerated) return 1;  // b comes first
+                    if (aIsGenerated && !bIsGenerated) return -1;
+                    if (!aIsGenerated && bIsGenerated) return 1;
                     
-                    // Priority 2: BOLs that replace API BOLs
+                    // Priority 3: BOLs that replace API BOLs
                     const aReplacesApi = a.replacesApiBOL === true || a.metadata?.eshipplus?.replacesApiBol === true;
                     const bReplacesApi = b.replacesApiBOL === true || b.metadata?.eshipplus?.replacesApiBol === true;
                     
                     if (aReplacesApi && !bReplacesApi) return -1;
                     if (!aReplacesApi && bReplacesApi) return 1;
                     
-                    // Priority 3: BOLs with generated filename patterns
-                    const aHasGeneratedFilename = (a.filename || '').includes('eshipplus-bol') || 
-                                                 (a.filename || '').includes('polaris-bol');
-                    const bHasGeneratedFilename = (b.filename || '').includes('eshipplus-bol') || 
-                                                 (b.filename || '').includes('polaris-bol');
-                    
-                    if (aHasGeneratedFilename && !bHasGeneratedFilename) return -1;
-                    if (!aHasGeneratedFilename && bHasGeneratedFilename) return 1;
-                    
-                    // Priority 4: Sort by creation date (newest first)
-                    const aDate = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                    const bDate = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                    
-                    return new Date(bDate) - new Date(aDate);
+                    // Finally, sort by creation date (newest first)
+                    return (b.createdAt?.toDate?.() || 0) - (a.createdAt?.toDate?.() || 0);
                 }),
                 invoice: allDocs.filter(doc => {
                     if (doc.docType === 3 || doc.documentType === 'invoice') {

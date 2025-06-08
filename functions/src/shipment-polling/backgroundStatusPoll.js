@@ -12,11 +12,11 @@ const db = admin.firestore();
 
 /**
  * Background status polling using smart status update logic
- * Runs every 30 minutes to check active shipments
+ * Runs every 5 minutes to check active shipments
  */
 exports.backgroundStatusPoll = onSchedule(
     {
-        schedule: 'every 30 minutes',
+        schedule: 'every 5 minutes',
         timeZone: 'America/Toronto',
         timeoutSeconds: 540, // 9 minutes max execution time
         memory: '2GiB'

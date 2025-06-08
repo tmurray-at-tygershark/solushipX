@@ -10,12 +10,12 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 /**
- * Background polling function that runs every 30 minutes to update active shipments
+ * Background polling function that runs every 5 minutes to update active shipments
  * This ensures we don't miss status changes even when users aren't actively viewing shipments
  */
 exports.pollActiveShipments = onSchedule(
     {
-        schedule: 'every 30 minutes',
+        schedule: 'every 5 minutes',
         timeZone: 'America/Toronto',
         timeoutSeconds: 540, // 9 minutes max execution time
         memory: '2GiB'
@@ -200,46 +200,42 @@ async function pollSingleShipment(shipment) {
  * Determine carrier information and polling capabilities
  */
 async function determineCarrierInfo(shipment) {
-    // Determine carrier from various sources
     let carrier = null;
     let trackingNumber = null;
     let bookingReferenceNumber = null;
-    let canPoll = false;
-    
-    // Check for eShipPlus
-    if (shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+    let canPoll = shouldPollShipment(shipment);
+
+    // Use only the primary carrier/booking source for eShipPlus detection
+    const isEShipPlus =
+        shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
         shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
         shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
-        shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus') {
-        
+        shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus';
+    const carrierName = (shipment.selectedRate?.carrier || shipment.selectedRateRef?.carrier || shipment.carrier || '').toLowerCase();
+
+    if (isEShipPlus) {
         carrier = 'eShipPlus';
         bookingReferenceNumber = shipment.carrierBookingConfirmation?.confirmationNumber ||
                                 shipment.carrierBookingConfirmation?.bookingReferenceNumber ||
                                 shipment.carrierBookingConfirmation?.proNumber;
-        canPoll = !!bookingReferenceNumber;
+        canPoll = canPoll && !!bookingReferenceNumber;
     }
     // Check for Canpar
-    else if (shipment.selectedRate?.carrier?.toLowerCase().includes('canpar') ||
-             shipment.selectedRateRef?.carrier?.toLowerCase().includes('canpar') ||
-             shipment.carrier?.toLowerCase().includes('canpar')) {
-        
+    else if (carrierName.includes('canpar')) {
         carrier = 'Canpar';
         trackingNumber = shipment.trackingNumber ||
                         shipment.selectedRate?.TrackingNumber ||
                         shipment.selectedRate?.Barcode ||
                         shipment.carrierBookingConfirmation?.trackingNumber;
-        canPoll = !!trackingNumber;
+        canPoll = canPoll && !!trackingNumber;
     }
     // Check for Polaris Transportation
-    else if (shipment.selectedRate?.carrier?.toLowerCase().includes('polaris') ||
-             shipment.selectedRateRef?.carrier?.toLowerCase().includes('polaris') ||
-             shipment.carrier?.toLowerCase().includes('polaris')) {
-        
+    else if (carrierName.includes('polaris')) {
         carrier = 'Polaris Transportation';
         trackingNumber = shipment.carrierBookingConfirmation?.confirmationNumber ||
                         shipment.carrierBookingConfirmation?.proNumber ||
                         shipment.trackingNumber;
-        canPoll = !!trackingNumber;
+        canPoll = canPoll && !!trackingNumber;
     }
     // Default carrier detection
     else {
@@ -252,7 +248,7 @@ async function determineCarrierInfo(shipment) {
                         shipment.carrierBookingConfirmation?.proNumber;
         canPoll = false; // Default to not polling unknown carriers
     }
-    
+
     return {
         carrier,
         trackingNumber,
@@ -458,4 +454,33 @@ function generateTrackingUpdateHash(update) {
         .createHash('md5')
         .update(JSON.stringify(hashData))
         .digest('hex');
+}
+
+function shouldPollShipment(shipment) {
+    const now = Date.now();
+    const lastPoll = shipment.lastStatusPoll?.toDate ? shipment.lastStatusPoll.toDate() : (shipment.lastStatusPoll || new Date(0));
+    const type = shipment.shipmentType || shipment.shipmentInfo?.shipmentType || '';
+    const status = (shipment.status || '').toLowerCase();
+
+    // Terminal states: never poll
+    if ([
+        'delivered', 'cancelled', 'void', 'canceled', 'voided'
+    ].includes(status)) {
+        return false;
+    }
+
+    // Freight: poll every 12 hours
+    if (type.toLowerCase().includes('freight') || type.toLowerCase().includes('ltl')) {
+        return now - lastPoll.getTime() > 12 * 60 * 60 * 1000;
+    }
+
+    // Courier: escalate for in transit/out for delivery
+    if ([
+        'in transit', 'out for delivery'
+    ].includes(status)) {
+        return now - lastPoll.getTime() > 10 * 60 * 1000; // 10 minutes
+    }
+
+    // Courier: other statuses, poll every 6 hours
+    return now - lastPoll.getTime() > 6 * 60 * 60 * 1000;
 } 

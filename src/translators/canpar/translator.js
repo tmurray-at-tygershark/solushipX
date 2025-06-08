@@ -18,6 +18,12 @@ const sanitizePostalCode = (postalCode) => {
 };
 
 export function toCanparRequest(formData) {
+    // Ensure we have the required data
+    if (!formData) {
+        throw new Error('Form data is required for Canpar request');
+    }
+
+    // Transform the data to Canpar's expected format
     return {
         shipmentInfo: formData.shipmentInfo, // Pass through for signature service
         shipment: {
@@ -39,7 +45,8 @@ export function toCanparRequest(formData) {
                 province: formData.shipFrom?.state || '',
                 country: formData.shipFrom?.country || 'CA',
                 postal_code: sanitizePostalCode(formData.shipFrom?.postalCode || formData.shipFrom?.zipPostal || ''),
-                phone: formData.shipFrom?.phone || formData.shipFrom?.contactPhone || ''
+                phone: formData.shipFrom?.phone || formData.shipFrom?.contactPhone || '',
+                residential: false
             },
             delivery_address: {
                 name: formData.shipTo?.company || formData.shipTo?.name || 'Recipient',
@@ -49,7 +56,8 @@ export function toCanparRequest(formData) {
                 province: formData.shipTo?.state || '',
                 country: formData.shipTo?.country || 'CA',
                 postal_code: sanitizePostalCode(formData.shipTo?.postalCode || formData.shipTo?.zipPostal || ''),
-                phone: formData.shipTo?.phone || formData.shipTo?.contactPhone || ''
+                phone: formData.shipTo?.phone || formData.shipTo?.contactPhone || '',
+                residential: false
             }
         }
     };

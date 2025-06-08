@@ -273,7 +273,7 @@ function extractEShipPlusBOLData(shipmentData, shipmentId) {
                 company: shipFrom?.companyName || shipFrom?.company || shipFrom?.Company || shipFrom?.Description || shipFrom?.name || 'Unknown Shipper',
                 contact: shipFrom?.contact || shipFrom?.attention || shipFrom?.contactName || shipFrom?.Contact || '',
                 address1: shipFrom?.address_line_1 || shipFrom?.street || shipFrom?.addressLine1 || shipFrom?.address1 || shipFrom?.Street || '',
-                address2: shipFrom?.address_line_2 || shipFrom?.street2 || shipFrom?.addressLine2 || shipFrom?.address2 || shipFrom?.StreetExtra || '',
+                address2: shipFrom?.address_line_2 || shipFrom?.street2 || shipTo?.addressLine2 || shipTo?.address2 || shipTo?.StreetExtra || '',
                 city: shipFrom?.city || shipFrom?.City || '',
                 state: shipFrom?.province || shipFrom?.state || shipFrom?.State || '',
                 zip: shipFrom?.postal_code || shipFrom?.postalCode || shipFrom?.zip || shipFrom?.PostalCode || '',
@@ -1105,8 +1105,8 @@ function drawIntegratedCarriersFooter(doc, bolData) {
  */
 async function storeEShipPlusBOLDocument(pdfBuffer, shipmentId, firebaseDocId, overwriteDocumentId = null) {
     try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const fileName = `eshipplus-bol-${shipmentId}-${timestamp}.pdf`;
+        // Use the new naming convention: SOLUSHIP-SHIPMENTID-BOL.pdf
+        const fileName = `SOLUSHIP-${shipmentId}-BOL.pdf`;
         const bucket = storage.bucket();
         
         // Use unified storage path

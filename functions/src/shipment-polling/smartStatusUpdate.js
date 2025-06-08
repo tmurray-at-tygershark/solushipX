@@ -648,12 +648,13 @@ function generateTrackingUpdateHash(update) {
 }
 
 /**
- * Manual status refresh function for immediate updates (called from refresh button)
+ * Force status refresh function that bypasses normal update rules
+ * This is used for manual refreshes and always performs the update
  */
 exports.forceStatusRefresh = onCall(
     {
-        timeoutSeconds: 30,
-        memory: '512MiB'
+        timeoutSeconds: 60,
+        memory: '1GiB'
     },
     async (request) => {
         // Validate authentication
@@ -667,20 +668,13 @@ exports.forceStatusRefresh = onCall(
             throw new HttpsError('invalid-argument', 'shipmentId is required');
         }
 
-        console.log(`🔄 Force status refresh requested for shipment: ${shipmentId}`);
+        // Always force the update
+        return await performSmartStatusUpdate(shipmentId, true, request.auth.uid);
+    });
 
-        try {
-            // Call smartStatusUpdate with force = true
-            const result = await performSmartStatusUpdate(shipmentId, true, request.auth.uid);
-
-            return {
-                success: true,
-                forced: true,
-                ...result
-            };
-
-        } catch (error) {
-            console.error(`❌ Error in force status refresh for ${shipmentId}:`, error);
-            throw new HttpsError('internal', `Force refresh failed: ${error.message}`);
-        }
-    }); 
+// Export both functions
+module.exports = {
+    smartStatusUpdate: exports.smartStatusUpdate,
+    forceStatusRefresh: exports.forceStatusRefresh,
+    performSmartStatusUpdate
+}; 
