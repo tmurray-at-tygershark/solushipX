@@ -655,14 +655,9 @@ function parsePolarisTransportationBookingResponse(apiResponse) {
 async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate) {
     console.log('updateShipmentWithBookingData: Updating shipment document');
 
-    // CRITICAL FIX: Fetch existing shipment data to preserve shipmentInfo (same as other carriers)
-    const existingShipmentDoc = await db.collection('shipments').doc(draftFirestoreDocId).get();
-    const existingShipmentData = existingShipmentDoc.data();
-    
-    console.log('updateShipmentWithBookingData: Preserving existing shipmentInfo:', existingShipmentData?.shipmentInfo);
-
     const updateData = {
         status: 'booked',
+        
         carrierBookingConfirmation: {
             confirmationNumber: bookingResult.confirmationNumber,
             trackingNumber: bookingResult.trackingNumber,
@@ -701,19 +696,10 @@ async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult,
             status: 'booked'
         },
         
-        // CRITICAL FIX: Explicitly preserve shipmentInfo data (same as other carriers)
-        shipmentInfo: {
-            ...existingShipmentData?.shipmentInfo,
-            // Ensure shipperReferenceNumber is preserved or set to shipmentID as fallback
-            shipperReferenceNumber: existingShipmentData?.shipmentInfo?.shipperReferenceNumber || 
-                                   existingShipmentData?.shipmentID || 
-                                   ''
-        },
-        
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    console.log('updateShipmentWithBookingData: Update data with preserved shipmentInfo:', JSON.stringify(updateData.shipmentInfo, null, 2));
+
 
     await db.collection('shipments').doc(draftFirestoreDocId).update(updateData);
     console.log('updateShipmentWithBookingData: Shipment document updated successfully');

@@ -155,6 +155,7 @@ const Navigation = () => {
 
     const profileMenuItems = isAuthenticated ? [
         { label: 'Profile', icon: 'fas fa-user' },
+        { label: 'Notifications', icon: 'fas fa-bell' },
         { label: 'Billing', icon: 'fas fa-credit-card' },
         { label: 'Settings', icon: 'fas fa-cog' },
         { label: 'Logout', icon: 'fas fa-sign-out-alt' }
@@ -208,6 +209,9 @@ const Navigation = () => {
         switch (label) {
             case 'Profile':
                 navigate('/profile');
+                break;
+            case 'Notifications':
+                navigate('/notifications');
                 break;
             case 'Billing':
                 navigate('/billing');

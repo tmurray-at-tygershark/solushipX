@@ -59,6 +59,16 @@ const { pollActiveShipments } = require('./src/shipment-polling/pollActiveShipme
 const { backgroundStatusPoll } = require('./src/shipment-polling/backgroundStatusPoll');
 const { smartStatusUpdate, forceStatusRefresh, performSmartStatusUpdate } = require('./src/shipment-polling/smartStatusUpdate');
 
+// Import email notification functions
+const { 
+  onShipmentCreated, 
+  onShipmentStatusChanged, 
+  sendTestNotification, 
+  updateNotificationPreferences,
+  getNotificationPreferences,
+  migrateToCollectionSystem
+} = require('./src/notifications/emailService');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -94,6 +104,16 @@ exports.backgroundStatusPoll = backgroundStatusPoll;
 exports.smartStatusUpdate = smartStatusUpdate;
 exports.forceStatusRefresh = forceStatusRefresh;
 exports.performSmartStatusUpdate = performSmartStatusUpdate;
+
+// Export email notification functions
+exports.onShipmentCreated = onShipmentCreated;
+exports.onShipmentStatusChanged = onShipmentStatusChanged;
+exports.sendTestNotification = sendTestNotification;
+exports.updateNotificationPreferences = updateNotificationPreferences;
+exports.getNotificationPreferences = getNotificationPreferences;
+exports.migrateToCollectionSystem = migrateToCollectionSystem;
+exports.getNotificationPreferences = getNotificationPreferences;
+exports.migrateToCollectionSystem = migrateToCollectionSystem;
 
 // Helper function to map HTTP status codes to Firebase HttpsError codes
 // See: https://firebase.google.com/docs/reference/functions/providers_https_.httpserrorcode

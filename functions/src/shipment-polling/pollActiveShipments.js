@@ -205,23 +205,39 @@ async function determineCarrierInfo(shipment) {
     let bookingReferenceNumber = null;
     let canPoll = shouldPollShipment(shipment);
 
-    // Use only the primary carrier/booking source for eShipPlus detection
-    const isEShipPlus =
+    // Get the carrier name for pattern matching
+    const carrierName = shipment.selectedRate?.carrier || 
+                       shipment.selectedRateRef?.carrier || 
+                       shipment.carrier || '';
+    const lowerCarrierName = carrierName.toLowerCase();
+
+    // Priority 1: Check for explicit eShipPlus identifiers
+    const isEShipPlusExplicit =
         shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
         shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
         shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
         shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus';
-    const carrierName = (shipment.selectedRate?.carrier || shipment.selectedRateRef?.carrier || shipment.carrier || '').toLowerCase();
 
-    if (isEShipPlus) {
+    // Priority 2: Check for freight carrier patterns (eShipPlus sub-carriers)
+    const freightPatterns = [
+        'freight', 'ltl', 'fedex freight', 'road runner', 'roadrunner',
+        'estes', 'yrc', 'xpo', 'old dominion', 'odfl', 'saia', 'ward'
+    ];
+    const isEShipPlusPattern = freightPatterns.some(pattern => lowerCarrierName.includes(pattern));
+
+    if (isEShipPlusExplicit || isEShipPlusPattern) {
         carrier = 'eShipPlus';
         bookingReferenceNumber = shipment.carrierBookingConfirmation?.confirmationNumber ||
                                 shipment.carrierBookingConfirmation?.bookingReferenceNumber ||
                                 shipment.carrierBookingConfirmation?.proNumber;
         canPoll = canPoll && !!bookingReferenceNumber;
+        
+        if (isEShipPlusPattern && !isEShipPlusExplicit) {
+            console.log(`🔍 Detected eShipPlus sub-carrier: ${carrierName}`);
+        }
     }
     // Check for Canpar
-    else if (carrierName.includes('canpar')) {
+    else if (lowerCarrierName.includes('canpar')) {
         carrier = 'Canpar';
         trackingNumber = shipment.trackingNumber ||
                         shipment.selectedRate?.TrackingNumber ||
@@ -230,7 +246,7 @@ async function determineCarrierInfo(shipment) {
         canPoll = canPoll && !!trackingNumber;
     }
     // Check for Polaris Transportation
-    else if (carrierName.includes('polaris')) {
+    else if (lowerCarrierName.includes('polaris')) {
         carrier = 'Polaris Transportation';
         trackingNumber = shipment.carrierBookingConfirmation?.confirmationNumber ||
                         shipment.carrierBookingConfirmation?.proNumber ||
@@ -239,10 +255,7 @@ async function determineCarrierInfo(shipment) {
     }
     // Default carrier detection
     else {
-        carrier = shipment.selectedRate?.carrier ||
-                 shipment.selectedRateRef?.carrier ||
-                 shipment.carrier ||
-                 'Unknown';
+        carrier = carrierName || 'Unknown';
         trackingNumber = shipment.trackingNumber ||
                         shipment.carrierBookingConfirmation?.trackingNumber ||
                         shipment.carrierBookingConfirmation?.proNumber;

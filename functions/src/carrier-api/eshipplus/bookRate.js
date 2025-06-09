@@ -712,6 +712,7 @@ async function processBookingRequest(data) {
         const shipmentDocRef = db.collection('shipments').doc(draftFirestoreDocId);
         const shipmentUpdateData = {
             status: 'booked',
+            
             carrierBookingConfirmation: {
                 confirmationNumber: bookingConfirmationResult.confirmationNumber,
                 proNumber: bookingConfirmationResult.proNumber,
@@ -728,20 +729,16 @@ async function processBookingRequest(data) {
                 shippingDocuments: bookingConfirmationResult.shippingDocuments || null, 
             },
             
-            // CRITICAL FIX: Explicitly preserve shipmentInfo data
+            // Preserve existing shipmentInfo data
             shipmentInfo: {
-                ...existingShipmentData?.shipmentInfo,
-                // Ensure shipperReferenceNumber is preserved or set to shipmentID as fallback
-                shipperReferenceNumber: existingShipmentData?.shipmentInfo?.shipperReferenceNumber || 
-                                       existingShipmentData?.shipmentID || 
-                                       ''
+                ...existingShipmentData?.shipmentInfo
             },
             
             shipmentStatus: admin.firestore.FieldValue.delete(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
         
-        logger.info('eShipPlus Booking: Update data with preserved shipmentInfo:', JSON.stringify(shipmentUpdateData.shipmentInfo, null, 2));
+
         logger.info(`LOG: Updating shipment document ${draftFirestoreDocId} with:`, shipmentUpdateData);
         await shipmentDocRef.update(shipmentUpdateData);
         logger.info(`LOG: Shipment document ${draftFirestoreDocId} successfully updated.`);

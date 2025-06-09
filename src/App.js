@@ -71,6 +71,9 @@ const GenerateInvoicesPage = lazy(() => import('./components/Admin/Billing/Gener
 // New Edit Carrier Mapping component
 const EditCarrierMapping = lazy(() => import('./components/Admin/Billing/EditCarrierMapping'));
 
+// Email Notification Preferences component
+const NotificationPreferences = lazy(() => import('./components/NotificationPreferences/NotificationPreferences'));
+
 // Loading Component
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -177,6 +180,11 @@ function AppRoutes() {
                 <Route path="/carriers/:carrierId" element={
                     <ProtectedRoute>
                         <CarrierConfig />
+                    </ProtectedRoute>
+                } />
+                <Route path="/notifications" element={
+                    <ProtectedRoute>
+                        <NotificationPreferences />
                     </ProtectedRoute>
                 } />
 
