@@ -576,89 +576,56 @@ function normalizeCanparStatus(canparStatus) {
 
 /**
  * Polaris Transportation specific status normalization
- * Maps Polaris PRO number status codes to enhanced status IDs
+ * Maps actual Polaris API status codes to enhanced status IDs
  */
 function normalizePolarisStatus(polarisStatus) {
   const statusMap = {
-    // Pre-shipment Phase
-    'REQ': 111,  // Request -> Request Quote
-    'QTD': 112,  // Quoted -> Quoted
-    'BOK': 309,  // Booked -> Booking confirmed
-    'SCD': 16,   // Scheduled -> Scheduled for pick up
+    // ACTUAL POLARIS API STATUS CODES (from real API)
     
-    // Pickup Phase
-    'DSP': 12,   // Dispatched -> Out for pickup
-    'PKD': 19,   // Picked up -> Picked up
-    'RCV': 121,  // Received -> Shipment dropped off
-    'TRM': 26,   // Terminal -> At terminal
+    // Pre-shipment and Entry Phase
+    'ENTERD/DR': 111,        // shipment entered in system -> Request Quote
+    'ENTERED': 111,          // shipment entered in system -> Request Quote
     
-    // Transit Phase
-    'TRN': 20,   // Transit -> In transit
-    'ENR': 21,   // En Route -> On route
-    'HUB': 26,   // Hub -> At terminal
-    'XFR': 21,   // Transfer -> On route
-    'LOD': 14,   // Loaded -> On board
-    'DEP': 21,   // Departed -> On route
+    // Pickup and Transit Phase
+    'SCHED PICK/DR': 16,     // scheduled for pickup -> Scheduled for pick up
+    'SCHED FOR PICK.': 16,   // scheduled for pickup -> Scheduled for pick up
+    'PICKED UP/DR': 19,      // shipment picked up -> Picked up
+    'PICKED UP': 19,         // shipment picked up -> Picked up
     
-    // Line Haul (Long Distance Transport)
-    'LHL': 20,   // Line Haul -> In transit
-    'ARV': 26,   // Arrived -> At terminal
-    'ULD': 26,   // Unloaded -> At terminal
+    // Arrival and Terminal Phases
+    'ARRV_ORIG': 26,         // Arrival -> At terminal
+    'ARRV_DEST': 26,         // Arrival at Destination -> At terminal
     
-    // Final Mile Delivery
-    'OFD': 23,   // Out for Delivery -> Out for delivery
-    'ATD': 114,  // Attempted Delivery -> Attempted delivery
-    'DLV': 30,   // Delivered -> Delivered
-    'POD': 30,   // Proof of Delivery -> Delivered
-    'SIG': 82,   // Signature Obtained -> Picture
+    // Transit Phases
+    'IN TRANSIT': 20,        // shipment in transit -> In transit
+    'IN TRANSIT/DR': 20,     // shipment in transit -> In transit
+    'IN TRNS/ON FILE': 20,   // shipment in transit -> In transit
     
-    // Exception Handling
-    'EXC': 50,   // Exception -> Exception
-    'REF': 115,  // Refused -> Refused
-    'UND': 113,  // Undelivered -> Undelivered
-    'MSS': 116,  // Missed Appointment -> Appointment missed
-    'NDL': 322,  // Not Delivered -> Not delivered
+    // Customs and Delays
+    'IN BOND': 25,           // in bond -> In customs
+    'CUSTOMS HOLD': 290,     // customs is holding -> On hold
+    'CUSTOMS_CLEARED': 25,   // cleared customs -> In customs (cleared)
+    'VOLUME DELAY': 300,     // volume delay -> Delay
     
-    // Delay and Hold Status
-    'DLY': 300,  // Delayed -> Delay
-    'HLD': 290,  // Hold -> On hold
-    'WTH': 120,  // Weather -> Weather delay
-    'TFC': 300,  // Traffic -> Delay
-    'MDF': 119,  // Mechanical Delay -> Hazardous material delay (closest match)
-    'CUS': 25,   // Customs -> In customs
+    // Delivery Phases
+    'SCHED FOR DELV': 22,    // scheduled for delivery -> Appointment
+    'OUT FOR DEL': 23,       // shipment in transit for delivery -> Out for delivery
+    'DELIVERED': 30,         // shipment delivered -> Delivered
+    'DELVD/BILLED': 30,      // shipment delivered and billed -> Delivered
     
-    // Special Handling
-    'HPU': 280,  // Hold for Pickup -> Held for pick up
-    'RTS': 303,  // Return to Sender -> Return to sender
-    'RRT': 301,  // Reroute -> Re-routed
-    'STG': 304,  // Storage -> Storage
-    'SRT': 301,  // Sort/Reroute -> Re-routed
+    // Cancellation
+    'CANCELLED': 40,         // shipment cancelled and voided -> Cancelled
     
-    // Appointment Management
-    'APT': 122,  // Appointment -> Appointment
-    'APC': 260,  // Appointment Confirmed -> Appointment confirmed
-    'APM': 116,  // Appointment Missed -> Appointment missed
-    'AWA': 250,  // Awaiting Appointment -> Awaiting appointment
-    
-    // Cancellation and Claims
-    'CAN': 40,   // Cancelled -> Cancelled
-    'VID': 40,   // Void -> Cancelled
-    'CLM': 305,  // Claim -> Claim in process
-    'CLR': 306,  // Claim Resolved -> Claim closed
-    
-    // Final Processing
-    'CLS': 70,   // Closed -> Closed
-    'CPL': 70,   // Complete -> Closed
-    
-    // Legacy text-based statuses
-    'DELIVERED': 30,        // Delivered (text) -> Delivered
-    'IN_TRANSIT': 20,       // In Transit (text) -> In transit
-    'OUT_FOR_DELIVERY': 23, // Out for Delivery (text) -> Out for delivery
-    'EXCEPTION': 50,        // Exception (text) -> Exception
-    'CANCELLED': 40,        // Cancelled (text) -> Cancelled
-    'ON_HOLD': 290,         // On Hold (text) -> On hold
-    'PICKED_UP': 19,        // Picked Up (text) -> Picked up
-    'AT_TERMINAL': 26       // At Terminal (text) -> At terminal
+    // Legacy mappings for backward compatibility
+    'BOOKED': 309,           // Legacy booked -> Booking confirmed
+    'SCHEDULED': 16,         // Legacy scheduled -> Scheduled for pick up
+    'PICKUP_SCHEDULED': 16,  // Legacy pickup scheduled -> Scheduled for pick up
+    'OUT_FOR_DELIVERY': 23,  // Legacy out for delivery -> Out for delivery
+    'COMPLETED': 30,         // Legacy completed -> Delivered
+    'CANCELED': 40,          // Legacy canceled -> Cancelled
+    'ON_HOLD': 290,          // Legacy on hold -> On hold
+    'DELAYED': 300,          // Legacy delayed -> Delay
+    'EXCEPTION': 50          // Legacy exception -> Exception
   };
   
   return statusMap[polarisStatus?.toUpperCase()] || 230; // Default to Any/Unknown

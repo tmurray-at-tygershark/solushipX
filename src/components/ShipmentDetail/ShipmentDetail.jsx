@@ -1255,6 +1255,7 @@ const ShipmentDetail = () => {
             // Check if this is an eShipPlus shipment with confirmation number
             const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
                 getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                getBestRateInfo?.sourceCarrier?.key === 'ESHIPPLUS' ||
                 carrierData?.name?.toLowerCase().includes('eshipplus') ||
                 carrierData?.carrierID === 'ESHIPPLUS';
 
@@ -1384,6 +1385,7 @@ const ShipmentDetail = () => {
             // Check carrier type for automatic cancellation
             const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
                 getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                getBestRateInfo?.sourceCarrier?.key === 'ESHIPPLUS' ||
                 getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
             const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
@@ -1481,6 +1483,7 @@ const ShipmentDetail = () => {
         const currentStatus = shipment?.status?.toLowerCase();
         const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
             getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+            getBestRateInfo?.sourceCarrier?.key === 'ESHIPPLUS' ||
             getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
         const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
@@ -1546,7 +1549,9 @@ const ShipmentDetail = () => {
                 // Enhanced BOL debugging for eShipPlus shipments
                 if (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
                     getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-                    carrierData?.name?.toLowerCase().includes('eshipplus')) {
+                    getBestRateInfo?.sourceCarrier?.key === 'ESHIPPLUS' ||
+                    carrierData?.name?.toLowerCase().includes('eshipplus') ||
+                    carrierData?.carrierID === 'ESHIPPLUS') {
 
                     console.log('🔍 eShipPlus Shipment - BOL Document Analysis:', {
                         totalBOLDocuments: documents.bol?.length || 0,
@@ -2543,7 +2548,9 @@ const ShipmentDetail = () => {
     const isEShipPlusCarrier = useMemo(() => {
         return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
             getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-            carrierData?.name?.toLowerCase().includes('eshipplus');
+            getBestRateInfo?.sourceCarrier?.key === 'ESHIPPLUS' ||
+            carrierData?.name?.toLowerCase().includes('eshipplus') ||
+            carrierData?.carrierID === 'ESHIPPLUS';
     }, [getBestRateInfo, carrierData]);
 
     // Fetch carrier data for logo display

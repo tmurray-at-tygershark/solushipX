@@ -26,22 +26,16 @@ export const useCarrierAgnosticStatusUpdate = () => {
                            shipment.selectedRateRef?.carrier || 
                            shipment.carrier || '';
         
-        // Enhanced eShipPlus detection logic (matching ShipmentDetail.jsx)
+        // Comprehensive eShipPlus detection based on multiple fields
         const isEShipPlus = shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
                            shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
                            shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
                            shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
-                           // Enhanced detection for freight carriers (which are typically eShipPlus)
-                           carrierName.toLowerCase().includes('freight') ||
-                           carrierName.toLowerCase().includes('fedex freight') ||
-                           carrierName.toLowerCase().includes('road runner') ||
-                           carrierName.toLowerCase().includes('estes') ||
-                           carrierName.toLowerCase().includes('yrc') ||
-                           carrierName.toLowerCase().includes('xpo') ||
-                           carrierName.toLowerCase().includes('old dominion') ||
-                           carrierName.toLowerCase().includes('saia') ||
-                           carrierName.toLowerCase().includes('ltl') ||
-                           carrierName.toLowerCase().includes('eshipplus');
+                           shipment.selectedRate?.sourceCarrier?.key === 'ESHIPPLUS' ||
+                           shipment.selectedRateRef?.sourceCarrier?.key === 'ESHIPPLUS' ||
+                           carrierName.toLowerCase().includes('eshipplus') ||
+                           shipment.carrierTrackingData?.carrier === 'eshipplus' ||
+                           shipment.carrierTrackingData?.carrier?.toLowerCase().includes('eshipplus');
 
         let masterCarrier = 'UNKNOWN';
         let trackingIdentifier = null;
@@ -51,13 +45,13 @@ export const useCarrierAgnosticStatusUpdate = () => {
             masterCarrier = 'ESHIPPLUS';
             trackingIdentifier = 'bookingReferenceNumber';
             
-            // Comprehensive eShipPlus tracking identifier extraction (matching ShipmentDetail.jsx)
-            trackingValue = shipment.bookingReferenceNumber ||
+            // Comprehensive eShipPlus tracking identifier extraction - prioritize carrierTrackingData
+            trackingValue = shipment.carrierTrackingData?.bookingReferenceNumber ||
+                           shipment.bookingReferenceNumber ||
                            shipment.selectedRate?.BookingReferenceNumber ||
                            shipment.selectedRate?.bookingReferenceNumber ||
                            shipment.selectedRateRef?.BookingReferenceNumber ||
                            shipment.selectedRateRef?.bookingReferenceNumber ||
-                           shipment.carrierTrackingData?.bookingReferenceNumber ||
                            shipment.carrierBookingConfirmation?.bookingReference ||
                            shipment.carrierBookingConfirmation?.confirmationNumber ||
                            shipment.carrierBookingConfirmation?.proNumber ||

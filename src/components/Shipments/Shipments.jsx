@@ -98,7 +98,10 @@ import {
     enhancedToLegacy,
     getEnhancedStatus,
     ENHANCED_STATUSES,
-    STATUS_GROUPS
+    STATUS_GROUPS,
+    getStatusesInGroup,
+    getStatusGroup,
+    normalizeCarrierStatusToEnhanced
 } from '../../utils/enhancedStatusModel';
 
 // Helper function to check if company has any enabled carriers
@@ -145,18 +148,36 @@ const capitalizeShipmentType = (type) => {
     return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
 };
 
+
+
+// Helper function to get country flag emoji
+const getCountryFlag = (address) => {
+    if (!address || !address.country) return '';
+
+    const country = address.country.toLowerCase();
+    if (country.includes('canada') || country.includes('ca')) {
+        return '🇨🇦';
+    } else if (country.includes('united states') || country.includes('usa') || country.includes('us')) {
+        return '🇺🇸';
+    }
+    return '';
+};
+
 // Helper function to format route (origin → destination)
 const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestination = '') => {
     const formatLocation = (address) => {
         if (!address || typeof address !== 'object') {
-            return 'N/A';
+            return { text: 'N/A', flag: '' };
         }
         // Format as "City, State/Province" for compact display
         const parts = [];
         if (address.city) parts.push(address.city);
         if (address.state || address.province) parts.push(address.state || address.province);
 
-        return parts.length > 0 ? parts.join(', ') : 'N/A';
+        return {
+            text: parts.length > 0 ? parts.join(', ') : 'N/A',
+            flag: getCountryFlag(address)
+        };
     };
 
     const origin = formatLocation(shipFrom);
@@ -168,21 +189,35 @@ const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestinat
             <div style={{
                 fontSize: '0.875rem',
                 fontWeight: 400,
-                color: '#374151'
+                color: '#374151',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
             }}>
-                {searchTermOrigin ? (
-                    <span>
-                        {origin.split(new RegExp(`(${searchTermOrigin})`, 'gi')).map((part, i) =>
-                            part.toLowerCase() === searchTermOrigin.toLowerCase() ? (
-                                <span key={i} style={{ backgroundColor: '#fff8c5' }}>
-                                    {part}
-                                </span>
-                            ) : (
-                                part
-                            )
-                        )}
+                {origin.flag && (
+                    <span style={{
+                        fontSize: '0.75rem',
+                        lineHeight: 1,
+                        marginTop: '-1px'
+                    }}>
+                        {origin.flag}
                     </span>
-                ) : origin}
+                )}
+                <span>
+                    {searchTermOrigin ? (
+                        <span>
+                            {origin.text.split(new RegExp(`(${searchTermOrigin})`, 'gi')).map((part, i) =>
+                                part.toLowerCase() === searchTermOrigin.toLowerCase() ? (
+                                    <span key={i} style={{ backgroundColor: '#fff8c5' }}>
+                                        {part}
+                                    </span>
+                                ) : (
+                                    part
+                                )
+                            )}
+                        </span>
+                    ) : origin.text}
+                </span>
             </div>
 
             {/* Arrow */}
@@ -199,21 +234,35 @@ const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestinat
             <div style={{
                 fontSize: '0.875rem',
                 fontWeight: 500,
-                color: '#111827'
+                color: '#111827',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
             }}>
-                {searchTermDestination ? (
-                    <span>
-                        {destination.split(new RegExp(`(${searchTermDestination})`, 'gi')).map((part, i) =>
-                            part.toLowerCase() === searchTermDestination.toLowerCase() ? (
-                                <span key={i} style={{ backgroundColor: '#fff8c5' }}>
-                                    {part}
-                                </span>
-                            ) : (
-                                part
-                            )
-                        )}
+                {destination.flag && (
+                    <span style={{
+                        fontSize: '0.75rem',
+                        lineHeight: 1,
+                        marginTop: '-1px'
+                    }}>
+                        {destination.flag}
                     </span>
-                ) : destination}
+                )}
+                <span>
+                    {searchTermDestination ? (
+                        <span>
+                            {destination.text.split(new RegExp(`(${searchTermDestination})`, 'gi')).map((part, i) =>
+                                part.toLowerCase() === searchTermDestination.toLowerCase() ? (
+                                    <span key={i} style={{ backgroundColor: '#fff8c5' }}>
+                                        {part}
+                                    </span>
+                                ) : (
+                                    part
+                                )
+                            )}
+                        </span>
+                    ) : destination.text}
+                </span>
             </div>
         </div>
     );
@@ -260,6 +309,38 @@ const formatDateTime = (timestamp) => {
             </div>
         </div>
     );
+};
+
+// Helper function to get shipment status group using enhanced status model
+const getShipmentStatusGroup = (shipment) => {
+    // Get the status and normalize it
+    const status = shipment.status?.toLowerCase()?.trim();
+
+    console.log(`Debug: Shipment ${shipment.id} has status: "${shipment.status}" (normalized: "${status}")`);
+
+    // Check for draft status first (highest priority)
+    if (status === 'draft') {
+        console.log(`Debug: Shipment ${shipment.id} identified as DRAFTS`);
+        return 'DRAFTS';
+    }
+
+    // Try to get enhanced status
+    const enhancedStatusId = normalizeCarrierStatusToEnhanced(shipment.status);
+    if (enhancedStatusId && ENHANCED_STATUSES[enhancedStatusId]) {
+        const group = ENHANCED_STATUSES[enhancedStatusId].group;
+        console.log(`Debug: Shipment ${shipment.id} enhanced status group: ${group}`);
+        return group;
+    }
+
+    // Fallback to legacy status mapping
+    if (status === 'pending' || status === 'scheduled' || status === 'awaiting_shipment' || status === 'booked') return 'PRE_SHIPMENT';
+    if (status === 'in_transit' || status === 'in transit' || status === 'picked_up' || status === 'on_route') return 'TRANSIT';
+    if (status === 'delivered') return 'COMPLETED';
+    if (status === 'cancelled' || status === 'canceled' || status === 'void' || status === 'voided') return 'CANCELLED';
+    if (status === 'exception' || status === 'delayed' || status === 'on_hold') return 'EXCEPTIONS';
+
+    console.log(`Debug: Shipment ${shipment.id} defaulting to PRE_SHIPMENT for status: "${status}"`);
+    return 'PRE_SHIPMENT'; // Default for unknown statuses
 };
 
 const Shipments = () => {
@@ -475,34 +556,50 @@ const Shipments = () => {
         try {
             let filteredShipments = [...allShipments];
 
-            // First apply tab filter
+            // Enhanced tab filter using status groups
+
             if (selectedTab === 'all') {
                 // "All" tab should exclude drafts
-                filteredShipments = filteredShipments.filter(s => s.status?.toLowerCase() !== 'draft');
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group !== 'DRAFTS';
+                });
             } else if (selectedTab === 'draft') {
-                // Handle draft tab - only show drafts (case-insensitive)
-                filteredShipments = filteredShipments.filter(s => s.status?.toLowerCase() === 'draft');
-            } else if (selectedTab === 'In Transit') {
-                filteredShipments = filteredShipments.filter(s =>
-                    s.status?.toLowerCase() === 'in_transit' ||
-                    s.status?.toLowerCase() === 'in transit'
-                );
-            } else if (selectedTab === 'Delivered') {
-                filteredShipments = filteredShipments.filter(s =>
-                    s.status?.toLowerCase() === 'delivered'
-                );
+                // Handle draft tab - only show drafts
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'DRAFTS';
+                });
             } else if (selectedTab === 'Awaiting Shipment') {
-                filteredShipments = filteredShipments.filter(s =>
-                    s.status?.toLowerCase() === 'scheduled'
-                );
+                // Include all pre-shipment and booking phases, exclude drafts
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return (group === 'PRE_SHIPMENT' || group === 'BOOKING') && group !== 'DRAFTS';
+                });
+            } else if (selectedTab === 'In Transit') {
+                // Include transit and delivery phases, exclude drafts
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return (group === 'TRANSIT' || group === 'DELIVERY') && group !== 'DRAFTS';
+                });
+            } else if (selectedTab === 'Delivered') {
+                // Include completed phase, exclude drafts
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'COMPLETED' && group !== 'DRAFTS';
+                });
+            } else if (selectedTab === 'Exceptions') {
+                // Include exceptions phase, exclude drafts
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'EXCEPTIONS' && group !== 'DRAFTS';
+                });
             } else if (selectedTab === 'Cancelled') {
-                // Handle \"Cancelled\" tab - filter by \"cancelled\" or \"void\" status (both spellings)
-                filteredShipments = filteredShipments.filter(s =>
-                    s.status?.toLowerCase() === 'cancelled' ||
-                    s.status?.toLowerCase() === 'canceled' ||
-                    s.status?.toLowerCase() === 'void' ||
-                    s.status?.toLowerCase() === 'voided'
-                );
+                // Include cancelled phase, exclude drafts
+                filteredShipments = filteredShipments.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'CANCELLED' && group !== 'DRAFTS';
+                });
             }
 
             // Shipment ID search (partial match)
@@ -726,20 +823,37 @@ const Shipments = () => {
         window.scrollTo(0, 0);
     }, []);
 
-    // Enhanced stats calculation to include all statuses including drafts and cancelled
+    // Enhanced stats calculation using status groups for more inclusive filtering
     const stats = useMemo(() => {
+        // Count shipments by status groups
+        const groupCounts = {
+            PRE_SHIPMENT: 0,
+            BOOKING: 0,
+            TRANSIT: 0,
+            DELIVERY: 0,
+            COMPLETED: 0,
+            EXCEPTIONS: 0,
+            CANCELLED: 0,
+            DRAFTS: 0
+        };
+
+        allShipments.forEach(shipment => {
+            const group = getShipmentStatusGroup(shipment);
+            if (group === 'DRAFTS') {
+                groupCounts.DRAFTS++;
+            } else {
+                groupCounts[group] = (groupCounts[group] || 0) + 1;
+            }
+        });
+
         return {
-            total: allShipments.filter(s => s.status?.toLowerCase() !== 'draft').length, // Exclude drafts from total
-            inTransit: allShipments.filter(s => s.status?.toLowerCase() === 'in_transit' || s.status?.toLowerCase() === 'in transit').length,
-            delivered: allShipments.filter(s => s.status?.toLowerCase() === 'delivered').length,
-            awaitingShipment: allShipments.filter(s => s.status?.toLowerCase() === 'scheduled').length,
-            cancelled: allShipments.filter(s =>
-                s.status?.toLowerCase() === 'cancelled' ||
-                s.status?.toLowerCase() === 'canceled' ||
-                s.status?.toLowerCase() === 'void' ||
-                s.status?.toLowerCase() === 'voided'
-            ).length,
-            drafts: allShipments.filter(s => s.status?.toLowerCase() === 'draft').length
+            total: allShipments.length - groupCounts.DRAFTS, // Exclude drafts from total
+            awaitingShipment: groupCounts.PRE_SHIPMENT + groupCounts.BOOKING, // Combine pre-shipment phases
+            inTransit: groupCounts.TRANSIT + groupCounts.DELIVERY, // Combine transit and delivery phases
+            delivered: groupCounts.COMPLETED,
+            exceptions: groupCounts.EXCEPTIONS,
+            cancelled: groupCounts.CANCELLED,
+            drafts: groupCounts.DRAFTS
         };
     }, [allShipments]);
 
@@ -981,31 +1095,52 @@ const Shipments = () => {
                 );
             }
 
-            // Store the full unfiltered dataset for stats calculation
+            // Store the full unfiltered dataset for stats calculation and search
             setAllShipments(shipmentsData);
 
-            // Filter by tab - exclude drafts from "All" tab
+            // Enhanced tab filter using status groups
             if (selectedTab === 'all') {
-                // "All" tab should exclude drafts (case-insensitive)
-                shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() !== 'draft');
+                // "All" tab should exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group !== 'DRAFTS';
+                });
             } else if (selectedTab === 'draft') {
-                // Handle draft tab - only show drafts (case-insensitive)
-                shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'draft');
+                // Handle draft tab - only show drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'DRAFTS';
+                });
             } else if (selectedTab === 'Awaiting Shipment') {
-                // Handle "Awaiting Shipment" tab - filter by "scheduled" status
-                shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === 'scheduled');
+                // Include all pre-shipment and booking phases, exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return (group === 'PRE_SHIPMENT' || group === 'BOOKING') && group !== 'DRAFTS';
+                });
+            } else if (selectedTab === 'In Transit') {
+                // Include transit and delivery phases, exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return (group === 'TRANSIT' || group === 'DELIVERY') && group !== 'DRAFTS';
+                });
+            } else if (selectedTab === 'Delivered') {
+                // Include completed phase, exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'COMPLETED' && group !== 'DRAFTS';
+                });
+            } else if (selectedTab === 'Exceptions') {
+                // Include exceptions phase, exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'EXCEPTIONS' && group !== 'DRAFTS';
+                });
             } else if (selectedTab === 'Cancelled') {
-                // Handle "Cancelled" tab - filter by "cancelled" status (both spellings)
-                shipmentsData = shipmentsData.filter(s =>
-                    s.status?.toLowerCase() === 'cancelled' ||
-                    s.status?.toLowerCase() === 'canceled' ||
-                    s.status?.toLowerCase() === 'void' ||
-                    s.status?.toLowerCase() === 'voided'
-                );
-            } else {
-                // Handle other specific status tabs (In Transit, Delivered, etc.)
-                // Use case-insensitive comparison for other statuses too
-                shipmentsData = shipmentsData.filter(s => s.status?.toLowerCase() === selectedTab.toLowerCase());
+                // Include cancelled phase, exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const group = getShipmentStatusGroup(s);
+                    return group === 'CANCELLED' && group !== 'DRAFTS';
+                });
             }
 
             // Apply sorting
@@ -1844,9 +1979,10 @@ const Shipments = () => {
                             <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Tabs value={selectedTab} onChange={handleTabChange}>
                                     <Tab label={`All (${stats.total})`} value="all" />
+                                    <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
                                     <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
                                     <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
-                                    <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
+                                    <Tab label={`Exceptions (${stats.exceptions})`} value="Exceptions" />
                                     <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
                                     <Tab label={`Drafts (${stats.drafts})`} value="draft" />
                                 </Tabs>

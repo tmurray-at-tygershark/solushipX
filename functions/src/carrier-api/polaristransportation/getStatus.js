@@ -6,18 +6,50 @@ const { getCarrierApiConfig, validateCarrierEndpoints } = require('../../utils')
 
 /**
  * Polaris Transportation Status Codes Mapping
- * Map common status codes to universal status
+ * Map actual Polaris API status codes to universal status
  */
 const POLARIS_STATUS_MAP = {
+    // ACTUAL POLARIS API STATUS CODES (from real API)
+    
+    // Pre-shipment and Entry Phase
+    'ENTERD/DR': 'pending',      // shipment entered in system
+    'ENTERED': 'pending',        // shipment entered in system
+    
+    // Pickup and Transit Phase
+    'SCHED PICK/DR': 'scheduled', // scheduled for pickup
+    'SCHED FOR PICK.': 'scheduled', // scheduled for pickup
+    'PICKED UP/DR': 'in_transit', // shipment picked up
+    'PICKED UP': 'in_transit',    // shipment picked up
+    
+    // Arrival and Terminal Phases
+    'ARRV_ORIG': 'in_transit',    // Arrival
+    'ARRV_DEST': 'in_transit',    // Arrival at Destination
+    
+    // Transit Phases
+    'IN TRANSIT': 'in_transit',   // shipment in transit
+    'IN TRANSIT/DR': 'in_transit', // shipment in transit
+    'IN TRNS/ON FILE': 'in_transit', // shipment in transit
+    
+    // Customs and Delays
+    'IN BOND': 'in_transit',      // in bond
+    'CUSTOMS HOLD': 'on_hold',    // customs is holding
+    'CUSTOMS_CLEARED': 'in_transit', // cleared customs
+    'VOLUME DELAY': 'on_hold',    // volume delay
+    
+    // Delivery Phases
+    'SCHED FOR DELV': 'in_transit', // scheduled for delivery
+    'OUT FOR DEL': 'in_transit',  // shipment in transit for delivery
+    'DELIVERED': 'delivered',     // shipment delivered
+    'DELVD/BILLED': 'delivered',  // shipment delivered and billed
+    
+    // Cancellation
+    'CANCELLED': 'canceled',      // shipment cancelled and voided
+    
+    // Legacy mappings for backward compatibility
     'BOOKED': 'booked',
     'SCHEDULED': 'scheduled',
     'PICKUP_SCHEDULED': 'scheduled',
-    'PICKED_UP': 'in_transit',
-    'IN_TRANSIT': 'in_transit',
-    'OUT_FOR_DELIVERY': 'in_transit',
-    'DELIVERED': 'delivered',
     'COMPLETED': 'delivered',
-    'CANCELLED': 'canceled',
     'CANCELED': 'canceled',
     'ON_HOLD': 'on_hold',
     'DELAYED': 'on_hold',
