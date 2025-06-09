@@ -41,6 +41,7 @@ import dayjs from 'dayjs';
 import { collection, query, orderBy, limit, onSnapshot, getDocs, where, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
+import ShipmentGlobe from '../Globe/Globe';
 
 // Helper function to format Firestore timestamp
 const formatDate = (timestamp) => {
@@ -696,51 +697,33 @@ const Dashboard = () => {
 
                 {/* Main Content */}
                 <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)', p: 3, mb: 3 }}>
-                    {/* Status Boxes */}
-                    <Grid container spacing={3} sx={{ mb: 4 }}>
-                        <Grid item xs={12} sm={6} md={3}>
-                            <StatusBox
-                                title="Total Shipments"
-                                count={shipmentStats.total}
-                                icon={ShippingIcon}
-                                color="#000000"
-                                bgColor="rgba(0, 0, 0, 0.1)"
+                    {/* Full Width Globe Section - Maximum Size */}
+                    <Box sx={{ mb: 4 }}>
+                        <Box sx={{
+                            backgroundColor: '#000000',
+                            borderRadius: 2,
+                            overflow: 'hidden',
+                            height: 600,
+                            position: 'relative'
+                        }}>
+                            <ShipmentGlobe
+                                shipments={shipments.slice(0, 20)} // Show recent 20 shipments
+                                width="100%"
+                                height={600}
+                                showOverlays={true}
+                                statusCounts={{
+                                    total: shipmentStats.total,
+                                    pending: shipmentStats.awaitingShipment,
+                                    transit: shipmentStats.inTransit,
+                                    delivered: shipmentStats.delivered
+                                }}
                             />
-                        </Grid>
+                        </Box>
+                    </Box>
 
-                        <Grid item xs={12} sm={6} md={3}>
-                            <StatusBox
-                                title="Awaiting Shipment"
-                                count={shipmentStats.awaitingShipment}
-                                icon={ScheduleIcon}
-                                color="#3B82F6"
-                                bgColor="rgba(59, 130, 246, 0.1)"
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6} md={3}>
-                            <StatusBox
-                                title="In Transit"
-                                count={shipmentStats.inTransit}
-                                icon={LocalShipping}
-                                color="#6366f1"
-                                bgColor="rgba(99, 102, 241, 0.1)"
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6} md={3}>
-                            <StatusBox
-                                title="Delivered"
-                                count={shipmentStats.delivered}
-                                icon={CheckCircleIcon}
-                                color="#10b981"
-                                bgColor="rgba(16, 185, 129, 0.1)"
-                            />
-                        </Grid>
-                    </Grid>
-
-                    {/* Daily Shipment Volume Chart */}
+                    {/* Chart Section */}
                     <Grid container spacing={3}>
+                        {/* Daily Shipment Volume Chart */}
                         <Grid item xs={12}>
                             <Paper sx={{
                                 p: 3,
