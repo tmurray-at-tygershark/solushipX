@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     Tooltip,
     IconButton,
@@ -18,7 +18,8 @@ import {
     Select,
     MenuItem,
     InputLabel,
-    Paper
+    Paper,
+    Container
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
@@ -26,7 +27,11 @@ import InventoryIcon from '@mui/icons-material/Inventory';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import './ShipmentInfo.css';
-import { useShipmentForm } from '../../contexts/ShipmentFormContext'; // Import the context hook
+import { useShipmentForm } from '../../contexts/ShipmentFormContext';
+import { useCompany } from '../../contexts/CompanyContext';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { useNavigate } from 'react-router-dom';
 
 // Helper to format date as YYYY-MM-DD
 const formatDateForInput = (date) => {
@@ -36,44 +41,146 @@ const formatDateForInput = (date) => {
     return `${year}-${month}-${day}`;
 };
 
-// Removed data and onDataChange from props
+// Helper to determine available shipment types based on connected carriers and their Firestore data
+const getAvailableShipmentTypes = (connectedCarriers, carrierData) => {
+    if (!connectedCarriers || connectedCarriers.length === 0) {
+        // No carriers configured at all
+        return { courier: false, freight: false };
+    }
+
+    // Check if any carriers are enabled
+    const enabledCarriers = connectedCarriers.filter(cc => cc.enabled === true);
+    if (enabledCarriers.length === 0) {
+        // No carriers are enabled
+        return { courier: false, freight: false };
+    }
+
+    // Build a lookup map for carrier types from Firestore data
+    const carrierTypeMap = {};
+    if (carrierData && Array.isArray(carrierData)) {
+        carrierData.forEach(carrier => {
+            carrierTypeMap[carrier.carrierID] = carrier.type;
+        });
+    }
+
+    const availableTypes = { courier: false, freight: false };
+
+    enabledCarriers.forEach(cc => {
+        const carrierType = carrierTypeMap[cc.carrierID];
+        if (carrierType === 'courier') {
+            availableTypes.courier = true;
+        } else if (carrierType === 'freight') {
+            availableTypes.freight = true;
+        } else if (carrierType === 'hybrid') {
+            availableTypes.courier = true;
+            availableTypes.freight = true;
+        }
+    });
+
+    return availableTypes;
+};
+
 const ShipmentInfo = ({ onNext, onPrevious }) => {
-    // Get state and update function from context
     const { formData, updateFormSection } = useShipmentForm();
-    // Use a local state for errors, still managed locally
+    const { companyData } = useCompany();
     const [errors, setErrors] = useState({});
     const [showErrorSnackbar, setShowErrorSnackbar] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [loading, setLoading] = useState(true);
+    const [carrierData, setCarrierData] = useState([]);
+    const navigate = useNavigate();
+
+    // Fetch carrier data from Firestore based on connected carriers
+    useEffect(() => {
+        const fetchCarrierData = async () => {
+            if (!companyData?.connectedCarriers || companyData.connectedCarriers.length === 0) {
+                console.log('No connected carriers found for company');
+                setCarrierData([]);
+                setLoading(false);
+                return;
+            }
+
+            try {
+                setLoading(true);
+                console.log('Fetching carrier data for:', companyData.connectedCarriers);
+
+                // Get carrier IDs from connected carriers
+                const carrierIds = companyData.connectedCarriers.map(cc => cc.carrierID);
+
+                // Fetch carrier documents from Firestore
+                const carriersRef = collection(db, 'carriers');
+                const carriersQuery = query(carriersRef, where('carrierID', 'in', carrierIds));
+                const snapshot = await getDocs(carriersQuery);
+
+                const carriers = [];
+                snapshot.forEach(doc => {
+                    carriers.push({ id: doc.id, ...doc.data() });
+                });
+
+                console.log('Fetched carrier data:', carriers);
+                setCarrierData(carriers);
+            } catch (error) {
+                console.error('Error fetching carrier data:', error);
+                setCarrierData([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchCarrierData();
+    }, [companyData]);
+
+    // Check available shipment types after carrier data is loaded
+    const availableShipmentTypes = useMemo(() => {
+        if (loading) return { courier: false, freight: false };
+        return getAvailableShipmentTypes(companyData?.connectedCarriers, carrierData);
+    }, [companyData?.connectedCarriers, carrierData, loading]);
+
+    // Auto-select shipment type based on available carriers
+    useEffect(() => {
+        if (!loading && !formData.shipmentInfo?.shipmentType) {
+            const types = availableShipmentTypes;
+
+            // Priority logic: Freight first, then courier
+            if (types.freight) {
+                handleShipmentTypeChange('freight');
+            } else if (types.courier) {
+                handleShipmentTypeChange('courier');
+            }
+            // If neither available, don't auto-select anything
+        }
+    }, [availableShipmentTypes, loading, formData.shipmentInfo?.shipmentType]);
+
+    // Check if no carriers are enabled
+    const noCarriersEnabled = !loading && !availableShipmentTypes.courier && !availableShipmentTypes.freight;
+
+    // Local state to ensure immediate courier selection and track user changes
+    const [localShipmentType, setLocalShipmentType] = useState('courier');
+    const [userHasChanged, setUserHasChanged] = useState(false);
 
     useEffect(() => {
-        // This useEffect is now simplified - the initialization is handled by the mount useEffect below
-        // Only handle updates to existing shipmentInfo if needed for other logic
-    }, [formData.shipmentInfo, updateFormSection]); // Keep dependencies for consistency
-
-    // Add loading effect
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setLoading(false);
-        }, 1000); // Simulate loading for 1 second
-        return () => clearTimeout(timer);
-    }, []);
+        // Only set courier as default if there's NO existing shipmentType data
+        const currentData = formData.shipmentInfo || {};
+        if (!userHasChanged && !currentData.shipmentType && !loading && availableShipmentTypes.courier) {
+            updateFormSection('shipmentInfo', {
+                ...currentData,
+                shipmentType: 'courier',
+                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date())
+            });
+        }
+    }, [loading, availableShipmentTypes, userHasChanged, formData.shipmentInfo, updateFormSection]);
 
     const handleInputChange = (e) => {
         const { id, value, type } = e.target;
         const newValue = type === 'checkbox' ? e.target.checked : value;
-        // Update context directly
         updateFormSection('shipmentInfo', { [id]: newValue });
-        // Clear error when field is modified
         if (errors[id]) {
             setErrors(prev => ({ ...prev, [id]: null }));
         }
     };
 
     const handleShipmentTypeChange = (type) => {
-        // Mark that user has made a change
         setUserHasChanged(true);
-        // Update both local state and context
         setLocalShipmentType(type);
         updateFormSection('shipmentInfo', { shipmentType: type });
         if (errors.shipmentType) {
@@ -84,13 +191,15 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     const validateForm = () => {
         const newErrors = {};
         const currentData = formData.shipmentInfo || {};
-        // ... (existing validation logic using currentData, which comes from formData.shipmentInfo)
-        // This validation logic itself seems fine as it reads from the context state.
-        // The critical part is ensuring context IS the latest before this validateForm is called IF we solely rely on context.
-        // Or, validate a passed-in data object if handleSubmit passes its own collected data.
-        // For now, assuming currentData from context is what we validate.
+        console.log('🔍 validateForm - Starting validation with data:', currentData);
+
         const requiredFields = ['shipmentType', 'shipmentDate'];
         const hasEmptyRequiredFields = requiredFields.some(field => !currentData[field]);
+        console.log('🔍 validateForm - Required fields check:', {
+            shipmentType: currentData.shipmentType,
+            shipmentDate: currentData.shipmentDate,
+            hasEmptyRequiredFields
+        });
 
         if (hasEmptyRequiredFields) {
             setErrorMessage('Please fill in all required fields');
@@ -125,6 +234,12 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
         }
         setErrors(newErrors);
         const isValid = Object.keys(newErrors).length === 0;
+        console.log('🔍 validateForm - Final result:', {
+            newErrors,
+            isValid,
+            errorCount: Object.keys(newErrors).length
+        });
+
         if (!isValid && !hasEmptyRequiredFields) {
             setErrorMessage('Please correct the errors highlighted below.');
             setShowErrorSnackbar(true);
@@ -133,71 +248,76 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     };
 
     const handleSubmit = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        try {
+            console.log('🚀 handleSubmit called!');
 
-        // currentShipmentInfo IS formData.shipmentInfo from context, which should have been updated by handleInputChange
-        const currentShipmentInfo = formData.shipmentInfo || {};
+            const currentShipmentInfo = formData.shipmentInfo || {};
+            console.log('🔍 ShipmentInfo handleSubmit - Form Data:', {
+                currentShipmentInfo,
+                formDataShipmentInfo: formData.shipmentInfo,
+                availableShipmentTypes,
+                loading
+            });
 
-        // Validate form using the data currently in context (formData.shipmentInfo)
-        const isValid = validateForm();
+            const isValid = validateForm();
+            console.log('🔍 ShipmentInfo handleSubmit - Validation Result:', isValid);
 
-        if (!isValid) {
-            const firstErrorField = Object.keys(errors)[0];
-            if (firstErrorField) {
-                const element = document.getElementById(firstErrorField);
-                if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                } else {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (!isValid) {
+                console.log('❌ ShipmentInfo handleSubmit - Validation failed, errors:', errors);
+                const firstErrorField = Object.keys(errors)[0];
+                if (firstErrorField) {
+                    const element = document.getElementById(firstErrorField);
+                    if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                 }
+                return;
             }
-            return;
-        }
 
-        // Since handleInputChange updates context directly, formData.shipmentInfo IS the source of truth.
-        // No need to explicitly call updateFormSection here again with the same object unless there was local state being managed.
-        onNext(currentShipmentInfo); // Pass the validated shipmentInfo data from context to the parent
+            console.log('✅ ShipmentInfo handleSubmit - Calling onNext with:', currentShipmentInfo);
+            onNext(currentShipmentInfo);
+        } catch (error) {
+            console.error('💥 ERROR in handleSubmit:', error);
+        }
     };
 
     const handleCloseSnackbar = () => {
         setShowErrorSnackbar(false);
     };
 
-    // Local state to ensure immediate courier selection and track user changes
-    const [localShipmentType, setLocalShipmentType] = useState('courier');
-    const [userHasChanged, setUserHasChanged] = useState(false);
-
     // Read values directly from context for rendering
     const currentData = formData.shipmentInfo || {};
 
-    // Smart default logic:
-    // 1. If user has made changes this session → use their selection
-    // 2. If there's existing draft data with shipmentType → respect it
-    // 3. Only default to courier for completely new shipments
+    // Smart default logic
     let shipmentType;
     if (userHasChanged) {
-        // User has made a change this session, use context or local state
         shipmentType = currentData.shipmentType || localShipmentType;
     } else if (currentData.shipmentType) {
-        // Existing draft data, respect the saved shipment type
         shipmentType = currentData.shipmentType;
+    } else if (availableShipmentTypes.courier && !availableShipmentTypes.freight) {
+        shipmentType = 'courier';
+    } else if (availableShipmentTypes.freight && !availableShipmentTypes.courier) {
+        shipmentType = 'freight';
     } else {
-        // New shipment, default to courier
         shipmentType = 'courier';
     }
 
-    // Also ensure the data is set in the context immediately if it's not already set
-    React.useEffect(() => {
-        // Only set courier as default if there's NO existing shipmentType data
-        if (!userHasChanged && !currentData.shipmentType) {
-            updateFormSection('shipmentInfo', {
-                ...currentData,
-                shipmentType: 'courier',
-                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date())
-            });
+    // Ensure the calculated shipment type is saved to form context
+    useEffect(() => {
+        console.log('🔍 useEffect - Shipment type save check:', {
+            shipmentType,
+            currentDataShipmentType: currentData.shipmentType,
+            loading,
+            shouldSave: shipmentType && !currentData.shipmentType && !loading
+        });
+
+        if (shipmentType && !currentData.shipmentType && !loading) {
+            console.log('💾 useEffect - Saving shipment type to form context:', shipmentType);
+            updateFormSection('shipmentInfo', { shipmentType });
         }
-    }, []); // Run only once on mount
+    }, [shipmentType, currentData.shipmentType, loading, updateFormSection]);
 
     if (loading) {
         return (
@@ -205,49 +325,8 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                     <Skeleton variant="text" width={200} height={40} />
                 </Box>
-
-                <Box sx={{ mb: 4 }}>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 2 }} />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 2 }} />
-                        </Grid>
-                    </Grid>
-                </Box>
-
-                <Box sx={{ mb: 4 }}>
-                    <Skeleton variant="text" width={150} height={30} sx={{ mb: 2 }} />
-                    <Skeleton variant="rectangular" height={56} sx={{ mb: 2 }} />
-                </Box>
-
-                <Box sx={{ mb: 4 }}>
-                    <Skeleton variant="text" width={150} height={30} sx={{ mb: 2 }} />
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <Skeleton variant="rectangular" height={56} />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <Skeleton variant="rectangular" height={56} />
-                        </Grid>
-                    </Grid>
-                </Box>
-
-                <Box sx={{ mb: 4 }}>
-                    <Skeleton variant="text" width={150} height={30} sx={{ mb: 2 }} />
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <Skeleton variant="rectangular" height={56} />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <Skeleton variant="rectangular" height={56} />
-                        </Grid>
-                    </Grid>
-                </Box>
-
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
-                    <Skeleton variant="rectangular" width={120} height={40} />
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <div>Loading carrier configuration...</div>
                 </Box>
             </div>
         );
@@ -261,303 +340,337 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                 </Typography>
             </Box>
 
-            <form onSubmit={handleSubmit} noValidate>
-                {/* Shipment Type Selection */}
-                <Box sx={{ mb: 4 }}>
-
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <div
-                                className={`shipment-type-card ${shipmentType === 'courier' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
-                                onClick={() => handleShipmentTypeChange('courier')}
-                                role="button"
-                                tabIndex={0}
+            <form className="form">
+                {/* Warning when no carriers are available */}
+                {noCarriersEnabled && (
+                    <Alert
+                        severity="warning"
+                        sx={{ mb: 3 }}
+                        action={
+                            <Button
+                                color="inherit"
+                                size="small"
+                                onClick={() => navigate('/carriers')}
                             >
-                                <InventoryIcon sx={{ fontSize: 40, mb: 1 }} />
-                                <Typography variant="subtitle1">Courier</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Fast delivery for smaller packages
-                                </Typography>
-                            </div>
-                            {errors.shipmentType && (
-                                <FormHelperText error sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
-                                    <ErrorOutlineIcon sx={{ fontSize: 16, mr: 0.5 }} />
-                                    {errors.shipmentType}
-                                </FormHelperText>
-                            )}
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <div
-                                className={`shipment-type-card ${shipmentType === 'freight' ? 'selected' : ''} ${errors.shipmentType ? 'error' : ''}`}
-                                onClick={() => handleShipmentTypeChange('freight')}
-                                role="button"
-                                tabIndex={0}
+                                Configure Carriers
+                            </Button>
+                        }
+                    >
+                        <Typography variant="body2">
+                            No carriers are currently enabled for your company.
+                            You'll need to configure and enable carriers before you can create shipments.
+                        </Typography>
+                    </Alert>
+                )}
+
+                <Grid container spacing={3}>
+                    {/* Shipment Type Selection */}
+                    <Grid item xs={12}>
+                        <Typography variant="h6" gutterBottom>
+                            Shipment Type
+                            <Tooltip title="Choose the type of shipment based on size and service requirements">
+                                <IconButton size="small">
+                                    <InfoIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                            <Tooltip
+                                title={!availableShipmentTypes.courier ? "No courier carriers available" : "Small packages, fast delivery"}
+                                placement="top"
                             >
-                                <LocalShippingIcon sx={{ fontSize: 40, mb: 1 }} />
-                                <Typography variant="subtitle1">Freight</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    For larger or bulk shipments
-                                </Typography>
-                            </div>
-                        </Grid>
-                    </Grid>
-                </Box>
-
-                <Divider sx={{ my: 3 }} />
-
-                {/* Reference Information */}
-                <Box sx={{ mb: 4 }}>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12}>
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="shipperReferenceNumber">
-                                    Reference Number
-                                    <Tooltip title="Your internal reference for this shipment">
-                                        <IconButton size="small" sx={{ ml: 0.5 }}>
-                                            <InfoIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                </label>
-                                <input
-                                    type="text"
-                                    id="shipperReferenceNumber"
-                                    className="form-control"
-                                    value={currentData.shipperReferenceNumber || ''} // Read from context
-                                    onChange={handleInputChange}
-                                    placeholder="Enter reference number"
-                                />
-                            </div>
-                        </Grid>
-                    </Grid>
-                </Box>
-
-                {/* Schedule */}
-                <Box sx={{ mb: 4 }}>
-                    <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-                        <AccessTimeIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                        Schedule
-                    </Typography>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                required
-                                type="date"
-                                id="shipmentDate"
-                                label="Shipment Date"
-                                value={currentData.shipmentDate || ''} // Read from context
-                                onChange={handleInputChange}
-                                error={!!errors.shipmentDate}
-                                helperText={errors.shipmentDate}
-                                InputLabelProps={{ shrink: true }}
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth error={!!errors.pickupTime}>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>Pickup Window</Typography>
-                                <Grid container spacing={1}>
-                                    <Grid item xs={6}>
-                                        <TextField
-                                            fullWidth
-                                            type="time"
-                                            id="earliestPickupTime"
-                                            label="Earliest"
-                                            value={currentData.earliestPickupTime || '05:00'} // Read from context
-                                            onChange={handleInputChange}
-                                            InputLabelProps={{ shrink: true }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={6}>
-                                        <TextField
-                                            fullWidth
-                                            type="time"
-                                            id="latestPickupTime"
-                                            label="Latest"
-                                            value={currentData.latestPickupTime || '17:00'} // Read from context
-                                            onChange={handleInputChange}
-                                            InputLabelProps={{ shrink: true }}
-                                        />
-                                    </Grid>
-                                </Grid>
-                                {errors.pickupTime && (
-                                    <FormHelperText error>
-                                        <ErrorOutlineIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
-                                        {errors.pickupTime}
-                                    </FormHelperText>
-                                )}
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth error={!!errors.deliveryTime}>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>Delivery Window</Typography>
-                                <Grid container spacing={1}>
-                                    <Grid item xs={6}>
-                                        <TextField
-                                            fullWidth
-                                            type="time"
-                                            id="earliestDeliveryTime"
-                                            label="Earliest"
-                                            value={currentData.earliestDeliveryTime || '09:00'} // Read from context
-                                            onChange={handleInputChange}
-                                            InputLabelProps={{ shrink: true }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={6}>
-                                        <TextField
-                                            fullWidth
-                                            type="time"
-                                            id="latestDeliveryTime"
-                                            label="Latest"
-                                            value={currentData.latestDeliveryTime || '22:00'} // Read from context
-                                            onChange={handleInputChange}
-                                            InputLabelProps={{ shrink: true }}
-                                        />
-                                    </Grid>
-                                </Grid>
-                                {errors.deliveryTime && (
-                                    <FormHelperText error>
-                                        <ErrorOutlineIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
-                                        {errors.deliveryTime}
-                                    </FormHelperText>
-                                )}
-                            </FormControl>
-                        </Grid>
-                    </Grid>
-                </Box>
-
-                <Divider sx={{ my: 3 }} />
-
-                {/* Additional Services */}
-                <Box sx={{ mb: 4 }}>
-                    <Typography variant="h6" sx={{ mb: 3, display: 'flex', alignItems: 'center' }}>
-                        Additional Services
-                    </Typography>
-
-                    <Paper elevation={0} sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
-                        <Grid container spacing={3}>
-                            {/* Dangerous Goods */}
-                            <Grid item xs={12} md={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel id="dangerous-goods-label">
-                                        Dangerous Goods
-                                    </InputLabel>
-                                    <Select
-                                        labelId="dangerous-goods-label"
-                                        id="dangerousGoodsType"
-                                        value={currentData.dangerousGoodsType || 'none'}
-                                        label="Dangerous Goods"
-                                        onChange={handleInputChange}
+                                <span style={{ flex: 1 }}>
+                                    <Button
+                                        variant={shipmentType === 'courier' ? 'contained' : 'outlined'}
+                                        startIcon={<LocalShippingIcon />}
+                                        onClick={() => handleShipmentTypeChange('courier')}
+                                        disabled={!availableShipmentTypes.courier}
+                                        fullWidth
+                                        sx={{
+                                            py: 2,
+                                            '&.MuiButton-contained': {
+                                                backgroundColor: '#1976d2',
+                                                '&:hover': {
+                                                    backgroundColor: '#1565c0'
+                                                }
+                                            },
+                                            '&.Mui-disabled': {
+                                                opacity: 0.6
+                                            }
+                                        }}
                                     >
-                                        <MenuItem value="none">None</MenuItem>
-                                        <MenuItem value="limited">Limited Quantity</MenuItem>
-                                        <MenuItem value="fully-regulated">Fully Regulated</MenuItem>
-                                    </Select>
-                                </FormControl>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                                Courier
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                                                Small packages, fast delivery
+                                            </Typography>
+                                        </Box>
+                                    </Button>
+                                </span>
+                            </Tooltip>
+                            <Tooltip
+                                title={!availableShipmentTypes.freight ? "No freight carriers available" : "Large shipments, LTL service"}
+                                placement="top"
+                            >
+                                <span style={{ flex: 1 }}>
+                                    <Button
+                                        variant={shipmentType === 'freight' ? 'contained' : 'outlined'}
+                                        startIcon={<InventoryIcon />}
+                                        onClick={() => handleShipmentTypeChange('freight')}
+                                        disabled={!availableShipmentTypes.freight}
+                                        fullWidth
+                                        sx={{
+                                            py: 2,
+                                            '&.MuiButton-contained': {
+                                                backgroundColor: '#1976d2',
+                                                '&:hover': {
+                                                    backgroundColor: '#1565c0'
+                                                }
+                                            },
+                                            '&.Mui-disabled': {
+                                                opacity: 0.6
+                                            }
+                                        }}
+                                    >
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                                Freight
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                                                Large shipments, LTL service
+                                            </Typography>
+                                        </Box>
+                                    </Button>
+                                </span>
+                            </Tooltip>
+                        </Box>
+                        {errors.shipmentType && (
+                            <FormHelperText error>
+                                {errors.shipmentType}
+                            </FormHelperText>
+                        )}
+                    </Grid>
+
+                    {/* Basic Shipment Details */}
+                    <Grid item xs={12} sm={6}>
+                        <TextField
+                            fullWidth
+                            id="shipmentDate"
+                            label="Shipment Date"
+                            type="date"
+                            value={currentData.shipmentDate || formatDateForInput(new Date())}
+                            onChange={handleInputChange}
+                            error={!!errors.shipmentDate}
+                            helperText={errors.shipmentDate}
+                            InputLabelProps={{
+                                shrink: true,
+                            }}
+                            required
+                        />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                        <TextField
+                            fullWidth
+                            id="shipperReferenceNumber"
+                            label="Reference Number"
+                            value={currentData.shipperReferenceNumber || ''}
+                            onChange={handleInputChange}
+                            error={!!errors.shipperReferenceNumber}
+                            helperText={errors.shipperReferenceNumber || "Your internal reference number"}
+                            placeholder="Optional reference number"
+                        />
+                    </Grid>
+
+                    {/* Pickup Time Windows */}
+                    <Grid item xs={12}>
+                        <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                            Pickup Time Window
+                            <Tooltip title="Specify the time window when the carrier can pick up the shipment">
+                                <IconButton size="small">
+                                    <InfoIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                        <TextField
+                            fullWidth
+                            id="earliestPickupTime"
+                            label="Earliest Pickup Time"
+                            type="time"
+                            value={currentData.earliestPickupTime || '09:00'}
+                            onChange={handleInputChange}
+                            error={!!errors.pickupTime}
+                            InputLabelProps={{
+                                shrink: true,
+                            }}
+                        />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                        <TextField
+                            fullWidth
+                            id="latestPickupTime"
+                            label="Latest Pickup Time"
+                            type="time"
+                            value={currentData.latestPickupTime || '17:00'}
+                            onChange={handleInputChange}
+                            error={!!errors.pickupTime}
+                            helperText={errors.pickupTime}
+                            InputLabelProps={{
+                                shrink: true,
+                            }}
+                        />
+                    </Grid>
+
+                    {/* Delivery Time Windows */}
+                    <Grid item xs={12}>
+                        <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                            Delivery Time Window
+                            <Tooltip title="Specify the preferred delivery time window">
+                                <IconButton size="small">
+                                    <InfoIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                        <TextField
+                            fullWidth
+                            id="earliestDeliveryTime"
+                            label="Earliest Delivery Time"
+                            type="time"
+                            value={currentData.earliestDeliveryTime || '09:00'}
+                            onChange={handleInputChange}
+                            error={!!errors.deliveryTime}
+                            InputLabelProps={{
+                                shrink: true,
+                            }}
+                        />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                        <TextField
+                            fullWidth
+                            id="latestDeliveryTime"
+                            label="Latest Delivery Time"
+                            type="time"
+                            value={currentData.latestDeliveryTime || '17:00'}
+                            onChange={handleInputChange}
+                            error={!!errors.deliveryTime}
+                            helperText={errors.deliveryTime}
+                            InputLabelProps={{
+                                shrink: true,
+                            }}
+                        />
+                    </Grid>
+
+                    {/* Special Services */}
+                    <Grid item xs={12}>
+                        <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                            Special Services
+                        </Typography>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            id="signatureRequired"
+                                            checked={currentData.signatureRequired || false}
+                                            onChange={handleInputChange}
+                                        />
+                                    }
+                                    label="Signature Required"
+                                />
                             </Grid>
-
-                            {/* Service Options */}
-                            <Grid item xs={12} md={6}>
-                                <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
-                                    Service Options
-                                </Typography>
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                id="signatureRequired"
-                                                checked={!!currentData.signatureRequired}
-                                                onChange={handleInputChange}
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                Signature Required
-                                                <Tooltip title="Require signature upon delivery (recommended for security)">
-                                                    <IconButton size="small" sx={{ ml: 0.5 }}>
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        }
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                id="holdForPickup"
-                                                checked={currentData.holdForPickup || false}
-                                                onChange={handleInputChange}
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                Hold for Pickup
-                                                <Tooltip title="Package will be held at the carrier's facility for pickup">
-                                                    <IconButton size="small" sx={{ ml: 0.5 }}>
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        }
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                id="saturdayDelivery"
-                                                checked={currentData.saturdayDelivery || false}
-                                                onChange={handleInputChange}
-                                                color="primary"
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                Saturday Delivery
-                                                <Tooltip title="Request delivery on Saturday (additional charges may apply)">
-                                                    <IconButton size="small" sx={{ ml: 0.5 }}>
-                                                        <InfoIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        }
-                                    />
-                                </Box>
+                            <Grid item xs={12} sm={6}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            id="residentialDelivery"
+                                            checked={currentData.residentialDelivery || false}
+                                            onChange={handleInputChange}
+                                        />
+                                    }
+                                    label="Residential Delivery"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            id="insideDelivery"
+                                            checked={currentData.insideDelivery || false}
+                                            onChange={handleInputChange}
+                                        />
+                                    }
+                                    label="Inside Delivery"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            id="liftgateRequired"
+                                            checked={currentData.liftgateRequired || false}
+                                            onChange={handleInputChange}
+                                        />
+                                    }
+                                    label="Liftgate Required"
+                                />
                             </Grid>
                         </Grid>
-                    </Paper>
-                </Box>
+                    </Grid>
 
-                <Box sx={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    mt: 4,
-                    gap: 2
-                }}>
-                    {/* Previous button logic might need to be added/passed if this isn't the first step */}
-                    {/* <Button variant="outlined" onClick={onPrevious}>Previous</Button> */}
+                    {/* Special Instructions */}
+                    <Grid item xs={12}>
+                        <TextField
+                            fullWidth
+                            id="specialInstructions"
+                            label="Special Instructions"
+                            multiline
+                            rows={3}
+                            value={currentData.specialInstructions || ''}
+                            onChange={handleInputChange}
+                            placeholder="Any special handling or delivery instructions..."
+                        />
+                    </Grid>
+                </Grid>
+
+                {/* Navigation Buttons */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                    <Button
+                        variant="outlined"
+                        onClick={onPrevious}
+                        type="button"
+                    >
+                        Previous
+                    </Button>
                     <Button
                         variant="contained"
-                        color="primary"
-                        onClick={handleSubmit}
-                        sx={{ minWidth: '120px' }}
+                        disabled={loading}
+                        onClick={(e) => {
+                            console.log('🔘 Next button clicked!');
+                            handleSubmit(e);
+                        }}
                     >
                         Next
                     </Button>
                 </Box>
             </form>
 
+            {/* Error Snackbar */}
             <Snackbar
                 open={showErrorSnackbar}
                 autoHideDuration={6000}
                 onClose={handleCloseSnackbar}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-            >
-                <Alert onClose={handleCloseSnackbar} severity="error" sx={{ width: '100%' }}>
-                    {errorMessage}
-                </Alert>
-            </Snackbar>
+                message={errorMessage}
+            />
         </div>
     );
 };

@@ -127,12 +127,48 @@ export const CompanyProvider = ({ children }) => {
         setCompanyIdForAddress(null);
     };
 
+    // Function to refresh company data from Firestore
+    const refreshCompanyData = async () => {
+        if (!currentUser || !companyData?.id) {
+            console.log('CompanyContext: Cannot refresh - no user or company data');
+            return;
+        }
+
+        try {
+            console.log('CompanyContext: Refreshing company data from Firestore');
+
+            // Fetch fresh data from Firestore using the document ID
+            const companyDoc = await getDoc(doc(db, 'companies', companyData.id));
+
+            if (!companyDoc.exists()) {
+                throw new Error('Company document not found');
+            }
+
+            const freshCompanyData = {
+                ...companyDoc.data(),
+                id: companyDoc.id
+            };
+
+            // Update localStorage cache
+            localStorage.setItem('solushipx_company_data', JSON.stringify(freshCompanyData));
+
+            // Update state
+            setCompanyData(freshCompanyData);
+
+            console.log('CompanyContext: Company data refreshed successfully');
+        } catch (err) {
+            console.error('Error refreshing company data:', err);
+            setError(err.message || 'Failed to refresh company data');
+        }
+    };
+
     const value = {
         companyData,
         companyIdForAddress,
         loading,
         error,
-        clearCompanyData
+        clearCompanyData,
+        refreshCompanyData
     };
 
     return (

@@ -200,19 +200,18 @@ const CreateShipmentContent = () => {
             }
 
             const initialShipmentData = {
-                status: 'draft',
-                companyID: companyIdForAddress,
-                userID: currentUser.uid, // Add user ID for security
-                userEmail: currentUser.email, // Add user email for reference
+                readableShipmentID: newShipmentID,
                 shipmentID: newShipmentID,
+                status: 'draft',
                 createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
+                companyID: companyIdForAddress,
+                userID: currentUser.uid,
                 shipFrom: emptyAddress(),
                 shipTo: emptyAddress(),
                 packages: [{}],
                 shipmentInfo: {
-                    shipmentDate: new Date().toISOString().split('T')[0],
-                    shipmentType: 'freight' // Add default shipment type
+                    shipmentDate: new Date().toISOString().split('T')[0]
+                    // shipmentType will be auto-selected based on available carriers
                 }
             };
 
@@ -328,7 +327,7 @@ const CreateShipmentContent = () => {
 
                                 // ShipmentInfo with proper fallbacks
                                 shipmentInfo: {
-                                    shipmentType: draftData.shipmentInfo?.shipmentType || 'freight',
+                                    shipmentType: draftData.shipmentInfo?.shipmentType,
                                     internationalShipment: draftData.shipmentInfo?.internationalShipment || false,
                                     shipperReferenceNumber: draftData.shipmentInfo?.shipperReferenceNumber || '',
                                     bookingReferenceNumber: draftData.shipmentInfo?.bookingReferenceNumber || '',

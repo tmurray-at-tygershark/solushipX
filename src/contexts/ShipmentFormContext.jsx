@@ -42,7 +42,7 @@ export const initialFormState = {
     },
     // ShipmentInfo data
     shipmentInfo: {
-        shipmentType: 'freight',
+        // shipmentType will be auto-selected based on available carriers
         internationalShipment: false,
         shipperReferenceNumber: '',
         bookingReferenceNumber: '',

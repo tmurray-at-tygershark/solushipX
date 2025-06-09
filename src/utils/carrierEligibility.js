@@ -357,13 +357,28 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
     console.log('🌟 Starting smart multi-carrier rate fetch...');
     const startTime = Date.now();
     
-    // Get eligible carriers first to calculate realistic timeouts
-    const eligibleCarriers = getEligibleCarriers(shipmentData);
+    // Extract custom eligible carriers from options, or use default eligibility check
+    const { customEligibleCarriers, ...otherOptions } = options;
+    
+    // Get eligible carriers - either custom provided or calculate using system rules
+    let eligibleCarriers;
+    if (customEligibleCarriers && Array.isArray(customEligibleCarriers)) {
+        console.log('🏢 Using custom eligible carriers provided by company filtering:', 
+            customEligibleCarriers.map(c => c.name));
+        eligibleCarriers = customEligibleCarriers;
+    } else {
+        console.log('🌐 Using system-wide carrier eligibility rules');
+        eligibleCarriers = getEligibleCarriers(shipmentData);
+    }
     
     if (eligibleCarriers.length === 0) {
+        const errorMessage = customEligibleCarriers 
+            ? 'No eligible carriers found for this company - please contact your administrator to configure carriers'
+            : 'No eligible carriers found for this shipment';
+            
         return {
             success: false,
-            error: 'No eligible carriers found for this shipment',
+            error: errorMessage,
             results: [],
             rates: [],
             summary: {
@@ -387,7 +402,7 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
         maxWaitTime = maxCarrierTimeout + 5000, // Slowest carrier + 5 second buffer (up to 33 seconds for eShipPlus)
         includeFailures = true,
         progressiveResults = true           // Return results as they arrive
-    } = options;
+    } = otherOptions;
     
     console.log(`🚀 Launching ${eligibleCarriers.length} carrier requests in parallel...`);
     console.log(`⏰ Timeout Strategy: Individual timeouts range from ${Math.min(...eligibleCarriers.map(c => c.timeout))}ms to ${maxCarrierTimeout}ms, max wait: ${maxWaitTime}ms`);

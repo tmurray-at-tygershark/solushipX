@@ -22,7 +22,14 @@ import {
     TableCell,
     TableContainer,
     TableHead,
-    TableRow
+    TableRow,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Switch,
+    IconButton,
+    Tooltip
 } from '@mui/material';
 import {
     Business as BusinessIcon,
@@ -32,17 +39,22 @@ import {
     Edit as EditIcon,
     Person as PersonIcon,
     Group as GroupIcon,
-    Badge as BadgeIcon
+    Badge as BadgeIcon,
+    LocalShipping as LocalShippingIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
 import { formatDateString } from '../../../utils/dateUtils';
 import './CompanyDetail.css';
+import { useSnackbar } from 'notistack';
+import { useCompany } from '../../../contexts/CompanyContext';
 
 const CompanyDetail = () => {
     const { id: companyFirestoreId } = useParams();
     const navigate = useNavigate();
+    const { enqueueSnackbar } = useSnackbar();
+    const { refreshCompanyData } = useCompany();
     const [company, setCompany] = useState(null);
     const [ownerDetails, setOwnerDetails] = useState(null);
     const [adminUsers, setAdminUsers] = useState([]);
@@ -51,6 +63,10 @@ const CompanyDetail = () => {
     const [origins, setOrigins] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [manageCarriersOpen, setManageCarriersOpen] = useState(false);
+    const [availableCarriers, setAvailableCarriers] = useState([]);
+    const [connectedCarriers, setConnectedCarriers] = useState([]);
+    const [loadingCarriers, setLoadingCarriers] = useState(false);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -108,6 +124,78 @@ const CompanyDetail = () => {
             setLoading(false);
         }
     }, [companyFirestoreId]);
+
+    const fetchCarriers = async () => {
+        setLoadingCarriers(true);
+        try {
+            // Fetch all carriers
+            const carriersRef = collection(db, 'carriers');
+            const carriersSnapshot = await getDocs(carriersRef);
+            const carriersData = carriersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setAvailableCarriers(carriersData);
+
+            // Fetch connected carriers for this company
+            if (company?.connectedCarriers) {
+                setConnectedCarriers(company.connectedCarriers);
+            } else {
+                setConnectedCarriers([]);
+            }
+        } catch (err) {
+            console.error('Error fetching carriers:', err);
+            setError('Error loading carriers');
+        } finally {
+            setLoadingCarriers(false);
+        }
+    };
+
+    const handleManageCarriers = () => {
+        fetchCarriers();
+        setManageCarriersOpen(true);
+    };
+
+    const handleCloseManageCarriers = () => {
+        setManageCarriersOpen(false);
+    };
+
+    const handleToggleCarrier = async (carrierId, carrierName) => {
+        try {
+            const isConnected = connectedCarriers.some(c => c.carrierID === carrierId);
+            let updatedConnectedCarriers;
+
+            if (isConnected) {
+                // Remove carrier
+                updatedConnectedCarriers = connectedCarriers.filter(c => c.carrierID !== carrierId);
+            } else {
+                // Add carrier
+                updatedConnectedCarriers = [
+                    ...connectedCarriers,
+                    {
+                        carrierID: carrierId,
+                        carrierName: carrierName,
+                        enabled: true,
+                        createdAt: new Date(),
+                        updatedAt: new Date()
+                    }
+                ];
+            }
+
+            // Update company document
+            await updateDoc(doc(db, 'companies', companyFirestoreId), {
+                connectedCarriers: updatedConnectedCarriers,
+                updatedAt: serverTimestamp()
+            });
+
+            setConnectedCarriers(updatedConnectedCarriers);
+            enqueueSnackbar(`Carrier ${isConnected ? 'removed' : 'added'} successfully`, { variant: 'success' });
+            refreshCompanyData();
+        } catch (err) {
+            console.error('Error updating carriers:', err);
+            enqueueSnackbar('Error updating carriers', { variant: 'error' });
+        }
+    };
 
     useEffect(() => {
         fetchData();
@@ -204,15 +292,25 @@ const CompanyDetail = () => {
                 <Typography variant="h4" component="h1" sx={{ mb: 0 }}>
                     {company.name}
                 </Typography>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<EditIcon />}
-                    component={RouterLink}
-                    to={`/admin/companies/${companyFirestoreId}/edit`}
-                >
-                    Edit Company
-                </Button>
+                <Box>
+                    <Button
+                        variant="outlined"
+                        startIcon={<LocalShippingIcon />}
+                        onClick={handleManageCarriers}
+                        sx={{ mr: 2 }}
+                    >
+                        Manage Carriers
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<EditIcon />}
+                        component={RouterLink}
+                        to={`/admin/companies/${companyFirestoreId}/edit`}
+                    >
+                        Edit Company
+                    </Button>
+                </Box>
             </Box>
 
             <Stack spacing={3}>
@@ -256,6 +354,53 @@ const CompanyDetail = () => {
                             <Typography variant="body1">{formatDateString(company.createdAt)}</Typography>
                         </Grid>
                     </Grid>
+                </Paper>
+
+                <Paper elevation={2} sx={{ p: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6">Connected Carriers</Typography>
+                        <Button
+                            variant="outlined"
+                            startIcon={<LocalShippingIcon />}
+                            onClick={handleManageCarriers}
+                            size="small"
+                        >
+                            Manage Carriers
+                        </Button>
+                    </Box>
+                    <Divider sx={{ mb: 2 }} />
+                    {company.connectedCarriers && company.connectedCarriers.length > 0 ? (
+                        <TableContainer>
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>Carrier Name</TableCell>
+                                        <TableCell>Status</TableCell>
+                                        <TableCell>Connected Since</TableCell>
+                                        <TableCell>Last Updated</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {company.connectedCarriers.map((carrier) => (
+                                        <TableRow key={carrier.carrierID}>
+                                            <TableCell>{carrier.carrierName}</TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                    color={carrier.enabled ? 'success' : 'default'}
+                                                    size="small"
+                                                />
+                                            </TableCell>
+                                            <TableCell>{formatDateString(carrier.createdAt)}</TableCell>
+                                            <TableCell>{formatDateString(carrier.updatedAt)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    ) : (
+                        <Typography color="text.secondary">No carriers connected to this company.</Typography>
+                    )}
                 </Paper>
 
                 <Paper elevation={2} sx={{ p: 3 }}>
@@ -378,6 +523,80 @@ const CompanyDetail = () => {
                     </TableContainer>
                 </Paper>
             </Stack>
+
+            {/* Manage Carriers Dialog */}
+            <Dialog
+                open={manageCarriersOpen}
+                onClose={handleCloseManageCarriers}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle>Manage Connected Carriers</DialogTitle>
+                <DialogContent>
+                    {loadingCarriers ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                            <CircularProgress />
+                        </Box>
+                    ) : (
+                        <TableContainer>
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>Logo</TableCell>
+                                        <TableCell>Carrier Name</TableCell>
+                                        <TableCell>Type</TableCell>
+                                        <TableCell>Status</TableCell>
+                                        <TableCell align="right">Actions</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {availableCarriers.map((carrier) => {
+                                        const isConnected = connectedCarriers.some(c => c.carrierID === carrier.carrierID);
+                                        return (
+                                            <TableRow key={carrier.id}>
+                                                <TableCell>
+                                                    <Box
+                                                        component="img"
+                                                        src={carrier.logoURL || '/images/carriers/default.png'}
+                                                        alt={`${carrier.name} logo`}
+                                                        sx={{
+                                                            width: 80,
+                                                            height: 80,
+                                                            objectFit: 'contain',
+                                                            bgcolor: 'grey.100',
+                                                            borderRadius: 1,
+                                                            p: 0.5
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>{carrier.name}</TableCell>
+                                                <TableCell>{carrier.type}</TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                        color={carrier.enabled ? 'success' : 'default'}
+                                                        size="small"
+                                                    />
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    <Switch
+                                                        checked={isConnected}
+                                                        onChange={() => handleToggleCarrier(carrier.carrierID, carrier.name)}
+                                                        color="primary"
+                                                    />
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseManageCarriers}>Close</Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

@@ -101,6 +101,17 @@ import {
     STATUS_GROUPS
 } from '../../utils/enhancedStatusModel';
 
+// Helper function to check if company has any enabled carriers
+const hasEnabledCarriers = (companyData) => {
+    if (!companyData?.connectedCarriers) {
+        return false;
+    }
+
+    return companyData.connectedCarriers.some(carrier =>
+        carrier.enabled === true && carrier.carrierID
+    );
+};
+
 // Add formatAddress function (copied from admin view)
 const formatAddress = (address, label = '', searchTerm = '') => {
     if (!address || typeof address !== 'object') {
@@ -177,7 +188,7 @@ const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestinat
             {/* Arrow */}
             <div style={{
                 fontSize: '0.75rem',
-                color: '#9ca3af',
+                color: '#000000',
                 margin: '2px 0',
                 textAlign: 'center'
             }}>
@@ -253,7 +264,7 @@ const formatDateTime = (timestamp) => {
 
 const Shipments = () => {
     const { user, loading: authLoading } = useAuth();
-    const { companyIdForAddress, loading: companyCtxLoading } = useCompany();
+    const { companyIdForAddress, loading: companyCtxLoading, companyData } = useCompany();
     const [shipments, setShipments] = useState([]);
     const [allShipments, setAllShipments] = useState([]); // Store all unfiltered shipments for stats
     const [customers, setCustomers] = useState({});
@@ -321,6 +332,10 @@ const Shipments = () => {
 
     // Add state to track if we should refresh on mount (when returning from other pages)
     const [shouldRefreshOnMount, setShouldRefreshOnMount] = useState(false);
+
+    // Add state to track document availability for shipments
+    const [documentAvailability, setDocumentAvailability] = useState({});
+    const [checkingDocuments, setCheckingDocuments] = useState(false);
 
     // Carrier-agnostic status update system
     const {
@@ -1159,9 +1174,29 @@ const Shipments = () => {
         }
     };
 
-    const handleActionMenuOpen = (event, shipment) => {
+    const handleActionMenuOpen = async (event, shipment) => {
         setSelectedShipment(shipment);
         setActionMenuAnchorEl(event.currentTarget);
+
+        // Check document availability for non-draft shipments
+        if (shipment.status !== 'draft') {
+            setCheckingDocuments(true);
+            try {
+                const availability = await checkDocumentAvailability(shipment);
+                setDocumentAvailability(prev => ({
+                    ...prev,
+                    [shipment.id]: availability
+                }));
+            } catch (error) {
+                console.error('Error checking documents:', error);
+                setDocumentAvailability(prev => ({
+                    ...prev,
+                    [shipment.id]: { hasLabels: false, hasBOLs: false }
+                }));
+            } finally {
+                setCheckingDocuments(false);
+            }
+        }
     };
 
     const handleActionMenuClose = (keepSelectedShipment = false) => {
@@ -1169,6 +1204,15 @@ const Shipments = () => {
             setSelectedShipment(null);
         }
         setActionMenuAnchorEl(null);
+
+        // Clear document availability cache for this shipment
+        if (selectedShipment && !keepSelectedShipment) {
+            setDocumentAvailability(prev => {
+                const updated = { ...prev };
+                delete updated[selectedShipment.id];
+                return updated;
+            });
+        }
     };
 
     // Handle draft deletion
@@ -1588,6 +1632,70 @@ const Shipments = () => {
         setSnackbar({ open: true, message, severity });
     };
 
+    /**
+     * Check document availability for a shipment (labels and BOLs)
+     */
+    const checkDocumentAvailability = async (shipment) => {
+        if (shipment.status === 'draft') {
+            return { hasLabels: false, hasBOLs: false };
+        }
+
+        try {
+            const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
+            const documentsResult = await getShipmentDocumentsFunction({
+                shipmentId: shipment.id,
+                organized: true
+            });
+
+            if (!documentsResult.data || !documentsResult.data.success) {
+                return { hasLabels: false, hasBOLs: false };
+            }
+
+            const documents = documentsResult.data.data;
+
+            // Check for labels
+            let hasLabels = false;
+            if (documents.labels && documents.labels.length > 0) {
+                hasLabels = true;
+            } else {
+                // Check in other documents for potential labels
+                const allDocs = Object.values(documents).flat();
+                const potentialLabels = allDocs.filter(doc => {
+                    const filename = (doc.filename || '').toLowerCase();
+                    const documentType = (doc.documentType || '').toLowerCase();
+                    const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
+
+                    // Exclude any BOL documents
+                    if (filename.includes('bol') ||
+                        filename.includes('billoflading') ||
+                        filename.includes('bill-of-lading') ||
+                        documentType.includes('bol') ||
+                        isGeneratedBOL) {
+                        return false;
+                    }
+
+                    return filename.includes('label') ||
+                        filename.includes('shipping') ||
+                        filename.includes('ship') ||
+                        filename.includes('print') ||
+                        filename.includes('prolabel') ||
+                        filename.includes('pro-label') ||
+                        documentType.includes('label') ||
+                        documentType.includes('shipping');
+                });
+                hasLabels = potentialLabels.length > 0;
+            }
+
+            // Check for BOLs
+            const hasBOLs = documents.bol && documents.bol.length > 0;
+
+            return { hasLabels, hasBOLs };
+        } catch (error) {
+            console.error('Error checking document availability:', error);
+            return { hasLabels: false, hasBOLs: false };
+        }
+    };
+
     // Add refresh on page focus to catch status updates when returning from other pages
     useEffect(() => {
         const handleFocus = () => {
@@ -1656,9 +1764,9 @@ const Shipments = () => {
     return (
         <div className="shipments-container">
             <div className="breadcrumb-container">
-                <Link to="/" className="breadcrumb-link">
+                <Link to="/dashboard" className="breadcrumb-link">
                     <HomeIcon />
-                    <Typography variant="body2">Home</Typography>
+                    <Typography variant="body2">Dashboard</Typography>
                 </Link>
                 <div className="breadcrumb-separator">
                     <NavigateNextIcon />
@@ -1700,15 +1808,34 @@ const Shipments = () => {
                                 >
                                     Export
                                 </Button>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<AddIcon />}
-                                    component={Link}
-                                    to="/create-shipment"
-                                    sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
-                                >
-                                    Create shipment
-                                </Button>
+                                {hasEnabledCarriers(companyData) ? (
+                                    <Button
+                                        variant="contained"
+                                        startIcon={<AddIcon />}
+                                        component={Link}
+                                        to="/create-shipment"
+                                        sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
+                                    >
+                                        Create shipment
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<AddIcon />}
+                                        disabled
+                                        sx={{
+                                            color: '#9ca3af',
+                                            borderColor: '#e5e7eb',
+                                            '&.Mui-disabled': {
+                                                color: '#9ca3af',
+                                                borderColor: '#e5e7eb'
+                                            }
+                                        }}
+                                        title="No carriers enabled for your company. Please configure carriers first."
+                                    >
+                                        Create shipment
+                                    </Button>
+                                )}
                             </Box>
                         </Box>
 
@@ -1839,6 +1966,7 @@ const Shipments = () => {
                                                         size: "small",
                                                         fullWidth: true,
                                                         variant: "outlined",
+                                                        placeholder: "",
                                                         sx: {
                                                             '& .MuiInputBase-input': { fontSize: '12px' },
                                                             '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -1878,19 +2006,30 @@ const Shipments = () => {
                                             renderInput={(params) => (
                                                 <TextField
                                                     {...params}
-                                                    label="Customer"
+                                                    label="Search Customers"
                                                     placeholder="Search customers"
                                                     size="small"
+                                                    variant="outlined"
                                                     sx={{
                                                         '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': {
+                                                            fontSize: '12px',
+                                                            '&.MuiInputLabel-shrink': {
+                                                                fontSize: '12px'
+                                                            }
+                                                        },
                                                         '& .MuiOutlinedInput-root': { minHeight: '40px' }
                                                     }}
                                                 />
                                             )}
                                             sx={{
                                                 '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': {
+                                                    fontSize: '12px',
+                                                    '&.MuiInputLabel-shrink': {
+                                                        fontSize: '12px'
+                                                    }
+                                                },
                                                 '& .MuiOutlinedInput-root': { minHeight: '40px' },
                                                 fontSize: '12px',
                                                 minHeight: '40px',
@@ -1960,7 +2099,7 @@ const Shipments = () => {
                                     </Grid>
 
                                     {/* Enhanced Status Filter */}
-                                    <Grid item xs={12} sm={6} md={2}>
+                                    <Grid item xs={12} sm={6} md={3}>
                                         <EnhancedStatusFilter
                                             value={filters.enhancedStatus || ''}
                                             onChange={(value) => setFilters(prev => ({
@@ -2177,10 +2316,46 @@ const Shipments = () => {
                                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                                             {/* Carrier Name */}
                                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                                {carrierData[shipment.id]?.carrier ||
-                                                                    shipment.selectedRateRef?.carrier ||
-                                                                    shipment.selectedRate?.carrier ||
-                                                                    shipment.carrier || 'N/A'}
+                                                                {(() => {
+                                                                    const carrierName = carrierData[shipment.id]?.carrier ||
+                                                                        shipment.selectedRateRef?.carrier ||
+                                                                        shipment.selectedRate?.carrier ||
+                                                                        shipment.carrier || 'N/A';
+
+                                                                    // Enhanced eShipPlus detection with multiple methods
+                                                                    const isEShipPlus =
+                                                                        // Direct displayCarrierId check
+                                                                        shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                                                                        shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                                                                        // sourceCarrierName check
+                                                                        shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
+                                                                        shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+                                                                        // carrierData check
+                                                                        carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
+                                                                        carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
+                                                                        // Check for freight carrier indicators (common eShipPlus sub-carriers)
+                                                                        (carrierName && (
+                                                                            carrierName.toLowerCase().includes('ward trucking') ||
+                                                                            carrierName.toLowerCase().includes('fedex freight') ||
+                                                                            carrierName.toLowerCase().includes('road runner') ||
+                                                                            carrierName.toLowerCase().includes('estes') ||
+                                                                            carrierName.toLowerCase().includes('yrc') ||
+                                                                            carrierName.toLowerCase().includes('xpo') ||
+                                                                            carrierName.toLowerCase().includes('old dominion') ||
+                                                                            carrierName.toLowerCase().includes('saia') ||
+                                                                            carrierName.toLowerCase().includes('averitt') ||
+                                                                            carrierName.toLowerCase().includes('southeastern freight')
+                                                                        )) ||
+                                                                        // Check shipment type for freight (often indicates eShipPlus)
+                                                                        (shipment.shipmentInfo?.shipmentType?.toLowerCase().includes('freight') ||
+                                                                            shipment.shipmentType?.toLowerCase().includes('freight'));
+
+                                                                    // For eShip Plus shipments, the carrierName is actually the sub-carrier (like "Ward Trucking")
+                                                                    // We append "via Eship Plus" to show it's through the eShip Plus platform
+                                                                    return isEShipPlus && carrierName !== 'N/A' ?
+                                                                        `${carrierName} via Eship Plus` :
+                                                                        carrierName;
+                                                                })()}
                                                             </Typography>
                                                             {/* Tracking/Confirmation/PRO Number with Copy Icon */}
                                                             {(() => {
@@ -2207,9 +2382,19 @@ const Shipments = () => {
                                                                     return (
                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                             <QrCodeIcon sx={{ fontSize: '12px', color: '#64748b' }} />
-                                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                                                            <Link
+                                                                                to={`/tracking/${trackingNumber}`}
+                                                                                style={{
+                                                                                    textDecoration: 'none',
+                                                                                    color: '#2563eb',
+                                                                                    fontSize: '12px'
+                                                                                }}
+                                                                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                                                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                                                                                title="Click to track this shipment"
+                                                                            >
                                                                                 {trackingNumber}
-                                                                            </Typography>
+                                                                            </Link>
                                                                             <IconButton
                                                                                 size="small"
                                                                                 onClick={() => {
@@ -2335,50 +2520,87 @@ const Shipments = () => {
                                 }
                             }}
                         >
-                            <MenuItem onClick={() => {
-                                handleActionMenuClose();
-                                navigate(`/shipment/${selectedShipment?.shipmentID || selectedShipment?.id}`);
-                            }}>
-                                <ListItemIcon>
-                                    <VisibilityIcon sx={{ fontSize: '14px' }} />
-                                </ListItemIcon>
-                                View Details
-                            </MenuItem>
-                            {selectedShipment?.status === 'draft' && (
+                            {/* View Details - Only for non-draft shipments */}
+                            {selectedShipment?.status !== 'draft' && (
                                 <MenuItem onClick={() => {
                                     handleActionMenuClose();
-                                    navigate(`/create-shipment/shipment-info/${selectedShipment.id}`);
+                                    navigate(`/shipment/${selectedShipment?.shipmentID || selectedShipment?.id}`);
                                 }}>
                                     <ListItemIcon>
-                                        <EditIcon sx={{ fontSize: '14px' }} />
+                                        <VisibilityIcon sx={{ fontSize: '14px' }} />
                                     </ListItemIcon>
-                                    Edit Draft
+                                    View Details
                                 </MenuItem>
                             )}
+
+                            {/* Draft shipment options */}
                             {selectedShipment?.status === 'draft' && (
-                                <MenuItem onClick={() => handleDeleteDraftWithDialog(selectedShipment)}>
+                                <>
+                                    <MenuItem onClick={() => {
+                                        handleActionMenuClose();
+                                        navigate(`/create-shipment/shipment-info/${selectedShipment.id}`);
+                                    }}>
+                                        <ListItemIcon>
+                                            <EditIcon sx={{ fontSize: '14px' }} />
+                                        </ListItemIcon>
+                                        Edit Draft
+                                    </MenuItem>
+                                    <MenuItem onClick={() => handleDeleteDraftWithDialog(selectedShipment)}>
+                                        <ListItemIcon>
+                                            <DeleteIcon sx={{ fontSize: '14px' }} />
+                                        </ListItemIcon>
+                                        Delete Draft
+                                    </MenuItem>
+                                </>
+                            )}
+
+                            {/* Show loading while checking documents */}
+                            {selectedShipment?.status !== 'draft' && checkingDocuments && (
+                                <MenuItem disabled>
                                     <ListItemIcon>
-                                        <DeleteIcon sx={{ fontSize: '14px' }} />
+                                        <CircularProgress size={14} />
                                     </ListItemIcon>
-                                    Delete Draft
+                                    Checking documents...
                                 </MenuItem>
                             )}
-                            {selectedShipment?.status !== 'draft' && (
-                                <MenuItem onClick={() => handlePrintLabel(selectedShipment)}>
-                                    <ListItemIcon>
-                                        <PrintIcon sx={{ fontSize: '14px' }} />
-                                    </ListItemIcon>
-                                    Print Label
-                                </MenuItem>
-                            )}
-                            {selectedShipment?.status !== 'draft' && (
-                                <MenuItem onClick={() => handlePrintBOL(selectedShipment)}>
-                                    <ListItemIcon>
-                                        <DescriptionIcon sx={{ fontSize: '14px' }} />
-                                    </ListItemIcon>
-                                    Print BOL
-                                </MenuItem>
-                            )}
+
+                            {/* Print Label - Only for non-draft shipments that have labels */}
+                            {selectedShipment?.status !== 'draft' &&
+                                !checkingDocuments &&
+                                documentAvailability[selectedShipment?.id]?.hasLabels && (
+                                    <MenuItem onClick={() => handlePrintLabel(selectedShipment)}>
+                                        <ListItemIcon>
+                                            <PrintIcon sx={{ fontSize: '14px' }} />
+                                        </ListItemIcon>
+                                        Print Label
+                                    </MenuItem>
+                                )}
+
+                            {/* Print BOL - Only for non-draft shipments that have BOLs */}
+                            {selectedShipment?.status !== 'draft' &&
+                                !checkingDocuments &&
+                                documentAvailability[selectedShipment?.id]?.hasBOLs && (
+                                    <MenuItem onClick={() => handlePrintBOL(selectedShipment)}>
+                                        <ListItemIcon>
+                                            <DescriptionIcon sx={{ fontSize: '14px' }} />
+                                        </ListItemIcon>
+                                        Print BOL
+                                    </MenuItem>
+                                )}
+
+                            {/* Show message if no documents available for non-draft shipments */}
+                            {selectedShipment?.status !== 'draft' &&
+                                !checkingDocuments &&
+                                documentAvailability[selectedShipment?.id] &&
+                                !documentAvailability[selectedShipment?.id]?.hasLabels &&
+                                !documentAvailability[selectedShipment?.id]?.hasBOLs && (
+                                    <MenuItem disabled>
+                                        <ListItemIcon>
+                                            <WarningIcon sx={{ fontSize: '14px', color: '#f59e0b' }} />
+                                        </ListItemIcon>
+                                        No documents available
+                                    </MenuItem>
+                                )}
                         </Menu>
                     </Box>
                 </Box>
