@@ -1,10 +1,34 @@
 // New Franky-style Globe implementation
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { Box, Typography } from '@mui/material';
+import {
+    Box,
+    Typography,
+    TextField,
+    IconButton,
+    Card,
+    CardContent,
+    Chip,
+    Button,
+    Slide,
+    Fade,
+    InputAdornment
+} from '@mui/material';
+import {
+    Search as SearchIcon,
+    Fullscreen as FullscreenIcon,
+    FullscreenExit as FullscreenExitIcon,
+    PlayArrow as PlayIcon,
+    Pause as PauseIcon
+} from '@mui/icons-material';
+import { collection, query, orderBy, limit, onSnapshot, where, Timestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { useCompany } from '../../contexts/CompanyContext';
+import { listenToShipmentEvents } from '../../utils/shipmentEvents';
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
+import StatusChip from '../StatusChip/StatusChip';
 import './Globe.css';
 
 
@@ -13,7 +37,12 @@ const geocodingCache = new Map();
 
 const extractLocationFromAddress = (address) => {
     if (!address) return null;
-    const parts = address.split(',').map(part => part.trim());
+
+    // Convert address object to string if needed
+    const addressString = typeof address === 'string' ? address : addressToString(address);
+    if (!addressString) return null;
+
+    const parts = addressString.split(',').map(part => part.trim());
     if (parts.length >= 2) {
         const city = parts[0].trim();
         const stateProvince = parts[1].trim();
@@ -27,8 +56,12 @@ const extractLocationFromAddress = (address) => {
 const formatDetailedAddress = (address) => {
     if (!address) return null;
 
+    // Convert address object to string if needed
+    const addressString = typeof address === 'string' ? address : addressToString(address);
+    if (!addressString) return null;
+
     // Split address into components and clean them
-    const parts = address.split(',').map(part => part.trim());
+    const parts = addressString.split(',').map(part => part.trim());
 
     if (parts.length === 0) return null;
 
@@ -102,8 +135,57 @@ const formatDetailedAddress = (address) => {
     };
 };
 
-const getCityCoordinates = async (addressString) => {
-    if (!addressString) return { lat: 45.0, lng: -100.0 };
+// Helper function to convert address object to string for geocoding
+const addressToString = (address) => {
+    if (!address) return '';
+    if (typeof address === 'string') return address;
+
+    // Handle address object with multiple possible field names
+    const parts = [];
+
+    // Primary street address
+    if (address.street1 || address.streetAddress || address.address1 || address.address) {
+        parts.push(address.street1 || address.streetAddress || address.address1 || address.address);
+    }
+
+    // Secondary address (apartment, suite, unit, etc.)
+    if (address.street2 || address.address2 || address.suite || address.unit || address.apartment) {
+        parts.push(address.street2 || address.address2 || address.suite || address.unit || address.apartment);
+    }
+
+    // City
+    if (address.city) parts.push(address.city);
+
+    // State/Province  
+    if (address.state || address.province || address.stateProvince) {
+        parts.push(address.state || address.province || address.stateProvince);
+    }
+
+    // Postal code
+    if (address.postalCode || address.zipCode || address.zip || address.postcode) {
+        parts.push(address.postalCode || address.zipCode || address.zip || address.postcode);
+    }
+
+    // Country
+    if (address.country || address.countryCode) {
+        parts.push(address.country || address.countryCode);
+    }
+
+    const result = parts.filter(Boolean).join(', ');
+    console.log('🔄 Address conversion:', { input: address, output: result });
+    return result;
+};
+
+const getCityCoordinates = async (address) => {
+    // Convert address to string format for geocoding
+    const addressString = addressToString(address);
+
+    console.log('🗺️ Geocoding request:', { originalAddress: address, convertedString: addressString });
+
+    if (!addressString) {
+        console.warn('⚠️ Empty address string, using fallback coordinates');
+        return { lat: 45.0, lng: -100.0 };
+    }
 
     // Check cache first
     if (geocodingCache.has(addressString)) {
@@ -113,9 +195,14 @@ const getCityCoordinates = async (addressString) => {
     // Try Google Maps geocoding first (if available)
     if (window.google && window.google.maps && window.google.maps.Geocoder) {
         try {
+            // Validate that addressString is actually a string and not empty
+            if (typeof addressString !== 'string' || addressString.trim().length === 0) {
+                throw new Error('Invalid address string provided to geocoding');
+            }
+
             const geocoder = new window.google.maps.Geocoder();
             const result = await new Promise((resolve, reject) => {
-                geocoder.geocode({ address: addressString }, (results, status) => {
+                geocoder.geocode({ address: addressString.trim() }, (results, status) => {
                     if (status === 'OK' && results && results.length > 0) {
                         const location = results[0].geometry.location;
                         resolve({
@@ -231,7 +318,7 @@ void main() {
     gl_FragColor = vec4(atmColor, atmOpacity) * factor;
 }`;
 
-const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusCounts = {}, shipments = [] }) => {
+const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusCounts = {}, shipments: propShipments = [] }) => {
     const mountRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -239,6 +326,161 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const cameraRef = useRef(null);
     const sceneRef = useRef(null);
     const [userInteracting, setUserInteracting] = useState(false);
+
+    // Real-time data state
+    const [realTimeShipments, setRealTimeShipments] = useState([]);
+    const [realtimeStatusCounts, setRealtimeStatusCounts] = useState({});
+    const [shipmentEvents, setShipmentEvents] = useState({});
+    const { companyIdForAddress, companyLoading } = useCompany();
+
+    // Enhanced UI features state
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isSearchMode, setIsSearchMode] = useState(false);
+    const [currentShipmentIndex, setCurrentShipmentIndex] = useState(0);
+    const [activeShipment, setActiveShipment] = useState(null);
+    const [showDrawer, setShowDrawer] = useState(false);
+    const [streamMessages, setStreamMessages] = useState([]);
+    const [isPaused, setIsPaused] = useState(false);
+    const streamRef = useRef(null);
+
+    // Use real-time shipments if available, fallback to prop shipments
+    const shipments = realTimeShipments.length > 0 ? realTimeShipments : propShipments;
+
+    // Real-time shipment data listener
+    useEffect(() => {
+        if (!companyIdForAddress || companyLoading) {
+            return;
+        }
+
+        console.log('🌍 Globe: Setting up real-time shipment listener for company:', companyIdForAddress);
+
+        // Calculate date range for last 7 days to get more data for the globe
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const dateFilter = Timestamp.fromDate(sevenDaysAgo);
+
+        const shipmentsQuery = query(
+            collection(db, 'shipments'),
+            where('companyID', '==', companyIdForAddress),
+            where('createdAt', '>=', dateFilter),
+            orderBy('createdAt', 'desc'),
+            limit(50) // Limit for performance but get enough for good globe display
+        );
+
+        const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
+            console.log('🌍 Globe: Received real-time shipments update:', snapshot.docs.length, 'shipments');
+
+            const shipmentsData = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    trackingNumber: data.trackingNumber || data.shipmentID || doc.id,
+                    ...data,
+                    // Ensure address fields are properly mapped
+                    origin: data.shipFrom || data.origin,
+                    destination: data.shipTo || data.destination,
+                };
+            }).filter(shipment => {
+                // Only include shipments with valid addresses and exclude drafts
+                return shipment.status?.toLowerCase() !== 'draft' &&
+                    shipment.origin &&
+                    shipment.destination;
+            });
+
+            // Calculate real-time status counts
+            const statusCounts = shipmentsData.reduce((counts, shipment) => {
+                const status = shipment.status?.toLowerCase();
+                switch (status) {
+                    case 'pending':
+                    case 'scheduled':
+                    case 'awaiting_shipment':
+                    case 'awaiting shipment':
+                    case 'booked':
+                        counts.pending = (counts.pending || 0) + 1;
+                        break;
+                    case 'in_transit':
+                    case 'in transit':
+                        counts.transit = (counts.transit || 0) + 1;
+                        break;
+                    case 'delivered':
+                        counts.delivered = (counts.delivered || 0) + 1;
+                        break;
+                    case 'delayed':
+                    case 'exception':
+                    case 'on_hold':
+                        counts.delayed = (counts.delayed || 0) + 1;
+                        break;
+                }
+                return counts;
+            }, {});
+
+            setRealTimeShipments(shipmentsData);
+            setRealtimeStatusCounts(statusCounts);
+        }, (error) => {
+            console.error('🌍 Globe: Error in real-time shipments listener:', error);
+        });
+
+        return () => unsubscribe();
+    }, [companyIdForAddress, companyLoading]);
+
+    // Real-time shipment events listeners
+    useEffect(() => {
+        if (shipments.length === 0) return;
+
+        console.log('🌍 Globe: Setting up real-time events listeners for', shipments.length, 'shipments');
+
+        const unsubscribers = [];
+
+        shipments.forEach(shipment => {
+            const shipmentId = shipment.shipmentID || shipment.shipmentId || shipment.id;
+            if (!shipmentId) return;
+
+            const unsubscribe = listenToShipmentEvents(shipmentId, (events) => {
+                setShipmentEvents(prev => ({
+                    ...prev,
+                    [shipmentId]: events || []
+                }));
+
+                // Add latest events to stream
+                if (events && events.length > 0) {
+                    const latestEvent = events[0]; // Events are sorted newest first
+                    if (latestEvent && latestEvent.timestamp) {
+                        const eventTime = new Date(latestEvent.timestamp);
+                        const now = new Date();
+                        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+
+                        // Only add to stream if it's a recent event (last 5 minutes)
+                        if (eventTime > fiveMinutesAgo) {
+                            const streamMessage = {
+                                id: `live-${latestEvent.eventId || Date.now()}`,
+                                type: 'live_event',
+                                content: `🔴 LIVE: ${latestEvent.title} • ${shipment.trackingNumber}`,
+                                status: shipment.status,
+                                timestamp: eventTime.getTime(),
+                                visible: true,
+                                isLive: true
+                            };
+
+                            setStreamMessages(prev => {
+                                // Avoid duplicates by checking if we already have this event
+                                const exists = prev.some(msg => msg.id === streamMessage.id);
+                                if (exists) return prev;
+
+                                // Add new live message at the top, keep only last 20
+                                return [streamMessage, ...prev.slice(0, 19)];
+                            });
+                        }
+                    }
+                }
+            });
+
+            unsubscribers.push(unsubscribe);
+        });
+
+        return () => {
+            unsubscribers.forEach(unsub => unsub());
+        };
+    }, [shipments]);
 
     useEffect(() => {
         let scene, camera, renderer, controls, earth, clouds, atmosphere, group, animationId;
@@ -643,10 +885,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                     // Realistic Earth with proper bump mapping - no separate night lights needed
 
-                    // Sequential shooting star animation - each arc plays once only
+                    // Sequential shooting star animation - each arc plays once with longer timing
                     if (scene.userData.animatedArcs) {
                         const currentTime = time * 1000; // Convert to milliseconds
-                        const animDuration = 4000; // 4 seconds for shooting star effect
+                        const animDuration = 6000; // 6 seconds for shooting star effect (was 4)
 
                         scene.userData.animatedArcs.forEach(arc => {
                             if (arc.userData.isMarker) {
@@ -656,218 +898,171 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     arc.material.opacity = parentArc.visible ? arc.userData.originalOpacity : 0;
                                     arc.visible = parentArc.visible;
                                 }
-                            } else if (arc.userData.isCarrierLogo) {
-                                // Carrier logos with elastic pop animations
-                                const parentArc = arc.userData.parentArc;
-                                if (parentArc && parentArc.userData) {
-                                    const shouldShow = parentArc.visible;
-                                    const logoData = arc.userData;
-
-                                    // State machine for elastic animations
-                                    if (shouldShow && logoData.animationPhase === 'hidden') {
-                                        // Start appear animation
-                                        logoData.animationPhase = 'appearing';
-                                        logoData.animationStartTime = currentTime;
-                                    } else if (!shouldShow && logoData.animationPhase === 'visible') {
-                                        // Start disappear animation
-                                        logoData.animationPhase = 'disappearing';
-                                        logoData.animationStartTime = currentTime;
-                                    }
-
-                                    // Handle animation phases
-                                    const animDuration = 800; // 0.8 seconds for pop animation
-                                    const timeSinceStart = currentTime - logoData.animationStartTime;
-
-                                    if (logoData.animationPhase === 'appearing') {
-                                        if (timeSinceStart < animDuration) {
-                                            // Elastic pop-in animation
-                                            const progress = timeSinceStart / animDuration;
-
-                                            // Elastic easing function (overshoot then settle)
-                                            const elasticEase = (t) => {
-                                                if (t === 0) return 0;
-                                                if (t === 1) return 1;
-                                                const p = 0.3;
-                                                const s = p / 4;
-                                                return Math.pow(2, -10 * t) * Math.sin((t - s) * (2 * Math.PI) / p) + 1;
-                                            };
-
-                                            const scale = elasticEase(progress);
-                                            arc.scale.set(
-                                                logoData.finalScale.x * scale,
-                                                logoData.finalScale.y * scale,
-                                                1
-                                            );
-                                            arc.material.opacity = progress * logoData.originalOpacity;
-                                            arc.visible = true;
-                                        } else {
-                                            // Animation complete - set to visible
-                                            logoData.animationPhase = 'visible';
-                                            arc.scale.set(logoData.finalScale.x, logoData.finalScale.y, 1);
-                                            arc.material.opacity = logoData.originalOpacity;
-                                            arc.visible = true;
-                                        }
-                                    } else if (logoData.animationPhase === 'disappearing') {
-                                        if (timeSinceStart < animDuration * 0.6) { // Faster disappear
-                                            // Elastic pop-out animation (reverse)
-                                            const progress = 1 - (timeSinceStart / (animDuration * 0.6));
-
-                                            // Bounce ease out (quick shrink with small bounce)
-                                            const bounceEase = (t) => {
-                                                if (t < 1 / 2.75) {
-                                                    return 7.5625 * t * t;
-                                                } else if (t < 2 / 2.75) {
-                                                    return 7.5625 * (t -= 1.5 / 2.75) * t + 0.75;
-                                                } else if (t < 2.5 / 2.75) {
-                                                    return 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375;
-                                                } else {
-                                                    return 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
-                                                }
-                                            };
-
-                                            const scale = bounceEase(progress);
-                                            arc.scale.set(
-                                                logoData.finalScale.x * scale,
-                                                logoData.finalScale.y * scale,
-                                                1
-                                            );
-                                            arc.material.opacity = progress * logoData.originalOpacity;
-                                            arc.visible = true;
-                                        } else {
-                                            // Animation complete - hide
-                                            logoData.animationPhase = 'hidden';
-                                            arc.scale.set(0, 0, 1);
-                                            arc.material.opacity = 0;
-                                            arc.visible = false;
-                                        }
-                                    } else if (logoData.animationPhase === 'visible') {
-                                        // Steady visible state
-                                        arc.scale.set(logoData.finalScale.x, logoData.finalScale.y, 1);
-                                        arc.material.opacity = logoData.originalOpacity;
-                                        arc.visible = true;
-                                    } else {
-                                        // Hidden state
-                                        arc.scale.set(0, 0, 1);
-                                        arc.material.opacity = 0;
-                                        arc.visible = false;
-                                    }
-                                }
                             } else if (arc.userData.isAnimatedArc) {
                                 if (arc.userData.isShootingArc) {
-                                    // Handle shooting arc animation (bouncing ball trail effect) - play once only
-                                    if (!arc.userData.animationComplete) {
-                                        const timeSinceStart = currentTime - arc.userData.animationStartTime;
+                                    // Handle shooting arc animation with looping support
+                                    const cycleTime = scene.userData.maxDelay || (scene.userData.totalShipments * 8000);
+                                    const currentCycleTime = currentTime % cycleTime;
+                                    const adjustedStartTime = arc.userData.originalDelay; // Use original delay within cycle
+                                    const timeSinceStart = currentCycleTime - adjustedStartTime;
 
-                                        // Check if animation should start
-                                        if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
-                                            arc.visible = true;
-                                            const progress = timeSinceStart / animDuration;
+                                    // Check if animation should start (with cycling)
+                                    if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
+                                        arc.visible = true;
+                                        const progress = timeSinceStart / animDuration;
 
-                                            // Update trail progress along the curve
-                                            arc.userData.progress = progress;
+                                        // Reset badge sync for each cycle
+                                        const currentCycle = Math.floor(currentTime / cycleTime);
+                                        if (currentCycle !== arc.userData.lastCycle) {
+                                            arc.userData.badgeSynced = false;
+                                            arc.userData.badgeHidden = false;
+                                            arc.userData.lastCycle = currentCycle;
+                                        }
 
-                                            // Calculate trail positions with bouncing ball physics
-                                            const trailLength = arc.userData.trailLength;
-                                            const positions = [];
+                                        // Sync badge with currently animating arc - INSTANT timing
+                                        if (timeSinceStart < 50 && !arc.userData.badgeSynced) { // First 50ms of animation for instant response
+                                            arc.userData.badgeSynced = true;
 
-                                            for (let i = 0; i < trailLength; i++) {
-                                                // Create trailing effect - each point follows behind the main progress
-                                                const trailProgress = Math.max(0, progress - (i * 0.05)); // 0.05 spacing between trail points
-
-                                                if (trailProgress > 0) {
-                                                    const point = arc.userData.curve.getPoint(trailProgress);
-                                                    positions.push(point.x, point.y, point.z);
-                                                } else {
-                                                    // If trail point hasn't started yet, use the starting position
-                                                    const startPoint = arc.userData.curve.getPoint(0);
-                                                    positions.push(startPoint.x, startPoint.y, startPoint.z);
-                                                }
+                                            // Find the shipment data for this arc
+                                            const shipmentForArc = shipments.find(s => (s.shipmentID || s.shipmentId || s.id) === arc.userData.shipmentId);
+                                            if (shipmentForArc) {
+                                                // Update active shipment and show badge IMMEDIATELY
+                                                setActiveShipment(shipmentForArc);
+                                                setShowDrawer(true);
                                             }
+                                        }
 
-                                            // Update geometry with new trail positions
-                                            arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                                            arc.geometry.attributes.position.needsUpdate = true;
+                                        // Update trail progress along the curve
+                                        arc.userData.progress = progress;
 
-                                            // Dynamic opacity for trail effect (brightest at head, fading toward tail)
-                                            let intensity;
-                                            if (progress < 0.1) {
-                                                // Quick fade-in
-                                                intensity = progress * 10;
-                                            } else if (progress > 0.9) {
-                                                // Quick fade-out
-                                                intensity = (1 - progress) * 10;
+                                        // Calculate trail positions with bouncing ball physics
+                                        const trailLength = arc.userData.trailLength;
+                                        const positions = [];
+
+                                        for (let i = 0; i < trailLength; i++) {
+                                            // Create trailing effect - each point follows behind the main progress
+                                            const trailProgress = Math.max(0, progress - (i * 0.05)); // 0.05 spacing between trail points
+
+                                            if (trailProgress > 0) {
+                                                const point = arc.userData.curve.getPoint(trailProgress);
+                                                positions.push(point.x, point.y, point.z);
                                             } else {
-                                                // Full intensity in middle
-                                                intensity = 1.0;
+                                                // If trail point hasn't started yet, use the starting position
+                                                const startPoint = arc.userData.curve.getPoint(0);
+                                                positions.push(startPoint.x, startPoint.y, startPoint.z);
                                             }
+                                        }
 
-                                            arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
+                                        // Update geometry with new trail positions
+                                        arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                                        arc.geometry.attributes.position.needsUpdate = true;
 
-                                            // Enhanced color with shooting effect
-                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            const brightnessMultiplier = 1.0 + intensity * 0.5;
-                                            arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
-
-                                        } else if (timeSinceStart > animDuration) {
-                                            // Animation completed - mark as done and hide
-                                            arc.userData.animationComplete = true;
-                                            arc.userData.hasAnimated = true;
-                                            arc.visible = false;
-                                            arc.material.opacity = 0;
+                                        // Dynamic opacity for trail effect (brightest at head, fading toward tail)
+                                        let intensity;
+                                        if (progress < 0.1) {
+                                            // Quick fade-in
+                                            intensity = progress * 10;
+                                        } else if (progress > 0.9) {
+                                            // Quick fade-out
+                                            intensity = (1 - progress) * 10;
                                         } else {
-                                            // Animation hasn't started yet
-                                            arc.visible = false;
-                                            arc.material.opacity = 0;
+                                            // Full intensity in middle
+                                            intensity = 1.0;
+                                        }
+
+                                        arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
+
+                                        // Enhanced color with shooting effect
+                                        const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                        const brightnessMultiplier = 1.0 + intensity * 0.5;
+                                        arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
+
+                                    } else if (timeSinceStart > animDuration) {
+                                        // Animation completed - mark as done and hide
+                                        arc.userData.animationComplete = true;
+                                        arc.userData.hasAnimated = true;
+                                        arc.visible = false;
+                                        arc.material.opacity = 0;
+
+                                        // Hide badge when arc animation completes
+                                        if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
+                                            arc.userData.badgeHidden = true;
+                                            setShowDrawer(false);
                                         }
                                     } else {
-                                        // Animation already completed - keep hidden
+                                        // Animation hasn't started yet
                                         arc.visible = false;
                                         arc.material.opacity = 0;
                                     }
                                 } else {
-                                    // Handle legacy static arc animation (fallback) - play once only
-                                    if (!arc.userData.animationComplete) {
-                                        const timeSinceStart = currentTime - arc.userData.animationStartTime;
+                                    // Animation already completed - keep hidden
+                                    arc.visible = false;
+                                    arc.material.opacity = 0;
+                                }
+                            } else {
+                                // Handle legacy static arc animation (fallback) - play once only
+                                if (!arc.userData.animationComplete) {
+                                    const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                        if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
-                                            arc.visible = true;
-                                            const progress = timeSinceStart / animDuration;
+                                    if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
+                                        arc.visible = true;
+                                        const progress = timeSinceStart / animDuration;
 
-                                            let intensity;
-                                            if (progress < 0.2) {
-                                                intensity = progress * 5;
-                                            } else if (progress < 0.7) {
-                                                intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
-                                            } else {
-                                                intensity = (1 - progress) * 3;
+                                        // Sync badge with currently animating arc (legacy fallback) - INSTANT timing
+                                        if (timeSinceStart < 50 && !arc.userData.badgeSynced) { // First 50ms of animation for instant response
+                                            arc.userData.badgeSynced = true;
+
+                                            // Find the shipment data for this arc
+                                            const shipmentForArc = shipments.find(s => (s.shipmentID || s.shipmentId || s.id) === arc.userData.shipmentId);
+                                            if (shipmentForArc) {
+                                                // Update active shipment and show badge IMMEDIATELY
+                                                setActiveShipment(shipmentForArc);
+                                                setShowDrawer(true);
                                             }
+                                        }
 
-                                            arc.material.opacity = Math.min(intensity, 1.0);
-                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            const pulseMultiplier = 1.0 + intensity * 0.8;
-                                            arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
-                                        } else if (timeSinceStart > animDuration) {
-                                            // Animation completed
-                                            arc.userData.animationComplete = true;
-                                            arc.visible = false;
-                                            arc.material.opacity = 0;
+                                        let intensity;
+                                        if (progress < 0.2) {
+                                            intensity = progress * 5;
+                                        } else if (progress < 0.7) {
+                                            intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
                                         } else {
-                                            arc.visible = false;
-                                            arc.material.opacity = 0;
+                                            intensity = (1 - progress) * 3;
+                                        }
+
+                                        arc.material.opacity = Math.min(intensity, 1.0);
+                                        const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                        const pulseMultiplier = 1.0 + intensity * 0.8;
+                                        arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
+                                    } else if (timeSinceStart > animDuration) {
+                                        // Animation completed
+                                        arc.userData.animationComplete = true;
+                                        arc.visible = false;
+                                        arc.material.opacity = 0;
+
+                                        // Hide badge when legacy arc animation completes
+                                        if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
+                                            arc.userData.badgeHidden = true;
+                                            setShowDrawer(false);
                                         }
                                     } else {
-                                        // Animation already completed
                                         arc.visible = false;
                                         arc.material.opacity = 0;
                                     }
+                                } else {
+                                    // Animation already completed
+                                    arc.visible = false;
+                                    arc.material.opacity = 0;
                                 }
                             }
                         });
                     }
 
-                    // Animate moving particles for in-transit shipments
+                    // Animate moving particles for in-transit shipments (optimized)
                     if (scene.userData.animatedParticles) {
-                        scene.userData.animatedParticles.forEach(particle => {
+                        const particleCount = scene.userData.animatedParticles.length;
+                        for (let i = 0; i < particleCount; i++) {
+                            const particle = scene.userData.animatedParticles[i];
                             particle.userData.progress += particle.userData.speed;
 
                             // Reset particle when it reaches destination
@@ -889,18 +1084,29 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             }
                             particle.material.opacity = opacity * 0.9;
 
-                            // Slight glow effect
-                            const glowIntensity = Math.sin(time * 15) * 0.2 + 0.8;
-                            particle.material.opacity *= glowIntensity;
-                        });
+                            // Optimized glow effect (less frequent calculations)
+                            if (frameCount % 3 === 0) { // Update every 3rd frame for performance
+                                const glowIntensity = Math.sin(time * 15) * 0.2 + 0.8;
+                                particle.material.opacity *= glowIntensity;
+                            }
+                        }
                     }
 
+                    // Optimized rendering - only render when needed
                     renderer.render(scene, camera);
 
-                    // Debug first few frames
+                    // Debug first few frames and performance monitoring
+                    frameCount++;
                     if (frameCount < 5) {
-                        console.log(`🎬 Frame ${frameCount + 1} rendered with ${scene.userData.animatedArcs?.length || 0} animated elements`);
-                        frameCount++;
+                        console.log(`🎬 Frame ${frameCount} rendered with ${scene.userData.animatedArcs?.length || 0} animated elements`);
+                    }
+
+                    // Performance monitoring every 60 frames (~1 second)
+                    if (frameCount % 60 === 0 && frameCount > 0) {
+                        const renderTime = performance.now() - time * 1000;
+                        if (renderTime > 16.67) { // Alert if frame takes longer than 60fps
+                            console.warn(`⚠️ Performance: Frame ${frameCount} took ${renderTime.toFixed(2)}ms (should be <16.67ms for 60fps)`);
+                        }
                     }
                 };
                 animate();
@@ -1056,12 +1262,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             color: getStatusColor(shipment.status),
                             opacity: 0.95,
                             transparent: true,
-                            linewidth: 4 // Slightly thicker for better visibility
+                            linewidth: 8 // Thicker for better visibility (was 4)
                         });
                         const arc = new THREE.Line(trailGeometry, material);
 
                         // Add sequential animation timing for shooting trail effect - play once only
-                        const animationStartDelay = index * 5000; // 5 seconds between each shipment for clear separation
+                        const animationStartDelay = index * 8000; // 8 seconds between each shipment for smoother experience (was 5)
                         const currentTime = performance.now(); // Get current time when creating arc
 
                         arc.userData = {
@@ -1069,7 +1275,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             isShootingArc: true, // Flag for shooting animation
                             originalOpacity: 0.95,
                             status: shipment.status,
-                            shipmentId: shipment.id,
+                            shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
                             animationStartTime: currentTime + animationStartDelay,
                             originalDelay: animationStartDelay, // Store original delay for reference
                             curve: curve,
@@ -1077,8 +1283,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             trailLength: trailLength,
                             trailPoints: trailPoints,
                             progress: 0, // Current position along the curve (0 to 1)
-                            hasAnimated: false, // Track if animation has completed
-                            animationComplete: false // Flag to mark when animation is done
+                            badgeSynced: false, // Track badge synchronization
+                            badgeHidden: false, // Track badge hiding
+                            lastCycle: -1, // Track animation cycles for looping
+                            shipmentData: shipment // Store full shipment data for badge
                         };
                         group.add(arc); // Add to rotating Earth group
                         animatedArcs.push(arc);
@@ -1119,225 +1327,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         // Add all markers to animated arcs for visibility control
                         animatedArcs.push(originMarker, destMarker);
 
-                        // Add carrier logo near the arc midpoint
-                        const carrierLogoPath = getCarrierLogoPath(shipment);
-                        console.log(`🚛 Checking carrier logo for shipment ${shipment.id}:`, {
-                            carrierLogoPath,
-                            carrier: shipment.carrier,
-                            selectedRateCarrier: shipment.selectedRate?.carrier,
-                            displayCarrierId: shipment.selectedRate?.displayCarrierId
-                        });
-
-                        if (carrierLogoPath) {
-                            const addCarrierLogo = (logoPath, arcCurve) => {
-                                // Get the midpoint of the arc for logo placement
-                                const midPoint = arcCurve.getPoint(0.5);
-
-                                // Position logo closer to surface but keep visible
-                                const logoPosition = midPoint.clone();
-                                logoPosition.normalize().multiplyScalar(11.2); // Slightly higher for better visibility
-
-                                // Move logo slightly away from arc center for visibility
-                                logoPosition.y -= 0.3; // Small southern offset to avoid overlap but stay visible
-
-                                // Offset along arc to avoid overlap with shipping route
-                                const offsetPoint = arcCurve.getPoint(0.6); // Use different point on arc
-                                const offsetPosition = offsetPoint.clone();
-                                offsetPosition.normalize().multiplyScalar(11.2);
-                                offsetPosition.y -= 0.3; // Apply same small southern offset
-
-                                // Use the offset position for better visibility
-                                logoPosition.copy(offsetPosition);
-
-                                // Load carrier logo texture
-                                const textureLoader = new THREE.TextureLoader();
-                                console.log(`🖼️ Attempting to load carrier logo: ${logoPath}`);
-
-                                textureLoader.load(
-                                    logoPath,
-                                    (texture) => {
-                                        console.log(`✅ Successfully loaded carrier logo: ${logoPath}`);
-
-                                        // Create rounded corners canvas for the logo
-                                        const canvas = document.createElement('canvas');
-                                        const ctx = canvas.getContext('2d');
-
-                                        // Set canvas size based on texture
-                                        const size = 256;
-                                        canvas.width = size;
-                                        canvas.height = size;
-
-                                        // Create rounded rectangle path
-                                        const radius = size * 0.15; // 15% border radius
-                                        ctx.beginPath();
-                                        ctx.roundRect(0, 0, size, size, radius);
-                                        ctx.clip();
-
-                                        // Draw the logo texture onto the rounded canvas
-                                        const img = new Image();
-                                        img.crossOrigin = 'anonymous';
-                                        img.onload = () => {
-                                            ctx.drawImage(img, 0, 0, size, size);
-
-                                            // Create texture from rounded canvas
-                                            const roundedTexture = new THREE.CanvasTexture(canvas);
-                                            roundedTexture.needsUpdate = true;
-
-                                            // Create sprite material with the rounded carrier logo
-                                            const logoMaterial = new THREE.SpriteMaterial({
-                                                map: roundedTexture,
-                                                transparent: true,
-                                                opacity: 1.0, // Make immediately visible
-                                                alphaTest: 0.1
-                                            });
-
-                                            const logoSprite = new THREE.Sprite(logoMaterial);
-                                            logoSprite.position.copy(logoPosition);
-
-                                            // Optimized size for visibility - 16:9 ratio
-                                            const finalScaleX = 0.5; // Increased for better visibility
-                                            const finalScaleY = 0.28; // Increased while maintaining 16:9 ratio
-                                            logoSprite.scale.set(finalScaleX, finalScaleY, 1); // Make immediately visible at final size
-
-                                            // Enhanced userData for animations
-                                            logoSprite.userData = {
-                                                isCarrierLogo: true,
-                                                parentArc: arc,
-                                                originalOpacity: 1.0,
-                                                finalScale: { x: finalScaleX, y: finalScaleY },
-                                                animationPhase: 'visible', // Make immediately visible
-                                                animationStartTime: 0,
-                                                originalDelay: arc.userData.originalDelay || 0
-                                            };
-
-                                            group.add(logoSprite);
-                                            animatedArcs.push(logoSprite);
-
-                                            console.log(`✅ Added animated carrier logo sprite for ${shipment.carrier || 'unknown carrier'}`);
-                                        };
-
-                                        img.src = logoPath;
-                                    },
-                                    undefined,
-                                    (error) => {
-                                        console.error(`❌ Failed to load carrier logo: ${logoPath}`, error);
-                                    }
-                                );
-                            };
-
-                            addCarrierLogo(carrierLogoPath, curve);
-                        } else {
-                            console.log(`⚠️ No carrier logo path found for shipment ${shipment.id}`);
-                        }
-
-                        // Add detailed address labels with dynamic positioning to avoid overlaps
-                        const addCityLabel = (position, addressData, color = 0xffffff, heightMultiplier = 1.25) => {
-                            const canvas = document.createElement('canvas');
-                            const context = canvas.getContext('2d');
-                            canvas.width = 400; // Wider canvas for detailed addresses
-                            canvas.height = 120; // Taller canvas for stacked address format
-
-                            // Clean text styling with thin font
-                            context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-                            context.font = '100 16px Arial'; // 100 = thin font weight
-                            context.textAlign = 'left';
-                            context.textBaseline = 'top';
-
-                            // Add subtle shadow for better contrast
-                            context.shadowColor = 'rgba(0, 0, 0, 0.8)';
-                            context.shadowOffsetX = 1;
-                            context.shadowOffsetY = 1;
-                            context.shadowBlur = 2;
-
-                            // Stacked address format: Street on line 1, City/State on line 2
-                            let line1 = '';
-                            let line2 = '';
-
-                            if (addressData && typeof addressData === 'object') {
-                                // Use structured address data
-                                if (addressData.street) {
-                                    line1 = addressData.street;
-                                }
-                                if (addressData.city || addressData.stateProvince) {
-                                    const cityState = [];
-                                    if (addressData.city) cityState.push(addressData.city);
-                                    if (addressData.stateProvince) cityState.push(addressData.stateProvince);
-                                    line2 = cityState.join(', ');
-                                }
-                                // If no street, use city as line 1
-                                if (!line1 && addressData.city) {
-                                    line1 = addressData.city;
-                                    line2 = addressData.stateProvince || '';
-                                }
-                            } else if (typeof addressData === 'string') {
-                                // Fallback for string format
-                                const parts = addressData.split(',').map(p => p.trim());
-                                if (parts.length >= 2) {
-                                    line1 = parts[0];
-                                    line2 = parts.slice(1).join(', ');
-                                } else {
-                                    line1 = addressData;
-                                }
-                            }
-
-                            // Draw stacked text
-                            const lineHeight = 20;
-                            const startY = 25;
-
-                            if (line1) {
-                                context.fillText(line1, 12, startY);
-                            }
-                            if (line2) {
-                                context.fillText(line2, 12, startY + lineHeight);
-                            }
-
-                            // Enhanced label positioning - use custom height multiplier for vertical separation
-                            const labelPosition = position.clone();
-                            labelPosition.multiplyScalar(heightMultiplier); // Use variable height for better label separation
-
-                            const texture = new THREE.CanvasTexture(canvas);
-                            const labelMat = new THREE.SpriteMaterial({
-                                map: texture,
-                                transparent: true,
-                                opacity: 1.0
-                            });
-                            const label = new THREE.Sprite(labelMat);
-                            label.position.copy(labelPosition);
-                            label.scale.set(1.4, 0.42, 1); // Adjusted scale for taller stacked labels
-                            label.userData = {
-                                isMarker: true,
-                                parentArc: arc,
-                                originalOpacity: 1.0
-                            };
-                            group.add(label);
-                            animatedArcs.push(label);
-                        };
-
-                        // Extract detailed address components and add labels with different heights
-                        const originAddress = formatDetailedAddress(shipment.origin);
-                        const destAddress = formatDetailedAddress(shipment.destination);
-
-                        if (originAddress && originAddress.formatted && originAddress.formatted.length < 50) {
-                            // Create structured address data for the label function
-                            const originData = {
-                                street: originAddress.street,
-                                city: originAddress.city,
-                                stateProvince: originAddress.stateProvince,
-                                formatted: originAddress.formatted
-                            };
-                            addCityLabel(startVec, originData, 0xffffff, 1.15); // Origin label closer to surface
-                        }
-                        if (destAddress && destAddress.formatted && destAddress.formatted.length < 50) {
-                            // Create structured address data for the label function
-                            const destData = {
-                                street: destAddress.street,
-                                city: destAddress.city,
-                                stateProvince: destAddress.stateProvince,
-                                formatted: destAddress.formatted
-                            };
-                            addCityLabel(endVec, destData, 0xffffff, 1.18); // Destination label closer to surface
-                        }
-
                         // Add enhanced animated particles for in-transit shipments
                         if (shipment.status?.toLowerCase() === 'in_transit') {
                             // Main bright particle
@@ -1356,7 +1345,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 curve: curve,
                                 progress: Math.random() * 0.3, // Start at different positions
                                 speed: 0.008 + Math.random() * 0.004, // Faster movement
-                                shipmentId: shipment.id
+                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id
                             };
                             group.add(particle); // Add to rotating Earth group
                             animatedParticles.push(particle);
@@ -1379,7 +1368,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 curve: curve,
                                 progress: Math.random() * 0.3,
                                 speed: 0.006 + Math.random() * 0.003, // Slightly slower for trailing effect
-                                shipmentId: shipment.id
+                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id
                             };
                             group.add(trailParticle);
                             animatedParticles.push(trailParticle);
@@ -1399,11 +1388,15 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 }
             }
 
-            // Store references for animation loop
+            // Store references for animation loop with cycling support
             scene.userData.animatedArcs = animatedArcs;
             scene.userData.animatedParticles = animatedParticles;
+            scene.userData.totalShipments = validShipments.length;
+            scene.userData.animationCycle = 0; // Track current cycle
+            scene.userData.maxDelay = validShipments.length * 8000; // Total time for one full cycle
 
             console.log(`✅ Created ${animatedArcs.length} futuristic arcs, ${animatedParticles.length} particles`);
+            console.log(`🔄 Animation cycle: ${scene.userData.maxDelay}ms for ${validShipments.length} shipments`);
         };
 
         // Small delay to ensure DOM is ready and prevent double initialization in React Strict Mode
@@ -1423,6 +1416,221 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             }
         };
     }, [width, height, JSON.stringify(shipments)]); // Use JSON.stringify to prevent object reference changes from causing reload
+
+    // Enhanced UI Functions
+
+    // Helper functions for stream messages
+    const getEventIcon = (eventType) => {
+        switch (eventType?.toLowerCase()) {
+            case 'created':
+            case 'shipment_created': return '📦';
+            case 'status_update':
+            case 'status_changed': return '🔄';
+            case 'tracking_update':
+            case 'location_update': return '📍';
+            case 'booking_confirmed':
+            case 'booked': return '✅';
+            case 'carrier_update':
+            case 'picked_up':
+            case 'pickup': return '🚚';
+            case 'document_generated':
+            case 'label_created': return '📄';
+            case 'rate_selected': return '💰';
+            case 'in_transit':
+            case 'transit': return '✈️';
+            case 'out_for_delivery': return '🚛';
+            case 'delivered': return '✅';
+            case 'exception':
+            case 'delayed': return '⚠️';
+            case 'cancelled': return '❌';
+            default: return '📦';
+        }
+    };
+
+    const getLocationName = (address) => {
+        if (!address) return 'Unknown';
+        if (address.city && address.state) {
+            return `${address.city}, ${address.state}`;
+        }
+        if (address.city) return address.city;
+        if (address.state) return address.state;
+        return 'Unknown';
+    };
+
+    // Initialize stream messages from shipments with real event data
+    useEffect(() => {
+        if (shipments && shipments.length > 0) {
+            // Create messages from real shipment events and recent shipments
+            const allEventMessages = [];
+
+            // First, add messages from actual events
+            Object.entries(shipmentEvents).forEach(([shipmentId, events]) => {
+                if (events && events.length > 0) {
+                    const shipment = shipments.find(s =>
+                        (s.shipmentID || s.shipmentId || s.id) === shipmentId
+                    );
+
+                    if (shipment) {
+                        // Add the 2 most recent events for each shipment
+                        events.slice(0, 2).forEach((event, eventIndex) => {
+                            allEventMessages.push({
+                                id: `init-event-${event.eventId || shipmentId}-${eventIndex}`,
+                                type: 'shipment_event',
+                                content: `${getEventIcon(event.eventType)} ${event.title} • ${shipment.trackingNumber || shipment.id}`,
+                                status: shipment.status,
+                                timestamp: event.timestamp || (Date.now() - (eventIndex * 60000)), // 1 minute apart if no timestamp
+                                visible: true,
+                                eventType: event.eventType,
+                                location: event.location
+                            });
+                        });
+                    }
+                }
+            });
+
+            // Then add fallback messages for shipments without events
+            const shipmentsWithoutEvents = shipments.filter(shipment => {
+                const shipmentId = shipment.shipmentID || shipment.shipmentId || shipment.id;
+                return !shipmentEvents[shipmentId] || shipmentEvents[shipmentId].length === 0;
+            });
+
+            shipmentsWithoutEvents.slice(0, 10).forEach((shipment, index) => {
+                allEventMessages.push({
+                    id: `init-shipment-${shipment.shipmentID || shipment.shipmentId || shipment.id}`,
+                    type: 'shipment',
+                    content: `📦 ${shipment.trackingNumber || shipment.id} • ${getLocationName(shipment.origin)} → ${getLocationName(shipment.destination)}`,
+                    status: shipment.status,
+                    timestamp: shipment.createdAt ? new Date(shipment.createdAt).getTime() : (Date.now() - (index * 120000)), // 2 minutes apart
+                    visible: true
+                });
+            });
+
+            // Sort by timestamp and take latest 15
+            allEventMessages.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            const latestMessages = allEventMessages.slice(0, 15);
+
+            setStreamMessages(prev => {
+                // Only update if we don't have live messages already
+                const liveMessages = prev.filter(msg => msg.isLive);
+                if (liveMessages.length > 0) {
+                    return [...liveMessages, ...latestMessages];
+                }
+                return latestMessages;
+            });
+        }
+    }, [shipments, shipmentEvents]);
+
+    // Auto-advance shipments when not in search mode (disabled - now synced to arc animations)
+    useEffect(() => {
+        // The drawer is now synchronized directly with arc animations in the animation loop
+        // This provides perfect timing sync between the visual arc and the drawer information
+
+        // Keep the currentShipmentIndex for search functionality
+        if (!isSearchMode && !isPaused && shipments.length > 0) {
+            const interval = setInterval(() => {
+                setCurrentShipmentIndex(prev => (prev + 1) % shipments.length);
+            }, 5000); // Keep index cycling for other features
+
+            return () => clearInterval(interval);
+        }
+    }, [isSearchMode, isPaused, shipments.length]);
+
+    // Real-time event stream from shipmentEvents
+    useEffect(() => {
+        // Process real shipment events and add them to stream
+        const processedEvents = [];
+
+        Object.entries(shipmentEvents).forEach(([shipmentId, events]) => {
+            if (events && events.length > 0) {
+                // Get the latest event for each shipment
+                const latestEvent = events[0]; // Events are sorted newest first
+                const shipment = shipments.find(s =>
+                    (s.shipmentID || s.shipmentId || s.id) === shipmentId
+                );
+
+                if (latestEvent && shipment) {
+                    const eventTime = new Date(latestEvent.timestamp);
+                    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+                    // Only include recent events (last 5 minutes) or if no timestamp, include it
+                    if (!latestEvent.timestamp || eventTime > fiveMinutesAgo) {
+                        processedEvents.push({
+                            id: `event-${latestEvent.eventId || shipmentId}-${latestEvent.timestamp || Date.now()}`,
+                            type: 'live_event',
+                            content: `${getEventIcon(latestEvent.eventType)} ${latestEvent.title} • ${shipment.trackingNumber || shipment.id}`,
+                            status: shipment.status,
+                            timestamp: latestEvent.timestamp || Date.now(),
+                            visible: true,
+                            isLive: true,
+                            eventType: latestEvent.eventType,
+                            location: latestEvent.location
+                        });
+                    }
+                }
+            }
+        });
+
+        // Sort by timestamp (newest first) and take latest 15
+        processedEvents.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        const latestEvents = processedEvents.slice(0, 15);
+
+        if (latestEvents.length > 0) {
+            setStreamMessages(prev => {
+                // Merge with existing non-live messages, prioritizing live events
+                const nonLiveMessages = prev.filter(msg => !msg.isLive);
+                const allMessages = [...latestEvents, ...nonLiveMessages];
+                return allMessages.slice(0, 20); // Keep last 20 total
+            });
+        }
+
+    }, [shipmentEvents, shipments]);
+
+    // Search functionality
+    const handleSearch = useCallback((searchValue) => {
+        setSearchTerm(searchValue);
+
+        if (!searchValue.trim()) {
+            setIsSearchMode(false);
+            setActiveShipment(null);
+            setShowDrawer(false);
+            return;
+        }
+
+        const foundShipment = shipments.find(s =>
+            s.trackingNumber?.toLowerCase().includes(searchValue.toLowerCase()) ||
+            (s.shipmentID || s.shipmentId || s.id)?.toLowerCase().includes(searchValue.toLowerCase())
+        );
+
+        if (foundShipment) {
+            // Add real-time events to the found shipment using proper shipment ID
+            const actualShipmentId = foundShipment.shipmentID || foundShipment.shipmentId || foundShipment.id;
+            const shipmentEventsData = shipmentEvents[actualShipmentId] || [];
+            const enhancedShipment = {
+                ...foundShipment,
+                latestEvents: shipmentEventsData.slice(0, 3) // Show latest 3 events
+            };
+
+            setIsSearchMode(true);
+            setActiveShipment(enhancedShipment);
+            setShowDrawer(true);
+            setUserInteracting(true); // Stop auto rotation
+        }
+    }, [shipments]);
+
+    // Resume auto mode
+    const handleResume = useCallback(() => {
+        setIsSearchMode(false);
+        setSearchTerm('');
+        setActiveShipment(null);
+        setShowDrawer(false);
+        setIsPaused(false);
+        setUserInteracting(false); // Resume auto rotation
+    }, []);
+
+    // Toggle pause/play
+    const handleTogglePause = useCallback(() => {
+        setIsPaused(prev => !prev);
+    }, []);
 
     const toggleFullScreen = () => {
         const willBeFullScreen = !isFullScreen;
@@ -1492,10 +1700,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             {showOverlays && !loading && (
                 <Box sx={{ position: 'absolute', top: 16, left: 16, display: 'flex', flexDirection: 'column', gap: 0.8, zIndex: 5 }}>
                     {[
-                        { key: 'pending', label: 'Awaiting Shipment', color: '#FFA726', value: statusCounts.pending || statusCounts.awaitingShipment || 0 },
-                        { key: 'transit', label: 'In Transit', color: '#42A5F5', value: statusCounts.transit || statusCounts.inTransit || 0 },
-                        { key: 'delivered', label: 'Delivered', color: '#66BB6A', value: statusCounts.delivered || 0 },
-                        { key: 'delayed', label: 'Delayed', color: '#F44336', value: statusCounts.delayed || 0 }
+                        { key: 'pending', label: 'Awaiting Shipment', color: '#FFA726', value: realtimeStatusCounts.pending || statusCounts.pending || statusCounts.awaitingShipment || 0 },
+                        { key: 'transit', label: 'In Transit', color: '#42A5F5', value: realtimeStatusCounts.transit || statusCounts.transit || statusCounts.inTransit || 0 },
+                        { key: 'delivered', label: 'Delivered', color: '#66BB6A', value: realtimeStatusCounts.delivered || statusCounts.delivered || 0 },
+                        { key: 'delayed', label: 'Delayed', color: '#F44336', value: realtimeStatusCounts.delayed || statusCounts.delayed || 0 }
                     ].map(({ key, label, color, value }) => (
                         <Box key={key} sx={{
                             background: 'rgba(0, 0, 0, 0.3)',
@@ -1535,33 +1743,337 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
             )}
 
-            {/* Fullscreen Button - Only show when NOT in fullscreen */}
+            {/* Real-time Stream (Bottom Left) */}
+            {!loading && (
+                <Box sx={{
+                    position: 'absolute',
+                    bottom: 16,
+                    left: 16,
+                    width: '300px',
+                    height: '200px',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    backdropFilter: 'blur(20px)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    zIndex: 5,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column-reverse' // Messages flow from bottom to top
+                }}>
+                    <Box
+                        ref={streamRef}
+                        sx={{
+                            flex: 1,
+                            overflowY: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column-reverse',
+                            padding: '8px',
+                            gap: '2px'
+                        }}
+                    >
+                        {streamMessages.slice(0, 15).map((message, index) => (
+                            <Fade
+                                key={message.id}
+                                in={message.visible}
+                                timeout={500}
+                                style={{
+                                    transitionDelay: `${index * 50}ms`
+                                }}
+                            >
+                                <Typography
+                                    sx={{
+                                        fontSize: '0.75rem',
+                                        color: 'rgba(255, 255, 255, 0.9)',
+                                        fontFamily: 'monospace',
+                                        lineHeight: 1.3,
+                                        opacity: Math.max(0.3, 1 - (index * 0.05)), // Fade out towards top
+                                        transform: `translateY(${index * -1}px)`, // Subtle movement effect
+                                        transition: 'all 0.3s ease',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        textShadow: '0 1px 2px rgba(0,0,0,0.8)'
+                                    }}
+                                >
+                                    {message.content}
+                                </Typography>
+                            </Fade>
+                        ))}
+                    </Box>
+
+                    {/* Stream Header */}
+                    <Box sx={{
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                        padding: '8px',
+                        background: 'rgba(0, 0, 0, 0.3)'
+                    }}>
+                        <Typography sx={{
+                            fontSize: '0.7rem',
+                            color: 'rgba(255, 255, 255, 0.6)',
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                        }}>
+                            🔴 LIVE FEED
+                        </Typography>
+                    </Box>
+                </Box>
+            )}
+
+            {/* Compact Badge (Bottom Right) - Exact FedEx Style */}
+            <Slide direction="up" in={showDrawer && activeShipment && !loading} mountOnEnter unmountOnExit>
+                <Box sx={{
+                    position: 'absolute',
+                    bottom: 16,
+                    right: 16,
+                    zIndex: 7,
+                    transition: 'all 0.3s ease'
+                }}>
+                    {activeShipment && (
+                        <Box sx={{
+                            display: 'flex',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+                            minWidth: '320px',
+                            height: '64px'
+                        }}>
+                            {/* Left: Carrier Logo Section */}
+                            <Box sx={{
+                                width: '96px',
+                                backgroundColor: (() => {
+                                    const carrierName = (activeShipment.selectedRate?.carrier ||
+                                        activeShipment.selectedRateRef?.carrier ||
+                                        activeShipment.carrier || '').toLowerCase();
+
+                                    // Carrier-specific brand colors
+                                    if (carrierName.includes('fedex')) return '#4B0082'; // FedEx Purple
+                                    if (carrierName.includes('ups')) return '#8B4513'; // UPS Brown
+                                    if (carrierName.includes('dhl')) return '#FFD320'; // DHL Yellow
+                                    if (carrierName.includes('usps')) return '#1F3B69'; // USPS Blue
+                                    if (carrierName.includes('canpar')) return '#E31837'; // Canpar Red
+                                    if (carrierName.includes('purolator')) return '#003087'; // Purolator Blue
+                                    if (carrierName.includes('polaris')) return '#1E3A8A'; // Polaris Blue
+                                    return '#7C3AED'; // Default purple
+                                })(),
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '8px'
+                            }}>
+                                {(() => {
+                                    const getLogoPath = (shipment) => {
+                                        const carrierName = shipment.selectedRate?.carrier ||
+                                            shipment.selectedRateRef?.carrier ||
+                                            shipment.carrier || '';
+
+                                        const normalizedName = carrierName.toLowerCase()
+                                            .replace(/\s+/g, '')
+                                            .replace(/[^a-z0-9]/g, '');
+
+                                        const carrierLogoMap = {
+                                            'fedex': 'fedex.png',
+                                            'ups': 'ups.png',
+                                            'usps': 'usps.png',
+                                            'dhl': 'dhl.png',
+                                            'canadapost': 'canadapost.png',
+                                            'canpar': 'canpar.png',
+                                            'purolator': 'purolator.png',
+                                            'polaristransportation': 'polaristransportation.png',
+                                            'eship': 'eship.png'
+                                        };
+
+                                        const logoFile = carrierLogoMap[normalizedName];
+                                        return logoFile ? `/images/carrier-badges/${logoFile}` : null;
+                                    };
+
+                                    const logoPath = getLogoPath(activeShipment);
+                                    return logoPath ? (
+                                        <img
+                                            src={logoPath}
+                                            alt="Carrier Logo"
+                                            style={{
+                                                maxHeight: '32px',
+                                                maxWidth: '80px',
+                                                objectFit: 'contain',
+                                                filter: 'brightness(0) invert(1)' // White logo
+                                            }}
+                                        />
+                                    ) : (
+                                        <Typography sx={{
+                                            color: 'white',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 700,
+                                            textAlign: 'center',
+                                            lineHeight: 1.2
+                                        }}>
+                                            {(activeShipment.selectedRate?.carrier ||
+                                                activeShipment.selectedRateRef?.carrier ||
+                                                activeShipment.carrier || 'CARRIER').toUpperCase()}
+                                        </Typography>
+                                    );
+                                })()}
+                            </Box>
+
+                            {/* Right: Info Section */}
+                            <Box sx={{
+                                flex: 1,
+                                backgroundColor: '#1a1a1a', // Dark background like FedEx
+                                padding: '8px 12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between'
+                            }}>
+                                {/* Tracking Number */}
+                                <Typography sx={{
+                                    color: 'white',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    fontFamily: 'monospace',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    #{activeShipment.trackingNumber || activeShipment.id}
+                                </Typography>
+
+                                {/* Route */}
+                                <Typography sx={{
+                                    color: 'white',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 500,
+                                    lineHeight: 1
+                                }}>
+                                    {activeShipment.origin?.city || 'Origin'} &gt; {activeShipment.destination?.city || 'Destination'}
+                                </Typography>
+
+                                {/* Status Pill */}
+                                <Box sx={{
+                                    alignSelf: 'flex-start'
+                                }}>
+                                    <Chip
+                                        label={activeShipment.status?.replace('_', ' ').toUpperCase() || 'STATUS'}
+                                        sx={{
+                                            backgroundColor: '#3B82F6',
+                                            color: 'white',
+                                            fontSize: '0.65rem',
+                                            fontWeight: 600,
+                                            height: '20px',
+                                            borderRadius: '10px',
+                                            '& .MuiChip-label': {
+                                                paddingX: '8px',
+                                                paddingY: '0'
+                                            }
+                                        }}
+                                    />
+                                </Box>
+                            </Box>
+                        </Box>
+                    )}
+                </Box>
+            </Slide>
+
+            {/* Enhanced Top Right Controls */}
             {!isFullScreen && (
                 <Box sx={{
                     position: 'absolute',
                     top: 16,
                     right: 16,
-                    zIndex: 6
+                    zIndex: 6,
+                    display: 'flex',
+                    gap: 1,
+                    alignItems: 'center'
                 }}>
-                    <Box
+                    {/* Search Box */}
+                    <Box sx={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        borderRadius: '8px',
+                        overflow: 'hidden'
+                    }}>
+                        <TextField
+                            size="small"
+                            placeholder="Search shipment ID..."
+                            value={searchTerm}
+                            onChange={(e) => handleSearch(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '1.1rem' }} />
+                                    </InputAdornment>
+                                ),
+                                sx: {
+                                    color: 'white',
+                                    fontSize: '0.875rem',
+                                    height: '36px',
+                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                    '& input': {
+                                        padding: '8px 8px 8px 0',
+                                        '&::placeholder': {
+                                            color: 'rgba(255,255,255,0.5)',
+                                            opacity: 1
+                                        }
+                                    }
+                                }
+                            }}
+                            sx={{ width: '200px' }}
+                        />
+                    </Box>
+
+                    {/* Control Buttons */}
+                    {isSearchMode && (
+                        <Button
+                            size="small"
+                            onClick={handleResume}
+                            sx={{
+                                background: 'rgba(0, 0, 0, 0.3)',
+                                backdropFilter: 'blur(20px)',
+                                color: 'white',
+                                minWidth: '80px',
+                                height: '36px',
+                                fontSize: '0.75rem',
+                                '&:hover': {
+                                    background: 'rgba(0, 0, 0, 0.5)'
+                                }
+                            }}
+                        >
+                            Resume Auto
+                        </Button>
+                    )}
+
+                    {!isSearchMode && (
+                        <IconButton
+                            size="small"
+                            onClick={handleTogglePause}
+                            sx={{
+                                background: 'rgba(0, 0, 0, 0.3)',
+                                backdropFilter: 'blur(20px)',
+                                color: 'white',
+                                width: '36px',
+                                height: '36px',
+                                '&:hover': {
+                                    background: 'rgba(0, 0, 0, 0.5)'
+                                }
+                            }}
+                        >
+                            {isPaused ? <PlayIcon /> : <PauseIcon />}
+                        </IconButton>
+                    )}
+
+                    {/* Fullscreen Button */}
+                    <IconButton
                         onClick={toggleFullScreen}
                         sx={{
                             background: 'rgba(0, 0, 0, 0.3)',
                             backdropFilter: 'blur(20px)',
-                            borderRadius: '8px',
-                            padding: '8px',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s ease',
+                            color: 'white',
+                            width: '36px',
+                            height: '36px',
                             '&:hover': {
-                                background: 'rgba(0, 0, 0, 0.5)',
-                                transform: 'scale(1.05)'
+                                background: 'rgba(0, 0, 0, 0.5)'
                             }
                         }}
                     >
-                        <Typography sx={{ color: 'white', fontSize: '0.75rem', textAlign: 'center' }}>
-                            ⛶
-                        </Typography>
-                    </Box>
+                        <FullscreenIcon />
+                    </IconButton>
                 </Box>
             )}
         </>
@@ -1612,6 +2124,93 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     }}>
                         ✕
                     </Typography>
+                </Box>
+
+                {/* Enhanced Fullscreen Controls */}
+                <Box sx={{
+                    position: 'absolute',
+                    top: 24,
+                    right: 80, // Leave space for close button
+                    zIndex: 10001,
+                    display: 'flex',
+                    gap: 1,
+                    alignItems: 'center'
+                }}>
+                    {/* Search Box */}
+                    <Box sx={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        borderRadius: '8px',
+                        overflow: 'hidden'
+                    }}>
+                        <TextField
+                            size="small"
+                            placeholder="Search shipment ID..."
+                            value={searchTerm}
+                            onChange={(e) => handleSearch(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '1.1rem' }} />
+                                    </InputAdornment>
+                                ),
+                                sx: {
+                                    color: 'white',
+                                    fontSize: '0.875rem',
+                                    height: '36px',
+                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                    '& input': {
+                                        padding: '8px 8px 8px 0',
+                                        '&::placeholder': {
+                                            color: 'rgba(255,255,255,0.5)',
+                                            opacity: 1
+                                        }
+                                    }
+                                }
+                            }}
+                            sx={{ width: '200px' }}
+                        />
+                    </Box>
+
+                    {/* Control Buttons */}
+                    {isSearchMode && (
+                        <Button
+                            size="small"
+                            onClick={handleResume}
+                            sx={{
+                                background: 'rgba(0, 0, 0, 0.3)',
+                                backdropFilter: 'blur(20px)',
+                                color: 'white',
+                                minWidth: '80px',
+                                height: '36px',
+                                fontSize: '0.75rem',
+                                '&:hover': {
+                                    background: 'rgba(0, 0, 0, 0.5)'
+                                }
+                            }}
+                        >
+                            Resume Auto
+                        </Button>
+                    )}
+
+                    {!isSearchMode && (
+                        <IconButton
+                            size="small"
+                            onClick={handleTogglePause}
+                            sx={{
+                                background: 'rgba(0, 0, 0, 0.3)',
+                                backdropFilter: 'blur(20px)',
+                                color: 'white',
+                                width: '36px',
+                                height: '36px',
+                                '&:hover': {
+                                    background: 'rgba(0, 0, 0, 0.5)'
+                                }
+                            }}
+                        >
+                            {isPaused ? <PlayIcon /> : <PauseIcon />}
+                        </IconButton>
+                    )}
                 </Box>
 
                 {/* Full Screen Globe Container */}
