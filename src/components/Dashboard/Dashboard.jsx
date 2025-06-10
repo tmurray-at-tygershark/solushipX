@@ -212,7 +212,7 @@ const StatusChip = React.memo(({ status }) => {
                 bgcolor: bgcolor,
                 borderRadius: '16px',
                 fontWeight: 500,
-                fontSize: '0.75rem',
+                fontSize: '12px',
                 height: '24px',
                 '& .MuiChip-label': {
                     px: 2
@@ -223,7 +223,140 @@ const StatusChip = React.memo(({ status }) => {
     );
 });
 
-// Extract ShipmentRow component for reusability
+// Helper function to get country flag emoji
+const getCountryFlag = (address) => {
+    if (!address || !address.country) return '';
+
+    const country = address.country.toLowerCase();
+    if (country.includes('canada') || country.includes('ca')) {
+        return '🇨🇦';
+    } else if (country.includes('united states') || country.includes('usa') || country.includes('us')) {
+        return '🇺🇸';
+    }
+    return '';
+};
+
+// Helper function to format route (origin → destination)
+const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestination = '') => {
+    const formatLocation = (address) => {
+        if (!address || typeof address !== 'object') {
+            return { text: 'N/A', flag: '' };
+        }
+        // Format as "City, State/Province" for compact display
+        const parts = [];
+        if (address.city) parts.push(address.city);
+        if (address.state || address.province) parts.push(address.state || address.province);
+
+        return {
+            text: parts.length > 0 ? parts.join(', ') : 'N/A',
+            flag: getCountryFlag(address)
+        };
+    };
+
+    const origin = formatLocation(shipFrom);
+    const destination = formatLocation(shipTo);
+
+    return (
+        <div style={{ lineHeight: 1.3 }}>
+            {/* Origin */}
+            <div style={{
+                fontSize: '12px',
+                fontWeight: 400,
+                color: '#374151',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+            }}>
+                {origin.flag && (
+                    <span style={{
+                        fontSize: '12px',
+                        lineHeight: 1,
+                        marginTop: '-1px'
+                    }}>
+                        {origin.flag}
+                    </span>
+                )}
+                <span>{origin.text}</span>
+            </div>
+
+            {/* Arrow */}
+            <div style={{
+                fontSize: '12px',
+                color: '#000000',
+                margin: '2px 0',
+                textAlign: 'center'
+            }}>
+                ↓
+            </div>
+
+            {/* Destination */}
+            <div style={{
+                fontSize: '12px',
+                fontWeight: 500,
+                color: '#111827',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+            }}>
+                {destination.flag && (
+                    <span style={{
+                        fontSize: '12px',
+                        lineHeight: 1,
+                        marginTop: '-1px'
+                    }}>
+                        {destination.flag}
+                    </span>
+                )}
+                <span>{destination.text}</span>
+            </div>
+        </div>
+    );
+};
+
+// Helper function to format date and time
+const formatDateTime = (timestamp) => {
+    if (!timestamp) return 'N/A';
+
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+
+    // Format date as MM/DD/YY
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const year = String(date.getFullYear()).slice(-2);
+    const formattedDate = `${month}/${day}/${year}`;
+
+    // Format time
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+    const formattedTime = timeFormatter.format(date);
+
+    return (
+        <div style={{ lineHeight: 1.3 }}>
+            {/* Date */}
+            <div style={{
+                fontSize: '12px',
+                fontWeight: 500,
+                color: '#111827'
+            }}>
+                {formattedDate}
+            </div>
+
+            {/* Time */}
+            <div style={{
+                fontSize: '12px',
+                color: '#6b7280',
+                marginTop: '2px'
+            }}>
+                {formattedTime}
+            </div>
+        </div>
+    );
+};
+
+// Extract ShipmentRow component for reusability with enhanced UI
 const ShipmentRow = React.memo(({ shipment, onPrint }) => {
     const [anchorEl, setAnchorEl] = useState(null);
     const navigate = useNavigate();
@@ -252,7 +385,6 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
     return (
         <TableRow
             hover
-            onClick={handleRowClick}
             sx={{
                 cursor: 'pointer',
                 '&:hover': {
@@ -261,29 +393,49 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
             }}
         >
             <TableCell
-                align="top"
-                onClick={(e) => e.stopPropagation()}
-                sx={{ verticalAlign: 'top', paddingTop: '16px' }}
+                sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}
             >
-                <Link
-                    to={`/shipment/${shipment.shipmentId}`}
-                    style={{ textDecoration: 'none', color: '#3b82f6' }}
-                >
-                    {shipment.shipmentId}
-                </Link>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Link
+                        to={`/shipment/${shipment.shipmentId}`}
+                        style={{
+                            textDecoration: 'none',
+                            color: '#3b82f6',
+                            fontSize: '12px'
+                        }}
+                        className="shipment-link"
+                    >
+                        {shipment.shipmentId}
+                    </Link>
+                </Box>
             </TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.customer}</TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.origin}</TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.destination}</TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.carrier}</TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>{shipment.shipmentType}</TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}>
+                {formatDateTime(shipment.createdAt)}
+            </TableCell>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}>
+                {shipment.customer}
+            </TableCell>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}>
+                {formatRoute(shipment.shipFrom, shipment.shipTo)}
+            </TableCell>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    {/* Carrier Name */}
+                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                        {shipment.carrier || 'N/A'}
+                    </Typography>
+                </Box>
+            </TableCell>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}>
+                {shipment.shipmentType}
+            </TableCell>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }}>
                 <StatusChip status={shipment.status} />
             </TableCell>
-            <TableCell align="top" sx={{ verticalAlign: 'top', paddingTop: '16px' }}>
+            <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', fontSize: '12px' }} align="right">
                 <IconButton
-                    size="small"
                     onClick={handleMenuClick}
+                    size="small"
                 >
                     <MoreVertIcon />
                 </IconButton>
@@ -291,10 +443,24 @@ const ShipmentRow = React.memo(({ shipment, onPrint }) => {
                     anchorEl={anchorEl}
                     open={Boolean(anchorEl)}
                     onClose={handleMenuClose}
+                    PaperProps={{
+                        sx: {
+                            '& .MuiMenuItem-root': { fontSize: '12px' }
+                        }
+                    }}
                 >
+                    <MenuItem onClick={() => {
+                        handleMenuClose();
+                        navigate(`/shipment/${shipment.shipmentId}`);
+                    }}>
+                        <ListItemIcon>
+                            <VisibilityIcon sx={{ fontSize: '12px' }} />
+                        </ListItemIcon>
+                        View Details
+                    </MenuItem>
                     <MenuItem onClick={handlePrint}>
                         <ListItemIcon>
-                            <PrintIcon fontSize="small" />
+                            <PrintIcon sx={{ fontSize: '12px' }} />
                         </ListItemIcon>
                         Print Label
                     </MenuItem>
@@ -314,10 +480,10 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
 
-    // Calculate date range for last 30 days
-    const thirtyDaysAgo = useMemo(() => {
+    // Calculate date range for last 24 hours
+    const twentyFourHoursAgo = useMemo(() => {
         const date = new Date();
-        date.setDate(date.getDate() - 30);
+        date.setHours(date.getHours() - 24);
         return Timestamp.fromDate(date);
     }, []);
 
@@ -351,14 +517,14 @@ const Dashboard = () => {
         }
 
         console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
-        console.log('Dashboard: Date filter from:', thirtyDaysAgo.toDate());
+        console.log('Dashboard: Date filter from:', twentyFourHoursAgo.toDate());
 
         const shipmentsQuery = query(
             collection(db, 'shipments'),
             where('companyID', '==', companyIdForAddress),
-            where('createdAt', '>=', thirtyDaysAgo),
+            where('createdAt', '>=', twentyFourHoursAgo),
             orderBy('createdAt', 'desc'),
-            limit(500) // Increased limit for 30 days of data
+            limit(100) // Reduced limit for 24 hours of data
         );
 
         const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
@@ -406,6 +572,9 @@ const Dashboard = () => {
                     customer: customerData.name || data.shipTo?.company || 'Unknown Customer',
                     origin: formatAddress(data.shipFrom),
                     destination: formatAddress(data.shipTo),
+                    // Store original objects for enhanced route formatting
+                    shipFrom: data.shipFrom,
+                    shipTo: data.shipTo,
                     carrier: rateInfo.carrier,
                     shipmentType: data.shipmentInfo?.shipmentType || 'Standard',
                     status: data.status || 'pending',
@@ -425,59 +594,74 @@ const Dashboard = () => {
         });
 
         return () => unsubscribe();
-    }, [companyIdForAddress, companyLoading, customers, thirtyDaysAgo]); // Add customers and thirtyDaysAgo as dependencies
+    }, [companyIdForAddress, companyLoading, customers, twentyFourHoursAgo]); // Add customers and twentyFourHoursAgo as dependencies
 
-    // Calculate all shipment stats in a single pass for last 30 days
+    // Helper function to get shipment status group (copied from Shipments.jsx)
+    const getShipmentStatusGroup = useCallback((shipment) => {
+        // Get the status and normalize it
+        const status = shipment.status?.toLowerCase()?.trim();
+
+        // Check for draft status first (highest priority)
+        if (status === 'draft') {
+            return 'DRAFTS';
+        }
+
+        // Enhanced status mapping based on shipments.jsx logic
+        if (status === 'pending' || status === 'scheduled' || status === 'awaiting_shipment' || status === 'awaiting shipment' || status === 'booked' || status === 'label_created') {
+            return 'PRE_SHIPMENT';
+        }
+        if (status === 'in_transit' || status === 'in transit' || status === 'picked_up' || status === 'on_route') {
+            return 'TRANSIT';
+        }
+        if (status === 'delivered') {
+            return 'COMPLETED';
+        }
+        if (status === 'cancelled' || status === 'canceled' || status === 'void' || status === 'voided') {
+            return 'CANCELLED';
+        }
+        if (status === 'exception' || status === 'delayed' || status === 'on_hold' || status === 'on hold') {
+            return 'EXCEPTIONS';
+        }
+
+        return 'PRE_SHIPMENT'; // Default for unknown statuses
+    }, []);
+
+    // Calculate all shipment stats using enhanced status groups for last 24 hours
     const shipmentStats = useMemo(() => {
-        const stats = {
-            total: shipments.length,
-            inTransit: 0,
-            delivered: 0,
-            onHold: 0,
-            pending: 0,
-            awaitingShipment: 0,
-            cancelled: 0,
-            totalValue: 0
+        // Count shipments by status groups
+        const groupCounts = {
+            PRE_SHIPMENT: 0,
+            BOOKING: 0,
+            TRANSIT: 0,
+            DELIVERY: 0,
+            COMPLETED: 0,
+            EXCEPTIONS: 0,
+            CANCELLED: 0,
+            DRAFTS: 0
         };
 
+        let totalValue = 0;
+
         shipments.forEach(shipment => {
-            const status = shipment.status?.toLowerCase();
+            const group = getShipmentStatusGroup(shipment);
+            groupCounts[group] = (groupCounts[group] || 0) + 1;
 
-            // Updated status mapping based on requirements
-            switch (status) {
-                case 'pending':
-                case 'created':
-                case 'booked':
-                case 'awaiting pickup':
-                    stats.pending++;
-                    stats.awaitingShipment++; // These count as both pending and awaiting
-                    break;
-                case 'awaiting shipment':
-                case 'label_created':
-                    stats.awaitingShipment++;
-                    break;
-                case 'in transit':
-                case 'in_transit':
-                    stats.inTransit++;
-                    break;
-                case 'on hold':
-                case 'on_hold':
-                    stats.onHold++;
-                    break;
-                case 'delivered':
-                    stats.delivered++;
-                    break;
-                case 'cancelled':
-                case 'canceled':
-                    stats.cancelled++;
-                    break;
-            }
-
-            if (shipment.value) stats.totalValue += shipment.value;
+            if (shipment.value) totalValue += shipment.value;
         });
 
-        return stats;
-    }, [shipments]);
+        return {
+            total: shipments.length - groupCounts.DRAFTS, // Exclude drafts from total
+            awaitingShipment: groupCounts.PRE_SHIPMENT + groupCounts.BOOKING, // Combine pre-shipment phases
+            inTransit: groupCounts.TRANSIT + groupCounts.DELIVERY, // Combine transit and delivery phases
+            delivered: groupCounts.COMPLETED,
+            delayed: groupCounts.EXCEPTIONS, // Exceptions include delayed shipments
+            cancelled: groupCounts.CANCELLED,
+            drafts: groupCounts.DRAFTS,
+            onHold: groupCounts.EXCEPTIONS, // Keep for backward compatibility
+            pending: groupCounts.PRE_SHIPMENT, // Keep for backward compatibility
+            totalValue
+        };
+    }, [shipments, getShipmentStatusGroup]);
 
     // Calculate metrics based on the stats
     const metrics = useMemo(() => {
@@ -712,10 +896,12 @@ const Dashboard = () => {
                                 height={600}
                                 showOverlays={true}
                                 statusCounts={{
-                                    total: shipmentStats.total,
                                     pending: shipmentStats.awaitingShipment,
+                                    awaitingShipment: shipmentStats.awaitingShipment,
                                     transit: shipmentStats.inTransit,
-                                    delivered: shipmentStats.delivered
+                                    inTransit: shipmentStats.inTransit,
+                                    delivered: shipmentStats.delivered,
+                                    delayed: shipmentStats.delayed
                                 }}
                             />
                         </Box>
@@ -834,17 +1020,21 @@ const Dashboard = () => {
                                     <CircularProgress />
                                 </Box>
                             ) : (
-                                <Table>
+                                <Table sx={{
+                                    '& .MuiTableCell-root': { fontSize: '12px' },
+                                    '& .MuiTypography-root': { fontSize: '12px' },
+                                    '& .shipment-link': { fontSize: '12px' },
+                                }}>
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell align="top">SHIPMENT ID</TableCell>
-                                            <TableCell align="top">CUSTOMER</TableCell>
-                                            <TableCell align="top">ORIGIN</TableCell>
-                                            <TableCell align="top">DESTINATION</TableCell>
-                                            <TableCell align="top" sx={{ minWidth: 120 }}>CARRIER</TableCell>
-                                            <TableCell align="top">TYPE</TableCell>
-                                            <TableCell align="top">STATUS</TableCell>
-                                            <TableCell align="top">ACTIONS</TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>ID</TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>DATE</TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>CUSTOMER</TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>ROUTE</TableCell>
+                                            <TableCell sx={{ minWidth: 120, fontSize: '12px' }}>CARRIER</TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>TYPE</TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>STATUS</TableCell>
+                                            <TableCell align="right" sx={{ fontSize: '12px' }}></TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>

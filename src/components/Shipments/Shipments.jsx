@@ -1187,7 +1187,11 @@ const Shipments = () => {
 
     useEffect(() => {
         if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-            loadShipments();
+            // Add small debounce to prevent rapid successive loads during filter changes
+            const timeoutId = setTimeout(() => {
+                loadShipments();
+            }, 100);
+            return () => clearTimeout(timeoutId);
         }
     }, [page, rowsPerPage, filters, sortBy, selectedTab, dateRange, companyIdForAddress, companyCtxLoading, authLoading]);
 
@@ -1831,68 +1835,57 @@ const Shipments = () => {
         }
     };
 
-    // Add refresh on page focus to catch status updates when returning from other pages
+    // Gentle data refresh on page focus (no full reload) - only when page was hidden for more than 30 seconds
     useEffect(() => {
-        const handleFocus = () => {
-            if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-                loadShipments();
-            }
-        };
+        let lastHiddenTime = 0;
+        const REFRESH_THRESHOLD = 30000; // 30 seconds
 
         const handleVisibilityChange = () => {
-            if (!document.hidden) {
-                if (!authLoading && !companyCtxLoading && companyIdForAddress) {
+            if (document.hidden) {
+                lastHiddenTime = Date.now();
+            } else if (lastHiddenTime > 0) {
+                const timeSinceHidden = Date.now() - lastHiddenTime;
+                // Only refresh if page was hidden for more than 30 seconds
+                if (timeSinceHidden > REFRESH_THRESHOLD && !authLoading && !companyCtxLoading && companyIdForAddress) {
+                    console.log('🔄 Refreshing data after page was hidden for', Math.round(timeSinceHidden / 1000), 'seconds');
                     loadShipments();
                 }
+                lastHiddenTime = 0;
             }
         };
 
-        // Also listen for back/forward navigation events
-        const handlePopState = () => {
-            if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-                loadShipments();
-            }
-        };
-
-        window.addEventListener('focus', handleFocus);
         document.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('popstate', handlePopState);
 
         return () => {
-            window.removeEventListener('focus', handleFocus);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('popstate', handlePopState);
         };
     }, [authLoading, companyCtxLoading, companyIdForAddress]);
 
-    // Additional effect to refresh when component mounts (when navigating from other routes)
-    useEffect(() => {
-        const refreshOnMount = () => {
-            // Check if we're navigating from another route (has history state)
-            if (window.history.state || performance.getEntriesByType('navigation')[0]?.type === 'back_forward') {
-                if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-                    // Small delay to ensure the page has settled
-                    setTimeout(() => {
-                        loadShipments();
-                    }, 100);
-                }
-            }
-        };
+    // Removed aggressive mount refresh - let the main useEffect handle data loading
 
-        refreshOnMount();
-    }, []); // Only run on mount
-
-    // --- Automatic polling for shipment statuses ---
+    // --- Gentle background polling for shipment statuses (reduced frequency) ---
     useEffect(() => {
+        // Only start polling if we have shipments and user is actively on the page
+        if (!shipments.length) return;
+
         const interval = setInterval(() => {
-            // Only poll for shipments that are not in a terminal state
+            // Only poll if document is visible (user is actively on the page)
+            if (document.hidden) return;
+
+            // Only poll for shipments that are not in a terminal state (limit to 5 at a time)
             const terminalStates = ['delivered', 'cancelled', 'void', 'canceled', 'voided'];
-            shipments.forEach((shipment) => {
-                if (!terminalStates.includes((shipment.status || '').toLowerCase())) {
+            const activeShipments = shipments
+                .filter(shipment => !terminalStates.includes((shipment.status || '').toLowerCase()))
+                .slice(0, 5); // Limit concurrent polling
+
+            activeShipments.forEach((shipment, index) => {
+                // Stagger the requests to avoid overwhelming the system
+                setTimeout(() => {
                     handleRefreshShipmentStatus(shipment);
-                }
+                }, index * 2000); // 2 second stagger
             });
-        }, 60000); // 60 seconds
+        }, 300000); // 5 minutes instead of 1 minute
+
         return () => clearInterval(interval);
     }, [shipments]);
 

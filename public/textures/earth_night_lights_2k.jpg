@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>
+<html lang="en" class="no-js is-ie lt-ie10 lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>
+<html lang="en" class="no-js is-ie lt-ie10 lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>
+<html lang="en" class="no-js is-ie lt-ie10 lt-ie9"> <![endif]-->
+<!--[if IE 9]>
+<html lang="en" class="no-js is-ie lt-ie10"> <![endif]-->
+<!--[if gt IE 9]><!-->
+<html lang="en"> <!--<![endif]-->
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-KEN9L99MMC"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-KEN9L99MMC');
+    </script>
+    
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EO - 404 Error</title>
+    <!-- NASA required metadata -->
+    <meta name="orgcode" content="610">
+    <meta name="rno" content="Robert.C.Levy.1">
+    <meta name="content-owner" content="Paul.D.Przyborski.1">
+    <meta name="webmaster" content="Paul.D.Przyborski.1">
+            <meta name="description" content="The Earth Observatory shares images and stories about the environment, Earth systems, and climate that emerge from NASA research, satellite missions, and models.">
+        <!-- Dublin Core Metadata Initiative (DCMI) metadata - http://dublincore.org/ -->
+    <meta name="DC.Identifier" content="https://earthobservatory.nasa.gov/">
+    <meta name="DC.Title" content="EO - 404 Error">
+            <meta name="DC.Description" content="The Earth Observatory shares images and stories about the environment, Earth systems, and climate that emerge from NASA research, satellite missions, and models.">
+        <meta name="DC.Date" scheme="ISO8601" content="2025-06-09">
+    <meta name="DC.Date.X-MetadataLastModified" scheme="ISO8601" content="2025-06-09">
+    <meta name="DC.Publisher" content="NASA Earth Observatory">
+    <meta name="DC.Publisher.Address" content="https://earthobservatory.nasa.gov/contact/">
+    <meta name="DC.Language" scheme="ISO639-1" content="en">
+    <meta name="DC.Type" content="Text.Article">
+    <meta name="DC.Format" scheme="IMT" content="text/html">
+    <meta name="DC.subject" content="The Earth Observatory shares images and stories about the environment, Earth systems, and climate that emerge from NASA research, satellite missions, and models.">
+    <meta name="csrf-token" content="">
+
+
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+
+    <link href="/css/bootstrap.min.css" rel="stylesheet"/>
+    <link href="/css/jasny-bootstrap.min.css" rel="stylesheet"/>
+    <link href="/css/hover-min.css" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css?family=Rajdhani:300,400,500,600,700" rel="stylesheet"/>
+        <link href="/css/main.css" rel="stylesheet"/>
+    <link href="/css/animate.min.css" rel="stylesheet"/>
+
+    <!--- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+    <script type="text/javascript" src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+    <script type="text/javascript" src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+        <!--include('feed::links') -->
+</head>
+
+<body>
+<div class="mobileNavBar"></div>
+<div class="mobileNavBarScroll"></div>
+<nav class="navmenu navmenu-default navmenu-fixed-right offcanvas nocontent" role="navigation">
+    <div class="navbar mobile-left-nav search-container">
+        <!--- Populated with JS from desktop nav to avoid duplicate code to maintain (.navbar-collapse.collapse.navbar-responsive-collapse) --></div>
+    <ul class="nav navmenu-nav">
+        <li><a href="/topic/atmosphere" class="btn-atmosphere">Atmosphere</a></li>
+        <li><a href="/topic/heat" class="btn-heat">Heat</a></li>
+        <li><a href="/topic/human-presence" class="btn-human">Human Presence</a></li>
+        <li><a href="/topic/land" class="btn-land">Land</a></li>
+        <li><a href="/topic/life" class="btn-life">Life</a></li>
+        <li>
+            <a href="javascript:void(0)" class="btn-naturalevent dropdown-toggle" data-toggle="dropdown" title="Natural Events navigation" alt="Natural Events navigation">Natural
+                Events</a>
+            <ul class="dropdown-menu">
+                <li><a href="/topic/natural-event">All</a></li>
+                <li><a href="/topic/drought">Drought</a></li>
+                <li><a href="/topic/dust-and-haze">Dust and Haze</a></li>
+                <li><a href="/topic/earthquakes">Earthquakes</a></li>
+                <li><a href="/topic/fires">Fires</a></li>
+                <li><a href="/topic/floods">Floods</a></li>
+                <li><a href="/topic/landslides">Landslides</a></li>
+                <li><a href="/topic/man-made">Man-made</a></li>
+                <li><a href="/topic/sea-and-lake-ice">Sea and Lake Ice</a></li>
+                <li><a href="/topic/severe-storms">Severe Storms</a></li>
+                <li><a href="/topic/temperature-extremes">Temperature Extremes</a></li>
+                <li><a href="/topic/unique-imagery">Unique Imagery</a></li>
+                <li><a href="/topic/volcanoes">Volcanoes</a></li>
+                <li><a href="/topic/water-color">Water Color</a></li>
+            </ul>
+        </li>
+        <li><a href="/topic/remote-sensing" class="btn-remotesensing">Remote Sensing</a></li>
+        <li><a href="/topic/snow-and-ice" class="btn-snowice"><img src="/img/topics/topic-snowIce.svg" alt="Snow &amp; Ice"/>Snow &amp; Ice</a></li>
+        <li><a href="/topic/water" class="btn-water">Water</a></li>
+        <!--<li><a href="javascript:void(0)" class="btn-solar" alt = "Solar Activity" title = "Solar Activity">Solar Activity</a></li> -->
+        <!-- <li><a href="javascript:void(0)" class="btn-climate" alt = "Climate Indicators" title = "Climate Indicators">Climate Indicators</a></li> -->
+        <li>
+            <a href="javascript:void(0)" class="btn-collections dropdown-toggle" data-toggle="dropdown" title="Collections navigation" alt="Collections navigation">Collections</a>
+            <ul class="dropdown-menu">
+                <li><a href = "/collection/1619/abcs-from-space">ABCs from Space</a></li>
+                <li><a href = "/collection/1722/air-quality">Air Quality</a></li>
+                <li><a href = "/collection/1676/amazon-deforestation">Amazon Deforestation</a></li>
+                <li><a href = "/collection/1461/astronaut-photography">Astronaut Photography</a></li>
+                <li><a href = "/collection/1717/backgrounders">Backgrounders</a></li>
+                <li><a href = "/collection/1484/blue-marble">Blue Marble</a></li>
+                <li><a href = "/collection/1595/earth-at-night">Earth at Night</a></li>
+                <li><a href = "/collection/1658/earth-from-afar">Earth from Afar</a></li>
+                <li><a href = "/collection/1692/fall-colors">Fall Colors</a></li>
+                <li><a href = "/collection/1714/food-and-agriculture">Food and Agriculture</a></li>
+                <li><a href = "/collection/1687/international-parks-and-unesco-sites">International Parks and UNESCO Sites</a></li>
+                <li><a href = "/collection/1702/renewable-and-alternative-energy">Renewable and Alternative Energy</a></li>
+                <li><a href = "/collection/1654/science-in-action">Science in Action</a></li>
+                <li><a href = "/collection/1684/sea-level-rise">Sea Level Rise</a></li>
+                <li><a href = "/collection/1596/us-national-parks">U.S. National Parks</a></li>
+                <li><a href = "/world-of-change">World of Change</a></li>
+            </ul>
+        </li>
+    </ul>
+    <div class="dropdown-menu-backdrop"></div>
+</nav>
+<div class="navbar navbar-default">
+    <div class="container-fluid">
+        <ul class="nav navbar-nav navbar-right">
+            <li>
+                <button type="button" class="navbar-toggle navbar-toggle-map hvr-rectangle-out" onclick="location.href='/map'">
+                    <span class="navbar-toggle-text">EO Explorer</span>
+                    <div class="pull-right">
+                        <span class="icon-map glyphicon glyphicon-map-marker"></span>
+                    </div>
+                </button>
+            </li>
+            <li>
+                <button type="button" class="navbar-toggle collapsed hvr-rectangle-out" data-toggle="offcanvas"
+                        data-target=".navmenu" data-canvas="body">
+                    <span class="navbar-toggle-text">Topics</span>
+                    <div class="pull-right">
+                        <span class="icon-bar top-bar"></span>
+                        <span class="icon-bar middle-bar"></span>
+                        <span class="icon-bar bottom-bar"></span>
+                    </div>
+                </button>
+            </li>
+        </ul>
+        <div class="navbar-header">
+            <a class="navbar-brand navbar-brand-meatball" href="https://www.nasa.gov/">
+                <div class="pull-left image-fade">
+                    <img class="bottom-fade" src="/img/logo-meatball2.png" srcset="/img/logo-meatball2-2x.png"
+                         alt="NASA"/>
+                    <img class="top-fade" src="/img/logo-meatball1.png" srcset="/img/logo-meatball1-2x.png" alt="NASA"/>
+                    <div class="logo-circle"></div>
+                </div>
+            </a>
+            <a class="navbar-brand navbar-brand-default" href="/">
+                <div class="pull-left image-fade">
+                    <img class="bottom-fade" src="/img/logoWhite.png" alt="Earth Observatory"/>
+                    <img class="top-fade" src="/img/logo.png" alt="Earth Observatory"/>
+                </div>
+            </a>
+        </div>
+        <div class="navbar-collapse collapse navbar-responsive-collapse search-container">
+            <form class="navbar-form navbar-left" action="/search">
+                <div class="form-group">
+                    <label for = "search-input" class = "sr-only">Search</label>
+                    <input class="form-control col-lg-12" name="q" id="search-input" type="text"/>
+                    <a href="javascript:void(0)" class="search-submit" title="Search" alt="Search">
+                        <img src="/img/icon-search.svg" alt="Search Icon">
+                    </a>
+                </div>
+            </form>
+            <ul class="nav navbar-nav navbar-left">
+                <li class="navbar-close">
+                    <button type="button" class="navbar-toggle hvr-rectangle-out navbar-toggle-active"
+                            data-toggle="offcanvas" data-target=".navmenu" data-canvas="body">
+                        <div class="pull-right">
+                            <span class="icon-bar top-bar"></span>
+                            <span class="icon-bar middle-bar"></span>
+                            <span class="icon-bar bottom-bar"></span>
+                        </div>
+                    </button>
+                </li>
+                <li class="search-toggle-container">
+                    <a href="javascript:void(0)" class="search-toggle" title="Search" alt="Search">
+                        <img src="/img/icon-search.svg" alt="Search Icon">
+                    </a>
+                </li>
+                <li><a href="/images" class="hvr-rectangle-out">Images</a></li>
+                <li><a href="/global-maps" class="hvr-rectangle-out">Global Maps</a></li>
+                <li><a href="/features" class="hvr-rectangle-out">Articles</a></li>
+                <li><a href="/blogs/" class="hvr-rectangle-out">Blogs</a></li>
+                <li><a href="/map/" class="hidden-md hidden-lg hvr-rectangle-out">EO Explorer</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class = "print-header visible-print-block">
+    <img src="/img/logo-meatball1.png" srcset="/img/logo-meatball1-2x.png" alt="NASA"/>
+    <img src="/img/logo.png" alt="Earth Observatory"/>
+</div>
+
+<!-- Content -->
+
+    <div class="container-fluid detail-container">
+        <div class="container container-mobile-fluid">
+            <div class="row">
+                <div class="col-xs-12">
+                    <h1 class="detail-header detail-header-text">HTTP Status 404 - Sorry, that page doesn’t exist!</h1>
+                    <p>
+                        You can search using the search box below or return to the <a href="/">homepage</a>.
+                    </p>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-lg-8 col-md-8 col-sm-8 col-xs-12 col-md-right-space">
+                    <input type="hidden" name="_token" value="">                    <form class="form-inline" action="/search">
+                        <input class="form-control mr-sm-2" type="text" name="q" placeholder="Search"
+                               aria-label="Search">
+                        <button class="btn btn-info" type="submit">Search</button>
+                    </form>
+                </div>
+                <div class="col-md-12" style="height:100px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+<footer>
+    <div class="container">
+        <div class="row">
+            <div class="footer-logo col-lg-3 col-sm-3 col-xs-12">
+                <a href="/" title="Earth Observatory">
+                    <img class="logo-mark" src="/img/logo-mark.svg" alt="Earth Observatory"/>
+
+                </a>
+            </div>
+            <div class="col-lg-7 col-sm-8 col-xs-12 pull-right">
+                <ul class="nav nav-pills">
+                    <li><a href="https://www.facebook.com/nasaearth/" class="fb hvr-rectangle-out" title="Facebook"><img
+                                    src="/img/social-facebook.svg" alt="Facebook"/></a></li>
+                    <li><a href="http://twitter.com/nasaearth/" class="twitter hvr-rectangle-out" title="Twitter"><img
+                                    src="/img/social-twitter.svg" alt="Twitter"/></a></li>
+                    <li><a href="http://instagram.com/NASAEarth/" class="instagram hvr-rectangle-out" title="Instagram"><img
+                                    src="/img/social-instagram.svg" alt="Instagram"/></a></li>
+                    <li><a href="/subscribe/" class="subscribe hvr-rectangle-out" title="Subscribe"><img
+                                    src="/img/social-subscribe.svg" alt="Subscribe"/></a></li>
+                    <li><a href="/subscribe/feeds" class="rss hvr-rectangle-out" title="RSS"><img
+                                    src="/img/social-rss.svg" alt="RSS"/></a></li>
+                </ul>
+            </div>
+            <div class="col-lg-8 col-sm-8 col-xs-12 pull-right">
+                <ul class="nav-footer">
+                    <li><a href="/subscribe/feeds">Feeds</a></li>
+                    <li><a href="/contact/">Contact</a></li>
+                    <li><a href="/about">About</a></li>
+                    <li><a href="/image-use-policy">Image Use Policy</a></li>
+                    <li><a href="https://www.nasa.gov/about/highlights/HP_Privacy.html">Privacy Policy</a></li>
+                    <li><a href="https://www.nasa.gov/accessibility/">Accessibility</a></li>
+                </ul>
+                <div class="clearfix"></div>
+                <div class="footer-contact col-lg-6 col-sm-6 col-xs-12">
+                    Webmaster <a href="/contact/">Paul Przyborski</a>
+                </div>
+                <div class="footer-contact col-lg-6 col-sm-6 col-xs-12">
+                    NASA Official <a href="/contact/">Robert Levy</a>
+                </div>
+                <div class="footer-credit col-lg-12 col-sm-12 col-xs-12">
+                    The Earth Observatory is part of the <br class="hidden-lg hidden-sm"/><a
+                            href="http://eospso.nasa.gov/">EOS Project Science Office</a> at <br
+                            class="hidden-lg hidden-sm"/><a href="https://www.nasa.gov/goddard/">NASA Goddard Space
+                        Flight Center</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<script type="text/javascript" src="/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/js/bootstrap-alert.js"></script>
+<script type="text/javascript" src="/js/bootstrap-notify.js"></script>
+<script type="text/javascript" src="/js/jasny-bootstrap.min.js"></script>
+<script type="text/javascript" src="/fontawesome/js/fontawesome-all.js"></script>
+<script type="text/javascript" src="/js/masonry.pkgd.min.js"></script>
+<script type="text/javascript" src="/js/imagesloaded.pkgd.min.js"></script>
+<script type="text/javascript" src="/js/main.js"></script>
+<script type="text/javascript">
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-17823747-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+
+        <script language="javascript" id="_fed_an_ua_tag" src="https://dap.digitalgov.gov/Universal-Federated-Analytics-Min.js?agency=NASA&subagency=GSFC&yt=true&dclink=true"></script>
+        <script src=https://touchpoints.app.cloud.gov/touchpoints/876fdea6.js async></script>
+        <script id="parsely-cfg" src="//cdn.parsely.com/keys/earthobservatory.nasa.gov/p.js" async="" defer=""></script>
+</body>
+</html>
