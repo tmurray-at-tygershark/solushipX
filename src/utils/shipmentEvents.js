@@ -214,29 +214,53 @@ export const recordTrackingUpdate = async (shipmentId, trackingUpdates, carrier)
 // New function to listen for real-time shipment event updates
 export const listenToShipmentEvents = (shipmentId, callback) => {
   if (!shipmentId) {
-    console.error("Shipment ID is required to listen to events.");
+    console.error("❌ Shipment ID is required to listen to events.");
     return () => {}; // Return a no-op unsubscribe function
   }
 
+  console.log(`📡 Setting up events listener for shipmentId: ${shipmentId}`);
   const shipmentEventsRef = doc(db, "shipmentEvents", shipmentId);
 
   const unsubscribe = onSnapshot(shipmentEventsRef, (docSnapshot) => {
+    console.log(`📨 Events snapshot received for ${shipmentId}:`, {
+      exists: docSnapshot.exists(),
+      docId: docSnapshot.id,
+      hasData: docSnapshot.exists() ? !!docSnapshot.data() : false
+    });
+
     if (docSnapshot.exists()) {
       const data = docSnapshot.data();
       const events = data.events || [];
+      
+      console.log(`✅ Events found for ${shipmentId}:`, {
+        eventsCount: events.length,
+        firstEvent: events[0] ? {
+          title: events[0].title,
+          timestamp: events[0].timestamp,
+          eventType: events[0].eventType
+        } : null,
+        documentData: {
+          shipmentID: data.shipmentID,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        }
+      });
+
       // Sort events by timestamp (newest first)
       events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       callback(events);
     } else {
+      console.warn(`📭 No events document found for shipmentId: ${shipmentId}`);
       // Document doesn't exist (e.g., new shipment with no events yet)
       callback([]);
     }
   }, (error) => {
-    console.error("Error listening to shipment events:", error);
+    console.error(`❌ Error listening to shipment events for ${shipmentId}:`, error);
     // Optionally, you could call the callback with an error indicator or an empty array
     callback([]); 
   });
 
+  console.log(`✅ Events listener setup complete for ${shipmentId}`);
   return unsubscribe; // Return the unsubscribe function to stop listening
 };
 

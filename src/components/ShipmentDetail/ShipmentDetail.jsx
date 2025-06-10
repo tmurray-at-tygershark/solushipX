@@ -1814,22 +1814,45 @@ const ShipmentDetail = () => {
             try {
                 setLoading(true);
 
-                // Query by shipmentID instead of document ID
-                console.log('ShipmentDetail: Fetching shipment by shipmentID:', id);
+                console.log('ShipmentDetail: Fetching shipment with ID:', id);
+                let shipmentData = null;
+                let docId = null;
 
+                // First attempt: Query by shipmentID field
+                console.log('ShipmentDetail: Attempting to find shipment by shipmentID field:', id);
                 const shipmentsRef = collection(db, 'shipments');
                 const q = query(shipmentsRef, where('shipmentID', '==', id), limit(1));
                 const querySnapshot = await getDocs(q);
 
                 if (!querySnapshot.empty) {
                     const docSnap = querySnapshot.docs[0];
-                    const shipmentData = { id: docSnap.id, ...docSnap.data() };
-
-                    console.log('ShipmentDetail: Found shipment by shipmentID:', {
+                    docId = docSnap.id;
+                    shipmentData = { id: docSnap.id, ...docSnap.data() };
+                    console.log('ShipmentDetail: Found shipment by shipmentID field:', {
                         shipmentID: shipmentData.shipmentID,
-                        firestoreDocId: docSnap.id
+                        firestoreDocId: docId
                     });
+                } else {
+                    // Second attempt: Try direct document ID lookup
+                    console.log('ShipmentDetail: No shipment found by shipmentID field, trying direct document lookup:', id);
+                    try {
+                        const docRef = doc(db, 'shipments', id);
+                        const docSnap = await getDoc(docRef);
+                        
+                        if (docSnap.exists()) {
+                            docId = docSnap.id;
+                            shipmentData = { id: docSnap.id, ...docSnap.data() };
+                            console.log('ShipmentDetail: Found shipment by direct document ID:', {
+                                firestoreDocId: docId,
+                                shipmentID: shipmentData.shipmentID
+                            });
+                        }
+                    } catch (directLookupError) {
+                        console.error('ShipmentDetail: Error in direct document lookup:', directLookupError);
+                    }
+                }
 
+                if (shipmentData && docId) {
                     // Fetch tracking data only if shipmentId exists
                     if (shipmentData.shipmentId) {
                         try {
@@ -1879,7 +1902,7 @@ const ShipmentDetail = () => {
                     }
 
                     // Fetch rates using new data structure
-                    console.log('Fetching rates with new structure for shipment:', docSnap.id);
+                    console.log('Fetching rates with new structure for shipment:', docId);
 
                     // Check if we have selectedRateRef (new structure)
                     if (shipmentData.selectedRateRef?.rateDocumentId) {
@@ -1906,7 +1929,7 @@ const ShipmentDetail = () => {
 
                     // Fetch all rates for this shipment (for potential future use)
                     try {
-                        const allRates = await getRatesForShipment(docSnap.id);
+                        const allRates = await getRatesForShipment(docId);
                         shipmentData.allRates = allRates;
                         console.log(`Found ${allRates.length} total rates for shipment:`, allRates);
 
@@ -1930,7 +1953,7 @@ const ShipmentDetail = () => {
                     if (!shipmentData.selectedRate) {
                         try {
                             console.log('No rate found with new structure, checking legacy subcollection');
-                            const ratesRef = collection(db, 'shipments', docSnap.id, 'rates');
+                            const ratesRef = collection(db, 'shipments', docId, 'rates');
                             const ratesSnapshot = await getDocs(ratesRef);
 
                             if (!ratesSnapshot.empty) {
@@ -1949,7 +1972,7 @@ const ShipmentDetail = () => {
 
                     // Fetch packages from the subcollection
                     try {
-                        const packagesRef = collection(db, 'shipments', docSnap.id, 'packages');
+                        const packagesRef = collection(db, 'shipments', docId, 'packages');
                         const packagesSnapshot = await getDocs(packagesRef);
 
                         if (!packagesSnapshot.empty) {
@@ -2009,8 +2032,8 @@ const ShipmentDetail = () => {
                     console.log('ShipmentDetail: Final shipmentData object before setLoading(false):', JSON.parse(JSON.stringify(shipmentData))); // ADDED LOG
 
                 } else {
-                    console.error('ShipmentDetail: No shipment found with shipmentID:', id);
-                    setError(`Shipment not found with ID: ${id}`);
+                    console.error('ShipmentDetail: No shipment found with ID:', id);
+                    setError(`Shipment not found with ID: ${id}. Please check the shipment ID and try again.`);
                 }
             } catch (err) {
                 console.error('Error fetching shipment:', err);

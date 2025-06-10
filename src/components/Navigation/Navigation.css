@@ -25,10 +25,12 @@
 
 .nav-link {
     color: rgba(255,255,255,0.9) !important;
-    padding: 0.5rem 1rem !important;
-    margin: 0 0.2rem;
+    padding: 0.4rem 0.75rem !important;
+    margin: 0 0.1rem;
     border-radius: 4px;
     transition: all 0.3s ease;
+    font-size: 0.875rem;
+    font-weight: 500;
 }
 
 .nav-link:hover {
@@ -60,7 +62,8 @@
     }
     
     .nav-link {
-        margin: 0.5rem 0;
-        padding: 0.8rem 1rem !important;
+        margin: 0.3rem 0;
+        padding: 0.6rem 0.75rem !important;
+        font-size: 0.875rem;
     }
 } 

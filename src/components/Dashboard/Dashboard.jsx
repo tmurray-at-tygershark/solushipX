@@ -480,10 +480,10 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
 
-    // Calculate date range for last 24 hours
-    const twentyFourHoursAgo = useMemo(() => {
+    // Calculate date range for last 30 days (matches UI header and provides comprehensive data)
+    const thirtyDaysAgo = useMemo(() => {
         const date = new Date();
-        date.setHours(date.getHours() - 24);
+        date.setDate(date.getDate() - 30);
         return Timestamp.fromDate(date);
     }, []);
 
@@ -517,18 +517,19 @@ const Dashboard = () => {
         }
 
         console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
-        console.log('Dashboard: Date filter from:', twentyFourHoursAgo.toDate());
+        console.log('Dashboard: Date filter from:', thirtyDaysAgo.toDate());
 
         const shipmentsQuery = query(
             collection(db, 'shipments'),
             where('companyID', '==', companyIdForAddress),
-            where('createdAt', '>=', twentyFourHoursAgo),
+            where('createdAt', '>=', thirtyDaysAgo),
             orderBy('createdAt', 'desc'),
-            limit(100) // Reduced limit for 24 hours of data
+            limit(200) // Increased limit for 30 days of comprehensive data
         );
 
         const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
             console.log('Dashboard: Received shipments snapshot with', snapshot.docs.length, 'documents');
+            console.log('Dashboard: Date range - From:', thirtyDaysAgo.toDate(), 'To:', new Date());
 
             const shipmentsData = snapshot.docs.map(doc => {
                 const data = doc.data();
@@ -586,6 +587,7 @@ const Dashboard = () => {
             });
 
             console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
+            console.log('Dashboard: Sample shipment data:', shipmentsData.slice(0, 2));
             setShipments(shipmentsData);
             setLoading(false);
         }, (error) => {
@@ -594,7 +596,7 @@ const Dashboard = () => {
         });
 
         return () => unsubscribe();
-    }, [companyIdForAddress, companyLoading, customers, twentyFourHoursAgo]); // Add customers and twentyFourHoursAgo as dependencies
+    }, [companyIdForAddress, companyLoading, customers, thirtyDaysAgo]); // Add customers and thirtyDaysAgo as dependencies
 
     // Helper function to get shipment status group (copied from Shipments.jsx)
     const getShipmentStatusGroup = useCallback((shipment) => {
@@ -700,10 +702,13 @@ const Dashboard = () => {
             .reduce((sum, shipment) => sum + (shipment.value || 0), 0);
     }, [shipments]);
 
-    // Calculate daily shipment counts for the last 30 days
+    // Calculate daily shipment counts for the last 30 days (matches shipment data range)
     const dailyShipmentCounts = useMemo(() => {
         const today = new Date();
         const dailyCounts = {};
+
+        console.log('📊 Chart: Calculating daily shipment counts for 30 days');
+        console.log('📊 Chart: Processing', shipments.length, 'total shipments');
 
         // Initialize all days in the last 30 days with 0
         for (let i = 29; i >= 0; i--) {
@@ -713,14 +718,34 @@ const Dashboard = () => {
             dailyCounts[dateKey] = 0;
         }
 
-        // Count shipments by date
+        // Count shipments by date - enhanced with better date handling
+        let processedCount = 0;
+        let skippedCount = 0;
+
         shipments.forEach(shipment => {
+            // Handle both formatted date string and direct timestamp
+            let shipmentDate;
+            
             if (shipment.date) {
-                if (dailyCounts.hasOwnProperty(shipment.date)) {
-                    dailyCounts[shipment.date]++;
-                }
+                // Use pre-formatted date string
+                shipmentDate = shipment.date;
+            } else if (shipment.createdAt) {
+                // Calculate date from timestamp directly
+                const timestamp = shipment.createdAt.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
+                shipmentDate = timestamp.toISOString().split('T')[0];
+            }
+
+            if (shipmentDate && dailyCounts.hasOwnProperty(shipmentDate)) {
+                dailyCounts[shipmentDate]++;
+                processedCount++;
+            } else {
+                skippedCount++;
             }
         });
+
+        console.log('📊 Chart: Processed', processedCount, 'shipments for chart, skipped', skippedCount);
+        console.log('📊 Chart: Date range coverage:', Object.keys(dailyCounts).sort());
+        console.log('📊 Chart: Daily counts sample:', Object.entries(dailyCounts).slice(0, 5));
 
         return dailyCounts;
     }, [shipments]);
@@ -790,10 +815,12 @@ const Dashboard = () => {
         console.log('Print label for shipment:', shipmentId);
     }, []);
 
-    // Generate chart data for the last 30 days
+    // Generate chart data for the last 30 days (synchronized with shipment data range)
     const chartData = useMemo(() => {
         const today = new Date();
         const chartPoints = [];
+
+        console.log('📈 Chart Data: Generating 30-day chart points');
 
         for (let i = 29; i >= 0; i--) {
             const date = new Date(today);
@@ -806,17 +833,41 @@ const Dashboard = () => {
                 day: date.toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric'
-                })
+                }),
+                fullDate: dateKey // Add full date for debugging
             });
         }
+
+        const totalChartShipments = chartPoints.reduce((sum, point) => sum + point.value, 0);
+        const maxDailyCount = Math.max(...chartPoints.map(point => point.value));
+        
+        console.log('📈 Chart Data: Generated', chartPoints.length, 'chart points');
+        console.log('📈 Chart Data: Total shipments in chart:', totalChartShipments);
+        console.log('📈 Chart Data: Max daily count:', maxDailyCount);
+        console.log('📈 Chart Data: Date range:', chartPoints[0]?.fullDate, 'to', chartPoints[chartPoints.length - 1]?.fullDate);
 
         return chartPoints;
     }, [dailyShipmentCounts]);
 
-    // Calculate max value for chart Y-axis
+    // Calculate max value for chart Y-axis (optimized for 30-day range)
     const maxChartValue = useMemo(() => {
-        const maxValue = Math.max(...chartData.map(point => point.value));
-        return Math.max(maxValue + 2, 10); // Ensure minimum of 10 for better visualization
+        const values = chartData.map(point => point.value);
+        const maxValue = Math.max(...values);
+        const totalShipments = values.reduce((sum, val) => sum + val, 0);
+        
+        // More intelligent Y-axis scaling based on data distribution
+        let calculatedMax;
+        if (maxValue === 0) {
+            calculatedMax = 10; // No data case
+        } else if (maxValue <= 5) {
+            calculatedMax = Math.max(maxValue + 2, 10); // Small numbers
+        } else {
+            calculatedMax = Math.ceil(maxValue * 1.2); // 20% padding for larger numbers
+        }
+
+        console.log('📊 Chart Y-Axis: Max daily value:', maxValue, 'Total shipments:', totalShipments, 'Y-axis max:', calculatedMax);
+        
+        return calculatedMax;
     }, [chartData]);
 
     // Show loading state while company data is loading
@@ -925,9 +976,14 @@ const Dashboard = () => {
                                     alignItems: 'center',
                                     mb: 3
                                 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                        Daily Shipments (Last 30 Days)
-                                    </Typography>
+                                    <Box>
+                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                            Daily Shipments (Last 30 Days)
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+                                            Synchronized with shipment data range • Real-time updates
+                                        </Typography>
+                                    </Box>
                                     <Box sx={{
                                         display: 'flex',
                                         alignItems: 'center',

@@ -13,7 +13,6 @@ import {
     Chip,
     Button,
     Slide,
-    Fade,
     InputAdornment
 } from '@mui/material';
 import {
@@ -23,12 +22,13 @@ import {
     PlayArrow as PlayIcon,
     Pause as PauseIcon,
     ChevronLeft as ChevronLeftIcon,
-    ChevronRight as ChevronRightIcon
+    ChevronRight as ChevronRightIcon,
+    Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
-import { listenToShipmentEvents } from '../../utils/shipmentEvents';
+
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
 import StatusChip from '../StatusChip/StatusChip';
 import './Globe.css';
@@ -468,11 +468,11 @@ const params = {
     atmMultiplier: 9.5,
 };
 
-// Earth textures - optimized resolution to prevent memory issues
+// Earth textures - upgraded to 8K for stunning detail
 const EARTH_TEXTURES = {
-    day: '/textures/planets/earth_atmos_2048.jpg', // 2K resolution to save VRAM
+    day: '/textures/8k_earth_daymap.jpg', // 8K high-resolution Earth texture for incredible detail
     normal: '/textures/planets/earth_normal_2048.jpg', // Normal map for terrain relief  
-    bump: '/textures/planets/earth_atmos_2048.jpg', // Bump map for realistic surface details
+    bump: '/textures/8k_earth_daymap.jpg', // Bump map using 8K texture for realistic surface details
     clouds: '/textures/planets/earth_clouds_1024.png'
     // Removed ocean/specular map to reduce memory usage
 };
@@ -522,11 +522,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const [userInteracting, setUserInteracting] = useState(false);
     const isInitializedRef = useRef(false);
     const routesInitializedRef = useRef(false);
+    const activeTimeoutsRef = useRef(new Set());
 
     // Real-time data state
     const [realTimeShipments, setRealTimeShipments] = useState([]);
     const [realtimeStatusCounts, setRealtimeStatusCounts] = useState({});
-    const [shipmentEvents, setShipmentEvents] = useState({});
     const { companyIdForAddress, companyLoading, company } = useCompany();
 
     // Enhanced UI features state
@@ -534,14 +534,179 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const [isSearchMode, setIsSearchMode] = useState(false);
     const [currentShipmentIndex, setCurrentShipmentIndex] = useState(0);
     const [activeShipment, setActiveShipment] = useState(null);
-    const [streamMessages, setStreamMessages] = useState([]);
     const [isPaused, setIsPaused] = useState(false);
     const [manualNavigation, setManualNavigation] = useState(false);
-    const streamRef = useRef(null);
     const pausedTimeRef = useRef(0);
+
+    // Camera position references for region navigation (calibrated from user data)
+    const defaultCameraPosition = { x: -8, y: 10, z: 16 };
+    const regionPositions = {
+        // North America - calibrated from user coordinates
+        northAmerica: { x: -7.171, y: 12.491, z: 14.579, target: { x: 0, y: 0, z: 0 } },
+        
+        // Europe - user-provided calibrated coordinates
+        europe: { x: 14.636, y: 14.485, z: -8.845, target: { x: 0, y: 0, z: 0 } },
+        
+        // Asia - user-provided calibrated coordinates (China)
+        asia: { x: 3.746, y: 10.485, z: -15.731, target: { x: 0, y: 0, z: 0 } },
+        
+        // South America - user-provided calibrated coordinates
+        southAmerica: { x: 2.385, y: -3.911, z: 18.720, target: { x: 0, y: 0, z: 0 } }
+    };
 
     // Globe is self-sufficient - uses only its own enhanced query with carrier tracking data
     const shipments = realTimeShipments;
+
+    // Shared Region Navigation Component to avoid duplication
+    const RegionNavigationButtons = ({ isFullscreenMode = false }) => (
+        <Box sx={{
+            position: 'absolute',
+            bottom: isFullscreenMode ? 24 : 16,
+            left: isFullscreenMode ? 24 : 16,
+            zIndex: isFullscreenMode ? 10001 : 6,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0.5,
+            alignItems: 'flex-start'
+        }}>
+            {[
+                { label: 'North America', action: goToNorthAmerica },
+                { label: 'Europe', action: goToEurope },
+                { label: 'Asia', action: goToAsia },
+                { label: 'South America', action: goToSouthAmerica }
+            ].map((region, index) => (
+                <Button
+                    key={region.label}
+                    onClick={region.action}
+                    size="small"
+                    sx={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        color: 'white',
+                        fontSize: '0.7rem',
+                        fontWeight: 500,
+                        padding: '4px 12px',
+                        minWidth: 'auto',
+                        height: '28px',
+                        borderRadius: '14px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        textTransform: 'none',
+                        '&:hover': {
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            transform: 'translateX(4px)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                        },
+                        transition: 'all 0.3s ease'
+                    }}
+                >
+                    {region.label}
+                </Button>
+            ))}
+        </Box>
+    );
+
+    // Shared Top Controls Component to avoid duplication
+    const TopControlsComponent = ({ isFullscreenMode = false }) => (
+        <Box sx={{
+            position: 'absolute',
+            top: 24,
+            right: isFullscreenMode ? 80 : 16, // Leave space for close button in fullscreen
+            zIndex: isFullscreenMode ? 10001 : 6,
+            display: 'flex',
+            gap: 1,
+            alignItems: 'center'
+        }}>
+            {/* SoluShipX Logo */}
+            <Box sx={{
+                background: 'rgba(0, 0, 0, 0.3)',
+                backdropFilter: 'blur(20px)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '36px'
+            }}>
+                <img
+                    src="/images/solushipx_logo_white.png"
+                    alt="SoluShipX"
+                    style={{
+                        height: '20px',
+                        width: 'auto',
+                        objectFit: 'contain'
+                    }}
+                />
+            </Box>
+
+            {/* Control Buttons */}
+            {isSearchMode && (
+                <Button
+                    size="small"
+                    onClick={handleResume}
+                    sx={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        color: 'white',
+                        minWidth: '80px',
+                        height: '36px',
+                        fontSize: '0.75rem',
+                        '&:hover': {
+                            background: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    }}
+                >
+                    Resume Auto
+                </Button>
+            )}
+
+            {/* Reset View Button */}
+            <IconButton
+                onClick={resetView}
+                sx={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    backdropFilter: 'blur(20px)',
+                    color: 'white',
+                    width: '36px',
+                    height: '36px',
+                    '&:hover': {
+                        background: 'rgba(0, 0, 0, 0.5)'
+                    }
+                }}
+            >
+                <RefreshIcon />
+            </IconButton>
+
+            {/* Fullscreen Button - Only in normal view */}
+            {!isFullscreenMode && (
+                <IconButton
+                    onClick={toggleFullScreen}
+                    sx={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        color: 'white',
+                        width: '36px',
+                        height: '36px',
+                        '&:hover': {
+                            background: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    }}
+                >
+                    <FullscreenIcon />
+                </IconButton>
+            )}
+        </Box>
+    );
+
+    // Helper function to create managed timeouts that get cleaned up on unmount
+    const createManagedTimeout = useCallback((callback, delay) => {
+        const timeoutId = setTimeout(() => {
+            activeTimeoutsRef.current.delete(timeoutId);
+            callback();
+        }, delay);
+        
+        activeTimeoutsRef.current.add(timeoutId);
+        return timeoutId;
+    }, []);
 
     // Real-time shipment data listener with carrier tracking data
     useEffect(() => {
@@ -565,7 +730,25 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         );
 
         const unsubscribe = onSnapshot(shipmentsQuery, async (snapshot) => {
-            console.log('🌍 Globe: Received real-time shipments update:', snapshot.docs.length, 'shipments');
+            console.log('🌍 Globe: Received real-time shipments update:', {
+                snapshotSize: snapshot.docs.length,
+                companyId: companyIdForAddress,
+                dateFilter: dateFilter.toDate().toISOString(),
+                queryPath: 'shipments collection'
+            });
+
+            // Log first few shipment documents for debugging
+            if (snapshot.docs.length > 0) {
+                console.log('🌍 Globe: Sample shipment documents:', snapshot.docs.slice(0, 3).map(doc => ({
+                    id: doc.id,
+                    data: {
+                        shipmentID: doc.data().shipmentID,
+                        companyID: doc.data().companyID,
+                        status: doc.data().status,
+                        createdAt: doc.data().createdAt?.toDate?.()?.toISOString?.() || 'No createdAt'
+                    }
+                })));
+            }
 
             // Enhanced shipment processing - carrierTrackingData is a direct field, not subcollection
             const shipmentsData = snapshot.docs.map((doc) => {
@@ -681,76 +864,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         }
     }, [companyLoading, companyIdForAddress, realTimeShipments.length]);
 
-    // Real-time shipment events listeners
-    useEffect(() => {
-        if (shipments.length === 0) return;
 
-        console.log('🌍 Globe: Setting up real-time events listeners for', shipments.length, 'shipments');
-
-        const unsubscribers = [];
-
-        shipments.forEach(shipment => {
-            // For events, we need the actual shipmentID field, not the document ID
-            const shipmentBusinessId = shipment.shipmentID || shipment.shipmentId;
-            const documentId = shipment.id; // Document ID for reference
-
-            console.log(`🔍 Globe: Setting up events listener for shipment:`, {
-                documentId: documentId,
-                shipmentBusinessId: shipmentBusinessId,
-                trackingNumber: shipment.trackingNumber
-            });
-
-            if (!shipmentBusinessId) {
-                console.warn(`⚠️ Globe: No shipmentID found for document ${documentId}`);
-                return;
-            }
-
-            const unsubscribe = listenToShipmentEvents(shipmentBusinessId, (events) => {
-                setShipmentEvents(prev => ({
-                    ...prev,
-                    [shipmentBusinessId]: events || []
-                }));
-
-                // Add latest events to stream
-                if (events && events.length > 0) {
-                    const latestEvent = events[0]; // Events are sorted newest first
-                    if (latestEvent && latestEvent.timestamp) {
-                        const eventTime = new Date(latestEvent.timestamp);
-                        const now = new Date();
-                        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-
-                        // Only add to stream if it's a recent event (last 5 minutes)
-                        if (eventTime > fiveMinutesAgo) {
-                            const streamMessage = {
-                                id: `live-${latestEvent.eventId || Date.now()}`,
-                                type: 'live_event',
-                                content: `🔴 LIVE: ${latestEvent.title} • ${shipment.trackingNumber}`,
-                                status: shipment.status,
-                                timestamp: eventTime.getTime(),
-                                visible: true,
-                                isLive: true
-                            };
-
-                            setStreamMessages(prev => {
-                                // Avoid duplicates by checking if we already have this event
-                                const exists = prev.some(msg => msg.id === streamMessage.id);
-                                if (exists) return prev;
-
-                                // Add new live message at the top, keep only last 20
-                                return [streamMessage, ...prev.slice(0, 19)];
-                            });
-                        }
-                    }
-                }
-            });
-
-            unsubscribers.push(unsubscribe);
-        });
-
-        return () => {
-            unsubscribers.forEach(unsub => unsub());
-        };
-    }, [shipments]);
 
     useEffect(() => {
         let scene, camera, renderer, controls, earth, clouds, atmosphere, group, animationId;
@@ -800,8 +914,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 sceneRef.current = scene;
                 camera = new THREE.PerspectiveCamera(45, actualWidth / actualHeight, 1, 1000);
 
-                // Position camera to focus on North America with optimal viewing angle
-                camera.position.set(-8, 10, 28); // Optimized for North America view
+                // Position camera to focus on North America with optimal viewing angle - zoomed in more
+                camera.position.set(-8, 10, 16); // Closer view for better detail (was 28)
                 camera.lookAt(0, 0, 0); // Look at globe center
 
                 renderer = new THREE.WebGLRenderer({
@@ -866,6 +980,33 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                 controls.addEventListener('end', () => {
                     console.log('🎯 User finished interacting with globe - keeping position');
+                    
+                    // 📍 COORDINATE LOGGING FOR CALIBRATION
+                    console.log('\n🌍 === GLOBE POSITION CALIBRATION DATA ===');
+                    console.log('📷 Camera Position:', {
+                        x: camera.position.x.toFixed(3),
+                        y: camera.position.y.toFixed(3),
+                        z: camera.position.z.toFixed(3)
+                    });
+                    console.log('🎯 Camera Target:', {
+                        x: controls.target.x.toFixed(3),
+                        y: controls.target.y.toFixed(3),
+                        z: controls.target.z.toFixed(3)
+                    });
+                    console.log('🌐 Globe Rotation:', {
+                        x: group.rotation.x.toFixed(3),
+                        y: group.rotation.y.toFixed(3),
+                        z: group.rotation.z.toFixed(3)
+                    });
+                    console.log('📐 Camera Rotation:', {
+                        x: camera.rotation.x.toFixed(3),
+                        y: camera.rotation.y.toFixed(3),
+                        z: camera.rotation.z.toFixed(3)
+                    });
+                    console.log('🔍 Camera Distance from Origin:', camera.position.distanceTo(new THREE.Vector3(0, 0, 0)).toFixed(3));
+                    console.log('🎪 Controls Distance:', controls.getDistance().toFixed(3));
+                    console.log('=== END CALIBRATION DATA ===\n');
+                    
                     // Note: We don't restart auto-rotation - user's position is maintained
                 });
 
@@ -886,24 +1027,34 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 controls.enableRotate = true;
                 controls.enablePan = true;
 
-                // Dramatic lighting setup inspired by Carmenta Globe documentation
-                const ambientLight = new THREE.AmbientLight(0x404080, 0.4); // Cooler, lower ambient for drama
+                // Store controls reference in camera for region navigation
+                camera.userData = { controls: controls };
+
+                // Enhanced dramatic lighting setup for realistic terrain rendering
+                const ambientLight = new THREE.AmbientLight(0x404080, 0.3); // Reduced ambient for more dramatic shadows
                 scene.add(ambientLight);
 
-                // Primary directional light - more dramatic and warmer
-                const directionalLight = new THREE.DirectionalLight(0xfff4e6, 1.8); // Warm, bright light
-                directionalLight.position.set(-10, 8, 12); // Position for North America emphasis
+                // Primary directional light - enhanced for terrain detail visibility  
+                const directionalLight = new THREE.DirectionalLight(0xfff4e6, 2.2); // Increased intensity for bump mapping
+                directionalLight.position.set(-12, 10, 15); // Adjusted for better terrain lighting
                 directionalLight.target.position.set(0, 0, 0);
                 directionalLight.castShadow = false; // Disable shadows for performance
                 scene.add(directionalLight);
                 scene.add(directionalLight.target);
 
-                // Secondary fill light for subtle highlighting
-                const fillLight = new THREE.DirectionalLight(0xe6f3ff, 0.6); // Cool fill light
-                fillLight.position.set(8, -4, -8); // Opposite side for balance
+                // Secondary fill light for realistic contrast
+                const fillLight = new THREE.DirectionalLight(0xe6f3ff, 0.8); // Increased fill light for terrain detail
+                fillLight.position.set(10, -6, -10); // Enhanced positioning for better fill lighting
                 fillLight.target.position.set(0, 0, 0);
                 scene.add(fillLight);
                 scene.add(fillLight.target);
+
+                // Add subtle rim lighting for atmospheric effect
+                const rimLight = new THREE.DirectionalLight(0xb3d9ff, 0.4); // Cool rim light
+                rimLight.position.set(0, 0, -20); // Behind the globe for rim effect
+                rimLight.target.position.set(0, 0, 0);
+                scene.add(rimLight);
+                scene.add(rimLight.target);
 
                 // Add neutral environment for PBR material to prevent black appearance
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -914,12 +1065,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 // Create group for globe rotation
                 group = new THREE.Group();
 
-                // Set rotation to 0,0 for default Earth position
-                // No rotation applied - showing Earth at its natural orientation
-                const initialRotationY = 0; // 0° - no Y rotation
+                // Set rotation with slight right turn for better initial view
+                // Rotate slightly right to show more of North America/Pacific
+                const initialRotationY = -0.3; // ~17° right rotation for better continent positioning
                 const initialRotationX = 0; // 0° - no X rotation
-
-
 
                 group.rotation.y = initialRotationY;
                 group.rotation.x = initialRotationX;
@@ -1048,15 +1197,16 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 const earthGeo = new THREE.SphereGeometry(10, 64, 64);
                 earthGeo.computeBoundingSphere();
 
-                // Simplified Earth material without specular layer for better performance
+                // Enhanced Earth material with realistic bump mapping and lighting response
                 const earthMat = new THREE.MeshStandardMaterial({
                     map: dayMap,
                     normalMap: normalMap,
                     bumpMap: bumpMap,
-                    bumpScale: 0.2, // Enhanced surface detail for dramatic effect
-                    roughness: 0.85, // Higher roughness to reduce specular highlights
-                    metalness: 0.02, // Much lower metalness for subtle specular
-                    envMapIntensity: 0.3, // Reduced environment reflection intensity
+                    bumpScale: 0.4, // Increased for more pronounced terrain relief
+                    roughness: 0.7, // Slightly more reflective for realistic surface
+                    metalness: 0.05, // Subtle metallic properties for mineral content
+                    envMapIntensity: 0.4, // Enhanced environment reflection for realism
+                    normalScale: new THREE.Vector2(1.2, 1.2), // Enhanced normal mapping intensity
                     // Enhanced for dramatic lighting response
                     emissive: new THREE.Color(0x000000), // No emission
                     emissiveIntensity: 0.0
@@ -1140,17 +1290,17 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     const interval = 0.016;
                     const time = performance.now() * 0.001; // Time in seconds
 
-                    // Only rotate if user is not interacting (maintains user's chosen position)
+                    // Only rotate clouds for subtle animation (no more Earth spinning)
                     if (!userInteracting) {
-                        // Rotate entire group (Earth, clouds, and all arcs together)
-                        group.rotateY(interval * 0.005 * params.speedFactor);
-
-                        // Additional cloud rotation for dynamic effect
-                        clouds.rotateY(interval * 0.005 * params.speedFactor);
+                        // Only rotate clouds for gentle atmospheric movement
+                        clouds.rotateY(interval * 0.003 * params.speedFactor);
                     }
 
                     // Realistic Earth with proper bump mapping - no separate night lights needed
 
+                    // UNIFIED TIMING SYSTEM: Badge and Animation Synchronization
+                    // ALL timing calculations MUST use the exact same constants and logic
+                    // to prevent any drift between badge switching and arc animations
                     // Sequential shooting star animation with trail movement
                     // In manual navigation mode, only animate the selected shipment continuously
                     // In auto mode, run the full sequence when not paused
@@ -1180,18 +1330,19 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     return; // Skip auto-animation logic in manual mode
                                 }
                                 if (arc.userData.isShootingArc) {
-                                    // Handle shooting arc animation with trail movement
-                                    const animDuration = arc.userData.animationDuration || 2500;
-                                    const holdDuration = arc.userData.holdDuration || 2500;
+                                    // Handle shooting arc animation with trail movement - UNIFIED TIMING
+                                    const ANIMATION_DURATION = arc.userData.ANIMATION_DURATION;
+                                    const HOLD_DURATION = arc.userData.HOLD_DURATION;
+                                    const TOTAL_DURATION = arc.userData.TOTAL_DURATION;
                                     const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                    // Check if animation should start - include hold duration
-                                    if (timeSinceStart >= 0 && timeSinceStart <= (animDuration + holdDuration)) {
+                                    // Check if animation should start - EXACT timing match with badge
+                                    if (timeSinceStart >= 0 && timeSinceStart <= TOTAL_DURATION) {
                                         arc.visible = true;
-                                        const progress = Math.min(timeSinceStart / animDuration, 1.0);
+                                        const progress = Math.min(timeSinceStart / ANIMATION_DURATION, 1.0);
 
-                                        // Sync badge with currently animating arc - EXACT timing with arc start
-                                        if (timeSinceStart >= 0 && timeSinceStart < 100 && !arc.userData.badgeSynced) { // First 100ms to ensure sync
+                                        // Sync badge with currently animating arc - EXACT timing at animation start (NO tolerance window)
+                                        if (timeSinceStart >= 0 && timeSinceStart <= 16.67 && !arc.userData.badgeSynced) { // Single frame window at 60fps
                                             arc.userData.badgeSynced = true;
 
                                             // Use stored shipment data from arc userData
@@ -1203,8 +1354,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             }
                                         }
 
-                                        // Handle animation phases: active animation vs hold phase
-                                        if (timeSinceStart <= animDuration) {
+                                        // Handle animation phases: active animation vs hold phase - UNIFIED TIMING
+                                        if (timeSinceStart <= ANIMATION_DURATION) {
                                             // Active animation phase with trail movement
                                             arc.userData.progress = progress;
 
@@ -1279,14 +1430,14 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             arc.material.color = baseColor;
                                         }
 
-                                    } else if (timeSinceStart > (animDuration + holdDuration)) {
-                                        // Animation completed - mark as done and hide
+                                    } else if (timeSinceStart > TOTAL_DURATION) {
+                                        // Animation completed - mark as done and hide - EXACT timing
                                         arc.userData.animationComplete = true;
                                         arc.userData.hasAnimated = true;
                                         arc.visible = false;
                                         arc.material.opacity = 0;
 
-                                        // Mark badge as handled when arc animation completes
+                                        // Mark badge as handled when arc animation completes - EXACT timing
                                         if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
                                             arc.userData.badgeHidden = true;
                                         }
@@ -1312,18 +1463,19 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     arc.material.opacity = 0;
                                 }
                             } else {
-                                // Handle legacy static arc animation - converted to sequential timing
+                                // Handle legacy static arc animation - converted to sequential timing - UNIFIED TIMING
                                 if (!arc.userData.animationComplete) {
-                                    const animDuration = arc.userData.animationDuration || 2500;
-                                    const holdDuration = arc.userData.holdDuration || 2500;
+                                    const ANIMATION_DURATION = arc.userData.ANIMATION_DURATION || 2500;
+                                    const HOLD_DURATION = arc.userData.HOLD_DURATION || 4500;
+                                    const TOTAL_DURATION = arc.userData.TOTAL_DURATION || (ANIMATION_DURATION + HOLD_DURATION);
                                     const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                    if (timeSinceStart >= 0 && timeSinceStart <= (animDuration + holdDuration)) {
+                                    if (timeSinceStart >= 0 && timeSinceStart <= TOTAL_DURATION) {
                                         arc.visible = true;
-                                        const progress = Math.min(timeSinceStart / animDuration, 1.0);
+                                        const progress = Math.min(timeSinceStart / ANIMATION_DURATION, 1.0);
 
                                         // Sync badge with currently animating arc (legacy fallback) - EXACT timing
-                                        if (timeSinceStart >= 0 && timeSinceStart < 100 && !arc.userData.badgeSynced) { // First 100ms for exact sync
+                                        if (timeSinceStart >= 0 && timeSinceStart <= 16.67 && !arc.userData.badgeSynced) { // Single frame window at 60fps
                                             arc.userData.badgeSynced = true;
 
                                             // Use stored shipment data from arc userData
@@ -1335,7 +1487,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             }
                                         }
 
-                                        if (timeSinceStart <= animDuration) {
+                                        if (timeSinceStart <= ANIMATION_DURATION) {
                                             // Active animation phase with smooth opacity
                                             let intensity;
                                             if (progress < 0.1) {
@@ -1357,13 +1509,13 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             arc.material.color = baseColor;
                                         }
 
-                                    } else if (timeSinceStart > (animDuration + holdDuration)) {
-                                        // Animation completed
+                                    } else if (timeSinceStart > TOTAL_DURATION) {
+                                        // Animation completed - EXACT timing
                                         arc.userData.animationComplete = true;
                                         arc.visible = false;
                                         arc.material.opacity = 0;
 
-                                        // Mark badge as handled when legacy arc animation completes
+                                        // Mark badge as handled when legacy arc animation completes - EXACT timing
                                         if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
                                             arc.userData.badgeHidden = true;
                                         }
@@ -1386,11 +1538,13 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         for (let i = 0; i < particleCount; i++) {
                             const particle = scene.userData.animatedParticles[i];
 
-                            // Check if this particle should be active based on sequential timing
-                            const sequentialDelay = particle.userData.sequentialIndex * 4000;
+                            // Check if this particle should be active based on sequential timing - UNIFIED TIMING
+                            const SHIPMENT_INTERVAL = 4000; // Same as arc timing
+                            const PARTICLE_TOTAL_DURATION = 7000; // Same as arc timing (2.5s + 4.5s)
+                            const sequentialDelay = particle.userData.sequentialIndex * SHIPMENT_INTERVAL;
                             const particleTimeSinceStart = (time * 1000) - sequentialDelay;
 
-                            if (particleTimeSinceStart >= 0 && particleTimeSinceStart <= 5000) { // 2.5s animation + 2.5s hold
+                            if (particleTimeSinceStart >= 0 && particleTimeSinceStart <= PARTICLE_TOTAL_DURATION) { // EXACT match with arc timing
                                 particle.visible = true;
                                 particle.userData.progress += particle.userData.speed;
 
@@ -1591,19 +1745,21 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             scene.userData.isProcessingShipments = true;
             scene.userData.maxDelay = validShipments.length * 4000; // Total time for one full cycle (4s per shipment)
 
-            // Sequential processing function
-            const processNextShipment = async (index) => {
-                if (index >= validShipments.length) {
-                    console.log(`✅ All ${validShipments.length} shipments processed sequentially`);
+                    // Sequential processing function
+        const processNextShipment = async (index) => {
+            if (index >= validShipments.length) {
+                console.log(`✅ All ${validShipments.length} shipments processed sequentially`);
+                if (scene.userData) {
                     scene.userData.isProcessingShipments = false;
-                    return;
                 }
+                return;
+            }
 
-                const shipment = validShipments[index];
-                try {
-                    console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
-                    console.log(`📍 Origin: ${shipment.origin}`);
-                    console.log(`📍 Destination: ${shipment.destination}`);
+            const shipment = validShipments[index];
+            try {
+                console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
+                console.log(`📍 Origin: ${shipment.origin}`);
+                console.log(`📍 Destination: ${shipment.destination}`);
 
                     const originCoords = await getCityCoordinates(shipment.origin);
                     const destCoords = await getCityCoordinates(shipment.destination);
@@ -1648,11 +1804,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         });
                         const arc = new THREE.Mesh(trailGeometry, material);
 
-                        // Add sequential animation timing - faster animation with extended hold time
-                        const animationDuration = 2500; // 2.5s animation (faster movement)
-                        const holdDuration = 2500; // 2.5s hold (extended for better visibility)
-                        const totalDurationPerShipment = animationDuration + holdDuration; // 5s total
-                        const animationStartDelay = index * 4000; // 4s between shipments for better flow
+                        // UNIFIED TIMING SYSTEM - Badge and Animation use EXACTLY the same timing
+                        const ANIMATION_DURATION = 2500; // 2.5s animation (faster movement)
+                        const HOLD_DURATION = 4500; // 4.5s hold (2.0s longer for better visibility)
+                        const TOTAL_DURATION = ANIMATION_DURATION + HOLD_DURATION; // 7.0s total
+                        const SHIPMENT_INTERVAL = 4000; // 4s between shipments for better flow
+                        const animationStartDelay = index * SHIPMENT_INTERVAL;
                         const currentTime = performance.now(); // Get current time when creating arc
 
                         // Debug shipment data before storing
@@ -1682,8 +1839,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             lastCycle: -1, // Track animation cycles for looping
                             shipmentData: shipment, // Store full shipment data for badge
                             sequentialIndex: index, // Track processing order
-                            animationDuration: animationDuration,
-                            holdDuration: holdDuration
+                            // UNIFIED TIMING - Use exact same constants as animation loop
+                            ANIMATION_DURATION: ANIMATION_DURATION,
+                            HOLD_DURATION: HOLD_DURATION,
+                            TOTAL_DURATION: TOTAL_DURATION
                         };
                         group.add(arc); // Add to rotating Earth group
                         animatedArcs.push(arc);
@@ -1773,22 +1932,22 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             animatedParticles.push(trailParticle);
                         }
 
-                        console.log(`✅ Shipment ${index + 1} geocoded and added - scheduling next in 5000ms`);
+                        console.log(`✅ Shipment ${index + 1} geocoded and added - scheduling next in ${SHIPMENT_INTERVAL}ms`);
 
-                        // Schedule next shipment processing with overlap for better flow
-                        setTimeout(() => {
+                        // Schedule next shipment processing with overlap for better flow - UNIFIED TIMING
+                        createManagedTimeout(() => {
                             processNextShipment(index + 1);
-                        }, 4000); // 4 second intervals for better flow
+                        }, SHIPMENT_INTERVAL); // Use same interval as animation timing
 
                     } else {
                         console.warn(`❌ Skipping shipment ${shipment.id} - missing coordinates, processing next...`);
                         // Process next shipment immediately if current one fails
-                        setTimeout(() => processNextShipment(index + 1), 100);
+                        createManagedTimeout(() => processNextShipment(index + 1), 100);
                     }
                 } catch (error) {
                     console.error(`❌ Error processing shipment ${shipment.id}:`, error);
                     // Process next shipment immediately if current one fails
-                    setTimeout(() => processNextShipment(index + 1), 100);
+                    createManagedTimeout(() => processNextShipment(index + 1), 100);
                 }
             };
 
@@ -1802,15 +1961,60 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
             console.log(`✅ Sequential processing initialized for ${validShipments.length} shipments`);
             console.log(`🔄 Total cycle time: ${validShipments.length * 4000}ms (${((validShipments.length * 4000) / 1000 / 60).toFixed(1)} minutes)`);
-            console.log(`🎯 Using thin trail arcs with faster 2.5s animation and 4s intervals`);
+            console.log(`🎯 UNIFIED TIMING: 2.5s animation + 4.5s hold = 7.0s total, 4.0s intervals - Badge+Arc perfectly synchronized`);
         };
 
         // Small delay to ensure DOM is ready and prevent double initialization in React Strict Mode
         const timeoutId = setTimeout(initializeGlobe, 50); // Slightly longer delay for stability
 
+        // Add manual coordinate logging with 'C' key for calibration (outside initializeGlobe)
+        const handleKeyPress = (event) => {
+            if (event.key.toLowerCase() === 'c' && !event.ctrlKey && !event.metaKey && cameraRef.current && sceneRef.current) {
+                const camera = cameraRef.current;
+                const controls = camera.userData?.controls;
+                const scene = sceneRef.current;
+                const group = scene.children.find(child => child.type === 'Group');
+                
+                console.log('\n🔧 === MANUAL CALIBRATION LOG (C key pressed) ===');
+                console.log('📷 Camera Position:', {
+                    x: camera.position.x.toFixed(3),
+                    y: camera.position.y.toFixed(3),
+                    z: camera.position.z.toFixed(3)
+                });
+                console.log('🎯 Camera Target:', {
+                    x: controls?.target.x.toFixed(3) || 'N/A',
+                    y: controls?.target.y.toFixed(3) || 'N/A',
+                    z: controls?.target.z.toFixed(3) || 'N/A'
+                });
+                console.log('🌐 Globe Rotation:', {
+                    x: group?.rotation.x.toFixed(3) || 'N/A',
+                    y: group?.rotation.y.toFixed(3) || 'N/A',
+                    z: group?.rotation.z.toFixed(3) || 'N/A'
+                });
+                console.log('📐 Camera Rotation:', {
+                    x: camera.rotation.x.toFixed(3),
+                    y: camera.rotation.y.toFixed(3),
+                    z: camera.rotation.z.toFixed(3)
+                });
+                console.log('🔍 Distance from Origin:', camera.position.distanceTo(new THREE.Vector3(0, 0, 0)).toFixed(3));
+                console.log('🎪 Controls Distance:', controls?.getDistance().toFixed(3) || 'N/A');
+                console.log('=== END MANUAL LOG ===\n');
+            }
+        };
+        window.addEventListener('keydown', handleKeyPress);
+
         return () => {
+            console.log('🧹 Globe: Component unmounting - cleaning up resources');
+
             clearTimeout(timeoutId);
             if (animationId) cancelAnimationFrame(animationId);
+
+            // Cancel all active timeouts
+            activeTimeoutsRef.current.forEach(timeoutId => {
+                clearTimeout(timeoutId);
+            });
+            activeTimeoutsRef.current.clear();
+            console.log('🧹 Globe: Cancelled all active timeouts');
 
             // Reset initialization flags
             isInitializedRef.current = false;
@@ -1892,6 +2096,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     console.warn('Canvas cleanup warning:', e.message);
                 }
             }
+
+            // Remove keyboard event listener
+            window.removeEventListener('keydown', handleKeyPress);
 
             // Clear geocoding cache to free memory
             geocodingCache.clear();
@@ -1977,12 +2184,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 });
                                 const arc = new THREE.Mesh(trailGeometry, material);
 
-                                const animationDuration = 2500;
-                                const holdDuration = 2500;
-                                const animationStartDelay = index * 4000;
+                                const ANIMATION_DURATION = 2500; // UNIFIED TIMING
+                                const HOLD_DURATION = 4500; // UNIFIED TIMING
+                                const animationStartDelay = index * 4000; // UNIFIED TIMING
                                 const currentTime = performance.now();
 
-                                arc.userData = {
+                                                                arc.userData = {
                                     isAnimatedArc: true,
                                     isShootingArc: true,
                                     originalOpacity: 0.95,
@@ -1997,8 +2204,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     badgeHidden: false,
                                     shipmentData: shipment,
                                     sequentialIndex: index,
-                                    animationDuration: animationDuration,
-                                    holdDuration: holdDuration
+                                    // UNIFIED TIMING - Use exact same constants as animation loop
+                                    ANIMATION_DURATION: ANIMATION_DURATION,
+                                    HOLD_DURATION: HOLD_DURATION,
+                                    TOTAL_DURATION: ANIMATION_DURATION + HOLD_DURATION
                                 };
 
                                 group.add(arc);
@@ -2036,106 +2245,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
     // Enhanced UI Functions
 
-    // Helper functions for stream messages
-    const getEventIcon = (eventType) => {
-        switch (eventType?.toLowerCase()) {
-            case 'created':
-            case 'shipment_created': return '📦';
-            case 'status_update':
-            case 'status_changed': return '🔄';
-            case 'tracking_update':
-            case 'location_update': return '📍';
-            case 'booking_confirmed':
-            case 'booked': return '✅';
-            case 'carrier_update':
-            case 'picked_up':
-            case 'pickup': return '🚚';
-            case 'document_generated':
-            case 'label_created': return '📄';
-            case 'rate_selected': return '💰';
-            case 'in_transit':
-            case 'transit': return '✈️';
-            case 'out_for_delivery': return '🚛';
-            case 'delivered': return '✅';
-            case 'exception':
-            case 'delayed': return '⚠️';
-            case 'cancelled': return '❌';
-            default: return '📦';
-        }
-    };
 
-    const getLocationName = (address) => {
-        if (!address) return 'Unknown';
-        if (address.city && address.state) {
-            return `${address.city}, ${address.state}`;
-        }
-        if (address.city) return address.city;
-        if (address.state) return address.state;
-        return 'Unknown';
-    };
 
-    // Initialize stream messages from shipments with real event data
-    useEffect(() => {
-        if (shipments && shipments.length > 0) {
-            // Create messages from real shipment events and recent shipments
-            const allEventMessages = [];
 
-            // First, add messages from actual events
-            Object.entries(shipmentEvents).forEach(([shipmentBusinessId, events]) => {
-                if (events && events.length > 0) {
-                    const shipment = shipments.find(s =>
-                        (s.shipmentID || s.shipmentId) === shipmentBusinessId
-                    );
-
-                    if (shipment) {
-                        // Add the 2 most recent events for each shipment
-                        events.slice(0, 2).forEach((event, eventIndex) => {
-                            allEventMessages.push({
-                                id: `init-event-${event.eventId || shipmentBusinessId}-${eventIndex}`,
-                                type: 'shipment_event',
-                                content: `${getEventIcon(event.eventType)} ${event.title} • ${shipment.trackingNumber || shipment.shipmentID || shipment.id}`,
-                                status: shipment.status,
-                                timestamp: event.timestamp || (Date.now() - (eventIndex * 60000)), // 1 minute apart if no timestamp
-                                visible: true,
-                                eventType: event.eventType,
-                                location: event.location
-                            });
-                        });
-                    }
-                }
-            });
-
-            // Then add fallback messages for shipments without events
-            const shipmentsWithoutEvents = shipments.filter(shipment => {
-                const shipmentBusinessId = shipment.shipmentID || shipment.shipmentId;
-                return !shipmentBusinessId || !shipmentEvents[shipmentBusinessId] || shipmentEvents[shipmentBusinessId].length === 0;
-            });
-
-            shipmentsWithoutEvents.slice(0, 10).forEach((shipment, index) => {
-                allEventMessages.push({
-                    id: `init-shipment-${shipment.shipmentID || shipment.shipmentId || shipment.id}`,
-                    type: 'shipment',
-                    content: `📦 ${shipment.trackingNumber || shipment.shipmentID || shipment.id} • ${getLocationName(shipment.origin)} → ${getLocationName(shipment.destination)}`,
-                    status: shipment.status,
-                    timestamp: shipment.createdAt ? new Date(shipment.createdAt).getTime() : (Date.now() - (index * 120000)), // 2 minutes apart
-                    visible: true
-                });
-            });
-
-            // Sort by timestamp and take latest 15
-            allEventMessages.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-            const latestMessages = allEventMessages.slice(0, 15);
-
-            setStreamMessages(prev => {
-                // Only update if we don't have live messages already
-                const liveMessages = prev.filter(msg => msg.isLive);
-                if (liveMessages.length > 0) {
-                    return [...liveMessages, ...latestMessages];
-                }
-                return latestMessages;
-            });
-        }
-    }, [shipments, shipmentEvents]);
 
     // Auto-advance shipments when not in search mode or manual navigation
     useEffect(() => {
@@ -2149,55 +2261,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         }
     }, [isSearchMode, isPaused, manualNavigation, shipments.length]);
 
-    // Real-time event stream from shipmentEvents
-    useEffect(() => {
-        // Process real shipment events and add them to stream
-        const processedEvents = [];
 
-        Object.entries(shipmentEvents).forEach(([shipmentBusinessId, events]) => {
-            if (events && events.length > 0) {
-                // Get the latest event for each shipment
-                const latestEvent = events[0]; // Events are sorted newest first
-                const shipment = shipments.find(s =>
-                    (s.shipmentID || s.shipmentId) === shipmentBusinessId
-                );
 
-                if (latestEvent && shipment) {
-                    const eventTime = new Date(latestEvent.timestamp);
-                    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-                    // Only include recent events (last 5 minutes) or if no timestamp, include it
-                    if (!latestEvent.timestamp || eventTime > fiveMinutesAgo) {
-                        processedEvents.push({
-                            id: `event-${latestEvent.eventId || shipmentBusinessId}-${latestEvent.timestamp || Date.now()}`,
-                            type: 'live_event',
-                            content: `${getEventIcon(latestEvent.eventType)} ${latestEvent.title} • ${shipment.trackingNumber || shipment.shipmentID || shipment.id}`,
-                            status: shipment.status,
-                            timestamp: latestEvent.timestamp || Date.now(),
-                            visible: true,
-                            isLive: true,
-                            eventType: latestEvent.eventType,
-                            location: latestEvent.location
-                        });
-                    }
-                }
-            }
-        });
-
-        // Sort by timestamp (newest first) and take latest 15
-        processedEvents.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        const latestEvents = processedEvents.slice(0, 15);
-
-        if (latestEvents.length > 0) {
-            setStreamMessages(prev => {
-                // Merge with existing non-live messages, prioritizing live events
-                const nonLiveMessages = prev.filter(msg => !msg.isLive);
-                const allMessages = [...latestEvents, ...nonLiveMessages];
-                return allMessages.slice(0, 20); // Keep last 20 total
-            });
-        }
-
-    }, [shipmentEvents, shipments]);
 
     // Search functionality
     const handleSearch = useCallback((searchValue) => {
@@ -2215,12 +2281,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         );
 
         if (foundShipment) {
-            // Add real-time events to the found shipment using proper shipment ID
-            const actualShipmentId = foundShipment.shipmentID || foundShipment.shipmentId || foundShipment.id;
-            const shipmentEventsData = shipmentEvents[actualShipmentId] || [];
             const enhancedShipment = {
-                ...foundShipment,
-                latestEvents: shipmentEventsData.slice(0, 3) // Show latest 3 events
+                ...foundShipment
             };
 
             setIsSearchMode(true);
@@ -2420,6 +2482,95 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         });
     }, [shipments, showSpecificShipmentArc]);
 
+    // Camera navigation functions for region switching
+    const animateCameraTo = useCallback((position, target = { x: 0, y: 0, z: 0 }, duration = 1500) => {
+        if (!cameraRef.current || !rendererRef.current || !sceneRef.current) return;
+
+        const camera = cameraRef.current;
+        const controls = camera.userData?.controls;
+
+        console.log(`🎥 Animating camera to position:`, position, 'target:', target);
+
+        // Disable controls during animation
+        if (controls) controls.enabled = false;
+
+        const startPosition = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+        const startTarget = controls ? { 
+            x: controls.target.x, 
+            y: controls.target.y, 
+            z: controls.target.z 
+        } : { x: 0, y: 0, z: 0 };
+
+        const startTime = performance.now();
+
+        const animateFrame = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Smooth easing function
+            const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1;
+            const easedProgress = easeInOutCubic(progress);
+
+            // Interpolate camera position
+            camera.position.x = startPosition.x + (position.x - startPosition.x) * easedProgress;
+            camera.position.y = startPosition.y + (position.y - startPosition.y) * easedProgress;
+            camera.position.z = startPosition.z + (position.z - startPosition.z) * easedProgress;
+
+            // Interpolate target
+            if (controls) {
+                controls.target.x = startTarget.x + (target.x - startTarget.x) * easedProgress;
+                controls.target.y = startTarget.y + (target.y - startTarget.y) * easedProgress;
+                controls.target.z = startTarget.z + (target.z - startTarget.z) * easedProgress;
+                controls.update();
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animateFrame);
+            } else {
+                // Re-enable controls after animation
+                if (controls) controls.enabled = true;
+                console.log(`✅ Camera animation completed`);
+            }
+        };
+
+        animateFrame();
+    }, []);
+
+    // Region navigation functions
+    const resetView = useCallback(() => {
+        console.log('🔄 Resetting to default view');
+        animateCameraTo(defaultCameraPosition, { x: 0, y: 0, z: 0 });
+        setUserInteracting(false); // Allow auto-rotation to resume if needed
+    }, [animateCameraTo]);
+
+    const goToNorthAmerica = useCallback(() => {
+        console.log('🌎 Navigating to North America');
+        const pos = regionPositions.northAmerica;
+        animateCameraTo(pos, pos.target);
+        setUserInteracting(true); // Prevent auto-rotation
+    }, [animateCameraTo]);
+
+    const goToEurope = useCallback(() => {
+        console.log('🌍 Navigating to Europe');
+        const pos = regionPositions.europe;
+        animateCameraTo(pos, pos.target);
+        setUserInteracting(true); // Prevent auto-rotation
+    }, [animateCameraTo]);
+
+    const goToAsia = useCallback(() => {
+        console.log('🌏 Navigating to Asia');
+        const pos = regionPositions.asia;
+        animateCameraTo(pos, pos.target);
+        setUserInteracting(true); // Prevent auto-rotation
+    }, [animateCameraTo]);
+
+    const goToSouthAmerica = useCallback(() => {
+        console.log('🌎 Navigating to South America');
+        const pos = regionPositions.southAmerica;
+        animateCameraTo(pos, pos.target);
+        setUserInteracting(true); // Prevent auto-rotation
+    }, [animateCameraTo]);
+
     const toggleFullScreen = () => {
         const willBeFullScreen = !isFullScreen;
         console.log('🖼️ Toggling fullscreen mode:', { current: isFullScreen, willBe: willBeFullScreen });
@@ -2534,82 +2685,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
             )}
 
-            {/* Real-time Stream (Bottom Left) */}
-            {!loading && (
-                <Box sx={{
-                    position: 'absolute',
-                    bottom: 16,
-                    left: 16,
-                    width: '300px',
-                    height: '200px',
-                    background: 'rgba(0, 0, 0, 0.2)',
-                    backdropFilter: 'blur(20px)',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    zIndex: 5,
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column-reverse' // Messages flow from bottom to top
-                }}>
-                    <Box
-                        ref={streamRef}
-                        sx={{
-                            flex: 1,
-                            overflowY: 'hidden',
-                            display: 'flex',
-                            flexDirection: 'column-reverse',
-                            padding: '8px',
-                            gap: '2px'
-                        }}
-                    >
-                        {streamMessages.slice(0, 15).map((message, index) => (
-                            <Fade
-                                key={message.id}
-                                in={message.visible}
-                                timeout={500}
-                                style={{
-                                    transitionDelay: `${index * 50}ms`
-                                }}
-                            >
-                                <Typography
-                                    sx={{
-                                        fontSize: '0.75rem',
-                                        color: 'rgba(255, 255, 255, 0.9)',
-                                        fontFamily: 'monospace',
-                                        lineHeight: 1.3,
-                                        opacity: Math.max(0.3, 1 - (index * 0.05)), // Fade out towards top
-                                        transform: `translateY(${index * -1}px)`, // Subtle movement effect
-                                        transition: 'all 0.3s ease',
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        textShadow: '0 1px 2px rgba(0,0,0,0.8)'
-                                    }}
-                                >
-                                    {message.content}
-                                </Typography>
-                            </Fade>
-                        ))}
-                    </Box>
 
-                    {/* Stream Header */}
-                    <Box sx={{
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                        padding: '8px',
-                        background: 'rgba(0, 0, 0, 0.3)'
-                    }}>
-                        <Typography sx={{
-                            fontSize: '0.7rem',
-                            color: 'rgba(255, 255, 255, 0.6)',
-                            fontWeight: 600,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px'
-                        }}>
-                            🔴 LIVE FEED
-                        </Typography>
-                    </Box>
-                </Box>
-            )}
 
             {/* Compact Badge (Bottom Right) - Always Visible */}
             {!loading && shipments.length > 0 && (
@@ -2623,26 +2699,28 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     alignItems: 'center',
                     gap: 1
                 }}>
-                    {/* Previous Button */}
-                    <Box sx={{
-                        width: '36px',
-                        height: '36px',
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        '&:hover': {
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            transform: 'scale(1.1)'
-                        }
-                    }} onClick={handlePreviousShipment}>
-                        <ChevronLeftIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
-                    </Box>
+                    {/* Previous Button - Hidden for now */}
+                    {false && (
+                        <Box sx={{
+                            width: '36px',
+                            height: '36px',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            backdropFilter: 'blur(20px)',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            '&:hover': {
+                                background: 'rgba(255, 255, 255, 0.1)',
+                                transform: 'scale(1.1)'
+                            }
+                        }} onClick={handlePreviousShipment}>
+                            <ChevronLeftIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
+                        </Box>
+                    )}
 
                     {/* Main Badge - Always show current or first shipment */}
                     <Box sx={{
@@ -2726,134 +2804,36 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         </Box>
                     </Box>
 
-                    {/* Next Button */}
-                    <Box sx={{
-                        width: '36px',
-                        height: '36px',
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        '&:hover': {
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            transform: 'scale(1.1)'
-                        }
-                    }} onClick={handleNextShipment}>
-                        <ChevronRightIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
-                    </Box>
-                </Box>
-            )}
-
-            {/* Enhanced Top Right Controls */}
-            {!isFullScreen && (
-                <Box sx={{
-                    position: 'absolute',
-                    top: 16,
-                    right: 16,
-                    zIndex: 6,
-                    display: 'flex',
-                    gap: 1,
-                    alignItems: 'center'
-                }}>
-                    {/* Search Box */}
-                    <Box sx={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '8px',
-                        overflow: 'hidden'
-                    }}>
-                        <TextField
-                            size="small"
-                            placeholder="Search shipment ID..."
-                            value={searchTerm}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '1.1rem' }} />
-                                    </InputAdornment>
-                                ),
-                                sx: {
-                                    color: 'white',
-                                    fontSize: '0.875rem',
-                                    height: '36px',
-                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                    '& input': {
-                                        padding: '8px 8px 8px 0',
-                                        '&::placeholder': {
-                                            color: 'rgba(255,255,255,0.5)',
-                                            opacity: 1
-                                        }
-                                    }
-                                }
-                            }}
-                            sx={{ width: '200px' }}
-                        />
-                    </Box>
-
-                    {/* Control Buttons */}
-                    {isSearchMode && (
-                        <Button
-                            size="small"
-                            onClick={handleResume}
-                            sx={{
-                                background: 'rgba(0, 0, 0, 0.3)',
-                                backdropFilter: 'blur(20px)',
-                                color: 'white',
-                                minWidth: '80px',
-                                height: '36px',
-                                fontSize: '0.75rem',
-                                '&:hover': {
-                                    background: 'rgba(0, 0, 0, 0.5)'
-                                }
-                            }}
-                        >
-                            Resume Auto
-                        </Button>
-                    )}
-
-                    {!isSearchMode && (
-                        <IconButton
-                            size="small"
-                            onClick={handleTogglePause}
-                            sx={{
-                                background: 'rgba(0, 0, 0, 0.3)',
-                                backdropFilter: 'blur(20px)',
-                                color: 'white',
-                                width: '36px',
-                                height: '36px',
-                                '&:hover': {
-                                    background: 'rgba(0, 0, 0, 0.5)'
-                                }
-                            }}
-                        >
-                            {isPaused || manualNavigation ? <PlayIcon /> : <PauseIcon />}
-                        </IconButton>
-                    )}
-
-                    {/* Fullscreen Button */}
-                    <IconButton
-                        onClick={toggleFullScreen}
-                        sx={{
-                            background: 'rgba(0, 0, 0, 0.3)',
-                            backdropFilter: 'blur(20px)',
-                            color: 'white',
+                    {/* Next Button - Hidden for now */}
+                    {false && (
+                        <Box sx={{
                             width: '36px',
                             height: '36px',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            backdropFilter: 'blur(20px)',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
                             '&:hover': {
-                                background: 'rgba(0, 0, 0, 0.5)'
+                                background: 'rgba(255, 255, 255, 0.1)',
+                                transform: 'scale(1.1)'
                             }
-                        }}
-                    >
-                        <FullscreenIcon />
-                    </IconButton>
+                        }} onClick={handleNextShipment}>
+                            <ChevronRightIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
+                        </Box>
+                    )}
                 </Box>
             )}
+
+            {/* Region Navigation Controls (Bottom Left) - Only in Normal View */}
+            {!loading && !isFullScreen && <RegionNavigationButtons isFullscreenMode={false} />}
+
+            {/* Enhanced Top Right Controls */}
+            {!isFullScreen && <TopControlsComponent isFullscreenMode={false} />}
         </>
     );
 
@@ -2905,91 +2885,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
 
                 {/* Enhanced Fullscreen Controls */}
-                <Box sx={{
-                    position: 'absolute',
-                    top: 24,
-                    right: 80, // Leave space for close button
-                    zIndex: 10001,
-                    display: 'flex',
-                    gap: 1,
-                    alignItems: 'center'
-                }}>
-                    {/* Search Box */}
-                    <Box sx={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '8px',
-                        overflow: 'hidden'
-                    }}>
-                        <TextField
-                            size="small"
-                            placeholder="Search shipment ID..."
-                            value={searchTerm}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '1.1rem' }} />
-                                    </InputAdornment>
-                                ),
-                                sx: {
-                                    color: 'white',
-                                    fontSize: '0.875rem',
-                                    height: '36px',
-                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                    '& input': {
-                                        padding: '8px 8px 8px 0',
-                                        '&::placeholder': {
-                                            color: 'rgba(255,255,255,0.5)',
-                                            opacity: 1
-                                        }
-                                    }
-                                }
-                            }}
-                            sx={{ width: '200px' }}
-                        />
-                    </Box>
-
-                    {/* Control Buttons */}
-                    {isSearchMode && (
-                        <Button
-                            size="small"
-                            onClick={handleResume}
-                            sx={{
-                                background: 'rgba(0, 0, 0, 0.3)',
-                                backdropFilter: 'blur(20px)',
-                                color: 'white',
-                                minWidth: '80px',
-                                height: '36px',
-                                fontSize: '0.75rem',
-                                '&:hover': {
-                                    background: 'rgba(0, 0, 0, 0.5)'
-                                }
-                            }}
-                        >
-                            Resume Auto
-                        </Button>
-                    )}
-
-                    {!isSearchMode && (
-                        <IconButton
-                            size="small"
-                            onClick={handleTogglePause}
-                            sx={{
-                                background: 'rgba(0, 0, 0, 0.3)',
-                                backdropFilter: 'blur(20px)',
-                                color: 'white',
-                                width: '36px',
-                                height: '36px',
-                                '&:hover': {
-                                    background: 'rgba(0, 0, 0, 0.5)'
-                                }
-                            }}
-                        >
-                            {isPaused || manualNavigation ? <PlayIcon /> : <PauseIcon />}
-                        </IconButton>
-                    )}
-                </Box>
+                <TopControlsComponent isFullscreenMode={true} />
 
                 {/* Full Screen Globe Container */}
                 <Box className="globe-container" sx={{
@@ -2998,6 +2894,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     height: '100vh'
                 }}>
                     {globeContent}
+                    
+                    {/* Fullscreen Region Navigation Controls (Bottom Left) */}
+                    {!loading && <RegionNavigationButtons isFullscreenMode={true} />}
                 </Box>
             </Box>
         );
