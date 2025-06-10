@@ -25,13 +25,15 @@ import {
     ChevronLeft as ChevronLeftIcon,
     ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
-import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, doc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { listenToShipmentEvents } from '../../utils/shipmentEvents';
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
 import StatusChip from '../StatusChip/StatusChip';
 import './Globe.css';
+
+
 
 // Component to handle carrier logo fetching and display
 const CarrierLogo = ({ activeShipment }) => {
@@ -40,6 +42,11 @@ const CarrierLogo = ({ activeShipment }) => {
     React.useEffect(() => {
         const fetchCarrierLogo = async () => {
             console.log('🚀 Starting fetchCarrierLogo for activeShipment:', activeShipment?.id);
+            console.log('🔄 useEffect triggered with dependencies:', {
+                shipmentId: activeShipment?.id,
+                topLevelCarrier: activeShipment?.carrier,
+                trackingDataCarrier: activeShipment?.carrierTrackingData?.carrier
+            });
 
             // Reset to null while fetching to prevent flash
             setCarrierLogoURL(null);
@@ -49,103 +56,97 @@ const CarrierLogo = ({ activeShipment }) => {
                 return;
             }
 
-            // Extract carrier from the correct location in shipment data
-            const carrierID = activeShipment.carrier ||
-                activeShipment.carrierTrackingData?.carrier ||
-                activeShipment.carrierTrackingData?.rawData?.carrier;
+            // Log the RAW carrierTrackingData to see what's actually there
+            console.log('🔍 RAW carrierTrackingData object:', activeShipment.carrierTrackingData);
+            console.log('🔍 RAW carrierTrackingData.rawData:', activeShipment.carrierTrackingData?.rawData);
 
-            console.log('🔍 Detailed carrier extraction debug:', {
-                shipmentId: activeShipment.id,
-                hasActiveShipment: !!activeShipment,
-                topLevelCarrier: activeShipment.carrier,
-                hasCarrierTrackingData: !!activeShipment.carrierTrackingData,
-                trackingDataCarrier: activeShipment.carrierTrackingData?.carrier,
-                hasRawData: !!activeShipment.carrierTrackingData?.rawData,
-                rawDataCarrier: activeShipment.carrierTrackingData?.rawData?.carrier,
-                finalCarrierID: carrierID,
-                carrierType: typeof carrierID,
-                allShipmentKeys: Object.keys(activeShipment)
+            // Extract master carrier from carrierTrackingData.rawData.carrier
+            const masterCarrier = activeShipment.carrierTrackingData?.rawData?.carrier;
+
+            console.log('🔍 Carrier extraction debug:', {
+                documentId: activeShipment.id,
+                shipmentID: activeShipment.shipmentID,
+                trackingNumber: activeShipment.trackingNumber,
+                masterCarrier: masterCarrier,
+                carrierTrackingDataExists: !!activeShipment.carrierTrackingData,
+                rawDataExists: !!activeShipment.carrierTrackingData?.rawData,
+                rawDataCarrier: activeShipment.carrierTrackingData?.rawData?.carrier
             });
 
-            if (!carrierID) {
-                console.warn('❌ No carrier ID found in any location, using fallback');
+            if (!masterCarrier) {
+                console.warn('❌ No master carrier found in carrierTrackingData.rawData.carrier, using solushipx fallback');
+                setCarrierLogoURL('/images/carrier-badges/solushipx.png');
                 return;
             }
 
-            try {
-                // Convert carrier ID to uppercase to match database format
-                const upperCaseCarrierID = carrierID?.toUpperCase();
-                console.log('🔍 Querying carriers collection:', {
-                    originalCarrierID: carrierID,
-                    upperCaseCarrierID: upperCaseCarrierID,
-                    queryField: 'carrierID'
-                });
+            // Convert master carrier to uppercase for database query
+            const upperCaseCarrierID = masterCarrier.toUpperCase();
 
+            console.log('🔍 Querying carriers collection:', {
+                masterCarrier: masterCarrier,
+                upperCaseCarrierID: upperCaseCarrierID,
+                queryField: 'carrierID'
+            });
+
+            try {
+                // Query carriers collection by carrierID field
                 const carriersQuery = query(
                     collection(db, 'carriers'),
-                    where('carrierID', '==', upperCaseCarrierID)
+                    where('carrierID', '==', upperCaseCarrierID),
+                    limit(1)
                 );
-                const querySnapshot = await getDocs(carriersQuery);
 
-                console.log('📄 Query result:', {
-                    found: !querySnapshot.empty,
-                    numResults: querySnapshot.size
-                });
+                const carriersSnapshot = await getDocs(carriersQuery);
 
-                if (!querySnapshot.empty) {
-                    // Get the first matching carrier document
-                    const carrierDoc = querySnapshot.docs[0];
+                if (!carriersSnapshot.empty) {
+                    const carrierDoc = carriersSnapshot.docs[0];
                     const carrierData = carrierDoc.data();
+                    const logoURL = carrierData.logoURL;
+                    const logoFileName = carrierData.logoFileName;
 
-                    console.log('📋 Found carrier document:', {
-                        docId: carrierDoc.id,
+                    console.log('✅ Found carrier in database:', {
+                        documentId: carrierDoc.id,
                         carrierID: carrierData.carrierID,
-                        name: carrierData.name,
-                        hasLogoURL: !!carrierData.logoURL,
-                        logoURL: carrierData.logoURL
+                        logoURL: logoURL,
+                        logoFileName: logoFileName,
+                        carrierName: carrierData.carrierName || carrierData.name
                     });
 
-                    if (carrierData.logoURL) {
-                        console.log('✅ Using carrier logo from collection:', carrierData.logoURL);
-                        setCarrierLogoURL(carrierData.logoURL);
+                    if (logoURL) {
+                        // Use the complete logoURL directly from the database
+                        console.log('🖼️ Using database logoURL:', logoURL);
+                        setCarrierLogoURL(logoURL);
+                        return;
+                    } else if (logoFileName) {
+                        // Fallback: try to construct URL from logoFileName
+                        let constructedURL;
+                        if (logoFileName.startsWith('http://') || logoFileName.startsWith('https://')) {
+                            constructedURL = logoFileName;
+                        } else {
+                            constructedURL = `/images/carrier-badges/${logoFileName}`;
+                        }
+
+                        console.log('🖼️ Using constructed logo URL:', constructedURL);
+                        setCarrierLogoURL(constructedURL);
                         return;
                     } else {
-                        console.warn('⚠️ Carrier document found but no logoURL field');
-                        console.warn('⚠️ Available fields:', Object.keys(carrierData));
+                        console.warn('⚠️ Carrier found but no logoURL or logoFileName field');
                     }
                 } else {
-                    console.error('❌ No carrier found with carrierID (uppercase):', upperCaseCarrierID);
-                    console.error('❌ Original carrierID was:', carrierID);
-                    console.error('❌ Available carriers should have carrierID field matching the uppercase value');
+                    console.warn('❌ No carrier found with carrierID:', upperCaseCarrierID);
                 }
 
-                // Fallback to hardcoded logos using lowercase for mapping
-                const carrierLogoMap = {
-                    'eshipplus': '/images/carrier-badges/eship.png',
-                    'eship': '/images/carrier-badges/eship.png',
-                    'fedex': '/images/carrier-badges/fedex.png',
-                    'ups': '/images/carrier-badges/ups.png',
-                    'usps': '/images/carrier-badges/usps.png',
-                    'dhl': '/images/carrier-badges/dhl.png',
-                    'canpar': '/images/carrier-badges/canpar.png',
-                    'purolator': '/images/carrier-badges/purolator.png',
-                    'polaristransportation': '/images/carrier-badges/polaristransportation.png',
-                    'polaris': '/images/carrier-badges/polaristransportation.png',
-                    'canadapost': '/images/carrier-badges/canadapost.png'
-                };
-
-                const fallbackURL = carrierLogoMap[carrierID?.toLowerCase()] || '/images/carrier-badges/eship.png';
-                console.log('🔄 Using fallback logo for carrierID:', carrierID, '→', fallbackURL);
-                setCarrierLogoURL(fallbackURL);
-
             } catch (error) {
-                console.error('🚨 Error fetching carrier logo:', error);
-                setCarrierLogoURL('/images/carrier-badges/eship.png');
+                console.error('🚨 Error querying carriers collection:', error);
             }
+
+            // Fallback to solushipx logo if database query fails
+            console.log('🔄 Using fallback logo: solushipx.png');
+            setCarrierLogoURL('/images/carrier-badges/solushipx.png');
         };
 
         fetchCarrierLogo();
-    }, [activeShipment?.carrier]);
+    }, [activeShipment?.id, activeShipment?.carrierTrackingData?.rawData?.carrier]);
 
     console.log('🖼️ Rendering CarrierLogo with URL:', carrierLogoURL);
 
@@ -181,19 +182,29 @@ const CarrierLogo = ({ activeShipment }) => {
             }}
             onError={(e) => {
                 console.error('🚨 Logo failed to load:', e.target.src);
-                console.error('🚨 Trying eship fallback');
-                const fallbackURL = '/images/carrier-badges/eship.png';
-                if (e.target.src !== fallbackURL && e.target.src.includes('carrier-badges')) {
-                    // Only try fallback if we're not already trying it and the URL looks like a carrier badge
+
+                // Try different fallback strategies
+                if (e.target.src.includes('firebasestorage.googleapis.com')) {
+                    // Remote storage failed, try local eship.png
+                    console.error('🚨 Remote storage failed, trying local eship logo');
+                    const localEshipURL = '/images/carrier-badges/eship.png';
+                    e.target.src = localEshipURL;
+                    setCarrierLogoURL(localEshipURL);
+                } else if (e.target.src.includes('eship.png') && !e.target.src.includes('solushipx')) {
+                    // Local eship failed, try solushipx fallback
+                    console.error('🚨 Local eship failed, trying solushipx fallback');
+                    const fallbackURL = '/images/carrier-badges/solushipx.png';
                     e.target.src = fallbackURL;
                     setCarrierLogoURL(fallbackURL);
-                } else if (e.target.src.includes('dashboard')) {
-                    // If the URL is wrong (contains dashboard), force use eship
-                    console.error('🚨 Wrong URL detected, forcing eship logo');
+                } else if (!e.target.src.includes('solushipx')) {
+                    // Any other failure, go straight to solushipx
+                    console.error('🚨 Trying solushipx fallback');
+                    const fallbackURL = '/images/carrier-badges/solushipx.png';
                     e.target.src = fallbackURL;
                     setCarrierLogoURL(fallbackURL);
                 } else {
-                    // Hide the image if even fallback fails
+                    // Even solushipx failed, hide the image
+                    console.error('🚨 All logo attempts failed, hiding image');
                     e.target.style.display = 'none';
                 }
             }}
@@ -462,8 +473,8 @@ const EARTH_TEXTURES = {
     day: '/textures/planets/earth_atmos_2048.jpg', // 2K resolution to save VRAM
     normal: '/textures/planets/earth_normal_2048.jpg', // Normal map for terrain relief  
     bump: '/textures/planets/earth_atmos_2048.jpg', // Bump map for realistic surface details
-    clouds: '/textures/planets/earth_clouds_1024.png',
-    ocean: '/textures/planets/earth_specular_2048.jpg'
+    clouds: '/textures/planets/earth_clouds_1024.png'
+    // Removed ocean/specular map to reduce memory usage
 };
 
 // Night lights are now integrated into the main Earth texture - no separate creation needed
@@ -501,7 +512,7 @@ void main() {
     gl_FragColor = vec4(atmColor, atmOpacity) * factor;
 }`;
 
-const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusCounts = {}, shipments: propShipments = [] }) => {
+const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusCounts = {} }) => {
     const mountRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -509,6 +520,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const cameraRef = useRef(null);
     const sceneRef = useRef(null);
     const [userInteracting, setUserInteracting] = useState(false);
+    const isInitializedRef = useRef(false);
+    const routesInitializedRef = useRef(false);
 
     // Real-time data state
     const [realTimeShipments, setRealTimeShipments] = useState([]);
@@ -527,53 +540,91 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const streamRef = useRef(null);
     const pausedTimeRef = useRef(0);
 
-    // Use real-time shipments if available, fallback to prop shipments
-    const shipments = realTimeShipments.length > 0 ? realTimeShipments : propShipments;
+    // Globe is self-sufficient - uses only its own enhanced query with carrier tracking data
+    const shipments = realTimeShipments;
 
-    // Real-time shipment data listener
+    // Real-time shipment data listener with carrier tracking data
     useEffect(() => {
         if (!companyIdForAddress || companyLoading) {
             return;
         }
 
-        console.log('🌍 Globe: Setting up real-time shipment listener for company:', companyIdForAddress);
+        console.log('🌍 Globe: Setting up independent enhanced real-time shipment listener for company:', companyIdForAddress);
 
-        // Calculate date range for last 7 days to get more data for the globe
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const dateFilter = Timestamp.fromDate(sevenDaysAgo);
+        // Calculate date range for last 30 days to get comprehensive data for the globe
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const dateFilter = Timestamp.fromDate(thirtyDaysAgo);
 
         const shipmentsQuery = query(
             collection(db, 'shipments'),
             where('companyID', '==', companyIdForAddress),
             where('createdAt', '>=', dateFilter),
             orderBy('createdAt', 'desc'),
-            limit(50) // Limit for performance but get enough for good globe display
+            limit(100) // Increased limit for comprehensive globe display
         );
 
-        const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
+        const unsubscribe = onSnapshot(shipmentsQuery, async (snapshot) => {
             console.log('🌍 Globe: Received real-time shipments update:', snapshot.docs.length, 'shipments');
 
-            const shipmentsData = snapshot.docs.map(doc => {
+            // Enhanced shipment processing - carrierTrackingData is a direct field, not subcollection
+            const shipmentsData = snapshot.docs.map((doc) => {
                 const data = doc.data();
-                return {
-                    id: doc.id,
-                    trackingNumber: data.trackingNumber || data.shipmentID || doc.id,
+                const shipmentId = doc.id;
+
+                // carrierTrackingData is already in the document data - no subcollection query needed!
+                const carrierTrackingData = data.carrierTrackingData;
+
+                console.log(`🔍 Globe: Processing shipment ${shipmentId}:`, {
+                    hasCarrierTrackingData: !!carrierTrackingData,
+                    hasRawData: !!carrierTrackingData?.rawData,
+                    masterCarrier: carrierTrackingData?.rawData?.carrier,
+                    carrierName: carrierTrackingData?.carrierName
+                });
+
+                // Debug the shipment structure being created
+                const shipmentObject = {
+                    id: shipmentId, // This is the Firestore document ID
+                    documentId: shipmentId, // Explicitly store document ID
+                    shipmentID: data.shipmentID, // This is the shipment ID field from the document
+                    trackingNumber: data.trackingNumber || data.shipmentID || shipmentId,
                     ...data,
+                    // carrierTrackingData is already included in ...data spread
                     // Ensure address fields are properly mapped
                     origin: data.shipFrom || data.origin,
                     destination: data.shipTo || data.destination,
                 };
-            }).filter(shipment => {
-                // Only include shipments with valid addresses and exclude drafts
-                return shipment.status?.toLowerCase() !== 'draft' &&
+
+                console.log(`🔍 Globe: Created shipment object for ${shipmentId}:`, {
+                    documentId: shipmentObject.documentId,
+                    shipmentID: shipmentObject.shipmentID,
+                    trackingNumber: shipmentObject.trackingNumber,
+                    hasCarrierData: !!shipmentObject.carrierTrackingData,
+                    carrierFromData: shipmentObject.carrierTrackingData?.rawData?.carrier
+                });
+
+                return shipmentObject;
+            });
+
+            // Filter valid shipments
+            const validShipments = shipmentsData.filter(shipment => {
+                // Only include shipments with valid addresses and exclude drafts, cancelled, and void shipments
+                const status = shipment.status?.toLowerCase();
+                return status !== 'draft' &&
+                    status !== 'cancelled' &&
+                    status !== 'void' &&
                     shipment.origin &&
                     shipment.destination;
             });
 
-            // Calculate real-time status counts
-            const statusCounts = shipmentsData.reduce((counts, shipment) => {
+            // Calculate real-time status counts (excluding cancelled/void)
+            const statusCounts = validShipments.reduce((counts, shipment) => {
                 const status = shipment.status?.toLowerCase();
+                // Skip cancelled and void shipments
+                if (status === 'cancelled' || status === 'void') {
+                    return counts;
+                }
+
                 switch (status) {
                     case 'pending':
                     case 'scheduled':
@@ -598,14 +649,37 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 return counts;
             }, {});
 
-            setRealTimeShipments(shipmentsData);
+            setRealTimeShipments(validShipments);
             setRealtimeStatusCounts(statusCounts);
+
+            console.log('🌍 Globe: Independently processed shipments with enhanced carrier data:', {
+                total: snapshot.docs.length,
+                valid: validShipments.length,
+                withCarrierData: validShipments.filter(s => s.carrierTrackingData).length,
+                eShipPlusDetected: validShipments.filter(s => s.carrierTrackingData?.rawData?.carrier === 'eshipplus').length,
+                dateRange: '30 days',
+                isIndependent: true
+            });
         }, (error) => {
             console.error('🌍 Globe: Error in real-time shipments listener:', error);
         });
 
         return () => unsubscribe();
     }, [companyIdForAddress, companyLoading]);
+
+    // Loading state handling for independent Globe
+    useEffect(() => {
+        if (companyLoading) {
+            console.log('🌍 Globe: Waiting for company data...');
+            setLoading(true);
+        } else if (!companyIdForAddress) {
+            console.log('⚠️ Globe: No company ID available');
+            setLoading(false);
+            setRealTimeShipments([]);
+        } else if (realTimeShipments.length === 0) {
+            console.log('🌍 Globe: No shipments available yet, but ready to receive data');
+        }
+    }, [companyLoading, companyIdForAddress, realTimeShipments.length]);
 
     // Real-time shipment events listeners
     useEffect(() => {
@@ -616,13 +690,25 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         const unsubscribers = [];
 
         shipments.forEach(shipment => {
-            const shipmentId = shipment.shipmentID || shipment.shipmentId || shipment.id;
-            if (!shipmentId) return;
+            // For events, we need the actual shipmentID field, not the document ID
+            const shipmentBusinessId = shipment.shipmentID || shipment.shipmentId;
+            const documentId = shipment.id; // Document ID for reference
 
-            const unsubscribe = listenToShipmentEvents(shipmentId, (events) => {
+            console.log(`🔍 Globe: Setting up events listener for shipment:`, {
+                documentId: documentId,
+                shipmentBusinessId: shipmentBusinessId,
+                trackingNumber: shipment.trackingNumber
+            });
+
+            if (!shipmentBusinessId) {
+                console.warn(`⚠️ Globe: No shipmentID found for document ${documentId}`);
+                return;
+            }
+
+            const unsubscribe = listenToShipmentEvents(shipmentBusinessId, (events) => {
                 setShipmentEvents(prev => ({
                     ...prev,
-                    [shipmentId]: events || []
+                    [shipmentBusinessId]: events || []
                 }));
 
                 // Add latest events to stream
@@ -668,14 +754,13 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
     useEffect(() => {
         let scene, camera, renderer, controls, earth, clouds, atmosphere, group, animationId;
-        let isInitialized = false;
 
         const initializeGlobe = async () => {
-            if (isInitialized) {
+            if (isInitializedRef.current) {
                 console.log('⚠️ Skipping duplicate initialization');
                 return;
             }
-            isInitialized = true;
+            isInitializedRef.current = true;
 
             console.log('🔄 Cleared geocoding cache for fresh coordinates');
             geocodingCache.clear();
@@ -784,21 +869,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     // Note: We don't restart auto-rotation - user's position is maintained
                 });
 
-                // Add rotation logging for user to find preferred view
-                controls.addEventListener('change', () => {
-                    if (group) {
-                        const rotY = group.rotation.y;
-                        const rotX = group.rotation.x;
-                        const rotYDegrees = (rotY * 180 / Math.PI).toFixed(1);
-                        const rotXDegrees = (rotX * 180 / Math.PI).toFixed(1);
-                        console.log('🔄 Current Globe Rotation:', {
-                            y: rotY.toFixed(3),
-                            x: rotX.toFixed(3),
-                            yDegrees: rotYDegrees + '°',
-                            xDegrees: rotXDegrees + '°'
-                        });
-                    }
-                });
+                // Rotation change listener removed to reduce console noise
 
                 // Enable keyboard controls for advanced navigation
                 controls.enableKeys = true;
@@ -848,12 +919,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 const initialRotationY = 0; // 0° - no Y rotation
                 const initialRotationX = 0; // 0° - no X rotation
 
-                console.log('🔄 Globe rotation set to 0,0 (default position):', {
-                    y: initialRotationY.toFixed(3),
-                    x: initialRotationX.toFixed(3),
-                    yDegrees: (initialRotationY * 180 / Math.PI).toFixed(1) + '°',
-                    xDegrees: (initialRotationX * 180 / Math.PI).toFixed(1) + '°'
-                });
+
 
                 group.rotation.y = initialRotationY;
                 group.rotation.x = initialRotationX;
@@ -887,12 +953,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     });
                 };
 
-                const [dayMap, normalMap, bumpMap, cloudsMap, oceanMap] = await Promise.all([
+                const [dayMap, normalMap, bumpMap, cloudsMap] = await Promise.all([
                     loadTextureWithFallback(EARTH_TEXTURES.day),
                     loadTextureWithFallback(EARTH_TEXTURES.normal),
                     loadTextureWithFallback(EARTH_TEXTURES.bump),
-                    loadTextureWithFallback(EARTH_TEXTURES.clouds),
-                    loadTextureWithFallback(EARTH_TEXTURES.ocean)
+                    loadTextureWithFallback(EARTH_TEXTURES.clouds)
                 ]);
 
                 dayMap.colorSpace = THREE.SRGBColorSpace;
@@ -902,7 +967,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 console.log('🗻 Normal map dimensions:', normalMap.image?.width, 'x', normalMap.image?.height);
                 console.log('🌍 Earth day map dimensions:', dayMap.image?.width, 'x', dayMap.image?.height);
                 console.log('🏔️ Bump map dimensions:', bumpMap.image?.width, 'x', bumpMap.image?.height);
-                console.log('🌊 Ocean/specular map dimensions:', oceanMap.image?.width, 'x', oceanMap.image?.height);
 
                 // Create efficient programmatic star field
                 const createProgrammaticStarField = () => {
@@ -984,13 +1048,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 const earthGeo = new THREE.SphereGeometry(10, 64, 64);
                 earthGeo.computeBoundingSphere();
 
-                // Enhanced Earth material with dramatic lighting and toned-down specular
+                // Simplified Earth material without specular layer for better performance
                 const earthMat = new THREE.MeshStandardMaterial({
                     map: dayMap,
                     normalMap: normalMap,
                     bumpMap: bumpMap,
                     bumpScale: 0.2, // Enhanced surface detail for dramatic effect
-                    roughnessMap: oceanMap, // Use ocean map for realistic water/land roughness variation
                     roughness: 0.85, // Higher roughness to reduce specular highlights
                     metalness: 0.02, // Much lower metalness for subtle specular
                     envMapIntensity: 0.3, // Reduced environment reflection intensity
@@ -1045,8 +1108,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                 // Add shipment routes if any exist
                 if (shipments && shipments.length > 0) {
-                    console.log('🚚 Adding shipment routes to globe...');
+                    console.log('🚚 Adding initial shipment routes to globe...');
                     await addShipmentRoutes(scene, shipments);
+                    routesInitializedRef.current = true;
                 }
 
                 // Click debugging removed - coordinate mapping is now correct
@@ -1056,7 +1120,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 console.log('🌍 Earth object:', earth ? 'Created' : 'Missing');
                 console.log('☁️ Clouds object:', clouds ? 'Created' : 'Missing');
                 console.log('🌌 Atmosphere object:', atmosphere ? 'Created' : 'Missing');
-                setLoading(false);
+
+                // Only set loading to false after everything is ready
+                setTimeout(() => {
+                    setLoading(false);
+                    console.log('🎯 Globe loading state cleared - ready for display');
+                }, 100); // Small delay to ensure smooth initialization
 
                 // Test immediate render before animation
                 renderer.render(scene, camera);
@@ -1400,6 +1469,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
             } catch (error) {
                 console.error('Error initializing globe:', error);
+                isInitializedRef.current = false; // Reset on error
                 setLoading(false);
             }
         };
@@ -1501,8 +1571,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 });
             }
 
-            const validShipments = shipments.filter(s => s.status && s.status.toLowerCase() !== 'draft');
-            console.log(`🚚 Valid shipments (non-draft):`, validShipments.length);
+            const validShipments = shipments.filter(s => {
+                const status = s.status?.toLowerCase();
+                return status && status !== 'draft' && status !== 'cancelled' && status !== 'void';
+            });
+            console.log(`🚚 Valid shipments (non-draft/cancelled/void):`, validShipments.length);
             console.log(`🚚 Valid shipments statuses:`, validShipments.map(s => s.status));
             console.log(`🚚 Starting sequential shipment processing for performance...`);
 
@@ -1564,12 +1637,14 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         const trailGeometry = new THREE.TubeGeometry(trailCurve, tubularSegments, tubeRadius, radialSegments, false);
 
                         // Enhanced material for thick tube effect with glow
-                        const material = new THREE.MeshBasicMaterial({
+                        const material = new THREE.MeshStandardMaterial({
                             color: getStatusColor(shipment.status),
                             opacity: 0.95,
                             transparent: true,
                             emissive: new THREE.Color(getStatusColor(shipment.status)),
-                            emissiveIntensity: 0.3
+                            emissiveIntensity: 0.3,
+                            roughness: 0.5,
+                            metalness: 0.1
                         });
                         const arc = new THREE.Mesh(trailGeometry, material);
 
@@ -1731,11 +1806,15 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         };
 
         // Small delay to ensure DOM is ready and prevent double initialization in React Strict Mode
-        const timeoutId = setTimeout(initializeGlobe, 10);
+        const timeoutId = setTimeout(initializeGlobe, 50); // Slightly longer delay for stability
 
         return () => {
             clearTimeout(timeoutId);
             if (animationId) cancelAnimationFrame(animationId);
+
+            // Reset initialization flags
+            isInitializedRef.current = false;
+            routesInitializedRef.current = false;
 
             // Comprehensive Three.js resource cleanup
             if (scene) {
@@ -1822,7 +1901,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
     // Separate effect to update shipment routes without reinitializing globe
     useEffect(() => {
-        if (sceneRef.current && shipments.length > 0 && !loading) {
+        // Only update routes if globe is initialized and routes were previously initialized
+        if (sceneRef.current && shipments.length > 0 && !loading && isInitializedRef.current && routesInitializedRef.current) {
             console.log('🔄 Updating shipment routes without reinitializing globe...');
 
             const scene = sceneRef.current;
@@ -1850,8 +1930,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                 // Add new shipment routes
                 const addShipmentRoutes = async (scene, shipments) => {
-                    const validShipments = shipments.filter(s => s.status && s.status.toLowerCase() !== 'draft');
-                    console.log(`🚚 Updating ${validShipments.length} shipment routes...`);
+                    const validShipments = shipments.filter(s => {
+                        const status = s.status?.toLowerCase();
+                        return status && status !== 'draft' && status !== 'cancelled' && status !== 'void';
+                    });
+                    console.log(`🚚 Updating ${validShipments.length} shipment routes (excluding cancelled/void)...`);
 
                     const animatedArcs = [];
                     const animatedParticles = [];
@@ -1883,12 +1966,14 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
                                 const trailGeometry = new THREE.TubeGeometry(trailCurve, trailLength - 1, 0.02, 8, false);
 
-                                const material = new THREE.MeshBasicMaterial({
+                                const material = new THREE.MeshStandardMaterial({
                                     color: getStatusColor(shipment.status),
                                     opacity: 0.95,
                                     transparent: true,
                                     emissive: new THREE.Color(getStatusColor(shipment.status)),
-                                    emissiveIntensity: 0.3
+                                    emissiveIntensity: 0.3,
+                                    roughness: 0.5,
+                                    metalness: 0.1
                                 });
                                 const arc = new THREE.Mesh(trailGeometry, material);
 
@@ -1996,19 +2081,19 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             const allEventMessages = [];
 
             // First, add messages from actual events
-            Object.entries(shipmentEvents).forEach(([shipmentId, events]) => {
+            Object.entries(shipmentEvents).forEach(([shipmentBusinessId, events]) => {
                 if (events && events.length > 0) {
                     const shipment = shipments.find(s =>
-                        (s.shipmentID || s.shipmentId || s.id) === shipmentId
+                        (s.shipmentID || s.shipmentId) === shipmentBusinessId
                     );
 
                     if (shipment) {
                         // Add the 2 most recent events for each shipment
                         events.slice(0, 2).forEach((event, eventIndex) => {
                             allEventMessages.push({
-                                id: `init-event-${event.eventId || shipmentId}-${eventIndex}`,
+                                id: `init-event-${event.eventId || shipmentBusinessId}-${eventIndex}`,
                                 type: 'shipment_event',
-                                content: `${getEventIcon(event.eventType)} ${event.title} • ${shipment.trackingNumber || shipment.id}`,
+                                content: `${getEventIcon(event.eventType)} ${event.title} • ${shipment.trackingNumber || shipment.shipmentID || shipment.id}`,
                                 status: shipment.status,
                                 timestamp: event.timestamp || (Date.now() - (eventIndex * 60000)), // 1 minute apart if no timestamp
                                 visible: true,
@@ -2022,15 +2107,15 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
             // Then add fallback messages for shipments without events
             const shipmentsWithoutEvents = shipments.filter(shipment => {
-                const shipmentId = shipment.shipmentID || shipment.shipmentId || shipment.id;
-                return !shipmentEvents[shipmentId] || shipmentEvents[shipmentId].length === 0;
+                const shipmentBusinessId = shipment.shipmentID || shipment.shipmentId;
+                return !shipmentBusinessId || !shipmentEvents[shipmentBusinessId] || shipmentEvents[shipmentBusinessId].length === 0;
             });
 
             shipmentsWithoutEvents.slice(0, 10).forEach((shipment, index) => {
                 allEventMessages.push({
                     id: `init-shipment-${shipment.shipmentID || shipment.shipmentId || shipment.id}`,
                     type: 'shipment',
-                    content: `📦 ${shipment.trackingNumber || shipment.id} • ${getLocationName(shipment.origin)} → ${getLocationName(shipment.destination)}`,
+                    content: `📦 ${shipment.trackingNumber || shipment.shipmentID || shipment.id} • ${getLocationName(shipment.origin)} → ${getLocationName(shipment.destination)}`,
                     status: shipment.status,
                     timestamp: shipment.createdAt ? new Date(shipment.createdAt).getTime() : (Date.now() - (index * 120000)), // 2 minutes apart
                     visible: true
@@ -2069,12 +2154,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         // Process real shipment events and add them to stream
         const processedEvents = [];
 
-        Object.entries(shipmentEvents).forEach(([shipmentId, events]) => {
+        Object.entries(shipmentEvents).forEach(([shipmentBusinessId, events]) => {
             if (events && events.length > 0) {
                 // Get the latest event for each shipment
                 const latestEvent = events[0]; // Events are sorted newest first
                 const shipment = shipments.find(s =>
-                    (s.shipmentID || s.shipmentId || s.id) === shipmentId
+                    (s.shipmentID || s.shipmentId) === shipmentBusinessId
                 );
 
                 if (latestEvent && shipment) {
@@ -2084,9 +2169,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     // Only include recent events (last 5 minutes) or if no timestamp, include it
                     if (!latestEvent.timestamp || eventTime > fiveMinutesAgo) {
                         processedEvents.push({
-                            id: `event-${latestEvent.eventId || shipmentId}-${latestEvent.timestamp || Date.now()}`,
+                            id: `event-${latestEvent.eventId || shipmentBusinessId}-${latestEvent.timestamp || Date.now()}`,
                             type: 'live_event',
-                            content: `${getEventIcon(latestEvent.eventType)} ${latestEvent.title} • ${shipment.trackingNumber || shipment.id}`,
+                            content: `${getEventIcon(latestEvent.eventType)} ${latestEvent.title} • ${shipment.trackingNumber || shipment.shipmentID || shipment.id}`,
                             status: shipment.status,
                             timestamp: latestEvent.timestamp || Date.now(),
                             visible: true,
@@ -2396,8 +2481,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         <>
             <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
             {loading && (
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.8)', color: 'white', zIndex: 10 }}>
-                    <Typography>Loading realistic Earth...</Typography>
+                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.95)', color: 'white', zIndex: 10 }}>
+                    <Typography variant="h6" sx={{ mb: 2 }}>Loading Globe...</Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.7, textAlign: 'center' }}>
+                        Initializing Earth textures and shipment data
+                    </Typography>
                 </Box>
             )}
             {showOverlays && !loading && (
