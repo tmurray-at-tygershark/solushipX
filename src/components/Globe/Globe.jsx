@@ -204,6 +204,7 @@ const CarrierLogo = ({ activeShipment }) => {
 
 
 const geocodingCache = new Map();
+const MAX_CACHE_SIZE = 100; // Limit cache to 100 entries to prevent memory growth
 
 const extractLocationFromAddress = (address) => {
     if (!address) return null;
@@ -386,6 +387,12 @@ const getCityCoordinates = async (address) => {
             });
 
             console.log(`✅ Geocoded "${addressString}":`, result);
+
+            // Implement cache size limit
+            if (geocodingCache.size >= MAX_CACHE_SIZE) {
+                const firstKey = geocodingCache.keys().next().value;
+                geocodingCache.delete(firstKey);
+            }
             geocodingCache.set(addressString, result);
             return result;
         } catch (error) {
@@ -398,6 +405,12 @@ const getCityCoordinates = async (address) => {
     // Final fallback
     const fallbackCoords = { lat: 45.0, lng: -100.0 };
     console.warn(`⚠️ Using fallback coordinates for "${addressString}"`);
+
+    // Implement cache size limit for fallback too
+    if (geocodingCache.size >= MAX_CACHE_SIZE) {
+        const firstKey = geocodingCache.keys().next().value;
+        geocodingCache.delete(firstKey);
+    }
     geocodingCache.set(addressString, fallbackCoords);
     return fallbackCoords;
 };
@@ -444,9 +457,9 @@ const params = {
     atmMultiplier: 9.5,
 };
 
-// Earth textures - ultra high resolution for crisp zoom
+// Earth textures - optimized resolution to prevent memory issues
 const EARTH_TEXTURES = {
-    day: '/textures/8k_earth_daymap.jpg', // Solar System Scope 8K ultra-high resolution Earth texture
+    day: '/textures/planets/earth_atmos_2048.jpg', // 2K resolution to save VRAM
     normal: '/textures/planets/earth_normal_2048.jpg', // Normal map for terrain relief  
     bump: '/textures/planets/earth_atmos_2048.jpg', // Bump map for realistic surface details
     clouds: '/textures/planets/earth_clouds_1024.png',
@@ -508,7 +521,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const [isSearchMode, setIsSearchMode] = useState(false);
     const [currentShipmentIndex, setCurrentShipmentIndex] = useState(0);
     const [activeShipment, setActiveShipment] = useState(null);
-    const [showDrawer, setShowDrawer] = useState(false);
     const [streamMessages, setStreamMessages] = useState([]);
     const [isPaused, setIsPaused] = useState(false);
     const [manualNavigation, setManualNavigation] = useState(false);
@@ -718,6 +730,19 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 renderer.sortObjects = true; // Enable proper transparency sorting
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
 
+                // Add WebGL context loss detection
+                const canvas = renderer.domElement;
+                canvas.addEventListener('webglcontextlost', (event) => {
+                    console.error('🚨 WebGL context lost! Preventing default and attempting recovery...');
+                    event.preventDefault();
+                    if (animationId) cancelAnimationFrame(animationId);
+                }, false);
+
+                canvas.addEventListener('webglcontextrestored', () => {
+                    console.log('🔄 WebGL context restored, reinitializing globe...');
+                    // The component will reinitialize automatically due to React
+                }, false);
+
                 // Store references for fullscreen resizing
                 rendererRef.current = renderer;
                 cameraRef.current = camera;
@@ -879,9 +904,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 console.log('🏔️ Bump map dimensions:', bumpMap.image?.width, 'x', bumpMap.image?.height);
                 console.log('🌊 Ocean/specular map dimensions:', oceanMap.image?.width, 'x', oceanMap.image?.height);
 
-                // Create prominent programmatic star field
+                // Create efficient programmatic star field
                 const createProgrammaticStarField = () => {
-                    const starCount = 3000; // More stars for better coverage
+                    const starCount = 1000; // Reduced for memory efficiency
                     const starPositions = new Float32Array(starCount * 3);
                     const starSizes = new Float32Array(starCount);
                     const starColors = new Float32Array(starCount * 3);
@@ -1058,7 +1083,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     // Realistic Earth with proper bump mapping - no separate night lights needed
 
                     // Sequential shooting star animation with trail movement
-                    if (scene.userData.animatedArcs && !isPaused) {
+                    // In manual navigation mode, only animate the selected shipment continuously
+                    // In auto mode, run the full sequence when not paused
+                    if (scene.userData.animatedArcs && (!isPaused || manualNavigation)) {
                         const currentTime = time * 1000; // Convert to milliseconds
 
                         scene.userData.animatedArcs.forEach(arc => {
@@ -1070,6 +1097,19 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     arc.visible = parentArc.visible;
                                 }
                             } else if (arc.userData.isAnimatedArc) {
+                                // Handle manual navigation mode - simple static display
+                                if (manualNavigation) {
+                                    if (arc.userData.isManuallySelected) {
+                                        // Keep the manually selected arc visible and static
+                                        arc.visible = true;
+                                        // Arc geometry and opacity are already set by showSpecificShipmentArc
+                                    } else {
+                                        // Hide all other arcs in manual navigation mode
+                                        arc.visible = false;
+                                        arc.material.opacity = 0;
+                                    }
+                                    return; // Skip auto-animation logic in manual mode
+                                }
                                 if (arc.userData.isShootingArc) {
                                     // Handle shooting arc animation with trail movement
                                     const animDuration = arc.userData.animationDuration || 2500;
@@ -1088,9 +1128,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             // Use stored shipment data from arc userData
                                             const shipmentForArc = arc.userData.shipmentData;
                                             if (shipmentForArc) {
-                                                // Update active shipment and show badge at EXACT same time as arc
+                                                // Update active shipment at EXACT same time as arc
                                                 setActiveShipment(shipmentForArc);
-                                                setShowDrawer(true);
                                                 console.log(`🎯 Badge synced with arc animation for shipment: ${shipmentForArc.trackingNumber || shipmentForArc.id}`);
                                             }
                                         }
@@ -1118,13 +1157,24 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                                 }
                                             }
 
-                                            // Recreate tube geometry with new trail positions
-                                            const newTrailCurve = new THREE.CatmullRomCurve3(newTrailPoints);
-                                            const newTubeGeometry = new THREE.TubeGeometry(newTrailCurve, trailLength - 1, 0.02, 8, false);
+                                            // Only recreate geometry if trail points actually changed significantly
+                                            if (!arc.userData.lastTrailPoints ||
+                                                arc.userData.lastTrailPoints.length !== newTrailPoints.length ||
+                                                newTrailPoints.some((point, i) =>
+                                                    !arc.userData.lastTrailPoints[i] ||
+                                                    point.distanceTo(arc.userData.lastTrailPoints[i]) > 0.1
+                                                )) {
 
-                                            // Update the arc's geometry
-                                            arc.geometry.dispose(); // Clean up old geometry
-                                            arc.geometry = newTubeGeometry;
+                                                const newTrailCurve = new THREE.CatmullRomCurve3(newTrailPoints);
+                                                const newTubeGeometry = new THREE.TubeGeometry(newTrailCurve, trailLength - 1, 0.02, 8, false);
+
+                                                // Dispose old geometry and update
+                                                if (arc.geometry) arc.geometry.dispose();
+                                                arc.geometry = newTubeGeometry;
+
+                                                // Store trail points for comparison
+                                                arc.userData.lastTrailPoints = newTrailPoints.map(p => p.clone());
+                                            }
 
                                             // Dynamic opacity for trail effect (smooth throughout)
                                             let intensity;
@@ -1143,13 +1193,16 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             const brightnessMultiplier = 1.0 + intensity * 0.5;
                                             arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
                                         } else {
-                                            // Hold phase - keep full arc visible with smooth transition
-                                            const fullArcCurve = arc.userData.curve;
-                                            const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
+                                            // Hold phase - keep full arc visible with smooth transition (only create once)
+                                            if (!arc.userData.fullArcGeometryCreated) {
+                                                const fullArcCurve = arc.userData.curve;
+                                                const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
 
-                                            // Update the arc's geometry to show full arc
-                                            arc.geometry.dispose(); // Clean up old geometry
-                                            arc.geometry = fullTubeGeometry;
+                                                // Dispose old geometry and update to full arc
+                                                if (arc.geometry) arc.geometry.dispose();
+                                                arc.geometry = fullTubeGeometry;
+                                                arc.userData.fullArcGeometryCreated = true;
+                                            }
 
                                             // Smooth transition from animation opacity (no sudden change)
                                             arc.material.opacity = 0.9 * arc.userData.originalOpacity; // Slightly dimmer but smooth
@@ -1164,10 +1217,20 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                         arc.visible = false;
                                         arc.material.opacity = 0;
 
-                                        // Hide badge when arc animation completes
+                                        // Mark badge as handled when arc animation completes
                                         if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
                                             arc.userData.badgeHidden = true;
-                                            setShowDrawer(false);
+                                        }
+
+                                        // Schedule cleanup after a delay to prevent memory accumulation
+                                        if (!arc.userData.cleanupScheduled) {
+                                            arc.userData.cleanupScheduled = true;
+                                            setTimeout(() => {
+                                                if (arc.geometry) arc.geometry.dispose();
+                                                if (arc.material) arc.material.dispose();
+                                                if (arc.parent) arc.parent.remove(arc);
+                                                console.log(`🧹 Cleaned up completed arc for shipment ${arc.userData.shipmentId}`);
+                                            }, 10000); // Clean up 10 seconds after completion
                                         }
                                     } else {
                                         // Animation hasn't started yet
@@ -1197,9 +1260,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             // Use stored shipment data from arc userData
                                             const shipmentForArc = arc.userData.shipmentData;
                                             if (shipmentForArc) {
-                                                // Update active shipment and show badge at EXACT same time as arc
+                                                // Update active shipment at EXACT same time as arc
                                                 setActiveShipment(shipmentForArc);
-                                                setShowDrawer(true);
                                                 console.log(`🎯 Badge synced with legacy arc animation for shipment: ${shipmentForArc.trackingNumber || shipmentForArc.id}`);
                                             }
                                         }
@@ -1232,10 +1294,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                         arc.visible = false;
                                         arc.material.opacity = 0;
 
-                                        // Hide badge when legacy arc animation completes
+                                        // Mark badge as handled when legacy arc animation completes
                                         if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
                                             arc.userData.badgeHidden = true;
-                                            setShowDrawer(false);
                                         }
                                     } else {
                                         arc.visible = false;
@@ -1308,6 +1369,30 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         const renderTime = performance.now() - time * 1000;
                         if (renderTime > 16.67) { // Alert if frame takes longer than 60fps
                             console.warn(`⚠️ Performance: Frame ${frameCount} took ${renderTime.toFixed(2)}ms (should be <16.67ms for 60fps)`);
+                        }
+
+                        // Memory monitoring
+                        const memInfo = renderer.info.memory;
+                        const renderInfo = renderer.info.render;
+
+                        if (memInfo.geometries > 100 || memInfo.textures > 50) {
+                            console.warn(`⚠️ High memory usage: ${memInfo.geometries} geometries, ${memInfo.textures} textures`);
+                        }
+
+                        if (frameCount % 600 === 0) { // Every 10 seconds
+                            console.log(`📊 Performance stats: Geometries: ${memInfo.geometries}, Textures: ${memInfo.textures}, Draw calls: ${renderInfo.calls}`);
+                        }
+
+                        // Emergency cleanup if we have too many objects
+                        if (memInfo.geometries > 200) {
+                            console.warn('🚨 Emergency cleanup triggered - too many geometries!');
+                            scene.userData.animatedArcs?.forEach((arc, index) => {
+                                if (arc.userData.animationComplete && index % 2 === 0) { // Clean up every other completed arc
+                                    if (arc.geometry) arc.geometry.dispose();
+                                    if (arc.material) arc.material.dispose();
+                                    if (arc.parent) arc.parent.remove(arc);
+                                }
+                            });
                         }
                     }
                 };
@@ -1651,17 +1736,218 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         return () => {
             clearTimeout(timeoutId);
             if (animationId) cancelAnimationFrame(animationId);
-            if (renderer) renderer.dispose();
+
+            // Comprehensive Three.js resource cleanup
+            if (scene) {
+                console.log('🧹 Starting comprehensive Three.js cleanup...');
+
+                // Dispose of all animated arcs and their resources
+                if (scene.userData.animatedArcs) {
+                    scene.userData.animatedArcs.forEach(arc => {
+                        if (arc.geometry) arc.geometry.dispose();
+                        if (arc.material) {
+                            if (arc.material.map) arc.material.map.dispose();
+                            arc.material.dispose();
+                        }
+                        if (arc.parent) arc.parent.remove(arc);
+                    });
+                    scene.userData.animatedArcs = [];
+                }
+
+                // Dispose of all animated particles and their resources
+                if (scene.userData.animatedParticles) {
+                    scene.userData.animatedParticles.forEach(particle => {
+                        if (particle.geometry) particle.geometry.dispose();
+                        if (particle.material) {
+                            if (particle.material.map) particle.material.map.dispose();
+                            particle.material.dispose();
+                        }
+                        if (particle.parent) particle.parent.remove(particle);
+                    });
+                    scene.userData.animatedParticles = [];
+                }
+
+                // Dispose of main globe objects
+                scene.traverse((object) => {
+                    if (object.geometry) object.geometry.dispose();
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(mat => {
+                                if (mat.map) mat.map.dispose();
+                                if (mat.normalMap) mat.normalMap.dispose();
+                                if (mat.bumpMap) mat.bumpMap.dispose();
+                                if (mat.emissiveMap) mat.emissiveMap.dispose();
+                                if (mat.roughnessMap) mat.roughnessMap.dispose();
+                                mat.dispose();
+                            });
+                        } else {
+                            if (object.material.map) object.material.map.dispose();
+                            if (object.material.normalMap) object.material.normalMap.dispose();
+                            if (object.material.bumpMap) object.material.bumpMap.dispose();
+                            if (object.material.emissiveMap) object.material.emissiveMap.dispose();
+                            if (object.material.roughnessMap) object.material.roughnessMap.dispose();
+                            object.material.dispose();
+                        }
+                    }
+                });
+
+                // Clear the scene
+                while (scene.children.length > 0) {
+                    scene.remove(scene.children[0]);
+                }
+
+                console.log('✅ Three.js resources disposed');
+            }
+
+            // Dispose of renderer
+            if (renderer) {
+                renderer.dispose();
+                console.log('✅ Renderer disposed');
+            }
+
+            // Remove DOM element
             if (mountRef.current && renderer?.domElement) {
                 try {
                     mountRef.current.removeChild(renderer.domElement);
                 } catch (e) {
-                    // Element may already be removed
                     console.warn('Canvas cleanup warning:', e.message);
                 }
             }
+
+            // Clear geocoding cache to free memory
+            geocodingCache.clear();
+            console.log('🧹 Globe cleanup completed');
         };
-    }, [width, height, JSON.stringify(shipments)]); // Use JSON.stringify to prevent object reference changes from causing reload
+    }, [width, height, shipments.length]); // Only reinitialize if dimensions or shipment count changes
+
+    // Separate effect to update shipment routes without reinitializing globe
+    useEffect(() => {
+        if (sceneRef.current && shipments.length > 0 && !loading) {
+            console.log('🔄 Updating shipment routes without reinitializing globe...');
+
+            const scene = sceneRef.current;
+            const group = scene.children.find(child => child.type === 'Group');
+
+            if (group) {
+                // Clear old animated arcs and particles
+                if (scene.userData.animatedArcs) {
+                    scene.userData.animatedArcs.forEach(arc => {
+                        if (arc.geometry) arc.geometry.dispose();
+                        if (arc.material) arc.material.dispose();
+                        if (arc.parent) arc.parent.remove(arc);
+                    });
+                    scene.userData.animatedArcs = [];
+                }
+
+                if (scene.userData.animatedParticles) {
+                    scene.userData.animatedParticles.forEach(particle => {
+                        if (particle.geometry) particle.geometry.dispose();
+                        if (particle.material) particle.material.dispose();
+                        if (particle.parent) particle.parent.remove(particle);
+                    });
+                    scene.userData.animatedParticles = [];
+                }
+
+                // Add new shipment routes
+                const addShipmentRoutes = async (scene, shipments) => {
+                    const validShipments = shipments.filter(s => s.status && s.status.toLowerCase() !== 'draft');
+                    console.log(`🚚 Updating ${validShipments.length} shipment routes...`);
+
+                    const animatedArcs = [];
+                    const animatedParticles = [];
+
+                    scene.userData.animatedArcs = animatedArcs;
+                    scene.userData.animatedParticles = animatedParticles;
+                    scene.userData.totalShipments = validShipments.length;
+                    scene.userData.currentShipmentIndex = 0;
+                    scene.userData.isProcessingShipments = true;
+
+                    // Process shipments without delays for instant update
+                    for (let index = 0; index < validShipments.length; index++) {
+                        const shipment = validShipments[index];
+                        try {
+                            const originCoords = await getCityCoordinates(shipment.origin);
+                            const destCoords = await getCityCoordinates(shipment.destination);
+
+                            if (originCoords && destCoords) {
+                                const startVec = latLngToVector3(originCoords.lat, originCoords.lng, 10.05);
+                                const endVec = latLngToVector3(destCoords.lat, destCoords.lng, 10.05);
+                                const distance = startVec.distanceTo(endVec);
+                                const arcHeight = Math.max(2, distance * 0.5);
+                                const mid = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
+                                mid.normalize().multiplyScalar(10 + arcHeight);
+
+                                const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
+                                const trailLength = 25;
+                                const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
+                                const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
+                                const trailGeometry = new THREE.TubeGeometry(trailCurve, trailLength - 1, 0.02, 8, false);
+
+                                const material = new THREE.MeshBasicMaterial({
+                                    color: getStatusColor(shipment.status),
+                                    opacity: 0.95,
+                                    transparent: true,
+                                    emissive: new THREE.Color(getStatusColor(shipment.status)),
+                                    emissiveIntensity: 0.3
+                                });
+                                const arc = new THREE.Mesh(trailGeometry, material);
+
+                                const animationDuration = 2500;
+                                const holdDuration = 2500;
+                                const animationStartDelay = index * 4000;
+                                const currentTime = performance.now();
+
+                                arc.userData = {
+                                    isAnimatedArc: true,
+                                    isShootingArc: true,
+                                    originalOpacity: 0.95,
+                                    status: shipment.status,
+                                    shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
+                                    animationStartTime: currentTime + animationStartDelay,
+                                    curve: curve,
+                                    trailLength: trailLength,
+                                    trailPoints: trailPoints,
+                                    progress: 0,
+                                    badgeSynced: false,
+                                    badgeHidden: false,
+                                    shipmentData: shipment,
+                                    sequentialIndex: index,
+                                    animationDuration: animationDuration,
+                                    holdDuration: holdDuration
+                                };
+
+                                group.add(arc);
+                                animatedArcs.push(arc);
+
+                                // Add markers
+                                const originGeo = new THREE.SphereGeometry(0.04, 8, 8);
+                                const originMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.9 });
+                                const originMarker = new THREE.Mesh(originGeo, originMat);
+                                originMarker.position.copy(startVec);
+                                originMarker.userData = { isMarker: true, parentArc: arc, originalOpacity: 0.9 };
+                                group.add(originMarker);
+
+                                const destGeo = new THREE.SphereGeometry(0.04, 8, 8);
+                                const destMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.9 });
+                                const destMarker = new THREE.Mesh(destGeo, destMat);
+                                destMarker.position.copy(endVec);
+                                destMarker.userData = { isMarker: true, parentArc: arc, originalOpacity: 0.9 };
+                                group.add(destMarker);
+
+                                animatedArcs.push(originMarker, destMarker);
+                            }
+                        } catch (error) {
+                            console.error(`❌ Error updating shipment route ${shipment.id}:`, error);
+                        }
+                    }
+
+                    console.log(`✅ Updated ${validShipments.length} shipment routes`);
+                };
+
+                addShipmentRoutes(scene, shipments);
+            }
+        }
+    }, [JSON.stringify(shipments.map(s => ({ id: s.id, status: s.status, origin: s.origin, destination: s.destination })))]); // Only when shipment data actually changes
 
     // Enhanced UI Functions
 
@@ -1835,7 +2121,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         if (!searchValue.trim()) {
             setIsSearchMode(false);
             setActiveShipment(null);
-            setShowDrawer(false);
             return;
         }
 
@@ -1855,7 +2140,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
             setIsSearchMode(true);
             setActiveShipment(enhancedShipment);
-            setShowDrawer(true);
             setUserInteracting(true); // Stop auto rotation
         }
     }, [shipments]);
@@ -1865,19 +2149,18 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         setIsSearchMode(false);
         setSearchTerm('');
         setActiveShipment(null);
-        setShowDrawer(false);
         setIsPaused(false);
         setManualNavigation(false);
         setUserInteracting(false); // Resume auto rotation
     }, []);
 
-    // Show specific shipment arc for manual navigation
+    // Show specific shipment arc for manual navigation - SIMPLE AND CLEAR
     const showSpecificShipmentArc = useCallback((shipmentIndex) => {
         if (!sceneRef.current?.userData?.animatedArcs || shipmentIndex < 0 || shipmentIndex >= shipments.length) {
             return;
         }
 
-        console.log(`🎯 Showing specific shipment arc for index: ${shipmentIndex}`);
+        console.log(`🎯 Showing shipment arc for index: ${shipmentIndex}`);
 
         // Find the arc for this shipment
         const arcs = sceneRef.current.userData.animatedArcs;
@@ -1887,23 +2170,26 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         );
 
         if (targetArc && targetArc.userData.curve) {
-            // Show the full arc immediately for manual navigation
+            // Show the full arc immediately - no complex animations
             const fullArcCurve = targetArc.userData.curve;
             const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
 
-            // Update the arc's geometry to show full arc
-            targetArc.geometry.dispose(); // Clean up old geometry
+            // Update the arc's geometry to show full route
+            targetArc.geometry.dispose();
             targetArc.geometry = fullTubeGeometry;
 
-            // Make it visible with full opacity
+            // Make it clearly visible
             targetArc.visible = true;
-            targetArc.material.opacity = 0.9 * targetArc.userData.originalOpacity;
+            targetArc.material.opacity = 0.95; // Full opacity for clear visibility
 
-            // Set color based on status
+            // Set appropriate color based on status
             const baseColor = new THREE.Color(getStatusColor(targetArc.userData.status));
             targetArc.material.color = baseColor;
 
-            console.log(`✅ Manual arc displayed for shipment ${shipmentIndex}`);
+            // Simple flag to indicate this is the manually selected arc
+            targetArc.userData.isManuallySelected = true;
+
+            console.log(`✅ Shipment ${shipmentIndex} arc displayed clearly`);
         } else {
             console.warn(`❌ No arc found for shipment index: ${shipmentIndex}`);
         }
@@ -1914,16 +2200,48 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         setIsPaused(prev => {
             const newPaused = !prev;
             if (newPaused) {
-                // Store the time when paused
+                // Store the time when paused and enter manual navigation
                 pausedTimeRef.current = performance.now();
                 setManualNavigation(true);
-            } else {
-                // When resuming, clear manual navigation and restart auto-loop
-                setManualNavigation(false);
-                setShowDrawer(false);
-                setActiveShipment(null);
 
-                // Hide all current arcs to restart the loop
+                // If we're currently on a shipment, set it up for continuous looping
+                if (sceneRef.current?.userData?.animatedArcs && currentShipmentIndex >= 0) {
+                    // Find current arc and set it to manual loop mode
+                    const currentArc = sceneRef.current.userData.animatedArcs.find(arc =>
+                        !arc.userData.isMarker &&
+                        arc.userData.sequentialIndex === currentShipmentIndex
+                    );
+
+                    if (currentArc) {
+                        // Set up current shipment for continuous looping
+                        const currentTime = performance.now();
+                        currentArc.userData.manualLoopMode = true;
+                        currentArc.userData.manualLoopStartTime = currentTime;
+                        currentArc.userData.animationComplete = false;
+                        currentArc.userData.badgeSynced = false;
+                        currentArc.userData.badgeHidden = false;
+                        currentArc.userData.manualBadgeSynced = false;
+
+                        // Hide all other arcs
+                        sceneRef.current.userData.animatedArcs.forEach(arc => {
+                            if (!arc.userData.isMarker && arc !== currentArc) {
+                                arc.visible = false;
+                                arc.material.opacity = 0;
+                                arc.userData.manualLoopMode = false;
+                            }
+                        });
+
+                        console.log(`🔄 Paused and set up continuous looping for shipment ${currentShipmentIndex}`);
+                    }
+                }
+            } else {
+                // When resuming, clear manual navigation and restart auto-loop from NEXT shipment
+                setManualNavigation(false);
+
+                // Calculate next shipment index for seamless continuation  
+                const nextIndex = (currentShipmentIndex + 1) % shipments.length;
+
+                // Clear all manual loop modes and reset arcs
                 if (sceneRef.current?.userData?.animatedArcs) {
                     sceneRef.current.userData.animatedArcs.forEach(arc => {
                         if (!arc.userData.isMarker) {
@@ -1932,29 +2250,33 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             arc.userData.animationComplete = false;
                             arc.userData.badgeSynced = false;
                             arc.userData.badgeHidden = false;
+                            arc.userData.manualLoopMode = false;
+                            arc.userData.manualBadgeSynced = false;
                         }
                     });
 
-                    // Reset animation start times to restart the sequence
+                    // Reset animation start times from the NEXT shipment
                     const currentTime = performance.now();
                     sceneRef.current.userData.animatedArcs.forEach((arc, index) => {
                         if (!arc.userData.isMarker && arc.userData.sequentialIndex !== undefined) {
-                            arc.userData.animationStartTime = currentTime + (arc.userData.sequentialIndex * 4000);
+                            // Calculate delay: start immediately for next shipment, then continue sequence
+                            const shipmentPosition = (arc.userData.sequentialIndex - nextIndex + shipments.length) % shipments.length;
+                            arc.userData.animationStartTime = currentTime + (shipmentPosition * 4000);
                         }
                     });
                 }
 
-                console.log('🔄 Resumed auto-loop, restarting shipment sequence');
+                console.log(`🔄 Resumed auto-loop from shipment ${nextIndex}, restarting sequence`);
             }
             return newPaused;
         });
-    }, []);
+    }, [currentShipmentIndex, shipments.length]);
 
-    // Manual navigation functions
+    // Manual navigation functions - SIMPLE USER EXPERIENCE
     const handlePreviousShipment = useCallback(() => {
         if (shipments.length === 0) return;
 
-        // Pause the system and enter manual navigation mode
+        // Pause auto-mode and enter manual browsing
         setIsPaused(true);
         setManualNavigation(true);
 
@@ -1962,35 +2284,30 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             const newIndex = prev === 0 ? shipments.length - 1 : prev - 1;
             const shipment = shipments[newIndex];
 
-            // Hide current shipment display first
-            setShowDrawer(false);
-            setActiveShipment(null);
-
-            // Clear all current arcs
+            // Hide all arcs first
             if (sceneRef.current?.userData?.animatedArcs) {
                 sceneRef.current.userData.animatedArcs.forEach(arc => {
                     if (!arc.userData.isMarker) {
                         arc.visible = false;
                         arc.material.opacity = 0;
+                        arc.userData.isManuallySelected = false;
                     }
                 });
             }
 
-            // Show the selected shipment after a brief delay
-            setTimeout(() => {
-                setActiveShipment(shipment);
-                setShowDrawer(true);
-                showSpecificShipmentArc(newIndex);
-            }, 200);
+            // Immediately update badge and show the selected shipment's arc
+            setActiveShipment(shipment);
+            showSpecificShipmentArc(newIndex);
 
+            console.log(`◀️ Previous: ${shipment.trackingNumber || shipment.id} (${newIndex + 1}/${shipments.length})`);
             return newIndex;
         });
-    }, [shipments]);
+    }, [shipments, showSpecificShipmentArc]);
 
     const handleNextShipment = useCallback(() => {
         if (shipments.length === 0) return;
 
-        // Pause the system and enter manual navigation mode
+        // Pause auto-mode and enter manual browsing
         setIsPaused(true);
         setManualNavigation(true);
 
@@ -1998,30 +2315,25 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             const newIndex = (prev + 1) % shipments.length;
             const shipment = shipments[newIndex];
 
-            // Hide current shipment display first
-            setShowDrawer(false);
-            setActiveShipment(null);
-
-            // Clear all current arcs
+            // Hide all arcs first
             if (sceneRef.current?.userData?.animatedArcs) {
                 sceneRef.current.userData.animatedArcs.forEach(arc => {
                     if (!arc.userData.isMarker) {
                         arc.visible = false;
                         arc.material.opacity = 0;
+                        arc.userData.isManuallySelected = false;
                     }
                 });
             }
 
-            // Show the selected shipment after a brief delay
-            setTimeout(() => {
-                setActiveShipment(shipment);
-                setShowDrawer(true);
-                showSpecificShipmentArc(newIndex);
-            }, 200);
+            // Immediately update badge and show the selected shipment's arc
+            setActiveShipment(shipment);
+            showSpecificShipmentArc(newIndex);
 
+            console.log(`▶️ Next: ${shipment.trackingNumber || shipment.id} (${newIndex + 1}/${shipments.length})`);
             return newIndex;
         });
-    }, [shipments]);
+    }, [shipments, showSpecificShipmentArc]);
 
     const toggleFullScreen = () => {
         const willBeFullScreen = !isFullScreen;
@@ -2211,8 +2523,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
             )}
 
-            {/* Compact Badge (Bottom Right) - Enhanced Style with Navigation */}
-            <Slide direction="up" in={showDrawer && activeShipment && !loading} mountOnEnter unmountOnExit>
+            {/* Compact Badge (Bottom Right) - Always Visible */}
+            {!loading && shipments.length > 0 && (
                 <Box sx={{
                     position: 'absolute',
                     bottom: 32,
@@ -2244,89 +2556,87 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         <ChevronLeftIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
                     </Box>
 
-                    {/* Main Badge */}
-                    {activeShipment && (
+                    {/* Main Badge - Always show current or first shipment */}
+                    <Box sx={{
+                        display: 'flex',
+                        minWidth: '420px',
+                        height: '100px',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                        {/* Left: Carrier Logo Section */}
                         <Box sx={{
+                            width: '140px',
                             display: 'flex',
-                            minWidth: '420px',
-                            height: '100px',
-                            background: 'rgba(0, 0, 0, 0.3)',
-                            backdropFilter: 'blur(20px)',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(255, 255, 255, 0.1)'
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '16px'
                         }}>
-                            {/* Left: Carrier Logo Section */}
-                            <Box sx={{
-                                width: '140px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: '16px'
-                            }}>
-                                <CarrierLogo activeShipment={activeShipment} />
-                            </Box>
+                            <CarrierLogo activeShipment={activeShipment || shipments[currentShipmentIndex] || shipments[0]} />
+                        </Box>
 
-                            {/* Right: Info Section */}
-                            <Box sx={{
-                                flex: 1,
-                                padding: '16px 20px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                justifyContent: 'space-between',
-                                position: 'relative'
-                            }}>
-                                {/* Header with Tracking Number */}
-                                <Box>
-                                    <Typography variant="h4" sx={{
-                                        color: 'white',
-                                        fontSize: '0.875rem',
-                                        fontWeight: 700,
-                                        letterSpacing: '0.5px'
-                                    }}>
-                                        #{activeShipment.trackingNumber || activeShipment.id}
-                                    </Typography>
-
-                                    {/* Route - Using Scorecard Caption Style - No margin */}
-                                    <Typography variant="caption" sx={{
-                                        color: '#9CA3AF',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 500,
-                                        lineHeight: 1.2,
-                                        display: 'block'
-                                    }}>
-                                        {activeShipment.origin?.city || 'Origin'} → {activeShipment.destination?.city || 'Destination'}
-                                    </Typography>
-                                </Box>
-
-                                {/* Status Chip - With Vertical Padding */}
-                                <Box sx={{
-                                    alignSelf: 'flex-start',
-                                    paddingY: '6px'
+                        {/* Right: Info Section */}
+                        <Box sx={{
+                            flex: 1,
+                            padding: '16px 20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            position: 'relative'
+                        }}>
+                            {/* Header with Tracking Number */}
+                            <Box>
+                                <Typography variant="h4" sx={{
+                                    color: 'white',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 700,
+                                    letterSpacing: '0.5px'
                                 }}>
-                                    <StatusChip
-                                        status={activeShipment.status}
-                                        size="small"
-                                        sx={{
-                                            fontSize: '0.7rem',
-                                            height: '24px'
-                                        }}
-                                    />
-                                </Box>
+                                    #{(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.trackingNumber || (activeShipment || shipments[currentShipmentIndex] || shipments[0])?.id || 'Loading...'}
+                                </Typography>
 
-                                {/* Counter - Bottom Right Corner */}
+                                {/* Route - Using Scorecard Caption Style - No margin */}
                                 <Typography variant="caption" sx={{
-                                    position: 'absolute',
-                                    bottom: '8px',
-                                    right: '8px',
-                                    color: 'rgba(255, 255, 255, 0.6)',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 500
+                                    color: '#9CA3AF',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 500,
+                                    lineHeight: 1.2,
+                                    display: 'block'
                                 }}>
-                                    {currentShipmentIndex + 1} / {shipments.length}
+                                    {(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.origin?.city || 'Origin'} → {(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.destination?.city || 'Destination'}
                                 </Typography>
                             </Box>
+
+                            {/* Status Chip - With Vertical Padding */}
+                            <Box sx={{
+                                alignSelf: 'flex-start',
+                                paddingY: '6px'
+                            }}>
+                                <StatusChip
+                                    status={(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.status || 'pending'}
+                                    size="small"
+                                    sx={{
+                                        fontSize: '0.7rem',
+                                        height: '24px'
+                                    }}
+                                />
+                            </Box>
+
+                            {/* Counter - Bottom Right Corner */}
+                            <Typography variant="caption" sx={{
+                                position: 'absolute',
+                                bottom: '8px',
+                                right: '8px',
+                                color: 'rgba(255, 255, 255, 0.6)',
+                                fontSize: '0.65rem',
+                                fontWeight: 500
+                            }}>
+                                {currentShipmentIndex + 1} / {shipments.length}
+                            </Typography>
                         </Box>
-                    )}
+                    </Box>
 
                     {/* Next Button */}
                     <Box sx={{
@@ -2349,7 +2659,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         <ChevronRightIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
                     </Box>
                 </Box>
-            </Slide>
+            )}
 
             {/* Enhanced Top Right Controls */}
             {!isFullScreen && (
