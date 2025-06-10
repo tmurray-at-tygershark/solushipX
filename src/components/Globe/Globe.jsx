@@ -643,12 +643,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                     // Realistic Earth with proper bump mapping - no separate night lights needed
 
-                    // Sequential shooting star animation - only one arc visible at a time
+                    // Sequential shooting star animation - each arc plays once only
                     if (scene.userData.animatedArcs) {
                         const currentTime = time * 1000; // Convert to milliseconds
-                        const animDuration = 6000; // 6 seconds for longer shooting star effect
-                        const totalShipments = scene.userData.animatedArcs.filter(a => a.userData.isAnimatedArc).length;
-                        const cycleDuration = totalShipments * 7000 + 3000; // Total cycle + 3 second pause (7s per arc for no overlap)
+                        const animDuration = 4000; // 4 seconds for shooting star effect
 
                         scene.userData.animatedArcs.forEach(arc => {
                             if (arc.userData.isMarker) {
@@ -755,47 +753,113 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     }
                                 }
                             } else if (arc.userData.isAnimatedArc) {
-                                // Calculate cycle position
-                                const cycleStartTime = Math.floor(currentTime / cycleDuration) * cycleDuration;
-                                const timeInCycle = currentTime - cycleStartTime;
-                                const animStartTime = arc.userData.originalDelay;
-                                const animEndTime = animStartTime + animDuration;
+                                if (arc.userData.isShootingArc) {
+                                    // Handle shooting arc animation (bouncing ball trail effect) - play once only
+                                    if (!arc.userData.animationComplete) {
+                                        const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                // Only show arc during its specific animation window
-                                if (timeInCycle >= animStartTime && timeInCycle <= animEndTime) {
-                                    // Arc is currently animating - dramatic shooting star effect
-                                    arc.visible = true;
-                                    const progress = (timeInCycle - animStartTime) / animDuration;
+                                        // Check if animation should start
+                                        if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
+                                            arc.visible = true;
+                                            const progress = timeSinceStart / animDuration;
 
-                                    // Enhanced shooting star intensity curve
-                                    let intensity;
-                                    if (progress < 0.2) {
-                                        // Rapid fade-in
-                                        intensity = progress * 5;
-                                    } else if (progress < 0.7) {
-                                        // Bright middle section
-                                        intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
+                                            // Update trail progress along the curve
+                                            arc.userData.progress = progress;
+
+                                            // Calculate trail positions with bouncing ball physics
+                                            const trailLength = arc.userData.trailLength;
+                                            const positions = [];
+
+                                            for (let i = 0; i < trailLength; i++) {
+                                                // Create trailing effect - each point follows behind the main progress
+                                                const trailProgress = Math.max(0, progress - (i * 0.05)); // 0.05 spacing between trail points
+
+                                                if (trailProgress > 0) {
+                                                    const point = arc.userData.curve.getPoint(trailProgress);
+                                                    positions.push(point.x, point.y, point.z);
+                                                } else {
+                                                    // If trail point hasn't started yet, use the starting position
+                                                    const startPoint = arc.userData.curve.getPoint(0);
+                                                    positions.push(startPoint.x, startPoint.y, startPoint.z);
+                                                }
+                                            }
+
+                                            // Update geometry with new trail positions
+                                            arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                                            arc.geometry.attributes.position.needsUpdate = true;
+
+                                            // Dynamic opacity for trail effect (brightest at head, fading toward tail)
+                                            let intensity;
+                                            if (progress < 0.1) {
+                                                // Quick fade-in
+                                                intensity = progress * 10;
+                                            } else if (progress > 0.9) {
+                                                // Quick fade-out
+                                                intensity = (1 - progress) * 10;
+                                            } else {
+                                                // Full intensity in middle
+                                                intensity = 1.0;
+                                            }
+
+                                            arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
+
+                                            // Enhanced color with shooting effect
+                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                            const brightnessMultiplier = 1.0 + intensity * 0.5;
+                                            arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
+
+                                        } else if (timeSinceStart > animDuration) {
+                                            // Animation completed - mark as done and hide
+                                            arc.userData.animationComplete = true;
+                                            arc.userData.hasAnimated = true;
+                                            arc.visible = false;
+                                            arc.material.opacity = 0;
+                                        } else {
+                                            // Animation hasn't started yet
+                                            arc.visible = false;
+                                            arc.material.opacity = 0;
+                                        }
                                     } else {
-                                        // Dramatic fade-out
-                                        intensity = (1 - progress) * 3;
+                                        // Animation already completed - keep hidden
+                                        arc.visible = false;
+                                        arc.material.opacity = 0;
                                     }
-
-                                    arc.material.opacity = Math.min(intensity, 1.0);
-
-                                    // Enhanced color with pulsing effect
-                                    const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                    const pulseMultiplier = 1.0 + intensity * 0.8;
-                                    arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
-
                                 } else {
-                                    // Hide arc completely when not animating
-                                    arc.visible = false;
-                                    arc.material.opacity = 0;
-                                }
+                                    // Handle legacy static arc animation (fallback) - play once only
+                                    if (!arc.userData.animationComplete) {
+                                        const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                // Update animation start time for next cycle
-                                if (timeInCycle >= cycleDuration - 100) { // Near end of cycle
-                                    arc.userData.animationStartTime = currentTime + animStartTime + 3000;
+                                        if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
+                                            arc.visible = true;
+                                            const progress = timeSinceStart / animDuration;
+
+                                            let intensity;
+                                            if (progress < 0.2) {
+                                                intensity = progress * 5;
+                                            } else if (progress < 0.7) {
+                                                intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
+                                            } else {
+                                                intensity = (1 - progress) * 3;
+                                            }
+
+                                            arc.material.opacity = Math.min(intensity, 1.0);
+                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                            const pulseMultiplier = 1.0 + intensity * 0.8;
+                                            arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
+                                        } else if (timeSinceStart > animDuration) {
+                                            // Animation completed
+                                            arc.userData.animationComplete = true;
+                                            arc.visible = false;
+                                            arc.material.opacity = 0;
+                                        } else {
+                                            arc.visible = false;
+                                            arc.material.opacity = 0;
+                                        }
+                                    } else {
+                                        // Animation already completed
+                                        arc.visible = false;
+                                        arc.material.opacity = 0;
+                                    }
                                 }
                             }
                         });
@@ -981,31 +1045,40 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
                         const points = curve.getPoints(100);
 
-                        // Create thin shooting star arc using line geometry
-                        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                        // Create animated "shooting" arc that travels from origin to destination
+                        // Instead of a static arc, create a trail that animates along the path
+                        const trailLength = 20; // Number of points in the shooting trail
+                        const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
+                        const trailGeometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
 
-                        // Thin line arc with bright material
+                        // Enhanced material for shooting trail effect
                         const material = new THREE.LineBasicMaterial({
                             color: getStatusColor(shipment.status),
                             opacity: 0.95,
                             transparent: true,
-                            linewidth: 3 // Thin but visible line
+                            linewidth: 4 // Slightly thicker for better visibility
                         });
-                        const arc = new THREE.Line(lineGeometry, material);
+                        const arc = new THREE.Line(trailGeometry, material);
 
-                        // Add sequential animation timing for shooting star effect
-                        const animationStartDelay = index * 7000; // 7 seconds between each shipment (6s animation + 1s gap)
+                        // Add sequential animation timing for shooting trail effect - play once only
+                        const animationStartDelay = index * 5000; // 5 seconds between each shipment for clear separation
                         const currentTime = performance.now(); // Get current time when creating arc
 
                         arc.userData = {
                             isAnimatedArc: true,
-                            originalOpacity: 0.9,
+                            isShootingArc: true, // Flag for shooting animation
+                            originalOpacity: 0.95,
                             status: shipment.status,
                             shipmentId: shipment.id,
                             animationStartTime: currentTime + animationStartDelay,
-                            originalDelay: animationStartDelay, // Store original delay for restart cycles
+                            originalDelay: animationStartDelay, // Store original delay for reference
                             curve: curve,
-                            points: points
+                            points: points,
+                            trailLength: trailLength,
+                            trailPoints: trailPoints,
+                            progress: 0, // Current position along the curve (0 to 1)
+                            hasAnimated: false, // Track if animation has completed
+                            animationComplete: false // Flag to mark when animation is done
                         };
                         group.add(arc); // Add to rotating Earth group
                         animatedArcs.push(arc);
@@ -1158,7 +1231,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         }
 
                         // Add detailed address labels with dynamic positioning to avoid overlaps
-                        const addCityLabel = (position, addressData, color = 0xffffff) => {
+                        const addCityLabel = (position, addressData, color = 0xffffff, heightMultiplier = 1.25) => {
                             const canvas = document.createElement('canvas');
                             const context = canvas.getContext('2d');
                             canvas.width = 400; // Wider canvas for detailed addresses
@@ -1218,9 +1291,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 context.fillText(line2, 12, startY + lineHeight);
                             }
 
-                            // Simple label positioning - just move away from surface
+                            // Enhanced label positioning - use custom height multiplier for vertical separation
                             const labelPosition = position.clone();
-                            labelPosition.multiplyScalar(1.08); // Move labels further from dots
+                            labelPosition.multiplyScalar(heightMultiplier); // Use variable height for better label separation
 
                             const texture = new THREE.CanvasTexture(canvas);
                             const labelMat = new THREE.SpriteMaterial({
@@ -1240,7 +1313,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             animatedArcs.push(label);
                         };
 
-                        // Extract detailed address components and add labels
+                        // Extract detailed address components and add labels with different heights
                         const originAddress = formatDetailedAddress(shipment.origin);
                         const destAddress = formatDetailedAddress(shipment.destination);
 
@@ -1252,7 +1325,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 stateProvince: originAddress.stateProvince,
                                 formatted: originAddress.formatted
                             };
-                            addCityLabel(startVec, originData, 0xffffff); // White label for origin
+                            addCityLabel(startVec, originData, 0xffffff, 1.15); // Origin label closer to surface
                         }
                         if (destAddress && destAddress.formatted && destAddress.formatted.length < 50) {
                             // Create structured address data for the label function
@@ -1262,7 +1335,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 stateProvince: destAddress.stateProvince,
                                 formatted: destAddress.formatted
                             };
-                            addCityLabel(endVec, destData, 0xffffff); // White label for destination
+                            addCityLabel(endVec, destData, 0xffffff, 1.18); // Destination label closer to surface
                         }
 
                         // Add enhanced animated particles for in-transit shipments
