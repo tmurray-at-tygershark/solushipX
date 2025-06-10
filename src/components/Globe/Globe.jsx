@@ -885,10 +885,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                     // Realistic Earth with proper bump mapping - no separate night lights needed
 
-                    // Sequential shooting star animation - each arc plays once with longer timing
+                    // Sequential shooting star animation with trail movement
                     if (scene.userData.animatedArcs) {
                         const currentTime = time * 1000; // Convert to milliseconds
-                        const animDuration = 6000; // 6 seconds for shooting star effect (was 4)
 
                         scene.userData.animatedArcs.forEach(arc => {
                             if (arc.userData.isMarker) {
@@ -900,84 +899,92 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 }
                             } else if (arc.userData.isAnimatedArc) {
                                 if (arc.userData.isShootingArc) {
-                                    // Handle shooting arc animation with looping support
-                                    const cycleTime = scene.userData.maxDelay || (scene.userData.totalShipments * 8000);
-                                    const currentCycleTime = currentTime % cycleTime;
-                                    const adjustedStartTime = arc.userData.originalDelay; // Use original delay within cycle
-                                    const timeSinceStart = currentCycleTime - adjustedStartTime;
+                                    // Handle shooting arc animation with trail movement
+                                    const animDuration = arc.userData.animationDuration || 4000;
+                                    const holdDuration = arc.userData.holdDuration || 1500;
+                                    const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                    // Check if animation should start (with cycling)
-                                    if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
+                                    // Check if animation should start - include hold duration
+                                    if (timeSinceStart >= 0 && timeSinceStart <= (animDuration + holdDuration)) {
                                         arc.visible = true;
-                                        const progress = timeSinceStart / animDuration;
+                                        const progress = Math.min(timeSinceStart / animDuration, 1.0);
 
-                                        // Reset badge sync for each cycle
-                                        const currentCycle = Math.floor(currentTime / cycleTime);
-                                        if (currentCycle !== arc.userData.lastCycle) {
-                                            arc.userData.badgeSynced = false;
-                                            arc.userData.badgeHidden = false;
-                                            arc.userData.lastCycle = currentCycle;
-                                        }
-
-                                        // Sync badge with currently animating arc - INSTANT timing
-                                        if (timeSinceStart < 50 && !arc.userData.badgeSynced) { // First 50ms of animation for instant response
+                                        // Sync badge with currently animating arc - EXACT timing with arc start
+                                        if (timeSinceStart >= 0 && timeSinceStart < 100 && !arc.userData.badgeSynced) { // First 100ms to ensure sync
                                             arc.userData.badgeSynced = true;
 
-                                            // Find the shipment data for this arc
-                                            const shipmentForArc = shipments.find(s => (s.shipmentID || s.shipmentId || s.id) === arc.userData.shipmentId);
+                                            // Use stored shipment data from arc userData
+                                            const shipmentForArc = arc.userData.shipmentData;
                                             if (shipmentForArc) {
-                                                // Update active shipment and show badge IMMEDIATELY
+                                                // Update active shipment and show badge at EXACT same time as arc
                                                 setActiveShipment(shipmentForArc);
                                                 setShowDrawer(true);
+                                                console.log(`🎯 Badge synced with arc animation for shipment: ${shipmentForArc.trackingNumber || shipmentForArc.id}`);
                                             }
                                         }
 
-                                        // Update trail progress along the curve
-                                        arc.userData.progress = progress;
+                                        // Handle animation phases: active animation vs hold phase
+                                        if (timeSinceStart <= animDuration) {
+                                            // Active animation phase with trail movement
+                                            arc.userData.progress = progress;
 
-                                        // Calculate trail positions with bouncing ball physics
-                                        const trailLength = arc.userData.trailLength;
-                                        const positions = [];
+                                            // Calculate trail positions with movement
+                                            const trailLength = arc.userData.trailLength;
+                                            const positions = [];
 
-                                        for (let i = 0; i < trailLength; i++) {
-                                            // Create trailing effect - each point follows behind the main progress
-                                            const trailProgress = Math.max(0, progress - (i * 0.05)); // 0.05 spacing between trail points
+                                            for (let i = 0; i < trailLength; i++) {
+                                                // Create trailing effect - each point follows behind the main progress
+                                                const trailProgress = Math.max(0, progress - (i * 0.04)); // 0.04 spacing between trail points
 
-                                            if (trailProgress > 0) {
-                                                const point = arc.userData.curve.getPoint(trailProgress);
-                                                positions.push(point.x, point.y, point.z);
+                                                if (trailProgress > 0) {
+                                                    const point = arc.userData.curve.getPoint(trailProgress);
+                                                    positions.push(point.x, point.y, point.z);
+                                                } else {
+                                                    // If trail point hasn't started yet, use the starting position
+                                                    const startPoint = arc.userData.curve.getPoint(0);
+                                                    positions.push(startPoint.x, startPoint.y, startPoint.z);
+                                                }
+                                            }
+
+                                            // Update geometry with new trail positions
+                                            arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                                            arc.geometry.attributes.position.needsUpdate = true;
+
+                                            // Dynamic opacity for trail effect (brightest at head, fading toward tail)
+                                            let intensity;
+                                            if (progress < 0.1) {
+                                                // Quick fade-in
+                                                intensity = progress * 10;
+                                            } else if (progress > 0.9) {
+                                                // Quick fade-out towards end of animation
+                                                intensity = (1 - progress) * 10;
                                             } else {
-                                                // If trail point hasn't started yet, use the starting position
-                                                const startPoint = arc.userData.curve.getPoint(0);
-                                                positions.push(startPoint.x, startPoint.y, startPoint.z);
+                                                // Full intensity in middle
+                                                intensity = 1.0;
                                             }
-                                        }
 
-                                        // Update geometry with new trail positions
-                                        arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                                        arc.geometry.attributes.position.needsUpdate = true;
+                                            arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
 
-                                        // Dynamic opacity for trail effect (brightest at head, fading toward tail)
-                                        let intensity;
-                                        if (progress < 0.1) {
-                                            // Quick fade-in
-                                            intensity = progress * 10;
-                                        } else if (progress > 0.9) {
-                                            // Quick fade-out
-                                            intensity = (1 - progress) * 10;
+                                            // Enhanced color with shooting effect
+                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                            const brightnessMultiplier = 1.0 + intensity * 0.5;
+                                            arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
                                         } else {
-                                            // Full intensity in middle
-                                            intensity = 1.0;
+                                            // Hold phase - keep full arc visible
+                                            const fullArcPoints = arc.userData.points;
+                                            const positions = [];
+                                            fullArcPoints.forEach(point => {
+                                                positions.push(point.x, point.y, point.z);
+                                            });
+                                            arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                                            arc.geometry.attributes.position.needsUpdate = true;
+
+                                            arc.material.opacity = 0.7 * arc.userData.originalOpacity; // Slightly dimmer
+                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                            arc.material.color = baseColor;
                                         }
 
-                                        arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
-
-                                        // Enhanced color with shooting effect
-                                        const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                        const brightnessMultiplier = 1.0 + intensity * 0.5;
-                                        arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
-
-                                    } else if (timeSinceStart > animDuration) {
+                                    } else if (timeSinceStart > (animDuration + holdDuration)) {
                                         // Animation completed - mark as done and hide
                                         arc.userData.animationComplete = true;
                                         arc.userData.hasAnimated = true;
@@ -1000,41 +1007,53 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                     arc.material.opacity = 0;
                                 }
                             } else {
-                                // Handle legacy static arc animation (fallback) - play once only
+                                // Handle legacy static arc animation - converted to sequential timing
                                 if (!arc.userData.animationComplete) {
+                                    const animDuration = arc.userData.animationDuration || 4000;
+                                    const holdDuration = arc.userData.holdDuration || 1500;
                                     const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
-                                    if (timeSinceStart >= 0 && timeSinceStart <= animDuration) {
+                                    if (timeSinceStart >= 0 && timeSinceStart <= (animDuration + holdDuration)) {
                                         arc.visible = true;
-                                        const progress = timeSinceStart / animDuration;
+                                        const progress = Math.min(timeSinceStart / animDuration, 1.0);
 
-                                        // Sync badge with currently animating arc (legacy fallback) - INSTANT timing
-                                        if (timeSinceStart < 50 && !arc.userData.badgeSynced) { // First 50ms of animation for instant response
+                                        // Sync badge with currently animating arc (legacy fallback) - EXACT timing
+                                        if (timeSinceStart >= 0 && timeSinceStart < 100 && !arc.userData.badgeSynced) { // First 100ms for exact sync
                                             arc.userData.badgeSynced = true;
 
-                                            // Find the shipment data for this arc
-                                            const shipmentForArc = shipments.find(s => (s.shipmentID || s.shipmentId || s.id) === arc.userData.shipmentId);
+                                            // Use stored shipment data from arc userData
+                                            const shipmentForArc = arc.userData.shipmentData;
                                             if (shipmentForArc) {
-                                                // Update active shipment and show badge IMMEDIATELY
+                                                // Update active shipment and show badge at EXACT same time as arc
                                                 setActiveShipment(shipmentForArc);
                                                 setShowDrawer(true);
+                                                console.log(`🎯 Badge synced with legacy arc animation for shipment: ${shipmentForArc.trackingNumber || shipmentForArc.id}`);
                                             }
                                         }
 
-                                        let intensity;
-                                        if (progress < 0.2) {
-                                            intensity = progress * 5;
-                                        } else if (progress < 0.7) {
-                                            intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
+                                        if (timeSinceStart <= animDuration) {
+                                            // Active animation phase
+                                            let intensity;
+                                            if (progress < 0.2) {
+                                                intensity = progress * 5;
+                                            } else if (progress < 0.7) {
+                                                intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
+                                            } else {
+                                                intensity = (1 - progress) * 3;
+                                            }
+
+                                            arc.material.opacity = Math.min(intensity, 1.0);
+                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                            const pulseMultiplier = 1.0 + intensity * 0.8;
+                                            arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
                                         } else {
-                                            intensity = (1 - progress) * 3;
+                                            // Hold phase
+                                            arc.material.opacity = 0.8;
+                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
+                                            arc.material.color = baseColor;
                                         }
 
-                                        arc.material.opacity = Math.min(intensity, 1.0);
-                                        const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                        const pulseMultiplier = 1.0 + intensity * 0.8;
-                                        arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
-                                    } else if (timeSinceStart > animDuration) {
+                                    } else if (timeSinceStart > (animDuration + holdDuration)) {
                                         // Animation completed
                                         arc.userData.animationComplete = true;
                                         arc.visible = false;
@@ -1058,36 +1077,46 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         });
                     }
 
-                    // Animate moving particles for in-transit shipments (optimized)
+                    // Animate moving particles for in-transit shipments with sequential timing
                     if (scene.userData.animatedParticles) {
                         const particleCount = scene.userData.animatedParticles.length;
                         for (let i = 0; i < particleCount; i++) {
                             const particle = scene.userData.animatedParticles[i];
-                            particle.userData.progress += particle.userData.speed;
 
-                            // Reset particle when it reaches destination
-                            if (particle.userData.progress >= 1.0) {
-                                particle.userData.progress = 0;
-                            }
+                            // Check if this particle should be active based on sequential timing
+                            const sequentialDelay = particle.userData.sequentialIndex * 4000;
+                            const particleTimeSinceStart = (time * 1000) - sequentialDelay;
 
-                            // Update particle position along curve
-                            const point = particle.userData.curve.getPoint(particle.userData.progress);
-                            particle.position.copy(point);
+                            if (particleTimeSinceStart >= 0 && particleTimeSinceStart <= 5500) { // 4s animation + 1.5s hold
+                                particle.visible = true;
+                                particle.userData.progress += particle.userData.speed;
 
-                            // Particle opacity based on position (fade at ends)
-                            const fadeDistance = 0.1;
-                            let opacity = 1.0;
-                            if (particle.userData.progress < fadeDistance) {
-                                opacity = particle.userData.progress / fadeDistance;
-                            } else if (particle.userData.progress > 1.0 - fadeDistance) {
-                                opacity = (1.0 - particle.userData.progress) / fadeDistance;
-                            }
-                            particle.material.opacity = opacity * 0.9;
+                                // Reset particle when it reaches destination
+                                if (particle.userData.progress >= 1.0) {
+                                    particle.userData.progress = 0;
+                                }
 
-                            // Optimized glow effect (less frequent calculations)
-                            if (frameCount % 3 === 0) { // Update every 3rd frame for performance
-                                const glowIntensity = Math.sin(time * 15) * 0.2 + 0.8;
-                                particle.material.opacity *= glowIntensity;
+                                // Update particle position along curve
+                                const point = particle.userData.curve.getPoint(particle.userData.progress);
+                                particle.position.copy(point);
+
+                                // Particle opacity based on position (fade at ends)
+                                const fadeDistance = 0.1;
+                                let opacity = 1.0;
+                                if (particle.userData.progress < fadeDistance) {
+                                    opacity = particle.userData.progress / fadeDistance;
+                                } else if (particle.userData.progress > 1.0 - fadeDistance) {
+                                    opacity = (1.0 - particle.userData.progress) / fadeDistance;
+                                }
+                                particle.material.opacity = opacity * 0.9;
+
+                                // Optimized glow effect (less frequent calculations)
+                                if (frameCount % 3 === 0) { // Update every 3rd frame for performance
+                                    const glowIntensity = Math.sin(time * 15) * 0.2 + 0.8;
+                                    particle.material.opacity *= glowIntensity;
+                                }
+                            } else {
+                                particle.visible = false;
                             }
                         }
                     }
@@ -1217,15 +1246,29 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             const validShipments = shipments.filter(s => s.status && s.status.toLowerCase() !== 'draft');
             console.log(`🚚 Valid shipments (non-draft):`, validShipments.length);
             console.log(`🚚 Valid shipments statuses:`, validShipments.map(s => s.status));
-            console.log(`🚚 Adding ${validShipments.length} shipment routes to globe`);
+            console.log(`🚚 Starting sequential shipment processing for performance...`);
 
             // Arrays to track animated objects for the animation loop
             const animatedArcs = [];
             const animatedParticles = [];
 
+            // Initialize scene metadata for sequential processing
+            scene.userData.animatedArcs = animatedArcs;
+            scene.userData.animatedParticles = animatedParticles;
+            scene.userData.totalShipments = validShipments.length;
+            scene.userData.currentShipmentIndex = 0;
+            scene.userData.isProcessingShipments = true;
+            scene.userData.maxDelay = validShipments.length * 4000; // Total time for one full cycle (4s per shipment)
 
+            // Sequential processing function
+            const processNextShipment = async (index) => {
+                if (index >= validShipments.length) {
+                    console.log(`✅ All ${validShipments.length} shipments processed sequentially`);
+                    scene.userData.isProcessingShipments = false;
+                    return;
+                }
 
-            for (const [index, shipment] of validShipments.entries()) {
+                const shipment = validShipments[index];
                 try {
                     console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
                     console.log(`📍 Origin: ${shipment.origin}`);
@@ -1251,23 +1294,25 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
                         const points = curve.getPoints(100);
 
-                        // Create animated "shooting" arc that travels from origin to destination
-                        // Instead of a static arc, create a trail that animates along the path
-                        const trailLength = 20; // Number of points in the shooting trail
+                        // Create thick animated arc with trail effect for movement
+                        const trailLength = 25; // Number of points in the shooting trail (increased for visibility)
                         const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
                         const trailGeometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
 
-                        // Enhanced material for shooting trail effect
+                        // Enhanced material for thick arc effect
                         const material = new THREE.LineBasicMaterial({
                             color: getStatusColor(shipment.status),
                             opacity: 0.95,
                             transparent: true,
-                            linewidth: 8 // Thicker for better visibility (was 4)
+                            linewidth: 12 // Much thicker line for visibility
                         });
                         const arc = new THREE.Line(trailGeometry, material);
 
-                        // Add sequential animation timing for shooting trail effect - play once only
-                        const animationStartDelay = index * 8000; // 8 seconds between each shipment for smoother experience (was 5)
+                        // Add sequential animation timing - reduced for better flow
+                        const animationDuration = 4000; // 4s animation (reduced from 6s)
+                        const holdDuration = 1500; // 1.5s hold (reduced from 3s)
+                        const totalDurationPerShipment = animationDuration + holdDuration; // 5.5s total
+                        const animationStartDelay = index * 4000; // 4s between shipments for better spacing
                         const currentTime = performance.now(); // Get current time when creating arc
 
                         arc.userData = {
@@ -1286,7 +1331,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             badgeSynced: false, // Track badge synchronization
                             badgeHidden: false, // Track badge hiding
                             lastCycle: -1, // Track animation cycles for looping
-                            shipmentData: shipment // Store full shipment data for badge
+                            shipmentData: shipment, // Store full shipment data for badge
+                            sequentialIndex: index, // Track processing order
+                            animationDuration: animationDuration,
+                            holdDuration: holdDuration
                         };
                         group.add(arc); // Add to rotating Earth group
                         animatedArcs.push(arc);
@@ -1345,7 +1393,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 curve: curve,
                                 progress: Math.random() * 0.3, // Start at different positions
                                 speed: 0.008 + Math.random() * 0.004, // Faster movement
-                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id
+                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
+                                sequentialIndex: index
                             };
                             group.add(particle); // Add to rotating Earth group
                             animatedParticles.push(particle);
@@ -1368,35 +1417,43 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 curve: curve,
                                 progress: Math.random() * 0.3,
                                 speed: 0.006 + Math.random() * 0.003, // Slightly slower for trailing effect
-                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id
+                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
+                                sequentialIndex: index
                             };
                             group.add(trailParticle);
                             animatedParticles.push(trailParticle);
                         }
 
-                        // City labels are now added inline with markers above
+                        console.log(`✅ Shipment ${index + 1} geocoded and added - scheduling next in 4000ms`);
+
+                        // Schedule next shipment processing with overlap for better flow
+                        setTimeout(() => {
+                            processNextShipment(index + 1);
+                        }, 4000); // 4 second intervals for better spacing
+
                     } else {
-                        console.warn(`❌ Skipping shipment ${shipment.id} - missing coordinates:`, {
-                            originCoords,
-                            destCoords,
-                            origin: shipment.origin,
-                            destination: shipment.destination
-                        });
+                        console.warn(`❌ Skipping shipment ${shipment.id} - missing coordinates, processing next...`);
+                        // Process next shipment immediately if current one fails
+                        setTimeout(() => processNextShipment(index + 1), 100);
                     }
                 } catch (error) {
                     console.error(`❌ Error processing shipment ${shipment.id}:`, error);
+                    // Process next shipment immediately if current one fails
+                    setTimeout(() => processNextShipment(index + 1), 100);
                 }
+            };
+
+            // Start sequential processing with the first shipment
+            if (validShipments.length > 0) {
+                processNextShipment(0);
+            } else {
+                console.log(`ℹ️ No valid shipments to process`);
+                scene.userData.isProcessingShipments = false;
             }
 
-            // Store references for animation loop with cycling support
-            scene.userData.animatedArcs = animatedArcs;
-            scene.userData.animatedParticles = animatedParticles;
-            scene.userData.totalShipments = validShipments.length;
-            scene.userData.animationCycle = 0; // Track current cycle
-            scene.userData.maxDelay = validShipments.length * 8000; // Total time for one full cycle
-
-            console.log(`✅ Created ${animatedArcs.length} futuristic arcs, ${animatedParticles.length} particles`);
-            console.log(`🔄 Animation cycle: ${scene.userData.maxDelay}ms for ${validShipments.length} shipments`);
+            console.log(`✅ Sequential processing initialized for ${validShipments.length} shipments`);
+            console.log(`🔄 Total cycle time: ${validShipments.length * 4000}ms (${((validShipments.length * 4000) / 1000 / 60).toFixed(1)} minutes)`);
+            console.log(`🎯 Using thick trail arcs with 1.5s hold and 4s intervals for perfect timing`);
         };
 
         // Small delay to ensure DOM is ready and prevent double initialization in React Strict Mode
