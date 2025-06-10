@@ -21,15 +21,185 @@ import {
     Fullscreen as FullscreenIcon,
     FullscreenExit as FullscreenExitIcon,
     PlayArrow as PlayIcon,
-    Pause as PauseIcon
+    Pause as PauseIcon,
+    ChevronLeft as ChevronLeftIcon,
+    ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
-import { collection, query, orderBy, limit, onSnapshot, where, Timestamp } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { listenToShipmentEvents } from '../../utils/shipmentEvents';
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
 import StatusChip from '../StatusChip/StatusChip';
 import './Globe.css';
+
+// Component to handle carrier logo fetching and display
+const CarrierLogo = ({ activeShipment }) => {
+    const [carrierLogoURL, setCarrierLogoURL] = React.useState(null); // Start with null to prevent flash
+
+    React.useEffect(() => {
+        const fetchCarrierLogo = async () => {
+            console.log('🚀 Starting fetchCarrierLogo for activeShipment:', activeShipment?.id);
+
+            // Reset to null while fetching to prevent flash
+            setCarrierLogoURL(null);
+
+            if (!activeShipment) {
+                console.warn('❌ No activeShipment provided');
+                return;
+            }
+
+            // Extract carrier from the correct location in shipment data
+            const carrierID = activeShipment.carrier ||
+                activeShipment.carrierTrackingData?.carrier ||
+                activeShipment.carrierTrackingData?.rawData?.carrier;
+
+            console.log('🔍 Detailed carrier extraction debug:', {
+                shipmentId: activeShipment.id,
+                hasActiveShipment: !!activeShipment,
+                topLevelCarrier: activeShipment.carrier,
+                hasCarrierTrackingData: !!activeShipment.carrierTrackingData,
+                trackingDataCarrier: activeShipment.carrierTrackingData?.carrier,
+                hasRawData: !!activeShipment.carrierTrackingData?.rawData,
+                rawDataCarrier: activeShipment.carrierTrackingData?.rawData?.carrier,
+                finalCarrierID: carrierID,
+                carrierType: typeof carrierID,
+                allShipmentKeys: Object.keys(activeShipment)
+            });
+
+            if (!carrierID) {
+                console.warn('❌ No carrier ID found in any location, using fallback');
+                return;
+            }
+
+            try {
+                // Convert carrier ID to uppercase to match database format
+                const upperCaseCarrierID = carrierID?.toUpperCase();
+                console.log('🔍 Querying carriers collection:', {
+                    originalCarrierID: carrierID,
+                    upperCaseCarrierID: upperCaseCarrierID,
+                    queryField: 'carrierID'
+                });
+
+                const carriersQuery = query(
+                    collection(db, 'carriers'),
+                    where('carrierID', '==', upperCaseCarrierID)
+                );
+                const querySnapshot = await getDocs(carriersQuery);
+
+                console.log('📄 Query result:', {
+                    found: !querySnapshot.empty,
+                    numResults: querySnapshot.size
+                });
+
+                if (!querySnapshot.empty) {
+                    // Get the first matching carrier document
+                    const carrierDoc = querySnapshot.docs[0];
+                    const carrierData = carrierDoc.data();
+
+                    console.log('📋 Found carrier document:', {
+                        docId: carrierDoc.id,
+                        carrierID: carrierData.carrierID,
+                        name: carrierData.name,
+                        hasLogoURL: !!carrierData.logoURL,
+                        logoURL: carrierData.logoURL
+                    });
+
+                    if (carrierData.logoURL) {
+                        console.log('✅ Using carrier logo from collection:', carrierData.logoURL);
+                        setCarrierLogoURL(carrierData.logoURL);
+                        return;
+                    } else {
+                        console.warn('⚠️ Carrier document found but no logoURL field');
+                        console.warn('⚠️ Available fields:', Object.keys(carrierData));
+                    }
+                } else {
+                    console.error('❌ No carrier found with carrierID (uppercase):', upperCaseCarrierID);
+                    console.error('❌ Original carrierID was:', carrierID);
+                    console.error('❌ Available carriers should have carrierID field matching the uppercase value');
+                }
+
+                // Fallback to hardcoded logos using lowercase for mapping
+                const carrierLogoMap = {
+                    'eshipplus': '/images/carrier-badges/eship.png',
+                    'eship': '/images/carrier-badges/eship.png',
+                    'fedex': '/images/carrier-badges/fedex.png',
+                    'ups': '/images/carrier-badges/ups.png',
+                    'usps': '/images/carrier-badges/usps.png',
+                    'dhl': '/images/carrier-badges/dhl.png',
+                    'canpar': '/images/carrier-badges/canpar.png',
+                    'purolator': '/images/carrier-badges/purolator.png',
+                    'polaristransportation': '/images/carrier-badges/polaristransportation.png',
+                    'polaris': '/images/carrier-badges/polaristransportation.png',
+                    'canadapost': '/images/carrier-badges/canadapost.png'
+                };
+
+                const fallbackURL = carrierLogoMap[carrierID?.toLowerCase()] || '/images/carrier-badges/eship.png';
+                console.log('🔄 Using fallback logo for carrierID:', carrierID, '→', fallbackURL);
+                setCarrierLogoURL(fallbackURL);
+
+            } catch (error) {
+                console.error('🚨 Error fetching carrier logo:', error);
+                setCarrierLogoURL('/images/carrier-badges/eship.png');
+            }
+        };
+
+        fetchCarrierLogo();
+    }, [activeShipment?.carrier]);
+
+    console.log('🖼️ Rendering CarrierLogo with URL:', carrierLogoURL);
+
+    // Don't render anything if no URL is set (prevents flash)
+    if (!carrierLogoURL) {
+        return (
+            <div style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: '0.7rem'
+            }}>
+                Loading...
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={carrierLogoURL}
+            alt="Carrier Logo"
+            style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover', // Fill the entire container
+                // filter: 'brightness(0) invert(1)', // Temporarily removed to test
+            }}
+            onLoad={(e) => {
+                console.log('✅ Carrier logo loaded successfully:', e.target.src);
+            }}
+            onError={(e) => {
+                console.error('🚨 Logo failed to load:', e.target.src);
+                console.error('🚨 Trying eship fallback');
+                const fallbackURL = '/images/carrier-badges/eship.png';
+                if (e.target.src !== fallbackURL && e.target.src.includes('carrier-badges')) {
+                    // Only try fallback if we're not already trying it and the URL looks like a carrier badge
+                    e.target.src = fallbackURL;
+                    setCarrierLogoURL(fallbackURL);
+                } else if (e.target.src.includes('dashboard')) {
+                    // If the URL is wrong (contains dashboard), force use eship
+                    console.error('🚨 Wrong URL detected, forcing eship logo');
+                    e.target.src = fallbackURL;
+                    setCarrierLogoURL(fallbackURL);
+                } else {
+                    // Hide the image if even fallback fails
+                    e.target.style.display = 'none';
+                }
+            }}
+        />
+    );
+};
 
 
 
@@ -331,7 +501,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const [realTimeShipments, setRealTimeShipments] = useState([]);
     const [realtimeStatusCounts, setRealtimeStatusCounts] = useState({});
     const [shipmentEvents, setShipmentEvents] = useState({});
-    const { companyIdForAddress, companyLoading } = useCompany();
+    const { companyIdForAddress, companyLoading, company } = useCompany();
 
     // Enhanced UI features state
     const [searchTerm, setSearchTerm] = useState('');
@@ -341,7 +511,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const [showDrawer, setShowDrawer] = useState(false);
     const [streamMessages, setStreamMessages] = useState([]);
     const [isPaused, setIsPaused] = useState(false);
+    const [manualNavigation, setManualNavigation] = useState(false);
     const streamRef = useRef(null);
+    const pausedTimeRef = useRef(0);
 
     // Use real-time shipments if available, fallback to prop shipments
     const shipments = realTimeShipments.length > 0 ? realTimeShipments : propShipments;
@@ -886,7 +1058,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     // Realistic Earth with proper bump mapping - no separate night lights needed
 
                     // Sequential shooting star animation with trail movement
-                    if (scene.userData.animatedArcs) {
+                    if (scene.userData.animatedArcs && !isPaused) {
                         const currentTime = time * 1000; // Convert to milliseconds
 
                         scene.userData.animatedArcs.forEach(arc => {
@@ -900,8 +1072,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             } else if (arc.userData.isAnimatedArc) {
                                 if (arc.userData.isShootingArc) {
                                     // Handle shooting arc animation with trail movement
-                                    const animDuration = arc.userData.animationDuration || 4000;
-                                    const holdDuration = arc.userData.holdDuration || 1500;
+                                    const animDuration = arc.userData.animationDuration || 2500;
+                                    const holdDuration = arc.userData.holdDuration || 2500;
                                     const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
                                     // Check if animation should start - include hold duration
@@ -928,9 +1100,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             // Active animation phase with trail movement
                                             arc.userData.progress = progress;
 
-                                            // Calculate trail positions with movement
+                                            // Calculate trail positions with movement for tube geometry
                                             const trailLength = arc.userData.trailLength;
-                                            const positions = [];
+                                            const newTrailPoints = [];
 
                                             for (let i = 0; i < trailLength; i++) {
                                                 // Create trailing effect - each point follows behind the main progress
@@ -938,28 +1110,29 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                                                 if (trailProgress > 0) {
                                                     const point = arc.userData.curve.getPoint(trailProgress);
-                                                    positions.push(point.x, point.y, point.z);
+                                                    newTrailPoints.push(point);
                                                 } else {
                                                     // If trail point hasn't started yet, use the starting position
                                                     const startPoint = arc.userData.curve.getPoint(0);
-                                                    positions.push(startPoint.x, startPoint.y, startPoint.z);
+                                                    newTrailPoints.push(startPoint);
                                                 }
                                             }
 
-                                            // Update geometry with new trail positions
-                                            arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                                            arc.geometry.attributes.position.needsUpdate = true;
+                                            // Recreate tube geometry with new trail positions
+                                            const newTrailCurve = new THREE.CatmullRomCurve3(newTrailPoints);
+                                            const newTubeGeometry = new THREE.TubeGeometry(newTrailCurve, trailLength - 1, 0.02, 8, false);
 
-                                            // Dynamic opacity for trail effect (brightest at head, fading toward tail)
+                                            // Update the arc's geometry
+                                            arc.geometry.dispose(); // Clean up old geometry
+                                            arc.geometry = newTubeGeometry;
+
+                                            // Dynamic opacity for trail effect (smooth throughout)
                                             let intensity;
                                             if (progress < 0.1) {
                                                 // Quick fade-in
                                                 intensity = progress * 10;
-                                            } else if (progress > 0.9) {
-                                                // Quick fade-out towards end of animation
-                                                intensity = (1 - progress) * 10;
                                             } else {
-                                                // Full intensity in middle
+                                                // Full intensity throughout the rest of animation (no fade-out at end)
                                                 intensity = 1.0;
                                             }
 
@@ -970,16 +1143,16 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                             const brightnessMultiplier = 1.0 + intensity * 0.5;
                                             arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
                                         } else {
-                                            // Hold phase - keep full arc visible
-                                            const fullArcPoints = arc.userData.points;
-                                            const positions = [];
-                                            fullArcPoints.forEach(point => {
-                                                positions.push(point.x, point.y, point.z);
-                                            });
-                                            arc.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                                            arc.geometry.attributes.position.needsUpdate = true;
+                                            // Hold phase - keep full arc visible with smooth transition
+                                            const fullArcCurve = arc.userData.curve;
+                                            const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
 
-                                            arc.material.opacity = 0.7 * arc.userData.originalOpacity; // Slightly dimmer
+                                            // Update the arc's geometry to show full arc
+                                            arc.geometry.dispose(); // Clean up old geometry
+                                            arc.geometry = fullTubeGeometry;
+
+                                            // Smooth transition from animation opacity (no sudden change)
+                                            arc.material.opacity = 0.9 * arc.userData.originalOpacity; // Slightly dimmer but smooth
                                             const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
                                             arc.material.color = baseColor;
                                         }
@@ -1009,8 +1182,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             } else {
                                 // Handle legacy static arc animation - converted to sequential timing
                                 if (!arc.userData.animationComplete) {
-                                    const animDuration = arc.userData.animationDuration || 4000;
-                                    const holdDuration = arc.userData.holdDuration || 1500;
+                                    const animDuration = arc.userData.animationDuration || 2500;
+                                    const holdDuration = arc.userData.holdDuration || 2500;
                                     const timeSinceStart = currentTime - arc.userData.animationStartTime;
 
                                     if (timeSinceStart >= 0 && timeSinceStart <= (animDuration + holdDuration)) {
@@ -1032,23 +1205,23 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                         }
 
                                         if (timeSinceStart <= animDuration) {
-                                            // Active animation phase
+                                            // Active animation phase with smooth opacity
                                             let intensity;
-                                            if (progress < 0.2) {
-                                                intensity = progress * 5;
-                                            } else if (progress < 0.7) {
-                                                intensity = 0.9 + Math.sin(progress * Math.PI * 8) * 0.1;
+                                            if (progress < 0.1) {
+                                                // Quick fade-in
+                                                intensity = progress * 10;
                                             } else {
-                                                intensity = (1 - progress) * 3;
+                                                // Full intensity throughout (no flicker at end)
+                                                intensity = 1.0;
                                             }
 
-                                            arc.material.opacity = Math.min(intensity, 1.0);
+                                            arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
                                             const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            const pulseMultiplier = 1.0 + intensity * 0.8;
-                                            arc.material.color = baseColor.clone().multiplyScalar(pulseMultiplier);
+                                            const brightnessMultiplier = 1.0 + intensity * 0.5;
+                                            arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
                                         } else {
-                                            // Hold phase
-                                            arc.material.opacity = 0.8;
+                                            // Hold phase - smooth transition from animation
+                                            arc.material.opacity = 0.9 * arc.userData.originalOpacity; // Match main animation hold opacity
                                             const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
                                             arc.material.color = baseColor;
                                         }
@@ -1078,7 +1251,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     }
 
                     // Animate moving particles for in-transit shipments with sequential timing
-                    if (scene.userData.animatedParticles) {
+                    if (scene.userData.animatedParticles && !isPaused) {
                         const particleCount = scene.userData.animatedParticles.length;
                         for (let i = 0; i < particleCount; i++) {
                             const particle = scene.userData.animatedParticles[i];
@@ -1087,7 +1260,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             const sequentialDelay = particle.userData.sequentialIndex * 4000;
                             const particleTimeSinceStart = (time * 1000) - sequentialDelay;
 
-                            if (particleTimeSinceStart >= 0 && particleTimeSinceStart <= 5500) { // 4s animation + 1.5s hold
+                            if (particleTimeSinceStart >= 0 && particleTimeSinceStart <= 5000) { // 2.5s animation + 2.5s hold
                                 particle.visible = true;
                                 particle.userData.progress += particle.userData.speed;
 
@@ -1294,26 +1467,42 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
                         const points = curve.getPoints(100);
 
-                        // Create thick animated arc with trail effect for movement
+                        // Create thick 3D tube arc with trail effect for movement
                         const trailLength = 25; // Number of points in the shooting trail (increased for visibility)
                         const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
-                        const trailGeometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
 
-                        // Enhanced material for thick arc effect
-                        const material = new THREE.LineBasicMaterial({
+                        // Create tube geometry for actually thick arcs
+                        const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
+                        const tubeRadius = 0.02; // Thin tube radius for elegant visibility
+                        const tubularSegments = trailLength - 1;
+                        const radialSegments = 8; // Circular cross-section
+                        const trailGeometry = new THREE.TubeGeometry(trailCurve, tubularSegments, tubeRadius, radialSegments, false);
+
+                        // Enhanced material for thick tube effect with glow
+                        const material = new THREE.MeshBasicMaterial({
                             color: getStatusColor(shipment.status),
                             opacity: 0.95,
                             transparent: true,
-                            linewidth: 12 // Much thicker line for visibility
+                            emissive: new THREE.Color(getStatusColor(shipment.status)),
+                            emissiveIntensity: 0.3
                         });
-                        const arc = new THREE.Line(trailGeometry, material);
+                        const arc = new THREE.Mesh(trailGeometry, material);
 
-                        // Add sequential animation timing - reduced for better flow
-                        const animationDuration = 4000; // 4s animation (reduced from 6s)
-                        const holdDuration = 1500; // 1.5s hold (reduced from 3s)
-                        const totalDurationPerShipment = animationDuration + holdDuration; // 5.5s total
-                        const animationStartDelay = index * 4000; // 4s between shipments for better spacing
+                        // Add sequential animation timing - faster animation with extended hold time
+                        const animationDuration = 2500; // 2.5s animation (faster movement)
+                        const holdDuration = 2500; // 2.5s hold (extended for better visibility)
+                        const totalDurationPerShipment = animationDuration + holdDuration; // 5s total
+                        const animationStartDelay = index * 4000; // 4s between shipments for better flow
                         const currentTime = performance.now(); // Get current time when creating arc
+
+                        // Debug shipment data before storing
+                        console.log('🔍 Storing shipment data in arc userData:', {
+                            shipmentId: shipment.id,
+                            hasCarrierTrackingData: !!shipment.carrierTrackingData,
+                            carrierFromTrackingData: shipment.carrierTrackingData?.carrier,
+                            carrierFromRawData: shipment.carrierTrackingData?.rawData?.carrier,
+                            shipmentKeys: Object.keys(shipment)
+                        });
 
                         arc.userData = {
                             isAnimatedArc: true,
@@ -1341,8 +1530,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                         // No glow layers for thin line approach - keep it clean and simple
 
-                        // Create tiny endpoint markers - just slightly bigger than the lines
-                        const originGeo = new THREE.SphereGeometry(0.01, 8, 8); // Very tiny markers
+                        // Create visible endpoint markers - bigger than the tube arcs
+                        const originGeo = new THREE.SphereGeometry(0.04, 8, 8); // Bigger markers, twice the tube size
                         const originMat = new THREE.MeshBasicMaterial({
                             color: 0x00ff00, // Green for origin
                             transparent: true,
@@ -1357,7 +1546,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         };
                         group.add(originMarker);
 
-                        const destGeo = new THREE.SphereGeometry(0.01, 8, 8); // Very tiny markers
+                        const destGeo = new THREE.SphereGeometry(0.04, 8, 8); // Bigger markers, twice the tube size
                         const destMat = new THREE.MeshBasicMaterial({
                             color: 0xff0000, // Red for destination
                             transparent: true,
@@ -1424,12 +1613,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             animatedParticles.push(trailParticle);
                         }
 
-                        console.log(`✅ Shipment ${index + 1} geocoded and added - scheduling next in 4000ms`);
+                        console.log(`✅ Shipment ${index + 1} geocoded and added - scheduling next in 5000ms`);
 
                         // Schedule next shipment processing with overlap for better flow
                         setTimeout(() => {
                             processNextShipment(index + 1);
-                        }, 4000); // 4 second intervals for better spacing
+                        }, 4000); // 4 second intervals for better flow
 
                     } else {
                         console.warn(`❌ Skipping shipment ${shipment.id} - missing coordinates, processing next...`);
@@ -1453,7 +1642,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
             console.log(`✅ Sequential processing initialized for ${validShipments.length} shipments`);
             console.log(`🔄 Total cycle time: ${validShipments.length * 4000}ms (${((validShipments.length * 4000) / 1000 / 60).toFixed(1)} minutes)`);
-            console.log(`🎯 Using thick trail arcs with 1.5s hold and 4s intervals for perfect timing`);
+            console.log(`🎯 Using thin trail arcs with faster 2.5s animation and 4s intervals`);
         };
 
         // Small delay to ensure DOM is ready and prevent double initialization in React Strict Mode
@@ -1577,20 +1766,17 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         }
     }, [shipments, shipmentEvents]);
 
-    // Auto-advance shipments when not in search mode (disabled - now synced to arc animations)
+    // Auto-advance shipments when not in search mode or manual navigation
     useEffect(() => {
-        // The drawer is now synchronized directly with arc animations in the animation loop
-        // This provides perfect timing sync between the visual arc and the drawer information
-
-        // Keep the currentShipmentIndex for search functionality
-        if (!isSearchMode && !isPaused && shipments.length > 0) {
+        // Only auto-advance if not in search mode, not paused, and not in manual navigation mode
+        if (!isSearchMode && !isPaused && !manualNavigation && shipments.length > 0) {
             const interval = setInterval(() => {
                 setCurrentShipmentIndex(prev => (prev + 1) % shipments.length);
             }, 5000); // Keep index cycling for other features
 
             return () => clearInterval(interval);
         }
-    }, [isSearchMode, isPaused, shipments.length]);
+    }, [isSearchMode, isPaused, manualNavigation, shipments.length]);
 
     // Real-time event stream from shipmentEvents
     useEffect(() => {
@@ -1681,13 +1867,161 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         setActiveShipment(null);
         setShowDrawer(false);
         setIsPaused(false);
+        setManualNavigation(false);
         setUserInteracting(false); // Resume auto rotation
     }, []);
 
+    // Show specific shipment arc for manual navigation
+    const showSpecificShipmentArc = useCallback((shipmentIndex) => {
+        if (!sceneRef.current?.userData?.animatedArcs || shipmentIndex < 0 || shipmentIndex >= shipments.length) {
+            return;
+        }
+
+        console.log(`🎯 Showing specific shipment arc for index: ${shipmentIndex}`);
+
+        // Find the arc for this shipment
+        const arcs = sceneRef.current.userData.animatedArcs;
+        const targetArc = arcs.find(arc =>
+            !arc.userData.isMarker &&
+            arc.userData.sequentialIndex === shipmentIndex
+        );
+
+        if (targetArc && targetArc.userData.curve) {
+            // Show the full arc immediately for manual navigation
+            const fullArcCurve = targetArc.userData.curve;
+            const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
+
+            // Update the arc's geometry to show full arc
+            targetArc.geometry.dispose(); // Clean up old geometry
+            targetArc.geometry = fullTubeGeometry;
+
+            // Make it visible with full opacity
+            targetArc.visible = true;
+            targetArc.material.opacity = 0.9 * targetArc.userData.originalOpacity;
+
+            // Set color based on status
+            const baseColor = new THREE.Color(getStatusColor(targetArc.userData.status));
+            targetArc.material.color = baseColor;
+
+            console.log(`✅ Manual arc displayed for shipment ${shipmentIndex}`);
+        } else {
+            console.warn(`❌ No arc found for shipment index: ${shipmentIndex}`);
+        }
+    }, [shipments.length]);
+
     // Toggle pause/play
     const handleTogglePause = useCallback(() => {
-        setIsPaused(prev => !prev);
+        setIsPaused(prev => {
+            const newPaused = !prev;
+            if (newPaused) {
+                // Store the time when paused
+                pausedTimeRef.current = performance.now();
+                setManualNavigation(true);
+            } else {
+                // When resuming, clear manual navigation and restart auto-loop
+                setManualNavigation(false);
+                setShowDrawer(false);
+                setActiveShipment(null);
+
+                // Hide all current arcs to restart the loop
+                if (sceneRef.current?.userData?.animatedArcs) {
+                    sceneRef.current.userData.animatedArcs.forEach(arc => {
+                        if (!arc.userData.isMarker) {
+                            arc.visible = false;
+                            arc.material.opacity = 0;
+                            arc.userData.animationComplete = false;
+                            arc.userData.badgeSynced = false;
+                            arc.userData.badgeHidden = false;
+                        }
+                    });
+
+                    // Reset animation start times to restart the sequence
+                    const currentTime = performance.now();
+                    sceneRef.current.userData.animatedArcs.forEach((arc, index) => {
+                        if (!arc.userData.isMarker && arc.userData.sequentialIndex !== undefined) {
+                            arc.userData.animationStartTime = currentTime + (arc.userData.sequentialIndex * 4000);
+                        }
+                    });
+                }
+
+                console.log('🔄 Resumed auto-loop, restarting shipment sequence');
+            }
+            return newPaused;
+        });
     }, []);
+
+    // Manual navigation functions
+    const handlePreviousShipment = useCallback(() => {
+        if (shipments.length === 0) return;
+
+        // Pause the system and enter manual navigation mode
+        setIsPaused(true);
+        setManualNavigation(true);
+
+        setCurrentShipmentIndex(prev => {
+            const newIndex = prev === 0 ? shipments.length - 1 : prev - 1;
+            const shipment = shipments[newIndex];
+
+            // Hide current shipment display first
+            setShowDrawer(false);
+            setActiveShipment(null);
+
+            // Clear all current arcs
+            if (sceneRef.current?.userData?.animatedArcs) {
+                sceneRef.current.userData.animatedArcs.forEach(arc => {
+                    if (!arc.userData.isMarker) {
+                        arc.visible = false;
+                        arc.material.opacity = 0;
+                    }
+                });
+            }
+
+            // Show the selected shipment after a brief delay
+            setTimeout(() => {
+                setActiveShipment(shipment);
+                setShowDrawer(true);
+                showSpecificShipmentArc(newIndex);
+            }, 200);
+
+            return newIndex;
+        });
+    }, [shipments]);
+
+    const handleNextShipment = useCallback(() => {
+        if (shipments.length === 0) return;
+
+        // Pause the system and enter manual navigation mode
+        setIsPaused(true);
+        setManualNavigation(true);
+
+        setCurrentShipmentIndex(prev => {
+            const newIndex = (prev + 1) % shipments.length;
+            const shipment = shipments[newIndex];
+
+            // Hide current shipment display first
+            setShowDrawer(false);
+            setActiveShipment(null);
+
+            // Clear all current arcs
+            if (sceneRef.current?.userData?.animatedArcs) {
+                sceneRef.current.userData.animatedArcs.forEach(arc => {
+                    if (!arc.userData.isMarker) {
+                        arc.visible = false;
+                        arc.material.opacity = 0;
+                    }
+                });
+            }
+
+            // Show the selected shipment after a brief delay
+            setTimeout(() => {
+                setActiveShipment(shipment);
+                setShowDrawer(true);
+                showSpecificShipmentArc(newIndex);
+            }, 200);
+
+            return newIndex;
+        });
+    }, [shipments]);
 
     const toggleFullScreen = () => {
         const willBeFullScreen = !isFullScreen;
@@ -1757,7 +2091,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             {showOverlays && !loading && (
                 <Box sx={{ position: 'absolute', top: 16, left: 16, display: 'flex', flexDirection: 'column', gap: 0.8, zIndex: 5 }}>
                     {[
-                        { key: 'pending', label: 'Awaiting Shipment', color: '#FFA726', value: realtimeStatusCounts.pending || statusCounts.pending || statusCounts.awaitingShipment || 0 },
+                        { key: 'pending', label: 'Ready To Ship', color: '#FFA726', value: realtimeStatusCounts.pending || statusCounts.pending || statusCounts.awaitingShipment || 0 },
                         { key: 'transit', label: 'In Transit', color: '#42A5F5', value: realtimeStatusCounts.transit || statusCounts.transit || statusCounts.inTransit || 0 },
                         { key: 'delivered', label: 'Delivered', color: '#66BB6A', value: realtimeStatusCounts.delivered || statusCounts.delivered || 0 },
                         { key: 'delayed', label: 'Delayed', color: '#F44336', value: realtimeStatusCounts.delayed || statusCounts.delayed || 0 }
@@ -1877,154 +2211,143 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
             )}
 
-            {/* Compact Badge (Bottom Right) - Exact FedEx Style */}
+            {/* Compact Badge (Bottom Right) - Enhanced Style with Navigation */}
             <Slide direction="up" in={showDrawer && activeShipment && !loading} mountOnEnter unmountOnExit>
                 <Box sx={{
                     position: 'absolute',
-                    bottom: 16,
+                    bottom: 32,
                     right: 16,
                     zIndex: 7,
-                    transition: 'all 0.3s ease'
+                    transition: 'all 0.3s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
                 }}>
+                    {/* Previous Button */}
+                    <Box sx={{
+                        width: '36px',
+                        height: '36px',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        '&:hover': {
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            transform: 'scale(1.1)'
+                        }
+                    }} onClick={handlePreviousShipment}>
+                        <ChevronLeftIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
+                    </Box>
+
+                    {/* Main Badge */}
                     {activeShipment && (
                         <Box sx={{
                             display: 'flex',
+                            minWidth: '420px',
+                            height: '100px',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            backdropFilter: 'blur(20px)',
                             borderRadius: '8px',
-                            overflow: 'hidden',
-                            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
-                            minWidth: '320px',
-                            height: '64px'
+                            border: '1px solid rgba(255, 255, 255, 0.1)'
                         }}>
                             {/* Left: Carrier Logo Section */}
                             <Box sx={{
-                                width: '96px',
-                                backgroundColor: (() => {
-                                    const carrierName = (activeShipment.selectedRate?.carrier ||
-                                        activeShipment.selectedRateRef?.carrier ||
-                                        activeShipment.carrier || '').toLowerCase();
-
-                                    // Carrier-specific brand colors
-                                    if (carrierName.includes('fedex')) return '#4B0082'; // FedEx Purple
-                                    if (carrierName.includes('ups')) return '#8B4513'; // UPS Brown
-                                    if (carrierName.includes('dhl')) return '#FFD320'; // DHL Yellow
-                                    if (carrierName.includes('usps')) return '#1F3B69'; // USPS Blue
-                                    if (carrierName.includes('canpar')) return '#E31837'; // Canpar Red
-                                    if (carrierName.includes('purolator')) return '#003087'; // Purolator Blue
-                                    if (carrierName.includes('polaris')) return '#1E3A8A'; // Polaris Blue
-                                    return '#7C3AED'; // Default purple
-                                })(),
+                                width: '140px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                padding: '8px'
+                                padding: '16px'
                             }}>
-                                {(() => {
-                                    const getLogoPath = (shipment) => {
-                                        const carrierName = shipment.selectedRate?.carrier ||
-                                            shipment.selectedRateRef?.carrier ||
-                                            shipment.carrier || '';
-
-                                        const normalizedName = carrierName.toLowerCase()
-                                            .replace(/\s+/g, '')
-                                            .replace(/[^a-z0-9]/g, '');
-
-                                        const carrierLogoMap = {
-                                            'fedex': 'fedex.png',
-                                            'ups': 'ups.png',
-                                            'usps': 'usps.png',
-                                            'dhl': 'dhl.png',
-                                            'canadapost': 'canadapost.png',
-                                            'canpar': 'canpar.png',
-                                            'purolator': 'purolator.png',
-                                            'polaristransportation': 'polaristransportation.png',
-                                            'eship': 'eship.png'
-                                        };
-
-                                        const logoFile = carrierLogoMap[normalizedName];
-                                        return logoFile ? `/images/carrier-badges/${logoFile}` : null;
-                                    };
-
-                                    const logoPath = getLogoPath(activeShipment);
-                                    return logoPath ? (
-                                        <img
-                                            src={logoPath}
-                                            alt="Carrier Logo"
-                                            style={{
-                                                maxHeight: '32px',
-                                                maxWidth: '80px',
-                                                objectFit: 'contain',
-                                                filter: 'brightness(0) invert(1)' // White logo
-                                            }}
-                                        />
-                                    ) : (
-                                        <Typography sx={{
-                                            color: 'white',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 700,
-                                            textAlign: 'center',
-                                            lineHeight: 1.2
-                                        }}>
-                                            {(activeShipment.selectedRate?.carrier ||
-                                                activeShipment.selectedRateRef?.carrier ||
-                                                activeShipment.carrier || 'CARRIER').toUpperCase()}
-                                        </Typography>
-                                    );
-                                })()}
+                                <CarrierLogo activeShipment={activeShipment} />
                             </Box>
 
                             {/* Right: Info Section */}
                             <Box sx={{
                                 flex: 1,
-                                backgroundColor: '#1a1a1a', // Dark background like FedEx
-                                padding: '8px 12px',
+                                padding: '16px 20px',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                justifyContent: 'space-between'
+                                justifyContent: 'space-between',
+                                position: 'relative'
                             }}>
-                                {/* Tracking Number */}
-                                <Typography sx={{
-                                    color: 'white',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    fontFamily: 'monospace',
-                                    letterSpacing: '0.5px'
-                                }}>
-                                    #{activeShipment.trackingNumber || activeShipment.id}
-                                </Typography>
+                                {/* Header with Tracking Number */}
+                                <Box>
+                                    <Typography variant="h4" sx={{
+                                        color: 'white',
+                                        fontSize: '0.875rem',
+                                        fontWeight: 700,
+                                        letterSpacing: '0.5px'
+                                    }}>
+                                        #{activeShipment.trackingNumber || activeShipment.id}
+                                    </Typography>
 
-                                {/* Route */}
-                                <Typography sx={{
-                                    color: 'white',
-                                    fontSize: '0.85rem',
-                                    fontWeight: 500,
-                                    lineHeight: 1
-                                }}>
-                                    {activeShipment.origin?.city || 'Origin'} &gt; {activeShipment.destination?.city || 'Destination'}
-                                </Typography>
+                                    {/* Route - Using Scorecard Caption Style - No margin */}
+                                    <Typography variant="caption" sx={{
+                                        color: '#9CA3AF',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 500,
+                                        lineHeight: 1.2,
+                                        display: 'block'
+                                    }}>
+                                        {activeShipment.origin?.city || 'Origin'} → {activeShipment.destination?.city || 'Destination'}
+                                    </Typography>
+                                </Box>
 
-                                {/* Status Pill */}
+                                {/* Status Chip - With Vertical Padding */}
                                 <Box sx={{
-                                    alignSelf: 'flex-start'
+                                    alignSelf: 'flex-start',
+                                    paddingY: '6px'
                                 }}>
-                                    <Chip
-                                        label={activeShipment.status?.replace('_', ' ').toUpperCase() || 'STATUS'}
+                                    <StatusChip
+                                        status={activeShipment.status}
+                                        size="small"
                                         sx={{
-                                            backgroundColor: '#3B82F6',
-                                            color: 'white',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            height: '20px',
-                                            borderRadius: '10px',
-                                            '& .MuiChip-label': {
-                                                paddingX: '8px',
-                                                paddingY: '0'
-                                            }
+                                            fontSize: '0.7rem',
+                                            height: '24px'
                                         }}
                                     />
                                 </Box>
+
+                                {/* Counter - Bottom Right Corner */}
+                                <Typography variant="caption" sx={{
+                                    position: 'absolute',
+                                    bottom: '8px',
+                                    right: '8px',
+                                    color: 'rgba(255, 255, 255, 0.6)',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 500
+                                }}>
+                                    {currentShipmentIndex + 1} / {shipments.length}
+                                </Typography>
                             </Box>
                         </Box>
                     )}
+
+                    {/* Next Button */}
+                    <Box sx={{
+                        width: '36px',
+                        height: '36px',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(20px)',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        '&:hover': {
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            transform: 'scale(1.1)'
+                        }
+                    }} onClick={handleNextShipment}>
+                        <ChevronRightIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
+                    </Box>
                 </Box>
             </Slide>
 
@@ -2111,7 +2434,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 }
                             }}
                         >
-                            {isPaused ? <PlayIcon /> : <PauseIcon />}
+                            {isPaused || manualNavigation ? <PlayIcon /> : <PauseIcon />}
                         </IconButton>
                     )}
 
@@ -2265,7 +2588,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 }
                             }}
                         >
-                            {isPaused ? <PlayIcon /> : <PauseIcon />}
+                            {isPaused || manualNavigation ? <PlayIcon /> : <PauseIcon />}
                         </IconButton>
                     )}
                 </Box>
