@@ -890,15 +890,6 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
                 // carrierTrackingData is already in the document data - no subcollection query needed!
                 const carrierTrackingData = data.carrierTrackingData;
 
-                if (isMountedRef.current) {
-                    console.log(`🔍 Globe: Processing shipment ${shipmentId}:`, {
-                        hasCarrierTrackingData: !!carrierTrackingData,
-                        hasRawData: !!carrierTrackingData?.rawData,
-                        masterCarrier: carrierTrackingData?.rawData?.carrier,
-                        carrierName: carrierTrackingData?.carrierName
-                    });
-                }
-
                 // Debug the shipment structure being created
                 const shipmentObject = {
                     id: shipmentId, // This is the Firestore document ID
@@ -911,16 +902,6 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
                     origin: data.shipFrom || data.origin,
                     destination: data.shipTo || data.destination,
                 };
-
-                if (isMountedRef.current) {
-                    console.log(`🔍 Globe: Created shipment object for ${shipmentId}:`, {
-                        documentId: shipmentObject.documentId,
-                        shipmentID: shipmentObject.shipmentID,
-                        trackingNumber: shipmentObject.trackingNumber,
-                        hasCarrierData: !!shipmentObject.carrierTrackingData,
-                        carrierFromData: shipmentObject.carrierTrackingData?.rawData?.carrier
-                    });
-                }
 
                 return shipmentObject;
             });

@@ -34,6 +34,7 @@ import {
     Logout as LogoutIcon,
     Fullscreen as FullscreenIcon,
     Close as CloseIcon,
+    QrCode2 as BarcodeIcon,
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
@@ -497,20 +498,38 @@ const Dashboard = () => {
                         value={trackingNumber}
                         onChange={(e) => setTrackingNumber(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
+                        placeholder="Enter tracking number"
                         InputProps={{
                             startAdornment: (
                                 <InputAdornment position="start">
-                                    <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />
+                                    <BarcodeIcon sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />
                                 </InputAdornment>
                             ),
                             disableUnderline: true,
-                            style: { color: 'white' }
+                            style: { color: 'white' },
+                            sx: {
+                                '& .MuiInputBase-input': {
+                                    color: 'white',
+                                    fontSize: '0.8rem',
+                                    '&::placeholder': {
+                                        color: 'rgba(255, 255, 255, 0.7)',
+                                        opacity: 1
+                                    }
+                                }
+                            }
                         }}
                         sx={{
                             bgcolor: 'rgba(255, 255, 255, 0.1)',
                             borderRadius: '20px',
                             p: '4px 16px',
-                            width: '150px'
+                            width: '250px',
+                            '& .MuiInputBase-input': {
+                                color: 'white',
+                                fontSize: '0.8rem'
+                            },
+                            '& .MuiInputBase-root': {
+                                color: 'white'
+                            }
                         }}
                     />
                 </Box>
@@ -567,11 +586,52 @@ const Dashboard = () => {
             </Drawer>
 
             {/* Tracking Drawer (Right) */}
-            <Drawer anchor="right" open={isTrackingDrawerOpen} onClose={() => setIsTrackingDrawerOpen(false)}>
+            {isTrackingDrawerOpen && (
+                <Box
+                    onClick={() => setIsTrackingDrawerOpen(false)}
+                    sx={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100vw',
+                        height: '100vh',
+                        bgcolor: 'rgba(0,0,0,0.7)',
+                        zIndex: 1499,
+                        transition: 'opacity 0.3s',
+                    }}
+                />
+            )}
+            <Drawer
+                anchor="right"
+                open={isTrackingDrawerOpen}
+                onClose={() => setIsTrackingDrawerOpen(false)}
+                PaperProps={{
+                    sx: {
+                        width: { xs: '90vw', sm: 400, md: 450 },
+                        height: '100%',
+                        bgcolor: '#0a0a0a',
+                        zIndex: 1500,
+                        position: 'fixed',
+                        right: 0,
+                        top: 0,
+                    }
+                }}
+                ModalProps={{
+                    keepMounted: true,
+                    sx: { zIndex: 1500 }
+                }}
+            >
                 <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
                     <Suspense fallback={<CircularProgress sx={{ m: 4 }} />}>
                         {/* Pass trackingNumber to the component so it can auto-fetch */}
-                        <TrackingDrawerContent trackingIdentifier={trackingNumber} isDrawer={true} />
+                        <TrackingDrawerContent
+                            trackingIdentifier={trackingNumber}
+                            isDrawer={true}
+                            onClose={() => {
+                                setIsTrackingDrawerOpen(false);
+                                setTrackingNumber(''); // Clear the tracking number when closing
+                            }}
+                        />
                     </Suspense>
                 </Box>
             </Drawer>

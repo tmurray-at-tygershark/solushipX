@@ -26,7 +26,8 @@ const ShipmentTableRow = ({
     carrierData,
     searchFields,
     highlightSearchTerm,
-    showSnackbar
+    showSnackbar,
+    onOpenTrackingDrawer
 }) => {
     const isSelected = selected.indexOf(shipment.id) !== -1;
 
@@ -209,19 +210,20 @@ const ShipmentTableRow = ({
                     {trackingNumber && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <QrCodeIcon sx={{ fontSize: '12px', color: '#64748b' }} />
-                            <Link
-                                to={`/tracking/${trackingNumber}`}
-                                style={{
-                                    textDecoration: 'none',
+                            <Typography
+                                onClick={() => onOpenTrackingDrawer(trackingNumber)}
+                                sx={{
                                     color: '#2563eb',
-                                    fontSize: '12px'
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                        textDecoration: 'underline'
+                                    }
                                 }}
-                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
-                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
                                 title="Click to track this shipment"
                             >
                                 {trackingNumber}
-                            </Link>
+                            </Typography>
                             <IconButton
                                 size="small"
                                 onClick={() => {

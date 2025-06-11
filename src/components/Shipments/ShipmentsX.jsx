@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import {
     Box,
     Paper,
@@ -10,15 +10,17 @@ import {
     Tabs,
     Tab,
     Toolbar,
-    TablePagination
+    TablePagination,
+    Drawer
 } from '@mui/material';
 import {
     Add as AddIcon,
     FilterList as FilterIcon,
     GetApp as ExportIcon,
-    Refresh as RefreshIcon
+    Refresh as RefreshIcon,
+    ArrowBackIosNew as ArrowBackIosNewIcon
 } from '@mui/icons-material';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { collection, getDocs, query, where, orderBy, doc, deleteDoc } from 'firebase/firestore';
@@ -35,6 +37,7 @@ import PdfViewerDialog from './components/PdfViewerDialog';
 import DeleteConfirmDialog from './components/DeleteConfirmDialog';
 import ShipmentActionMenu from './components/ShipmentActionMenu';
 import StatusUpdateDialog from './components/StatusUpdateDialog';
+import TrackingDrawerContent from '../Tracking/Tracking';
 
 // Import utilities
 import {
@@ -105,6 +108,10 @@ const ShipmentsX = () => {
     // Add new state for document availability
     const [documentAvailability, setDocumentAvailability] = useState({});
     const [checkingDocuments, setCheckingDocuments] = useState(false);
+
+    // Add tracking drawer state
+    const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
+    const [currentTrackingNumber, setCurrentTrackingNumber] = useState('');
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -577,6 +584,14 @@ const ShipmentsX = () => {
         }
     }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress]);
 
+    // Add tracking drawer handler
+    const handleOpenTrackingDrawer = (trackingNumber) => {
+        setCurrentTrackingNumber(trackingNumber);
+        setIsTrackingDrawerOpen(true);
+    };
+
+    const navigate = useNavigate();
+
     // Show loading state
     if (authLoading || companyCtxLoading) {
         return (
@@ -621,9 +636,30 @@ const ShipmentsX = () => {
                         flexWrap: 'wrap',
                         gap: 1
                     }}>
-                        <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                            Shipments
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Button
+                                onClick={() => navigate('/dashboard')}
+                                sx={{
+                                    minWidth: 0,
+                                    p: 0.5,
+                                    mr: 1,
+                                    color: '#6e6e73',
+                                    background: 'none',
+                                    borderRadius: '50%',
+                                    '&:hover': {
+                                        background: '#f2f2f7',
+                                        color: '#111',
+                                    },
+                                    boxShadow: 'none',
+                                }}
+                                aria-label="Back to Dashboard"
+                            >
+                                <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
+                            </Button>
+                            <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                Shipments
+                            </Typography>
+                        </Box>
                         <Box sx={{ display: 'flex', gap: 1 }}>
                             <Button
                                 variant="outlined"
@@ -788,6 +824,7 @@ const ShipmentsX = () => {
                             searchFields={searchFields}
                             highlightSearchTerm={highlightSearchTerm}
                             showSnackbar={showSnackbar}
+                            onOpenTrackingDrawer={handleOpenTrackingDrawer}
                         />
 
                         {/* Pagination */}
@@ -999,6 +1036,59 @@ const ShipmentsX = () => {
                     {snackbar.message}
                 </Alert>
             </Snackbar>
+
+            {/* Tracking Drawer */}
+            {isTrackingDrawerOpen && (
+                <Box
+                    onClick={() => setIsTrackingDrawerOpen(false)}
+                    sx={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100vw',
+                        height: '100vh',
+                        bgcolor: 'rgba(0,0,0,0.7)',
+                        zIndex: 1499,
+                        transition: 'opacity 0.3s',
+                    }}
+                />
+            )}
+            <Drawer
+                anchor="right"
+                open={isTrackingDrawerOpen}
+                onClose={() => {
+                    setIsTrackingDrawerOpen(false);
+                    setCurrentTrackingNumber('');
+                }}
+                PaperProps={{
+                    sx: {
+                        width: { xs: '90vw', sm: 400, md: 450 },
+                        height: '100%',
+                        bgcolor: '#0a0a0a',
+                        zIndex: 1500,
+                        position: 'fixed',
+                        right: 0,
+                        top: 0,
+                    }
+                }}
+                ModalProps={{
+                    keepMounted: true,
+                    sx: { zIndex: 1500 }
+                }}
+            >
+                <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
+                    <Suspense fallback={<CircularProgress sx={{ m: 4 }} />}>
+                        <TrackingDrawerContent
+                            trackingIdentifier={currentTrackingNumber}
+                            isDrawer={true}
+                            onClose={() => {
+                                setIsTrackingDrawerOpen(false);
+                                setCurrentTrackingNumber('');
+                            }}
+                        />
+                    </Suspense>
+                </Box>
+            </Drawer>
         </div>
     );
 };
