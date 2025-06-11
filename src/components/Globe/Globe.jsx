@@ -543,13 +543,13 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const regionPositions = {
         // North America - calibrated from user coordinates
         northAmerica: { x: -7.171, y: 12.491, z: 14.579, target: { x: 0, y: 0, z: 0 } },
-        
+
         // Europe - user-provided calibrated coordinates
         europe: { x: 14.636, y: 14.485, z: -8.845, target: { x: 0, y: 0, z: 0 } },
-        
+
         // Asia - user-provided calibrated coordinates (China)
         asia: { x: 3.746, y: 10.485, z: -15.731, target: { x: 0, y: 0, z: 0 } },
-        
+
         // South America - user-provided calibrated coordinates
         southAmerica: { x: 2.385, y: -3.911, z: 18.720, target: { x: 0, y: 0, z: 0 } }
     };
@@ -561,8 +561,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const RegionNavigationButtons = ({ isFullscreenMode = false }) => (
         <Box sx={{
             position: 'absolute',
-            bottom: isFullscreenMode ? 24 : 16,
-            left: isFullscreenMode ? 24 : 16,
+            bottom: isFullscreenMode ? '24px' : { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
+            left: isFullscreenMode ? '24px' : { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
             zIndex: isFullscreenMode ? 10001 : 6,
             display: 'flex',
             flexDirection: 'column',
@@ -697,13 +697,21 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         </Box>
     );
 
+    // Track if component is mounted
+    const isMountedRef = useRef(true);
+
+    // Store resize handler for cleanup
+    const resizeHandlerRef = useRef(null);
+
     // Helper function to create managed timeouts that get cleaned up on unmount
     const createManagedTimeout = useCallback((callback, delay) => {
         const timeoutId = setTimeout(() => {
             activeTimeoutsRef.current.delete(timeoutId);
-            callback();
+            if (isMountedRef.current) {
+                callback();
+            }
         }, delay);
-        
+
         activeTimeoutsRef.current.add(timeoutId);
         return timeoutId;
     }, []);
@@ -714,7 +722,9 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             return;
         }
 
-        console.log('🌍 Globe: Setting up independent enhanced real-time shipment listener for company:', companyIdForAddress);
+        if (isMountedRef.current) {
+            console.log('🌍 Globe: Setting up independent enhanced real-time shipment listener for company:', companyIdForAddress);
+        }
 
         // Calculate date range for last 30 days to get comprehensive data for the globe
         const thirtyDaysAgo = new Date();
@@ -730,6 +740,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         );
 
         const unsubscribe = onSnapshot(shipmentsQuery, async (snapshot) => {
+            // Check if component is still mounted before logging
+            if (!isMountedRef.current) {
+                return;
+            }
+
             console.log('🌍 Globe: Received real-time shipments update:', {
                 snapshotSize: snapshot.docs.length,
                 companyId: companyIdForAddress,
@@ -738,7 +753,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             });
 
             // Log first few shipment documents for debugging
-            if (snapshot.docs.length > 0) {
+            if (snapshot.docs.length > 0 && isMountedRef.current) {
                 console.log('🌍 Globe: Sample shipment documents:', snapshot.docs.slice(0, 3).map(doc => ({
                     id: doc.id,
                     data: {
@@ -758,12 +773,14 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 // carrierTrackingData is already in the document data - no subcollection query needed!
                 const carrierTrackingData = data.carrierTrackingData;
 
-                console.log(`🔍 Globe: Processing shipment ${shipmentId}:`, {
-                    hasCarrierTrackingData: !!carrierTrackingData,
-                    hasRawData: !!carrierTrackingData?.rawData,
-                    masterCarrier: carrierTrackingData?.rawData?.carrier,
-                    carrierName: carrierTrackingData?.carrierName
-                });
+                if (isMountedRef.current) {
+                    console.log(`🔍 Globe: Processing shipment ${shipmentId}:`, {
+                        hasCarrierTrackingData: !!carrierTrackingData,
+                        hasRawData: !!carrierTrackingData?.rawData,
+                        masterCarrier: carrierTrackingData?.rawData?.carrier,
+                        carrierName: carrierTrackingData?.carrierName
+                    });
+                }
 
                 // Debug the shipment structure being created
                 const shipmentObject = {
@@ -778,13 +795,15 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     destination: data.shipTo || data.destination,
                 };
 
-                console.log(`🔍 Globe: Created shipment object for ${shipmentId}:`, {
-                    documentId: shipmentObject.documentId,
-                    shipmentID: shipmentObject.shipmentID,
-                    trackingNumber: shipmentObject.trackingNumber,
-                    hasCarrierData: !!shipmentObject.carrierTrackingData,
-                    carrierFromData: shipmentObject.carrierTrackingData?.rawData?.carrier
-                });
+                if (isMountedRef.current) {
+                    console.log(`🔍 Globe: Created shipment object for ${shipmentId}:`, {
+                        documentId: shipmentObject.documentId,
+                        shipmentID: shipmentObject.shipmentID,
+                        trackingNumber: shipmentObject.trackingNumber,
+                        hasCarrierData: !!shipmentObject.carrierTrackingData,
+                        carrierFromData: shipmentObject.carrierTrackingData?.rawData?.carrier
+                    });
+                }
 
                 return shipmentObject;
             });
@@ -832,19 +851,24 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 return counts;
             }, {});
 
-            setRealTimeShipments(validShipments);
-            setRealtimeStatusCounts(statusCounts);
+            // Only update state if component is still mounted
+            if (isMountedRef.current) {
+                setRealTimeShipments(validShipments);
+                setRealtimeStatusCounts(statusCounts);
 
-            console.log('🌍 Globe: Independently processed shipments with enhanced carrier data:', {
-                total: snapshot.docs.length,
-                valid: validShipments.length,
-                withCarrierData: validShipments.filter(s => s.carrierTrackingData).length,
-                eShipPlusDetected: validShipments.filter(s => s.carrierTrackingData?.rawData?.carrier === 'eshipplus').length,
-                dateRange: '30 days',
-                isIndependent: true
-            });
+                console.log('🌍 Globe: Independently processed shipments with enhanced carrier data:', {
+                    total: snapshot.docs.length,
+                    valid: validShipments.length,
+                    withCarrierData: validShipments.filter(s => s.carrierTrackingData).length,
+                    eShipPlusDetected: validShipments.filter(s => s.carrierTrackingData?.rawData?.carrier === 'eshipplus').length,
+                    dateRange: '30 days',
+                    isIndependent: true
+                });
+            }
         }, (error) => {
-            console.error('🌍 Globe: Error in real-time shipments listener:', error);
+            if (isMountedRef.current) {
+                console.error('🌍 Globe: Error in real-time shipments listener:', error);
+            }
         });
 
         return () => unsubscribe();
@@ -852,6 +876,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
     // Loading state handling for independent Globe
     useEffect(() => {
+        if (!isMountedRef.current) return;
+
         if (companyLoading) {
             console.log('🌍 Globe: Waiting for company data...');
             setLoading(true);
@@ -893,9 +919,16 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     mountRef.current.innerHTML = '';
                 }
 
-                // Get actual pixel dimensions from container
-                const actualWidth = mountRef.current?.offsetWidth || width;
-                const actualHeight = mountRef.current?.offsetHeight || height;
+                // Get actual pixel dimensions from container with multiple fallbacks
+                const containerRect = mountRef.current?.getBoundingClientRect();
+                const containerWidth = containerRect?.width || mountRef.current?.offsetWidth || mountRef.current?.clientWidth;
+                const containerHeight = containerRect?.height || mountRef.current?.offsetHeight || mountRef.current?.clientHeight;
+
+                // Use container dimensions if available, otherwise fall back to props or parent
+                const actualWidth = containerWidth > 0 ? containerWidth :
+                    (mountRef.current?.parentElement?.offsetWidth || width || 800);
+                const actualHeight = containerHeight > 0 ? containerHeight :
+                    (mountRef.current?.parentElement?.offsetHeight || height || 600);
 
                 // Debug canvas dimensions and DOM state
                 console.log('🎯 Canvas setup:', {
@@ -974,39 +1007,43 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                 // Add interaction event listeners to stop auto-rotation when user drags
                 controls.addEventListener('start', () => {
-                    console.log('🎯 User started interacting with globe - stopping auto-rotation');
+                    if (isMountedRef.current) {
+                        console.log('🎯 User started interacting with globe - stopping auto-rotation');
+                    }
                     setUserInteracting(true);
                 });
 
                 controls.addEventListener('end', () => {
-                    console.log('🎯 User finished interacting with globe - keeping position');
-                    
-                    // 📍 COORDINATE LOGGING FOR CALIBRATION
-                    console.log('\n🌍 === GLOBE POSITION CALIBRATION DATA ===');
-                    console.log('📷 Camera Position:', {
-                        x: camera.position.x.toFixed(3),
-                        y: camera.position.y.toFixed(3),
-                        z: camera.position.z.toFixed(3)
-                    });
-                    console.log('🎯 Camera Target:', {
-                        x: controls.target.x.toFixed(3),
-                        y: controls.target.y.toFixed(3),
-                        z: controls.target.z.toFixed(3)
-                    });
-                    console.log('🌐 Globe Rotation:', {
-                        x: group.rotation.x.toFixed(3),
-                        y: group.rotation.y.toFixed(3),
-                        z: group.rotation.z.toFixed(3)
-                    });
-                    console.log('📐 Camera Rotation:', {
-                        x: camera.rotation.x.toFixed(3),
-                        y: camera.rotation.y.toFixed(3),
-                        z: camera.rotation.z.toFixed(3)
-                    });
-                    console.log('🔍 Camera Distance from Origin:', camera.position.distanceTo(new THREE.Vector3(0, 0, 0)).toFixed(3));
-                    console.log('🎪 Controls Distance:', controls.getDistance().toFixed(3));
-                    console.log('=== END CALIBRATION DATA ===\n');
-                    
+                    if (isMountedRef.current) {
+                        console.log('🎯 User finished interacting with globe - keeping position');
+
+                        // 📍 COORDINATE LOGGING FOR CALIBRATION
+                        console.log('\n🌍 === GLOBE POSITION CALIBRATION DATA ===');
+                        console.log('📷 Camera Position:', {
+                            x: camera.position.x.toFixed(3),
+                            y: camera.position.y.toFixed(3),
+                            z: camera.position.z.toFixed(3)
+                        });
+                        console.log('🎯 Camera Target:', {
+                            x: controls.target.x.toFixed(3),
+                            y: controls.target.y.toFixed(3),
+                            z: controls.target.z.toFixed(3)
+                        });
+                        console.log('🌐 Globe Rotation:', {
+                            x: group.rotation.x.toFixed(3),
+                            y: group.rotation.y.toFixed(3),
+                            z: group.rotation.z.toFixed(3)
+                        });
+                        console.log('📐 Camera Rotation:', {
+                            x: camera.rotation.x.toFixed(3),
+                            y: camera.rotation.y.toFixed(3),
+                            z: camera.rotation.z.toFixed(3)
+                        });
+                        console.log('🔍 Camera Distance from Origin:', camera.position.distanceTo(new THREE.Vector3(0, 0, 0)).toFixed(3));
+                        console.log('🎪 Controls Distance:', controls.getDistance().toFixed(3));
+                        console.log('=== END CALIBRATION DATA ===\n');
+                    }
+
                     // Note: We don't restart auto-rotation - user's position is maintained
                 });
 
@@ -1029,6 +1066,81 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                 // Store controls reference in camera for region navigation
                 camera.userData = { controls: controls };
+
+                // Add window resize handler for responsive globe with debouncing
+                let resizeTimeout;
+                const handleResize = () => {
+                    if (!mountRef.current || !renderer || !camera) return;
+
+                    // Debounce resize events for better performance
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(() => {
+                        // Get current container dimensions
+                        const containerRect = mountRef.current.getBoundingClientRect();
+                        const newWidth = containerRect.width || mountRef.current.offsetWidth || mountRef.current.clientWidth;
+                        const newHeight = containerRect.height || mountRef.current.offsetHeight || mountRef.current.clientHeight;
+
+                        // Fallback to parent container if dimensions are 0
+                        const finalWidth = newWidth > 0 ? newWidth : (mountRef.current.parentElement?.offsetWidth || width);
+                        const finalHeight = newHeight > 0 ? newHeight : (mountRef.current.parentElement?.offsetHeight || height);
+
+                        // Only resize if dimensions actually changed significantly (avoid micro-adjustments)
+                        const currentWidth = renderer.domElement.width / renderer.getPixelRatio();
+                        const currentHeight = renderer.domElement.height / renderer.getPixelRatio();
+
+                        if (Math.abs(finalWidth - currentWidth) < 5 && Math.abs(finalHeight - currentHeight) < 5) {
+                            return;
+                        }
+
+                        // Update camera aspect ratio
+                        camera.aspect = finalWidth / finalHeight;
+                        camera.updateProjectionMatrix();
+
+                        // Update renderer size
+                        renderer.setSize(finalWidth, finalHeight);
+                        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+                        // Force canvas to fill container
+                        const canvas = renderer.domElement;
+                        canvas.style.width = '100%';
+                        canvas.style.height = '100%';
+                        canvas.style.display = 'block';
+
+                        if (isMountedRef.current) {
+                            console.log('🔄 Globe resized:', {
+                                width: finalWidth,
+                                height: finalHeight,
+                                aspect: (finalWidth / finalHeight).toFixed(2),
+                                containerRect: { w: containerRect.width, h: containerRect.height }
+                            });
+                        }
+
+                        // Force immediate render after resize
+                        renderer.render(scene, camera);
+                    }, 150); // Slightly longer debounce for stability
+                };
+
+                // Add resize event listener
+                window.addEventListener('resize', handleResize);
+
+                // Add ResizeObserver for more accurate container size detection
+                let resizeObserver;
+                if (window.ResizeObserver && mountRef.current) {
+                    resizeObserver = new ResizeObserver((entries) => {
+                        for (const entry of entries) {
+                            // Trigger resize handler when container size changes
+                            handleResize();
+                        }
+                    });
+                    resizeObserver.observe(mountRef.current);
+
+                    if (isMountedRef.current) {
+                        console.log('🔍 ResizeObserver attached to Globe container for accurate dimension tracking');
+                    }
+                }
+
+                // Store resize handler and observer for cleanup
+                resizeHandlerRef.current = { handleResize, resizeObserver };
 
                 // Enhanced dramatic lighting setup for realistic terrain rendering
                 const ambientLight = new THREE.AmbientLight(0x404080, 0.3); // Reduced ambient for more dramatic shadows
@@ -1745,21 +1857,21 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             scene.userData.isProcessingShipments = true;
             scene.userData.maxDelay = validShipments.length * 4000; // Total time for one full cycle (4s per shipment)
 
-                    // Sequential processing function
-        const processNextShipment = async (index) => {
-            if (index >= validShipments.length) {
-                console.log(`✅ All ${validShipments.length} shipments processed sequentially`);
-                if (scene.userData) {
-                    scene.userData.isProcessingShipments = false;
+            // Sequential processing function
+            const processNextShipment = async (index) => {
+                if (index >= validShipments.length) {
+                    console.log(`✅ All ${validShipments.length} shipments processed sequentially`);
+                    if (scene.userData) {
+                        scene.userData.isProcessingShipments = false;
+                    }
+                    return;
                 }
-                return;
-            }
 
-            const shipment = validShipments[index];
-            try {
-                console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
-                console.log(`📍 Origin: ${shipment.origin}`);
-                console.log(`📍 Destination: ${shipment.destination}`);
+                const shipment = validShipments[index];
+                try {
+                    console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
+                    console.log(`📍 Origin: ${shipment.origin}`);
+                    console.log(`📍 Destination: ${shipment.destination}`);
 
                     const originCoords = await getCityCoordinates(shipment.origin);
                     const destCoords = await getCityCoordinates(shipment.destination);
@@ -1974,7 +2086,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 const controls = camera.userData?.controls;
                 const scene = sceneRef.current;
                 const group = scene.children.find(child => child.type === 'Group');
-                
+
                 console.log('\n🔧 === MANUAL CALIBRATION LOG (C key pressed) ===');
                 console.log('📷 Camera Position:', {
                     x: camera.position.x.toFixed(3),
@@ -2005,6 +2117,27 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
         return () => {
             console.log('🧹 Globe: Component unmounting - cleaning up resources');
+
+            // Mark component as unmounted
+            isMountedRef.current = false;
+
+            // Remove resize event listener and observer
+            if (resizeHandlerRef.current) {
+                if (typeof resizeHandlerRef.current === 'function') {
+                    // Legacy cleanup for old format
+                    window.removeEventListener('resize', resizeHandlerRef.current);
+                } else if (resizeHandlerRef.current.handleResize) {
+                    // New cleanup format
+                    window.removeEventListener('resize', resizeHandlerRef.current.handleResize);
+
+                    // Disconnect ResizeObserver
+                    if (resizeHandlerRef.current.resizeObserver) {
+                        resizeHandlerRef.current.resizeObserver.disconnect();
+                        console.log('🧹 Globe: ResizeObserver disconnected');
+                    }
+                }
+                resizeHandlerRef.current = null;
+            }
 
             clearTimeout(timeoutId);
             if (animationId) cancelAnimationFrame(animationId);
@@ -2189,7 +2322,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 const animationStartDelay = index * 4000; // UNIFIED TIMING
                                 const currentTime = performance.now();
 
-                                                                arc.userData = {
+                                arc.userData = {
                                     isAnimatedArc: true,
                                     isShootingArc: true,
                                     originalOpacity: 0.95,
@@ -2495,10 +2628,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         if (controls) controls.enabled = false;
 
         const startPosition = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
-        const startTarget = controls ? { 
-            x: controls.target.x, 
-            y: controls.target.y, 
-            z: controls.target.z 
+        const startTarget = controls ? {
+            x: controls.target.x,
+            y: controls.target.y,
+            z: controls.target.z
         } : { x: 0, y: 0, z: 0 };
 
         const startTime = performance.now();
@@ -2602,13 +2735,13 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         containerSize: { w: container.clientWidth, h: container.clientHeight }
                     });
 
+                    // Update camera aspect ratio first
+                    camera.aspect = newWidth / newHeight;
+                    camera.updateProjectionMatrix();
+
                     // Update renderer size
                     renderer.setSize(newWidth, newHeight);
                     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-                    // Update camera aspect ratio
-                    camera.aspect = newWidth / newHeight;
-                    camera.updateProjectionMatrix();
 
                     // Re-append canvas to container
                     container.appendChild(renderer.domElement);
@@ -2691,8 +2824,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             {!loading && shipments.length > 0 && (
                 <Box sx={{
                     position: 'absolute',
-                    bottom: 32,
-                    right: 16,
+                    bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
+                    right: { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
                     zIndex: 7,
                     transition: 'all 0.3s ease',
                     display: 'flex',
@@ -2725,8 +2858,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     {/* Main Badge - Always show current or first shipment */}
                     <Box sx={{
                         display: 'flex',
-                        minWidth: '420px',
-                        height: '100px',
+                        minWidth: { xs: '280px', sm: '350px', md: '420px' }, // Responsive width
+                        height: { xs: '80px', sm: '90px', md: '100px' }, // Responsive height
                         background: 'rgba(0, 0, 0, 0.3)',
                         backdropFilter: 'blur(20px)',
                         borderRadius: '8px',
@@ -2734,11 +2867,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     }}>
                         {/* Left: Carrier Logo Section */}
                         <Box sx={{
-                            width: '140px',
+                            width: { xs: '80px', sm: '110px', md: '140px' }, // Responsive logo section width
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            padding: '16px'
+                            padding: { xs: '8px', sm: '12px', md: '16px' } // Responsive padding
                         }}>
                             <CarrierLogo activeShipment={activeShipment || shipments[currentShipmentIndex] || shipments[0]} />
                         </Box>
@@ -2746,7 +2879,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                         {/* Right: Info Section */}
                         <Box sx={{
                             flex: 1,
-                            padding: '16px 20px',
+                            padding: { xs: '8px 12px', sm: '12px 16px', md: '16px 20px' }, // Responsive padding
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'space-between',
@@ -2756,7 +2889,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                             <Box>
                                 <Typography variant="h4" sx={{
                                     color: 'white',
-                                    fontSize: '0.875rem',
+                                    fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.875rem' }, // Responsive font size
                                     fontWeight: 700,
                                     letterSpacing: '0.5px'
                                 }}>
@@ -2766,7 +2899,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                                 {/* Route - Using Scorecard Caption Style - No margin */}
                                 <Typography variant="caption" sx={{
                                     color: '#9CA3AF',
-                                    fontSize: '0.75rem',
+                                    fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' }, // Responsive font size
                                     fontWeight: 500,
                                     lineHeight: 1.2,
                                     display: 'block'
@@ -2894,7 +3027,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     height: '100vh'
                 }}>
                     {globeContent}
-                    
+
                     {/* Fullscreen Region Navigation Controls (Bottom Left) */}
                     {!loading && <RegionNavigationButtons isFullscreenMode={true} />}
                 </Box>
@@ -2906,7 +3039,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         <Box className="globe-container" sx={{
             position: 'relative',
             width,
-            height,
+            height: '100%', // Take up full height of parent container
             backgroundColor: '#000000', // Black background
             borderRadius: '8px'
         }}>
@@ -2915,4 +3048,5 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     );
 };
 
-export default ShipmentGlobe; 
+// Memoize the component to prevent unnecessary re-renders and improve performance isolation
+export default React.memo(ShipmentGlobe); 

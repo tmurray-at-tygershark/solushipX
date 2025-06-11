@@ -53,17 +53,74 @@
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(255, 255, 255, 0.75)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
 }
 
+/* Mobile menu styles - Only for smaller devices */
 @media (max-width: 991.98px) {
     .navbar-collapse {
         background: rgba(26, 35, 126, 0.95);
         padding: 1rem;
         border-radius: 8px;
         margin-top: 1rem;
+        max-height: 70vh;
+        overflow-y: auto;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1000;
     }
     
     .nav-link {
         margin: 0.3rem 0;
         padding: 0.6rem 0.75rem !important;
         font-size: 0.875rem;
+        display: block;
+        width: 100%;
+    }
+}
+
+/* Tablet and Desktop menu styles - Always show navigation */
+@media (min-width: 992px) {
+    .navbar-collapse {
+        display: flex !important;
+    }
+    
+    .navbar-toggler {
+        display: none !important;
+    }
+}
+
+/* Medium screens (tablets) - Smaller text and spacing */
+@media (min-width: 768px) and (max-width: 991.98px) {
+    .nav-link {
+        font-size: 0.85rem !important;
+        padding: 0.4rem 0.75rem !important;
+    }
+    
+    .navbar-brand img {
+        height: 28px !important;
+    }
+}
+
+/* Large screens (desktop) - Normal sizing */
+@media (min-width: 992px) {
+    .nav-link {
+        font-size: 0.9rem !important;
+        padding: 0.5rem 1rem !important;
+    }
+    
+    .navbar-brand img {
+        height: 30px !important;
+    }
+}
+
+/* Extra large screens - Full sizing */
+@media (min-width: 1200px) {
+    .nav-link {
+        font-size: 1rem !important;
+        padding: 0.5rem 1.25rem !important;
+    }
+    
+    .navbar-brand img {
+        height: 32px !important;
     }
 } 

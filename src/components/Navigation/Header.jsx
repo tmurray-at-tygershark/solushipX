@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     Avatar,
@@ -33,6 +33,25 @@ const Navigation = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { logout } = useAuth();
+
+    // Close mobile menu when screen size changes to tablet/desktop and force re-render for dynamic styles
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth >= 768) {
+                setIsOpen(false);
+            }
+            // Force re-render to update dynamic styles
+            setIsOpen(prev => prev);
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Close mobile menu when route changes
+    useEffect(() => {
+        setIsOpen(false);
+    }, [location.pathname]);
 
     // Check if we're on an admin page
     const isAdminPage = location.pathname.startsWith('/admin');
@@ -251,17 +270,26 @@ const Navigation = () => {
     return (
         <>
             <nav className="navbar navbar-expand-lg">
-                <div className="container">
+                <div className="container" onClick={(e) => {
+                    // Close mobile menu when clicking outside of it
+                    if (isOpen && !e.target.closest('.navbar-collapse') && !e.target.closest('.navbar-toggler')) {
+                        setIsOpen(false);
+                    }
+                }}>
                     <Link className="navbar-brand" to={isAuthenticated ? "/dashboard" : "/homepage"}>
                         <img
                             src="/images/solushipx_logo_white.png"
                             alt="SolushipX Logo"
-                            style={{ height: '30px' }}
+                            style={{
+                                height: window.innerWidth >= 1200 ? '32px' :
+                                    window.innerWidth >= 992 ? '30px' :
+                                        window.innerWidth >= 768 ? '28px' : '26px'
+                            }}
                         />
                     </Link>
 
                     <button
-                        className="navbar-toggler"
+                        className="navbar-toggler d-lg-none"
                         type="button"
                         onClick={() => setIsOpen(!isOpen)}
                         aria-label="Toggle navigation"
@@ -269,64 +297,141 @@ const Navigation = () => {
                         <span className="navbar-toggler-icon"></span>
                     </button>
 
-                    <div className={`navbar-collapse ${isOpen ? 'show' : ''}`}>
+                    <div className={`collapse navbar-collapse ${isOpen ? 'show' : ''}`} id="navbarNav">
                         <ul className="navbar-nav me-auto">
-                            {!isAuthenticated && (
-                                <>
-                                    <li className="nav-item">
-                                        <Button
-                                            className="nav-link"
-                                            onClick={handleFeaturesClick}
-                                            endIcon={<ExpandMoreIcon />}
-                                            sx={{ color: 'inherit', textTransform: 'none', fontWeight: 500 }}
-                                        >
-                                            Features
-                                        </Button>
-                                    </li>
-                                    <li className="nav-item">
-                                        <Link
-                                            className={`nav-link ${location.pathname === '/pricing' ? 'active' : ''}`}
-                                            to="/pricing"
-                                            onClick={() => setIsOpen(false)}
-                                        >
-                                            Pricing
-                                        </Link>
-                                    </li>
-                                    <li className="nav-item">
-                                        <Button
-                                            className="nav-link"
-                                            onClick={handleIntegrationsClick}
-                                            endIcon={<ExpandMoreIcon />}
-                                            sx={{ color: 'inherit', textTransform: 'none', fontWeight: 500 }}
-                                        >
-                                            Integrations
-                                        </Button>
-                                    </li>
-                                    <li className="nav-item">
-                                        <Button
-                                            className="nav-link"
-                                            onClick={handleResourcesClick}
-                                            endIcon={<ExpandMoreIcon />}
-                                            sx={{ color: 'inherit', textTransform: 'none', fontWeight: 500 }}
-                                        >
-                                            Resources
-                                        </Button>
-                                    </li>
-                                </>
-                            )}
-                        </ul>
-                        <ul className="navbar-nav ms-auto">
-                            {menuItems.map((item) => (
+                            {isAuthenticated ? menuItems.map((item) => (
                                 <li className="nav-item" key={item.path}>
                                     <Link
                                         className={`nav-link ${location.pathname === item.path ? 'active' : ''}`}
                                         to={item.path}
                                         onClick={() => setIsOpen(false)}
+                                        style={{
+                                            fontSize: window.innerWidth >= 1200 ? '1rem' :
+                                                window.innerWidth >= 992 ? '0.9rem' : '0.85rem'
+                                        }}
                                     >
                                         <span>{item.label}</span>
                                     </Link>
                                 </li>
-                            ))}
+                            )) : (
+                                <>
+                                    {/* Features - Desktop and Tablet with progressive sizing */}
+                                    <li className="nav-item d-none d-md-block">
+                                        <Button
+                                            className="nav-link"
+                                            onClick={handleFeaturesClick}
+                                            endIcon={<ExpandMoreIcon />}
+                                            sx={{
+                                                color: 'inherit',
+                                                textTransform: 'none',
+                                                fontWeight: 500,
+                                                fontSize: window.innerWidth >= 1200 ? '1rem' :
+                                                    window.innerWidth >= 992 ? '0.9rem' : '0.85rem',
+                                                px: window.innerWidth >= 992 ? 2 : 1.5
+                                            }}
+                                        >
+                                            Features
+                                        </Button>
+                                    </li>
+                                    {/* Features - Mobile only */}
+                                    <li className="nav-item d-md-none">
+                                        <Link
+                                            className="nav-link"
+                                            to="#"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setIsOpen(false);
+                                            }}
+                                        >
+                                            Features
+                                        </Link>
+                                    </li>
+
+                                    {/* Pricing - All sizes with progressive font sizing */}
+                                    <li className="nav-item">
+                                        <Link
+                                            className={`nav-link ${location.pathname === '/pricing' ? 'active' : ''}`}
+                                            to="/pricing"
+                                            onClick={() => setIsOpen(false)}
+                                            style={{
+                                                fontSize: window.innerWidth >= 1200 ? '1rem' :
+                                                    window.innerWidth >= 992 ? '0.9rem' :
+                                                        window.innerWidth >= 768 ? '0.85rem' : '1rem',
+                                                paddingLeft: window.innerWidth >= 992 ? '16px' : '12px',
+                                                paddingRight: window.innerWidth >= 992 ? '16px' : '12px'
+                                            }}
+                                        >
+                                            Pricing
+                                        </Link>
+                                    </li>
+
+                                    {/* Integrations - Desktop and Tablet with progressive sizing */}
+                                    <li className="nav-item d-none d-md-block">
+                                        <Button
+                                            className="nav-link"
+                                            onClick={handleIntegrationsClick}
+                                            endIcon={<ExpandMoreIcon />}
+                                            sx={{
+                                                color: 'inherit',
+                                                textTransform: 'none',
+                                                fontWeight: 500,
+                                                fontSize: window.innerWidth >= 1200 ? '1rem' :
+                                                    window.innerWidth >= 992 ? '0.9rem' : '0.85rem',
+                                                px: window.innerWidth >= 992 ? 2 : 1.5
+                                            }}
+                                        >
+                                            Integrations
+                                        </Button>
+                                    </li>
+                                    {/* Integrations - Mobile only */}
+                                    <li className="nav-item d-md-none">
+                                        <Link
+                                            className="nav-link"
+                                            to="#"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setIsOpen(false);
+                                            }}
+                                        >
+                                            Integrations
+                                        </Link>
+                                    </li>
+
+                                    {/* Resources - Desktop and Tablet with progressive sizing */}
+                                    <li className="nav-item d-none d-md-block">
+                                        <Button
+                                            className="nav-link"
+                                            onClick={handleResourcesClick}
+                                            endIcon={<ExpandMoreIcon />}
+                                            sx={{
+                                                color: 'inherit',
+                                                textTransform: 'none',
+                                                fontWeight: 500,
+                                                fontSize: window.innerWidth >= 1200 ? '1rem' :
+                                                    window.innerWidth >= 992 ? '0.9rem' : '0.85rem',
+                                                px: window.innerWidth >= 992 ? 2 : 1.5
+                                            }}
+                                        >
+                                            Resources
+                                        </Button>
+                                    </li>
+                                    {/* Resources - Mobile only */}
+                                    <li className="nav-item d-md-none">
+                                        <Link
+                                            className="nav-link"
+                                            to="#"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setIsOpen(false);
+                                            }}
+                                        >
+                                            Resources
+                                        </Link>
+                                    </li>
+                                </>
+                            )}
+                        </ul>
+                        <ul className="navbar-nav ms-auto">
                             {isAuthenticated ? (
                                 <li className="nav-item ms-2">
                                     <IconButton
@@ -379,11 +484,12 @@ const Navigation = () => {
                         </ul>
                     </div>
 
-                    {/* Features Mega Menu */}
+                    {/* Features Mega Menu - Desktop and Tablet */}
                     <Menu
                         anchorEl={featuresAnchorEl}
                         open={Boolean(featuresAnchorEl)}
                         onClose={handleMenuClose}
+                        sx={{ display: { xs: 'none', md: 'block' } }}
                         PaperProps={{
                             elevation: 0,
                             sx: {
@@ -391,7 +497,7 @@ const Navigation = () => {
                                 filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
                                 mt: 0,
                                 width: '100vw',
-                                maxHeight: '600px',
+                                maxHeight: { xs: '50vh', sm: '60vh', md: '600px' },
                                 borderRadius: 0,
                                 borderTop: '1px solid #e0e0e0',
                                 '&:before': {
@@ -451,11 +557,12 @@ const Navigation = () => {
                         </Box>
                     </Menu>
 
-                    {/* Integrations Mega Menu */}
+                    {/* Integrations Mega Menu - Desktop and Tablet */}
                     <Menu
                         anchorEl={integrationsAnchorEl}
                         open={Boolean(integrationsAnchorEl)}
                         onClose={handleMenuClose}
+                        sx={{ display: { xs: 'none', md: 'block' } }}
                         PaperProps={{
                             elevation: 0,
                             sx: {
@@ -523,11 +630,12 @@ const Navigation = () => {
                         </Box>
                     </Menu>
 
-                    {/* Resources Mega Menu */}
+                    {/* Resources Mega Menu - Desktop and Tablet */}
                     <Menu
                         anchorEl={resourcesAnchorEl}
                         open={Boolean(resourcesAnchorEl)}
                         onClose={handleMenuClose}
+                        sx={{ display: { xs: 'none', md: 'block' } }}
                         PaperProps={{
                             elevation: 0,
                             sx: {

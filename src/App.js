@@ -2,7 +2,7 @@
 import './muiLicense.js';
 
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -85,6 +85,43 @@ const LoadingFallback = () => (
         <CircularProgress />
     </Box>
 );
+
+// Conditional NotificationBar - only show on public pages
+const ConditionalNotificationBar = () => {
+    const location = useLocation();
+    const publicRoutes = ['/', '/login', '/signup', '/pricing'];
+    const isPublicRoute = publicRoutes.includes(location.pathname);
+    
+    return isPublicRoute ? <NotificationBar /> : null;
+};
+
+// Route Change Handler for Globe cleanup
+const RouteChangeHandler = () => {
+    const location = useLocation();
+    const prevLocationRef = React.useRef(location.pathname);
+    
+    React.useEffect(() => {
+        const currentPath = location.pathname;
+        const prevPath = prevLocationRef.current;
+        
+        // If we're navigating away from dashboard, force cleanup
+        if (prevPath === '/dashboard' && currentPath !== '/dashboard') {
+            console.log('🧹 Route Change: Navigating away from Dashboard - forcing Globe cleanup');
+            
+            // Force garbage collection if available (development only)
+            if (typeof window !== 'undefined' && window.gc && process.env.NODE_ENV === 'development') {
+                setTimeout(() => {
+                    window.gc();
+                    console.log('🗑️ Forced garbage collection after leaving Dashboard');
+                }, 500);
+            }
+        }
+        
+        prevLocationRef.current = currentPath;
+    }, [location.pathname]);
+    
+    return null;
+};
 
 function AppRoutes() {
     return (
@@ -257,7 +294,8 @@ function App() {
                                     minHeight: '100vh',
                                     width: '100%'
                                 }}>
-                                    <NotificationBar />
+                                    <ConditionalNotificationBar />
+                                    <RouteChangeHandler />
                                     <Navigation />
                                     <Box
                                         component="main"

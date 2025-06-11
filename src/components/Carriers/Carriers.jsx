@@ -317,11 +317,8 @@ const Carriers = () => {
             </div>
 
             <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" component="h1" gutterBottom>
+                <Typography variant="h5" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
                     Connected Carriers
-                </Typography>
-                <Typography variant="subtitle1" color="text.secondary">
-                    {carrierList.length} carrier{carrierList.length !== 1 ? 's' : ''} connected
                 </Typography>
             </Box>
 
