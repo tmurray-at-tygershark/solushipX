@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, lazy, Suspense, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, lazy, Suspense, useRef, forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -12,6 +12,13 @@ import {
     IconButton,
     TextField,
     InputAdornment,
+    Dialog,
+    Slide,
+    AppBar,
+    Toolbar,
+    Typography,
+    LinearProgress,
+    Fade,
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -24,19 +31,228 @@ import {
     Notifications as NotificationsIcon,
     AccountCircle as AccountCircleIcon,
     Business as BusinessIcon,
-    Refresh as RefreshIcon,
+    Logout as LogoutIcon,
     Fullscreen as FullscreenIcon,
+    Close as CloseIcon,
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Lazy load the Globe component to prevent it from loading on other pages
 const ShipmentGlobe = lazy(() => import('../Globe/Globe'));
 
 // Lazy load the Tracking component for the drawer
 const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
+
+// Lazy load the Shipments component for the modal
+const ShipmentsComponent = lazy(() => import('../Shipments/Shipments'));
+
+// Transition for the modal
+const Transition = forwardRef(function Transition(props, ref) {
+    return <Slide direction="up" ref={ref} {...props} timeout={{ enter: 500, exit: 300 }} easing={{ enter: 'cubic-bezier(0.4, 0, 0.2, 1)', exit: 'cubic-bezier(0.4, 0, 1, 1)' }} />;
+});
+
+// Enhanced Globe Loading Screen Component
+const GlobeLoadingScreen = ({ phase = 'initializing' }) => {
+    const [progress, setProgress] = useState(0);
+    const [currentPhase, setCurrentPhase] = useState(0);
+
+    const loadingPhases = [
+        { text: 'Initializing SoluShipX Globe', description: 'Preparing 3D visualization engine' },
+        { text: 'Loading Earth Textures', description: 'Downloading satellite imagery' },
+        { text: 'Fetching Shipment Data', description: 'Retrieving your logistics network' },
+        { text: 'Plotting Routes', description: 'Calculating optimal pathways' },
+        { text: 'Finalizing Experience', description: 'Almost ready to explore' }
+    ];
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setProgress((prevProgress) => {
+                const newProgress = prevProgress + Math.random() * 15;
+
+                // Update phase based on progress
+                const newPhase = Math.floor((newProgress / 100) * loadingPhases.length);
+                setCurrentPhase(Math.min(newPhase, loadingPhases.length - 1));
+
+                return newProgress >= 100 ? 100 : newProgress;
+            });
+        }, 400);
+
+        return () => clearInterval(timer);
+    }, [loadingPhases.length]);
+
+    const currentLoadingPhase = loadingPhases[currentPhase];
+
+    return (
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: '100vh',
+            background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)',
+            color: 'white',
+            position: 'relative',
+            overflow: 'hidden'
+        }}>
+            {/* Animated background particles */}
+            <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: `
+                    radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                    radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
+                `,
+                animation: 'float 6s ease-in-out infinite'
+            }} />
+
+            {/* Main loading content */}
+            <Box sx={{ textAlign: 'center', zIndex: 1, maxWidth: '400px', px: 3 }}>
+                {/* Logo with glow effect */}
+                <Fade in timeout={1000}>
+                    <Box sx={{ mb: 4, position: 'relative' }}>
+                        <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '120px',
+                            height: '120px',
+                            borderRadius: '50%',
+                            background: 'radial-gradient(circle, rgba(96, 165, 250, 0.3) 0%, transparent 70%)',
+                            animation: 'pulse 2s ease-in-out infinite'
+                        }} />
+                        <img
+                            src="/images/solushipx_logo_white.png"
+                            alt="SoluShipX"
+                            style={{
+                                height: 80,
+                                position: 'relative',
+                                zIndex: 2,
+                                filter: 'drop-shadow(0 0 20px rgba(96, 165, 250, 0.5))'
+                            }}
+                        />
+                    </Box>
+                </Fade>
+
+                {/* Progress circle with percentage */}
+                <Box sx={{ position: 'relative', display: 'inline-flex', mb: 3 }}>
+                    <CircularProgress
+                        variant="determinate"
+                        value={progress}
+                        size={100}
+                        thickness={2}
+                        sx={{
+                            color: '#60a5fa',
+                            filter: 'drop-shadow(0 0 10px rgba(96, 165, 250, 0.6))',
+                            '& .MuiCircularProgress-circle': {
+                                strokeLinecap: 'round',
+                            }
+                        }}
+                    />
+                    <Box sx={{
+                        top: 0,
+                        left: 0,
+                        bottom: 0,
+                        right: 0,
+                        position: 'absolute',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}>
+                        <Typography variant="h6" component="div" sx={{
+                            color: 'white',
+                            fontWeight: 600,
+                            fontSize: '1.2rem'
+                        }}>
+                            {Math.round(progress)}%
+                        </Typography>
+                    </Box>
+                </Box>
+
+                {/* Current phase text */}
+                <Fade in key={currentPhase} timeout={500}>
+                    <Box>
+                        <Typography variant="h6" sx={{
+                            fontSize: '1.3rem',
+                            fontWeight: 600,
+                            mb: 1,
+                            background: 'linear-gradient(45deg, #60a5fa, #8b5cf6)',
+                            backgroundClip: 'text',
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent'
+                        }}>
+                            {currentLoadingPhase.text}
+                        </Typography>
+                        <Typography sx={{
+                            fontSize: '0.95rem',
+                            opacity: 0.8,
+                            color: 'rgba(255, 255, 255, 0.7)'
+                        }}>
+                            {currentLoadingPhase.description}
+                        </Typography>
+                    </Box>
+                </Fade>
+
+                {/* Progress bar */}
+                <Box sx={{ width: '100%', mt: 3 }}>
+                    <LinearProgress
+                        variant="determinate"
+                        value={progress}
+                        sx={{
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            '& .MuiLinearProgress-bar': {
+                                borderRadius: 3,
+                                background: 'linear-gradient(45deg, #60a5fa, #8b5cf6)',
+                                boxShadow: '0 0 20px rgba(96, 165, 250, 0.5)'
+                            }
+                        }}
+                    />
+                </Box>
+
+                {/* Phase indicators */}
+                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 3 }}>
+                    {loadingPhases.map((_, index) => (
+                        <Box
+                            key={index}
+                            sx={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                backgroundColor: index <= currentPhase ? '#60a5fa' : 'rgba(255, 255, 255, 0.2)',
+                                transition: 'all 0.3s ease',
+                                boxShadow: index <= currentPhase ? '0 0 10px rgba(96, 165, 250, 0.8)' : 'none'
+                            }}
+                        />
+                    ))}
+                </Box>
+            </Box>
+
+            {/* CSS animations */}
+            <style jsx>{`
+                @keyframes float {
+                    0%, 100% { transform: translateY(0px) rotate(0deg); }
+                    33% { transform: translateY(-10px) rotate(1deg); }
+                    66% { transform: translateY(5px) rotate(-1deg); }
+                }
+                
+                @keyframes pulse {
+                    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+                    50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.9; }
+                }
+            `}</style>
+        </Box>
+    );
+};
 
 // Helper function to format Firestore timestamp
 const formatDate = (timestamp) => {
@@ -58,94 +274,36 @@ const formatAddress = (addressObj) => {
     return parts.join(', ');
 };
 
-// Globe Wrapper Component for complete isolation
-const GlobeWrapper = React.memo(({ shipments, statusCounts }) => {
-    const [isGlobeReady, setIsGlobeReady] = useState(false);
-
-    useEffect(() => {
-        console.log('🌍 GlobeWrapper: Mounting Globe component');
-        setIsGlobeReady(true);
-
-        return () => {
-            console.log('🧹 GlobeWrapper: Unmounting Globe component');
-            setIsGlobeReady(false);
-
-            // Force garbage collection if available (development only)
-            if (typeof window !== 'undefined' && window.gc && process.env.NODE_ENV === 'development') {
-                setTimeout(() => {
-                    window.gc();
-                    console.log('🗑️ Forced garbage collection after Globe cleanup');
-                }, 1000);
-            }
-        };
-    }, []);
-
-    if (!isGlobeReady) {
-        return (
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100vh',
-                backgroundColor: '#000000',
-                color: 'white'
-            }}>
-                <Box sx={{ textAlign: 'center' }}>
-                    <CircularProgress sx={{ color: '#60a5fa', mb: 2 }} />
-                    <Box sx={{ fontSize: '1.1rem', fontWeight: 500 }}>
-                        Preparing Globe...
-                    </Box>
-                </Box>
-            </Box>
-        );
-    }
-
-    return (
-        <Suspense fallback={
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100vh',
-                backgroundColor: '#000000',
-                color: 'white'
-            }}>
-                <Box sx={{ textAlign: 'center' }}>
-                    <CircularProgress sx={{ color: '#60a5fa', mb: 2 }} />
-                    <Box sx={{ fontSize: '1.1rem', fontWeight: 500 }}>
-                        Loading Globe...
-                    </Box>
-                    <Box sx={{ fontSize: '0.9rem', opacity: 0.7, mt: 1 }}>
-                        Initializing 3D visualization
-                    </Box>
-                </Box>
-            </Box>
-        }>
-            <ShipmentGlobe
-                shipments={shipments.slice(0, 50)} // Show recent 50 shipments for better visualization
-                width="100%"
-                showOverlays={true}
-                statusCounts={statusCounts}
-            />
-        </Suspense>
-    );
-});
-
-GlobeWrapper.displayName = 'GlobeWrapper';
-
 const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
     const { companyIdForAddress, loading: companyLoading } = useCompany();
     const navigate = useNavigate();
+    const { logout } = useAuth();
 
     // State for new UI elements
     const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
     const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
     const [trackingNumber, setTrackingNumber] = useState('');
+    const [isShipmentsModalOpen, setIsShipmentsModalOpen] = useState(false);
+
+    const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
 
     const globeRef = useRef(null); // Ref to access Globe's methods
+
+    useEffect(() => {
+        // Ensure the loading screen is visible for at least 5.5 seconds
+        // to allow the animation to complete.
+        const timer = setTimeout(() => {
+            setIsMinLoadingTimePassed(true);
+        }, 5500);
+        return () => clearTimeout(timer);
+    }, []);
+
+    const showLoadingScreen = useMemo(() => {
+        return companyLoading || loading || !isMinLoadingTimePassed;
+    }, [companyLoading, loading, isMinLoadingTimePassed]);
 
     // Calculate date range for last 30 days
     const thirtyDaysAgo = useMemo(() => {
@@ -283,24 +441,27 @@ const Dashboard = () => {
         }
     };
 
-    const handleResetView = () => {
-        if (globeRef.current) {
-            globeRef.current.resetView();
-        }
-    };
-
     const handleToggleFullscreen = () => {
         if (globeRef.current) {
             globeRef.current.toggleFullScreen();
         }
     };
 
+    const handleLogout = async () => {
+        try {
+            await logout();
+            navigate('/');
+        } catch (error) {
+            console.error("Failed to log out", error);
+        }
+    };
+
     const menuItems = [
-        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-        { text: 'Shipments', icon: <LocalShippingIcon />, path: '/shipments' },
-        { text: 'Customers', icon: <PeopleIcon />, path: '/customers' },
-        { text: 'Carriers', icon: <BusinessIcon />, path: '/carriers' },
-        { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', action: () => navigate('/dashboard') },
+        { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
+        { text: 'Customers', icon: <PeopleIcon />, path: '/customers', action: () => navigate('/customers') },
+        { text: 'Carriers', icon: <BusinessIcon />, path: '/carriers', action: () => navigate('/carriers') },
+        { text: 'Reports', icon: <AssessmentIcon />, path: '/reports', action: () => navigate('/reports') },
     ];
 
     const profileMenuItems = [
@@ -309,23 +470,6 @@ const Dashboard = () => {
         { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
     ];
 
-    // Show loading state while company data is loading
-    if (companyLoading || loading) {
-        return (
-            <Box sx={{
-                width: '100%',
-                height: '100vh',
-                bgcolor: '#0a0a0a',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center'
-            }}>
-                <CircularProgress sx={{ color: '#60a5fa' }} />
-            </Box>
-        );
-    }
-
-    // Main container with corrected height calculation
     return (
         <Box sx={{ height: '100vh', width: '100vw', overflow: 'hidden', position: 'relative', bgcolor: '#000' }}>
             {/* New Embedded Header */}
@@ -350,7 +494,6 @@ const Dashboard = () => {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <TextField
                         variant="standard"
-                        placeholder="Track a shipment..."
                         value={trackingNumber}
                         onChange={(e) => setTrackingNumber(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
@@ -367,42 +510,59 @@ const Dashboard = () => {
                             bgcolor: 'rgba(255, 255, 255, 0.1)',
                             borderRadius: '20px',
                             p: '4px 16px',
-                            width: '300px'
+                            width: '150px'
                         }}
                     />
-                    <IconButton onClick={handleResetView} sx={{ color: 'white' }}>
-                        <RefreshIcon />
-                    </IconButton>
-                    <IconButton onClick={handleToggleFullscreen} sx={{ color: 'white' }}>
-                        <FullscreenIcon />
-                    </IconButton>
                 </Box>
             </Box>
 
             {/* Navigation Drawer (Left) */}
             <Drawer anchor="left" open={isNavDrawerOpen} onClose={() => setIsNavDrawerOpen(false)}>
-                <Box sx={{ width: 250, bgcolor: '#111827', height: '100%', color: 'white' }} role="presentation">
-                    <List>
+                <Box sx={{ width: 250, bgcolor: '#111827', height: '100%', color: 'white', display: 'flex', flexDirection: 'column' }} role="presentation">
+                    <Box sx={{ p: 2, pl: 2.5, display: 'flex', justifyContent: 'flex-start' }}>
+                        <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 28 }} />
+                    </Box>
+                    <List sx={{ flexGrow: 1 }}>
                         {menuItems.map((item) => (
                             <ListItem key={item.text} disablePadding>
-                                <ListItemButton onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}>
-                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)' }}>{item.icon}</ListItemIcon>
-                                    <ListItemText primary={item.text} />
+                                <ListItemButton onClick={() => { item.action(); setIsNavDrawerOpen(false); }}>
+                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 40 }}>{item.icon}</ListItemIcon>
+                                    <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.9rem' }} />
                                 </ListItemButton>
                             </ListItem>
                         ))}
                     </List>
-                    <Box sx={{ flexGrow: 1 }} />
-                    <List>
-                        {profileMenuItems.map((item) => (
-                            <ListItem key={item.text} disablePadding>
-                                <ListItemButton onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}>
-                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)' }}>{item.icon}</ListItemIcon>
-                                    <ListItemText primary={item.text} />
-                                </ListItemButton>
-                            </ListItem>
-                        ))}
-                    </List>
+
+                    <Box sx={{ px: 2, pb: 2 }}>
+                        <List>
+                            {profileMenuItems.map((item) => (
+                                <ListItem key={item.text} disablePadding>
+                                    <ListItemButton onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}>
+                                        <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 40 }}>{item.icon}</ListItemIcon>
+                                        <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.9rem' }} />
+                                    </ListItemButton>
+                                </ListItem>
+                            ))}
+                        </List>
+
+                        <ListItemButton
+                            onClick={handleLogout}
+                            sx={{
+                                mt: 1,
+                                borderRadius: '8px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                                },
+                                justifyContent: 'center'
+                            }}
+                        >
+                            <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 'auto', mr: 1 }}>
+                                <LogoutIcon />
+                            </ListItemIcon>
+                            <ListItemText primary="Logout" primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: 500 }} />
+                        </ListItemButton>
+                    </Box>
                 </Box>
             </Drawer>
 
@@ -416,15 +576,72 @@ const Dashboard = () => {
                 </Box>
             </Drawer>
 
-            <Suspense fallback={<CircularProgress />}>
-                <ShipmentGlobe
-                    ref={globeRef}
-                    shipments={shipments.slice(0, 50)}
-                    width="100%"
-                    showOverlays={true}
-                    statusCounts={statusCounts}
-                />
-            </Suspense>
+            {/* Shipments Fullscreen Modal */}
+            <Dialog
+                fullScreen
+                open={isShipmentsModalOpen}
+                onClose={() => setIsShipmentsModalOpen(false)}
+                TransitionComponent={Transition}
+                PaperProps={{
+                    sx: {
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        backdropFilter: 'blur(10px)',
+                    }
+                }}
+            >
+                <AppBar sx={{ position: 'relative', bgcolor: 'rgba(255, 255, 255, 0.8)', boxShadow: 'none', borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
+                    <Toolbar>
+                        <Typography sx={{ ml: 2, flex: 1, color: 'black', fontWeight: 600 }} variant="h6" component="div">
+                            Shipments
+                        </Typography>
+                        <IconButton
+                            edge="end"
+                            color="inherit"
+                            onClick={() => setIsShipmentsModalOpen(false)}
+                            aria-label="close"
+                            sx={{ color: 'black' }}
+                        >
+                            <CloseIcon />
+                        </IconButton>
+                    </Toolbar>
+                </AppBar>
+                <Suspense fallback={
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                        <CircularProgress />
+                    </Box>
+                }>
+                    <ShipmentsComponent />
+                </Suspense>
+            </Dialog>
+
+            {/* Globe - always rendered but opacity is controlled */}
+            <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                opacity: showLoadingScreen ? 0 : 1,
+                transition: 'opacity 1s ease-in-out',
+                zIndex: 1,
+            }}>
+                <Suspense fallback={null}>
+                    <ShipmentGlobe
+                        ref={globeRef}
+                        shipments={shipments.slice(0, 50)}
+                        width="100%"
+                        showOverlays={true}
+                        statusCounts={statusCounts}
+                    />
+                </Suspense>
+            </Box>
+
+            {/* Loading Screen Overlay */}
+            <Fade in={showLoadingScreen} timeout={{ enter: 0, exit: 1000 }}>
+                <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 20 }}>
+                    <GlobeLoadingScreen />
+                </Box>
+            </Fade>
         </Box>
     );
 };

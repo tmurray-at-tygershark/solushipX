@@ -550,7 +550,6 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
     const isInitializedRef = useRef(false);
     const routesInitializedRef = useRef(false);
     const activeTimeoutsRef = useRef(new Set());
-    const directionalLightRef = useRef(null);
 
     // Real-time data state
     const [realTimeShipments, setRealTimeShipments] = useState([]);
@@ -1173,14 +1172,9 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
 
                 resizeHandlerRef.current = { handleResize, resizeObserver };
 
-                // A soft, neutral ambient light to ensure the dark side is not completely black
-                const ambientLight = new THREE.AmbientLight(0x404040, 0.7);
+                // A single, soft, uniform ambient light to illuminate the entire globe evenly.
+                const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
                 scene.add(ambientLight);
-
-                // This directional light simulates the sun. Its position is updated in real-time.
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 2.8);
-                directionalLightRef.current = directionalLight; // Store ref to update in animate loop
-                scene.add(directionalLight);
 
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
                 scene.environment = pmremGenerator.fromScene(new THREE.Scene(), 0.04).texture;
@@ -1250,11 +1244,6 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
                     animationId = requestAnimationFrame(animate);
                     controls.update();
                     const time = performance.now();
-
-                    // Update sun position for real-time day/night cycle
-                    if (directionalLightRef.current) {
-                        directionalLightRef.current.position.copy(getSunPosition(new Date()));
-                    }
 
                     if (!userInteracting) {
                         clouds.rotateY(0.0001 * params.speedFactor);

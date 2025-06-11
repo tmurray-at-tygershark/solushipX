@@ -1891,19 +1891,6 @@ const Shipments = () => {
 
     return (
         <div className="shipments-container">
-            <div className="breadcrumb-container">
-                <Link to="/dashboard" className="breadcrumb-link">
-                    <HomeIcon />
-                    <Typography variant="body2">Dashboard</Typography>
-                </Link>
-                <div className="breadcrumb-separator">
-                    <NavigateNextIcon />
-                </div>
-                <Typography variant="body2" className="breadcrumb-current">
-                    Shipments
-                </Typography>
-            </div>
-
             <Paper className="shipments-paper">
                 <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
                     <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -2988,7 +2975,7 @@ const Shipments = () => {
                     {/* Enhanced status update integration could be added here in the future */}
                 </Alert>
             </Snackbar>
-        </div >
+        </div>
     );
 };
 
