@@ -56,6 +56,15 @@ const ShipmentsComponent = lazy(() => import('../Shipments/ShipmentsX'));
 // Lazy load the CreateShipment component for the modal
 const CreateShipmentComponent = lazy(() => import('../CreateShipment'));
 
+// Lazy load the Customers component for the modal
+const CustomersComponent = lazy(() => import('../Customers/Customers'));
+
+// Lazy load the Carriers component for the modal
+const CarriersComponent = lazy(() => import('../Carriers/Carriers'));
+
+// Lazy load the Reports component for the modal
+const ReportsComponent = lazy(() => import('../Reports/Reports'));
+
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
 
@@ -279,6 +288,9 @@ const Dashboard = () => {
     const [trackingNumber, setTrackingNumber] = useState('');
     const [isShipmentsModalOpen, setIsShipmentsModalOpen] = useState(false);
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
+    const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false);
+    const [isCarriersModalOpen, setIsCarriersModalOpen] = useState(false);
+    const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
 
     const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
@@ -492,9 +504,9 @@ const Dashboard = () => {
         { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', action: () => navigate('/dashboard') },
         { text: 'Create Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
-        { text: 'Customers', icon: <PeopleIcon />, path: '/customers', action: () => navigate('/customers') },
-        { text: 'Carriers', icon: <BusinessIcon />, path: '/carriers', action: () => navigate('/carriers') },
-        { text: 'Reports', icon: <AssessmentIcon />, path: '/reports', action: () => navigate('/reports') },
+        { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
+        { text: 'Carriers', icon: <BusinessIcon />, action: () => setIsCarriersModalOpen(true) },
+        { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
     ];
 
     const profileMenuItems = [
@@ -804,6 +816,132 @@ const Dashboard = () => {
                             isModal={true}
                             onClose={() => setIsCreateShipmentModalOpen(false)}
                             onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                        />
+                    </Suspense>
+                </Box>
+            </Dialog>
+
+            {/* Customers Fullscreen Modal */}
+            <Dialog
+                open={isCustomersModalOpen}
+                onClose={() => setIsCustomersModalOpen(false)}
+                TransitionComponent={Transition}
+                fullWidth
+                maxWidth="xl"
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: { xs: '100%', md: '95vh' },
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
+                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CustomersComponent
+                            isModal={true}
+                            onClose={() => setIsCustomersModalOpen(false)}
+                        />
+                    </Suspense>
+                </Box>
+            </Dialog>
+
+            {/* Carriers Fullscreen Modal */}
+            <Dialog
+                open={isCarriersModalOpen}
+                onClose={() => setIsCarriersModalOpen(false)}
+                TransitionComponent={Transition}
+                fullWidth
+                maxWidth="xl"
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: { xs: '100%', md: '95vh' },
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
+                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CarriersComponent
+                            isModal={true}
+                            onClose={() => setIsCarriersModalOpen(false)}
+                        />
+                    </Suspense>
+                </Box>
+            </Dialog>
+
+            {/* Reports Fullscreen Modal */}
+            <Dialog
+                open={isReportsModalOpen}
+                onClose={() => setIsReportsModalOpen(false)}
+                TransitionComponent={Transition}
+                fullWidth
+                maxWidth="xl"
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: { xs: '100%', md: '95vh' },
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
+                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <ReportsComponent
+                            isModal={true}
+                            onClose={() => setIsReportsModalOpen(false)}
                         />
                     </Suspense>
                 </Box>

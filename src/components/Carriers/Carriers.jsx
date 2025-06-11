@@ -35,14 +35,15 @@ import {
     Settings as SettingsIcon,
     CloudDone as CloudDoneIcon,
     VpnKey as VpnKeyIcon,
-    Save as SaveIcon
+    Save as SaveIcon,
+    ArrowBackIosNew as ArrowBackIosNewIcon
 } from '@mui/icons-material';
 import { collection, getDocs, doc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import './Carriers.css';
 
-const Carriers = () => {
+const Carriers = ({ isModal = false, onClose = null }) => {
     const [carrierList, setCarrierList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -183,41 +184,23 @@ const Carriers = () => {
     const handleConfigureCarrier = (carrier) => {
         setSelectedCarrier(carrier);
 
-        // Load existing credentials if available
-        if (carrier.apiCredentials) {
-            setCredentials({
-                type: carrier.apiCredentials.type || 'custom',
-                username: carrier.apiCredentials.username || '',
-                password: carrier.apiCredentials.password || '',
-                accountNumber: carrier.apiCredentials.accountNumber || '',
-                hostURL: carrier.apiCredentials.hostURL || '',
-                endpoints: {
-                    rate: carrier.apiCredentials.endpoints?.rate || '',
-                    booking: carrier.apiCredentials.endpoints?.booking || '',
-                    tracking: carrier.apiCredentials.endpoints?.tracking || '',
-                    cancel: carrier.apiCredentials.endpoints?.cancel || '',
-                    labels: carrier.apiCredentials.endpoints?.labels || '',
-                    status: carrier.apiCredentials.endpoints?.status || ''
-                }
-            });
-        } else {
-            // Reset to default for new configuration
-            setCredentials({
-                type: 'soluship',
-                username: '',
-                password: '',
-                accountNumber: '',
-                hostURL: '',
-                endpoints: {
-                    rate: '',
-                    booking: '',
-                    tracking: '',
-                    cancel: '',
-                    labels: '',
-                    status: ''
-                }
-            });
-        }
+        // Always default to Soluship Connect for security
+        // Never expose existing Soluship credentials
+        setCredentials({
+            type: 'soluship',
+            username: '',
+            password: '',
+            accountNumber: '',
+            hostURL: '',
+            endpoints: {
+                rate: '',
+                booking: '',
+                tracking: '',
+                cancel: '',
+                labels: '',
+                status: ''
+            }
+        });
 
         setConfigDialogOpen(true);
     };
@@ -227,61 +210,17 @@ const Carriers = () => {
             setSaving(true);
             setError(null);
 
-            if (!selectedCarrier) {
-                throw new Error('No carrier selected');
-            }
-
-            let apiCredentials;
-
-            if (credentials.type === 'soluship') {
-                // Use Soluship Connect (default credentials)
-                apiCredentials = {
-                    type: 'soluship',
-                    provider: 'SolushipX',
-                    note: 'Using SolushipX default credentials'
-                };
-            } else {
-                // Use custom credentials
-                apiCredentials = {
-                    type: 'custom',
-                    username: credentials.username,
-                    password: credentials.password,
-                    accountNumber: credentials.accountNumber,
-                    hostURL: credentials.hostURL,
-                    endpoints: credentials.endpoints
-                };
-            }
-
-            // Update carrier in Firestore
-            const carrierRef = doc(db, 'carriers', selectedCarrier.firestoreId);
-            await updateDoc(carrierRef, {
-                apiCredentials,
-                connected: true,
-                enabled: true,
-                updatedAt: serverTimestamp()
-            });
-
-            // Update local state
-            setCarrierList(prevList =>
-                prevList.map(c =>
-                    c.id === selectedCarrier.id
-                        ? {
-                            ...c,
-                            apiCredentials,
-                            connected: true,
-                            enabled: true,
-                            credentialType: credentials.type
-                        }
-                        : c
-                )
-            );
-
-            setSuccessMessage(`${selectedCarrier.name} configured successfully with ${credentials.type === 'soluship' ? 'Soluship Connect' : 'custom credentials'}`);
+            // Temporarily disable saving to database for security
+            // This functionality will be implemented later
+            setSuccessMessage('Configuration saved locally. Database updates are temporarily disabled for security.');
             setConfigDialogOpen(false);
 
+            // TODO: Implement proper credential saving logic later
+            // Do not save anything to database at this time
+
         } catch (error) {
-            console.error('Error saving credentials:', error);
-            setError('Failed to save credentials. Please try again.');
+            console.error('Error in save credentials (disabled):', error);
+            setError('Configuration is temporarily disabled.');
         } finally {
             setSaving(false);
         }
@@ -306,21 +245,59 @@ const Carriers = () => {
     }
 
     return (
-        <div className="carriers-container">
-            <div className="breadcrumb-container">
-                <Link to="/" className="breadcrumb-link">
-                    <HomeIcon />
-                    <Typography variant="body2">Home</Typography>
-                </Link>
-                <NavigateNextIcon />
-                <Typography variant="body2">Carriers</Typography>
-            </div>
+        <Box sx={{ p: 3 }}>
+            {/* Modal Header with Back Arrow */}
+            {isModal && onClose && (
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    mb: 3
+                }}>
+                    <Button
+                        onClick={onClose}
+                        sx={{
+                            minWidth: 0,
+                            p: 0.5,
+                            mr: 1,
+                            color: '#6e6e73',
+                            background: 'none',
+                            borderRadius: '50%',
+                            '&:hover': {
+                                background: '#f2f2f7',
+                                color: '#111',
+                            },
+                            boxShadow: 'none',
+                        }}
+                        aria-label="Close Carriers"
+                    >
+                        <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
+                    </Button>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                        Connected Carriers
+                    </Typography>
+                </Box>
+            )}
 
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h5" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
-                    Connected Carriers
-                </Typography>
-            </Box>
+            {/* Breadcrumb - only show when not in modal */}
+            {!isModal && (
+                <div className="breadcrumb-container">
+                    <Link to="/" className="breadcrumb-link">
+                        <HomeIcon />
+                        <Typography variant="body2">Home</Typography>
+                    </Link>
+                    <NavigateNextIcon />
+                    <Typography variant="body2">Carriers</Typography>
+                </div>
+            )}
+
+            {!isModal && (
+                <Box sx={{ mb: 4 }}>
+                    <Typography variant="h5" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
+                        Connected Carriers
+                    </Typography>
+                </Box>
+            )}
 
             {error && (
                 <Alert severity="error" sx={{ mb: 2 }}>
@@ -471,13 +448,14 @@ const Carriers = () => {
                             <FormControlLabel
                                 value="custom"
                                 control={<Radio />}
+                                disabled={true}
                                 label={
                                     <Box>
-                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                            My Own Credentials
+                                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.disabled' }}>
+                                            My Own Credentials (Coming Soon)
                                         </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Use your own carrier account credentials for direct billing.
+                                        <Typography variant="caption" color="text.disabled">
+                                            Custom credential configuration will be available in a future update.
                                         </Typography>
                                     </Box>
                                 }
@@ -488,121 +466,20 @@ const Carriers = () => {
                     {credentials.type === 'soluship' && (
                         <Alert severity="info" sx={{ mb: 2 }}>
                             <Typography variant="body2">
-                                <strong>Soluship Connect</strong> uses SolushipX default credentials.
-                                Shipments will be billed through your SolushipX account with competitive rates.
+                                <strong>Soluship Connect</strong> uses SolushipX managed credentials.
+                                Shipments will be processed through your SolushipX account with competitive rates.
+                                No additional configuration required.
                             </Typography>
                         </Alert>
                     )}
 
                     {credentials.type === 'custom' && (
-                        <>
-                            <Alert severity="warning" sx={{ mb: 2 }}>
-                                <Typography variant="body2">
-                                    Using your own credentials requires a direct account with {selectedCarrier?.name}.
-                                    Shipments will be billed directly to your carrier account.
-                                </Typography>
-                            </Alert>
-
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Username"
-                                        value={credentials.username}
-                                        onChange={(e) => setCredentials(prev => ({ ...prev, username: e.target.value }))}
-                                        helperText="Your carrier account username"
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Password"
-                                        type="password"
-                                        value={credentials.password}
-                                        onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
-                                        helperText="Your carrier account password"
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Account Number"
-                                        value={credentials.accountNumber}
-                                        onChange={(e) => setCredentials(prev => ({ ...prev, accountNumber: e.target.value }))}
-                                        helperText="Your carrier account number"
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Host URL"
-                                        value={credentials.hostURL}
-                                        onChange={(e) => setCredentials(prev => ({ ...prev, hostURL: e.target.value }))}
-                                        helperText="API base URL (if different from default)"
-                                    />
-                                </Grid>
-                            </Grid>
-
-                            <Divider sx={{ my: 3 }} />
-
-                            <Typography variant="h6" gutterBottom>
-                                API Endpoints (Optional)
+                        <Alert severity="warning" sx={{ mb: 2 }}>
+                            <Typography variant="body2">
+                                Custom credential configuration is temporarily unavailable.
+                                Please use Soluship Connect for now.
                             </Typography>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                                Leave blank to use default endpoints for {selectedCarrier?.name}
-                            </Typography>
-
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Rate Endpoint"
-                                        value={credentials.endpoints.rate}
-                                        onChange={(e) => setCredentials(prev => ({
-                                            ...prev,
-                                            endpoints: { ...prev.endpoints, rate: e.target.value }
-                                        }))}
-                                        size="small"
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Booking Endpoint"
-                                        value={credentials.endpoints.booking}
-                                        onChange={(e) => setCredentials(prev => ({
-                                            ...prev,
-                                            endpoints: { ...prev.endpoints, booking: e.target.value }
-                                        }))}
-                                        size="small"
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Tracking Endpoint"
-                                        value={credentials.endpoints.tracking}
-                                        onChange={(e) => setCredentials(prev => ({
-                                            ...prev,
-                                            endpoints: { ...prev.endpoints, tracking: e.target.value }
-                                        }))}
-                                        size="small"
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Cancel Endpoint"
-                                        value={credentials.endpoints.cancel}
-                                        onChange={(e) => setCredentials(prev => ({
-                                            ...prev,
-                                            endpoints: { ...prev.endpoints, cancel: e.target.value }
-                                        }))}
-                                        size="small"
-                                    />
-                                </Grid>
-                            </Grid>
-                        </>
+                        </Alert>
                     )}
                 </DialogContent>
                 <DialogActions>
@@ -612,10 +489,10 @@ const Carriers = () => {
                     <Button
                         variant="contained"
                         onClick={handleSaveCredentials}
-                        disabled={saving}
+                        disabled={saving || credentials.type === 'custom'}
                         startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
                     >
-                        {saving ? 'Saving...' : 'Save Configuration'}
+                        {saving ? 'Processing...' : 'Confirm Soluship Connect'}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -626,7 +503,7 @@ const Carriers = () => {
                 onClose={handleCloseSnackbar}
                 message={successMessage}
             />
-        </div>
+        </Box>
     );
 };
 

@@ -23,6 +23,7 @@ const ShipmentActionMenu = ({
     onDeleteDraft,
     onPrintLabel,
     onPrintBOL,
+    onViewShipmentDetail,
     documentAvailability,
     checkingDocuments
 }) => {
@@ -30,7 +31,13 @@ const ShipmentActionMenu = ({
 
     const handleViewDetails = () => {
         onClose();
-        navigate(`/shipment/${selectedShipment?.shipmentID || selectedShipment?.id}`);
+        if (onViewShipmentDetail) {
+            // Use slide-over functionality if available
+            onViewShipmentDetail(selectedShipment?.id);
+        } else {
+            // Fallback to navigation
+            navigate(`/shipment/${selectedShipment?.shipmentID || selectedShipment?.id}`);
+        }
     };
 
     const handleEditDraft = () => {

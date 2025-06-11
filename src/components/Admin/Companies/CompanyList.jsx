@@ -23,7 +23,6 @@ import {
 import {
     Search as SearchIcon,
     Add as AddIcon,
-    Edit as EditIcon,
     Delete as DeleteIcon,
     Visibility as ViewIcon,
     MoreVert as MoreVertIcon,
@@ -78,13 +77,6 @@ const CompanyList = () => {
     const handleViewCompany = () => {
         if (selectedCompany) {
             navigate(`/admin/companies/${selectedCompany.id}`);
-            handleActionsClose();
-        }
-    };
-
-    const handleEditCompany = () => {
-        if (selectedCompany) {
-            navigate(`/admin/companies/${selectedCompany.id}/edit`);
             handleActionsClose();
         }
     };
@@ -225,12 +217,6 @@ const CompanyList = () => {
                         <ViewIcon fontSize="small" />
                     </ListItemIcon>
                     <ListItemText>View Details</ListItemText>
-                </MenuItem>
-                <MenuItem onClick={handleEditCompany}>
-                    <ListItemIcon>
-                        <EditIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>Edit Company</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={handleDeleteCompany}>
                     <ListItemIcon>

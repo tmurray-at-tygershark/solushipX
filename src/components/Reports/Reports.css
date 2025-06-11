@@ -1,7 +1,7 @@
 /* Reports Component Styles */
 
 /* Breadcrumb styles */
-.breadcrumb-container {
+.reports-container .breadcrumb-container {
     display: flex;
     align-items: center;
     margin-bottom: 24px;
@@ -9,7 +9,7 @@
     font-size: 14px;
 }
 
-.breadcrumb-link {
+.reports-container .breadcrumb-link {
     display: flex;
     align-items: center;
     color: #666;
@@ -17,290 +17,308 @@
     transition: color 0.2s;
 }
 
-.breadcrumb-link:hover {
+.reports-container .breadcrumb-link:hover {
     color: #1976d2;
 }
 
-.breadcrumb-icon {
+.reports-container .breadcrumb-icon {
     font-size: 20px;
     margin-right: 4px;
 }
 
-.breadcrumb-separator {
+.reports-container .breadcrumb-separator {
     font-size: 20px;
     margin: 0 8px;
     color: #999;
 }
 
-.breadcrumb-current {
+.reports-container .breadcrumb-current {
     color: #333;
     font-weight: 500;
 }
 
 /* Paper Components */
-.MuiPaper-root {
+.reports-container .MuiPaper-root {
     border: 1px solid #e2e8f0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     transition: all 0.2s ease-in-out;
 }
 
-.MuiPaper-root:hover {
+.reports-container .MuiPaper-root:hover {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 /* Tabs */
-.MuiTabs-root {
+.reports-container .MuiTabs-root {
     border-bottom: 1px solid #e2e8f0;
 }
 
-.MuiTab-root {
+.reports-container .MuiTab-root {
     text-transform: none;
     font-weight: 500;
     color: #64748b;
     min-width: 120px;
 }
 
-.MuiTab-root.Mui-selected {
+.reports-container .MuiTab-root.Mui-selected {
     color: #3b82f6;
     font-weight: 600;
 }
 
-.MuiTabs-indicator {
+.reports-container .MuiTabs-indicator {
     background-color: #3b82f6;
     height: 3px;
 }
 
 /* Buttons */
-.MuiButton-root {
+.reports-container .MuiButton-root {
     text-transform: none;
     font-weight: 500;
     border-radius: 8px;
     padding: 8px 16px;
 }
 
-.MuiButton-contained {
+.reports-container .MuiButton-contained {
     background-color: #0f172a;
     color: white;
 }
 
-.MuiButton-contained:hover {
+.reports-container .MuiButton-contained:hover {
     background-color: #1e293b;
 }
 
-.MuiButton-outlined {
+.reports-container .MuiButton-outlined {
     border-color: #e2e8f0;
     color: #64748b;
 }
 
-.MuiButton-outlined:hover {
+.reports-container .MuiButton-outlined:hover {
     border-color: #cbd5e1;
     background-color: #f8fafc;
 }
 
 /* Form Controls */
-.MuiTextField-root,
-.MuiFormControl-root {
+.reports-container .MuiTextField-root,
+.reports-container .MuiFormControl-root {
     margin-bottom: 16px;
 }
 
-.MuiInputLabel-root {
+.reports-container .MuiInputLabel-root {
     color: #64748b;
 }
 
-.MuiOutlinedInput-root {
+.reports-container .MuiOutlinedInput-root {
     border-radius: 8px;
 }
 
-.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+.reports-container .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
     border-color: #cbd5e1;
 }
 
-.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+.reports-container .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
     border-color: #3b82f6;
 }
 
 /* Select */
-.MuiSelect-select {
+.reports-container .MuiSelect-select {
     padding: 12px;
 }
 
 /* Checkbox */
-.MuiCheckbox-root {
+.reports-container .MuiCheckbox-root {
     color: #64748b;
 }
 
-.MuiCheckbox-root.Mui-checked {
+.reports-container .MuiCheckbox-root.Mui-checked {
     color: #3b82f6;
 }
 
 /* Table */
-.MuiTableContainer-root {
+.reports-container .MuiTableContainer-root {
     border-radius: 8px;
     overflow: hidden;
 }
 
-.MuiTable-root {
+.reports-container .MuiTable-root {
     border-collapse: separate;
     border-spacing: 0;
 }
 
-.MuiTableHead-root .MuiTableCell-root {
+.reports-container .MuiTableHead-root .MuiTableCell-root {
     background-color: #f8fafc;
     color: #64748b;
     font-weight: 600;
     padding: 16px;
 }
 
-.MuiTableBody-root .MuiTableCell-root {
+.reports-container .MuiTableBody-root .MuiTableCell-root {
     color: #1e293b;
     padding: 16px;
     border-bottom: 1px solid #e2e8f0;
 }
 
-.MuiTableRow-root:hover {
+.reports-container .MuiTableRow-root:hover {
     background-color: #f8fafc;
 }
 
 /* Chips */
-.MuiChip-root {
+.reports-container .MuiChip-root {
     border-radius: 6px;
     font-weight: 500;
     height: 24px;
 }
 
 /* Charts */
-.MuiChartsAxis-line {
+.reports-container .MuiChartsAxis-line {
     stroke: #e2e8f0;
 }
 
-.MuiChartsAxis-tick {
+.reports-container .MuiChartsAxis-tick {
     stroke: #e2e8f0;
 }
 
-.MuiChartsAxis-label {
+.reports-container .MuiChartsAxis-label {
     fill: #64748b;
 }
 
 /* Dialog */
-.MuiDialog-paper {
+.reports-container .MuiDialog-paper {
     border-radius: 12px;
     padding: 24px;
 }
 
-.MuiDialogTitle-root {
+.reports-container .MuiDialogTitle-root {
     color: #1e293b;
     font-weight: 600;
     padding: 0;
     margin-bottom: 24px;
 }
 
-.MuiDialogContent-root {
+.reports-container .MuiDialogContent-root {
     padding: 0;
 }
 
-.MuiDialogActions-root {
+.reports-container .MuiDialogActions-root {
     padding: 24px 0 0 0;
+    gap: 12px;
+}
+
+/* Alert */
+.reports-container .MuiAlert-root {
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+/* Progress */
+.reports-container .MuiLinearProgress-root {
+    border-radius: 4px;
+    height: 6px;
 }
 
 /* Typography */
-.MuiTypography-h5 {
+.reports-container .MuiTypography-h4 {
     color: #1e293b;
     font-weight: 600;
 }
 
-.MuiTypography-h6 {
+.reports-container .MuiTypography-h5 {
     color: #1e293b;
     font-weight: 600;
 }
 
-.MuiTypography-subtitle2 {
-    color: #64748b;
-}
-
-.MuiTypography-body1 {
+.reports-container .MuiTypography-h6 {
     color: #1e293b;
+    font-weight: 600;
 }
 
-.MuiTypography-body2 {
+.reports-container .MuiTypography-subtitle2 {
     color: #64748b;
 }
 
-/* Grid */
-.MuiGrid-container {
-    margin-top: 0;
+.reports-container .MuiTypography-body1 {
+    color: #475569;
 }
 
-/* Stack */
-.MuiStack-root {
+.reports-container .MuiTypography-body2 {
+    color: #64748b;
+}
+
+/* Layout */
+.reports-container .MuiGrid-container {
+    margin: 0;
+}
+
+.reports-container .MuiStack-root {
     gap: 16px;
 }
 
 /* Avatar */
-.MuiAvatar-root {
+.reports-container .MuiAvatar-root {
     background-color: #3b82f6;
-    width: 40px;
-    height: 40px;
+    color: white;
+    font-weight: 600;
 }
 
 /* List */
-.MuiList-root {
+.reports-container .MuiList-root {
     padding: 0;
 }
 
-.MuiListItem-root {
+.reports-container .MuiListItem-root {
     padding: 12px 0;
 }
 
-.MuiListItemText-primary {
+.reports-container .MuiListItemText-primary {
     color: #1e293b;
     font-weight: 500;
 }
 
-.MuiListItemText-secondary {
+.reports-container .MuiListItemText-secondary {
     color: #64748b;
 }
 
 /* Divider */
-.MuiDivider-root {
+.reports-container .MuiDivider-root {
     border-color: #e2e8f0;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+/* Scrollbar */
+.reports-container ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
 }
 
-::-webkit-scrollbar-track {
+.reports-container ::-webkit-scrollbar-track {
     background: #f1f5f9;
-    border-radius: 4px;
+    border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb {
+.reports-container ::-webkit-scrollbar-thumb {
     background: #cbd5e1;
-    border-radius: 4px;
+    border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+.reports-container ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
 }
 
-/* Responsive Adjustments */
+/* Responsive */
 @media (max-width: 768px) {
-    .MuiGrid-container {
-        margin-top: 16px;
+    .reports-container .MuiGrid-container {
+        margin: 0;
     }
-
-    .MuiPaper-root {
-        margin-bottom: 16px;
+    
+    .reports-container .MuiPaper-root {
+        margin: 0 -16px;
     }
-
-    .MuiTableContainer-root {
-        overflow-x: auto;
+    
+    .reports-container .MuiTableContainer-root {
+        margin: 0 -16px;
+        border-radius: 0;
     }
 }
 
-/* Animation */
+/* Animations */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -312,6 +330,6 @@
     }
 }
 
-.MuiPaper-root {
+.reports-container .MuiPaper-root {
     animation: fadeIn 0.3s ease-out;
 } 

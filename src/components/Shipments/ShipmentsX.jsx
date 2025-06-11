@@ -252,30 +252,34 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
             if (documents.labels && documents.labels.length > 0) {
                 hasLabels = true;
             } else {
-                // Check in other documents for potential labels
-                const allDocs = Object.values(documents).flat();
-                const potentialLabels = allDocs.filter(doc => {
+                // Check in other documents for potential labels (excluding BOL array)
+                const nonBolDocs = Object.entries(documents)
+                    .filter(([key]) => key !== 'bol') // Explicitly exclude BOL array
+                    .map(([, docs]) => docs)
+                    .flat();
+
+                const potentialLabels = nonBolDocs.filter(doc => {
                     const filename = (doc.filename || '').toLowerCase();
                     const documentType = (doc.documentType || '').toLowerCase();
                     const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
 
-                    // Exclude any BOL documents
+                    // Exclude any BOL documents more strictly
                     if (filename.includes('bol') ||
                         filename.includes('billoflading') ||
                         filename.includes('bill-of-lading') ||
+                        filename.includes('bill_of_lading') ||
                         documentType.includes('bol') ||
                         isGeneratedBOL) {
                         return false;
                     }
 
+                    // More specific label detection
                     return filename.includes('label') ||
-                        filename.includes('shipping') ||
-                        filename.includes('ship') ||
-                        filename.includes('print') ||
                         filename.includes('prolabel') ||
                         filename.includes('pro-label') ||
-                        documentType.includes('label') ||
-                        documentType.includes('shipping');
+                        filename.includes('shipping_label') ||
+                        filename.includes('shippinglabel') ||
+                        documentType.includes('label');
                 });
                 hasLabels = potentialLabels.length > 0;
             }
@@ -977,6 +981,7 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                 open={Boolean(actionMenuAnchorEl)}
                 onClose={handleActionMenuClose}
                 selectedShipment={selectedShipment}
+                onViewShipmentDetail={handleViewShipmentDetail}
                 onPrintLabel={async (shipment) => {
                     try {
                         // Get document availability using the same logic as the menu
@@ -1006,30 +1011,34 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                         if (documents.labels && documents.labels.length > 0) {
                             labelUrl = documents.labels[0].downloadUrl;
                         } else {
-                            // Check in other documents for potential labels
-                            const allDocs = Object.values(documents).flat();
-                            const potentialLabel = allDocs.find(doc => {
+                            // Check in other documents for potential labels (excluding BOL array)
+                            const nonBolDocs = Object.entries(documents)
+                                .filter(([key]) => key !== 'bol') // Explicitly exclude BOL array
+                                .map(([, docs]) => docs)
+                                .flat();
+
+                            const potentialLabel = nonBolDocs.find(doc => {
                                 const filename = (doc.filename || '').toLowerCase();
                                 const documentType = (doc.documentType || '').toLowerCase();
                                 const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
 
-                                // Exclude any BOL documents
+                                // Exclude any BOL documents more strictly
                                 if (filename.includes('bol') ||
                                     filename.includes('billoflading') ||
                                     filename.includes('bill-of-lading') ||
+                                    filename.includes('bill_of_lading') ||
                                     documentType.includes('bol') ||
                                     isGeneratedBOL) {
                                     return false;
                                 }
 
+                                // More specific label detection
                                 return filename.includes('label') ||
-                                    filename.includes('shipping') ||
-                                    filename.includes('ship') ||
-                                    filename.includes('print') ||
                                     filename.includes('prolabel') ||
                                     filename.includes('pro-label') ||
-                                    documentType.includes('label') ||
-                                    documentType.includes('shipping');
+                                    filename.includes('shipping_label') ||
+                                    filename.includes('shippinglabel') ||
+                                    documentType.includes('label');
                             });
 
                             if (potentialLabel) {
