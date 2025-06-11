@@ -44,6 +44,7 @@ import SnackbarNotification from './components/SnackbarNotification';
 import { useShipmentData } from './hooks/useShipmentData';
 import { useShipmentActions } from './hooks/useShipmentActions';
 import { useDocuments } from './hooks/useDocuments';
+import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate';
 
 // Utils
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -70,6 +71,19 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         documentsError,
         fetchShipmentDocuments
     } = useDocuments(shipment?.id, shipment?.status);
+
+    // Smart status update hook for auto-checking and manual refresh
+    const {
+        loading: smartUpdateLoading,
+        error: smartUpdateError,
+        updateResult,
+        performSmartUpdate,
+        forceRefresh: forceSmartRefresh,
+        getUpdateStatusMessage,
+        clearUpdateState,
+        hasUpdates,
+        wasSkipped
+    } = useSmartStatusUpdate(shipment?.id, shipment);
 
     // Enhanced PDF viewer function - identical to working ShipmentDetail
     const viewPdfInModal = async (documentId, filename, title, actionType = 'printLabel', directUrl = null) => {
@@ -120,7 +134,12 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         handleCancelShipment,
         showSnackbar,
         setSnackbar
-    } = useShipmentActions(shipment, carrierData, shipmentDocuments, viewPdfInModal);
+    } = useShipmentActions(shipment, carrierData, shipmentDocuments, viewPdfInModal, {
+        smartUpdateLoading,
+        forceSmartRefresh,
+        clearUpdateState,
+        refreshShipment
+    });
 
     // UI State
     const [expandedSections, setExpandedSections] = useState({
@@ -632,7 +651,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                         carrierData={carrierData}
                         mergedEvents={mergedEvents}
                         actionStates={actionStates}
-                        smartUpdateLoading={false}
+                        smartUpdateLoading={smartUpdateLoading}
                         onRefreshStatus={handleRefreshStatus}
                         onShowSnackbar={showSnackbar}
                     />
@@ -708,7 +727,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
             <PrintLabelDialog
                 open={printLabelModalOpen}
                 onClose={() => setPrintLabelModalOpen(false)}
-                onPrint={handlePrintLabel}
+                onPrint={(config) => handlePrintLabel(config.quantity, config.labelType)}
                 labelConfig={labelConfig}
                 setLabelConfig={setLabelConfig}
                 shipment={shipment}

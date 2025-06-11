@@ -19,6 +19,7 @@ import {
     Typography,
     LinearProgress,
     Fade,
+    Button,
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -35,6 +36,7 @@ import {
     Fullscreen as FullscreenIcon,
     Close as CloseIcon,
     QrCode2 as BarcodeIcon,
+    Add as AddIcon,
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
@@ -50,6 +52,12 @@ const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
 
 // Lazy load the Shipments component for the modal
 const ShipmentsComponent = lazy(() => import('../Shipments/ShipmentsX'));
+
+// Lazy load the CreateShipment component for the modal
+const CreateShipmentComponent = lazy(() => import('../CreateShipment'));
+
+// Import ShipmentAgent for the main dashboard overlay
+const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
 
 // Transition for the modal
 const Transition = forwardRef(function Transition(props, ref) {
@@ -261,7 +269,7 @@ const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
-    const { companyIdForAddress, loading: companyLoading } = useCompany();
+    const { companyIdForAddress, companyData, loading: companyLoading } = useCompany();
     const navigate = useNavigate();
     const { logout } = useAuth();
 
@@ -270,6 +278,8 @@ const Dashboard = () => {
     const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
     const [trackingNumber, setTrackingNumber] = useState('');
     const [isShipmentsModalOpen, setIsShipmentsModalOpen] = useState(false);
+    const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
 
     const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
 
@@ -439,8 +449,48 @@ const Dashboard = () => {
         }
     };
 
+    const handleOpenCreateShipmentModal = () => {
+        // Close other modals first if open
+        if (isShipmentsModalOpen) {
+            setIsShipmentsModalOpen(false);
+            // Add a small delay to allow the first modal to close before opening the new one
+            setTimeout(() => {
+                setIsCreateShipmentModalOpen(true);
+            }, 300);
+        } else {
+            setIsCreateShipmentModalOpen(true);
+        }
+    };
+
+    // Handler for opening tracking drawer from Globe
+    const handleOpenTrackingDrawerFromGlobe = (trackingId) => {
+        setTrackingNumber(trackingId);
+        setIsTrackingDrawerOpen(true);
+    };
+
+    // Handler for intelligent return to shipments from CreateShipment modal
+    const handleReturnToShipmentsFromCreateShipment = () => {
+        console.log('handleReturnToShipmentsFromCreateShipment called');
+        console.log('Current modal states:', { isShipmentsModalOpen, isCreateShipmentModalOpen });
+
+        if (isShipmentsModalOpen) {
+            // Case 1: Shipments modal is already open, just close CreateShipment modal
+            console.log('Shipments modal is open, closing CreateShipment modal');
+            setIsCreateShipmentModalOpen(false);
+        } else {
+            // Case 2: Shipments modal is not open, close CreateShipment and open Shipments
+            console.log('Shipments modal is not open, closing CreateShipment and opening Shipments');
+            setIsCreateShipmentModalOpen(false);
+            // Small delay to allow CreateShipment modal to close before opening Shipments
+            setTimeout(() => {
+                setIsShipmentsModalOpen(true);
+            }, 300);
+        }
+    };
+
     const menuItems = [
         { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', action: () => navigate('/dashboard') },
+        { text: 'Create Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
         { text: 'Customers', icon: <PeopleIcon />, path: '/customers', action: () => navigate('/customers') },
         { text: 'Carriers', icon: <BusinessIcon />, path: '/carriers', action: () => navigate('/carriers') },
@@ -480,7 +530,7 @@ const Dashboard = () => {
                         value={trackingNumber}
                         onChange={(e) => setTrackingNumber(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
-                        placeholder="Enter tracking number"
+                        placeholder="Shipment/Tracking Number"
                         InputProps={{
                             startAdornment: (
                                 <InputAdornment position="start">
@@ -716,7 +766,61 @@ const Dashboard = () => {
                 </Box>
             </Dialog>
 
+            {/* Create Shipment Fullscreen Modal */}
+            <Dialog
+                open={isCreateShipmentModalOpen}
+                onClose={() => setIsCreateShipmentModalOpen(false)}
+                TransitionComponent={Transition}
+                fullWidth
+                maxWidth="xl"
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: { xs: '100%', md: '95vh' },
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
+                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CreateShipmentComponent
+                            isModal={true}
+                            onClose={() => setIsCreateShipmentModalOpen(false)}
+                            onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                        />
+                    </Suspense>
+                </Box>
+            </Dialog>
 
+            {/* AI Shipping Agent Overlay */}
+            {companyData?.id && (
+                <Suspense fallback={null}>
+                    <ShipmentAgent
+                        companyId={companyData.id}
+                        inModal={false}
+                        isPanelOpen={isChatOpen}
+                        setIsPanelOpen={setIsChatOpen}
+                        currentShipmentId={null}
+                    />
+                </Suspense>
+            )}
 
             {/* Globe - always rendered but opacity is controlled */}
             <Box sx={{
@@ -736,6 +840,7 @@ const Dashboard = () => {
                         width="100%"
                         showOverlays={true}
                         statusCounts={statusCounts}
+                        onOpenTrackingDrawer={handleOpenTrackingDrawerFromGlobe}
                     />
                 </Suspense>
             </Box>

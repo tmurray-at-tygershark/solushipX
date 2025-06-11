@@ -4,7 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import html2pdf from 'html2pdf.js';
 import { PDFDocument } from 'pdf-lib';
 
-export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { labels: [], bol: [], other: [] }, viewPdfInModal) => {
+export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { labels: [], bol: [], other: [] }, viewPdfInModal, statusUpdateFunctions = {}) => {
     // Enhanced state for action buttons with individual loading states
     const [actionStates, setActionStates] = useState({
         printLabel: { loading: false, error: null },
@@ -296,8 +296,66 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
     }, [shipment?.shipmentID, shipment?.id, setActionLoading, showSnackbar]);
 
     const handleRefreshStatus = useCallback(async () => {
-        showSnackbar('Refresh status functionality coming soon', 'info');
-    }, [showSnackbar]);
+        const { forceSmartRefresh, clearUpdateState, refreshShipment } = statusUpdateFunctions;
+        
+        if (!forceSmartRefresh) {
+            showSnackbar('Status refresh functionality not available', 'warning');
+            return;
+        }
+
+        try {
+            setActionLoading('refreshStatus', true);
+            clearUpdateState?.();
+            showSnackbar('Checking shipment status...', 'info');
+
+            const result = await forceSmartRefresh();
+
+            if (result && result.success) {
+                if (result.statusChanged) {
+                    showSnackbar(
+                        `Status updated: ${result.previousStatus} → ${result.newStatus}`,
+                        'success'
+                    );
+
+                    // Refresh the shipment data to get updated information
+                    refreshShipment?.();
+
+                    // If tracking updates were also received, mention them
+                    if (result.trackingUpdatesCount > 0) {
+                        setTimeout(() => {
+                            showSnackbar(
+                                `${result.trackingUpdatesCount} new tracking events added to history`,
+                                'info'
+                            );
+                        }, 2000);
+                    }
+                } else if (result.skipped) {
+                    showSnackbar(result.reason || 'Status check skipped', 'info');
+                } else if (result.updated) {
+                    if (result.trackingUpdatesCount > 0) {
+                        showSnackbar(
+                            `Status confirmed. ${result.trackingUpdatesCount} new tracking events added.`,
+                            'success'
+                        );
+                    } else {
+                        showSnackbar('Status confirmed - no new updates', 'success');
+                    }
+                    
+                    // Refresh the shipment data even if status didn't change
+                    refreshShipment?.();
+                }
+            } else {
+                const errorMessage = result?.error || 'Failed to refresh status';
+                showSnackbar(`Failed to check status: ${errorMessage}`, 'error');
+            }
+
+        } catch (error) {
+            console.error('Error in smart status refresh:', error);
+            showSnackbar('Failed to refresh status. Please try again.', 'error');
+        } finally {
+            setActionLoading('refreshStatus', false);
+        }
+    }, [statusUpdateFunctions, setActionLoading, showSnackbar]);
 
     const handleCancelShipment = useCallback(async () => {
         showSnackbar('Cancel shipment functionality coming soon', 'info');

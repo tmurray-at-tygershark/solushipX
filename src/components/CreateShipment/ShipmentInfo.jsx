@@ -334,12 +334,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
 
     return (
         <div className="form-section">
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h5" component="h3" className="form-section-title">
-                    Shipment Info
-                </Typography>
-            </Box>
-
             <form className="form">
                 {/* Warning when no carriers are available */}
                 {noCarriersEnabled && (
@@ -485,17 +479,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                     </Grid>
 
                     {/* Pickup Time Windows */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                            Pickup Time Window
-                            <Tooltip title="Specify the time window when the carrier can pick up the shipment">
-                                <IconButton size="small">
-                                    <InfoIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        </Typography>
-                    </Grid>
-
                     <Grid item xs={12} sm={6}>
                         <TextField
                             fullWidth
@@ -528,17 +511,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                     </Grid>
 
                     {/* Delivery Time Windows */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                            Delivery Time Window
-                            <Tooltip title="Specify the preferred delivery time window">
-                                <IconButton size="small">
-                                    <InfoIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        </Typography>
-                    </Grid>
-
                     <Grid item xs={12} sm={6}>
                         <TextField
                             fullWidth

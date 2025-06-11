@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, forwardRef } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -15,9 +15,47 @@ import Packages from './Packages';
 import Rates from './Rates';
 import Review from './Review';
 import './CreateShipment.css';
-import { Paper, Box, Typography, Button, CircularProgress } from '@mui/material';
-import ShipmentAgent from '../ShipmentAgent/ShipmentAgent';
-import { CheckCircle, Error } from '@mui/icons-material';
+import {
+    Paper,
+    Box,
+    Typography,
+    Button,
+    CircularProgress,
+    Drawer,
+    List,
+    ListItem,
+    ListItemButton,
+    ListItemIcon,
+    ListItemText,
+    IconButton,
+    TextField,
+    InputAdornment,
+    Dialog,
+    Slide,
+    AppBar,
+    Toolbar,
+    LinearProgress,
+    Fade,
+} from '@mui/material';
+import {
+    Menu as MenuIcon,
+    Search as SearchIcon,
+    Dashboard as DashboardIcon,
+    Assessment as AssessmentIcon,
+    People as PeopleIcon,
+    LocalShipping as LocalShippingIcon,
+    Settings as SettingsIcon,
+    Notifications as NotificationsIcon,
+    AccountCircle as AccountCircleIcon,
+    Business as BusinessIcon,
+    Logout as LogoutIcon,
+    Fullscreen as FullscreenIcon,
+    Close as CloseIcon,
+    QrCode2 as BarcodeIcon,
+    CheckCircle,
+    Error,
+    ArrowBackIosNew as ArrowBackIosNewIcon,
+} from '@mui/icons-material';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 
 // API key should be loaded from environment variables with a fallback
@@ -78,18 +116,22 @@ const emptyAddress = () => ({
 });
 
 // Component that uses the context
-const CreateShipmentContent = () => {
-    const { step: urlStep, draftId: urlDraftId } = useParams();
+const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null }) => {
+    const { step: stepSlug, draftId: urlDraftId } = useParams();
     const navigate = useNavigate();
     const { currentUser, loading: authLoading } = useAuth();
     const { companyData, companyIdForAddress, loading: companyLoading, error: companyError } = useCompany();
     const { formData, updateFormSection, setFormData, setDraftShipmentIdentifiers, clearFormData } = useShipmentForm();
 
-    const [currentStep, setCurrentStep] = useState(urlStep ? STEPS[urlStep] || 1 : 1);
+    const [currentStep, setCurrentStep] = useState(() => {
+        if (isModal) {
+            return 1; // Always start at step 1 in modal mode
+        }
+        return stepSlug ? STEPS[stepSlug] || 1 : 1;
+    });
     const [isStepLoading, setIsStepLoading] = useState(false);
     const [isDraftProcessing, setIsDraftProcessing] = useState(true);
     const [error, setError] = useState(null);
-    const [isChatOpen, setIsChatOpen] = useState(false);
     const hasLoggedVersion = useRef(false);
     const isNavigating = useRef(false);
     const [activeDraftId, setActiveDraftId] = useState(null);
@@ -101,7 +143,7 @@ const CreateShipmentContent = () => {
         rates: { complete: false, missing: [] }
     });
 
-    console.log(`CreateShipmentContent RENDER: urlStep: ${urlStep}, urlDraftId: ${urlDraftId}, activeDraftId: ${activeDraftId}, isDraftProcessing: ${isDraftProcessing}, currentStep: ${currentStep}`);
+    console.log(`CreateShipmentContent RENDER: urlStep: ${stepSlug}, urlDraftId: ${urlDraftId}, activeDraftId: ${activeDraftId}, isDraftProcessing: ${isDraftProcessing}, currentStep: ${currentStep}`);
 
     useEffect(() => {
         if (!hasLoggedVersion.current) {
@@ -613,15 +655,20 @@ const CreateShipmentContent = () => {
     }, [formData.shipTo?.customerID, activeDraftId, companyIdForAddress, setDraftShipmentIdentifiers]);
 
     useEffect(() => {
-        const targetStep = urlStep ? STEPS[urlStep] : 1;
-        console.log(`URL Sync/Step Logic: urlStep: ${urlStep}, targetStep: ${targetStep}, currentStep: ${currentStep}, isNavigating: ${isNavigating.current}, activeDraftId: ${activeDraftId}, isDraftProcessing: ${isDraftProcessing}`);
+        // Skip URL sync logic when in modal mode
+        if (isModal) {
+            return;
+        }
+
+        const targetStep = stepSlug ? STEPS[stepSlug] : 1;
+        console.log(`URL Sync/Step Logic: urlStep: ${stepSlug}, targetStep: ${targetStep}, currentStep: ${currentStep}, isNavigating: ${isNavigating.current}, activeDraftId: ${activeDraftId}, isDraftProcessing: ${isDraftProcessing}`);
 
         if (!isNavigating.current && targetStep !== currentStep) {
             console.log(`URL Sync: Setting currentStep from ${currentStep} to ${targetStep}`);
             setCurrentStep(targetStep);
         }
 
-        if (!urlStep && !isDraftProcessing) {
+        if (!stepSlug && !isDraftProcessing) {
             if (activeDraftId) {
                 console.log(`URL Sync: No urlStep, activeDraftId ${activeDraftId} found. Navigating to its shipment-info.`);
                 navigate(`/create-shipment/shipment-info/${activeDraftId}`, { replace: true });
@@ -630,7 +677,7 @@ const CreateShipmentContent = () => {
                 navigate('/create-shipment/shipment-info', { replace: true });
             }
         }
-    }, [urlStep, activeDraftId, isDraftProcessing, currentStep, navigate]);
+    }, [stepSlug, activeDraftId, isDraftProcessing, currentStep, navigate, isModal]);
 
     const handleStepSave = async (sectionKeyForFirestore, dataForSection) => {
         if (!activeDraftId) {
@@ -697,19 +744,28 @@ const CreateShipmentContent = () => {
             const nextStep = currentStep + 1;
             const nextStepSlug = STEP_SLUGS[nextStep];
             console.log(`CreateShipment handleNext: activeDraftId BEFORE navigation: ${activeDraftId}`);
-            const path = activeDraftId ? `/create-shipment/${nextStepSlug}/${activeDraftId}` : `/create-shipment/${nextStepSlug}`;
-            if (!activeDraftId && nextStep > 1) {
-                console.error("CRITICAL: activeDraftId is null before navigating past step 1. This should not happen.");
-                setError("Session error, please try creating a new shipment.");
-                return;
-            }
-            console.log(`CreateShipment: Navigating to next step. Current step: ${currentStep}, Next slug: ${nextStepSlug}, Path: ${path}`);
 
-            isNavigating.current = true;
-            navigate(path, { replace: true });
-            setCurrentStep(nextStep);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => { isNavigating.current = false; }, 50);
+            if (isModal) {
+                // In modal mode, just change the step without navigation
+                console.log(`CreateShipment: Modal mode - changing step from ${currentStep} to ${nextStep}`);
+                setCurrentStep(nextStep);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                // Normal navigation mode
+                const path = activeDraftId ? `/create-shipment/${nextStepSlug}/${activeDraftId}` : `/create-shipment/${nextStepSlug}`;
+                if (!activeDraftId && nextStep > 1) {
+                    console.error("CRITICAL: activeDraftId is null before navigating past step 1. This should not happen.");
+                    setError("Session error, please try creating a new shipment.");
+                    return;
+                }
+                console.log(`CreateShipment: Navigating to next step. Current step: ${currentStep}, Next slug: ${nextStepSlug}, Path: ${path}`);
+
+                isNavigating.current = true;
+                navigate(path, { replace: true });
+                setCurrentStep(nextStep);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setTimeout(() => { isNavigating.current = false; }, 50);
+            }
         }
     };
 
@@ -718,14 +774,23 @@ const CreateShipmentContent = () => {
             const prevStep = currentStep - 1;
             const prevStepSlug = STEP_SLUGS[prevStep];
             console.log(`CreateShipment handlePrevious: activeDraftId BEFORE navigation: ${activeDraftId}`);
-            const path = activeDraftId ? `/create-shipment/${prevStepSlug}/${activeDraftId}` : `/create-shipment/${prevStepSlug}`;
-            console.log(`CreateShipment: Navigating to previous step. Current step: ${currentStep}, Prev slug: ${prevStepSlug}, Path: ${path}`);
 
-            isNavigating.current = true;
-            navigate(path, { replace: true });
-            setCurrentStep(prevStep);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => { isNavigating.current = false; }, 50);
+            if (isModal) {
+                // In modal mode, just change the step without navigation
+                console.log(`CreateShipment: Modal mode - changing step from ${currentStep} to ${prevStep}`);
+                setCurrentStep(prevStep);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                // Normal navigation mode
+                const path = activeDraftId ? `/create-shipment/${prevStepSlug}/${activeDraftId}` : `/create-shipment/${prevStepSlug}`;
+                console.log(`CreateShipment: Navigating to previous step. Current step: ${currentStep}, Prev slug: ${prevStepSlug}, Path: ${path}`);
+
+                isNavigating.current = true;
+                navigate(path, { replace: true });
+                setCurrentStep(prevStep);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setTimeout(() => { isNavigating.current = false; }, 50);
+            }
         }
     };
 
@@ -758,7 +823,14 @@ const CreateShipmentContent = () => {
                         // Don't fail the entire process for event recording errors
                     }
 
-                    navigate('/shipments');
+                    if (isModal && onClose) {
+                        // In modal mode, close the modal instead of navigating
+                        console.log('CreateShipment: Modal mode - closing modal after shipment creation');
+                        onClose();
+                    } else {
+                        // Normal mode - navigate to shipments page
+                        navigate('/shipments');
+                    }
                     clearFormData();
                 })
                 .catch(err => {
@@ -873,7 +945,7 @@ const CreateShipmentContent = () => {
             case 3: return <ShipTo key={`ship-to-${activeDraftId || 'new'}`} {...stepProps} />;
             case 4: return <Packages key={`packages-${activeDraftId || 'new'}`} {...stepProps} />;
             case 5: return <Rates key={`rates-${activeDraftId || 'new'}`} {...stepProps} formData={formData} />;
-            case 6: return <Review key={`review-${activeDraftId || 'new'}`} {...stepProps} onSubmit={handleSubmit} />;
+            case 6: return <Review key={`review-${activeDraftId || 'new'}`} {...stepProps} onSubmit={handleSubmit} onReturnToShipments={onReturnToShipments} />;
             default: return <Typography>Unknown step.</Typography>;
         }
     };
@@ -990,17 +1062,53 @@ const CreateShipmentContent = () => {
 
     return (
         <div className="container-fluid" style={{ position: 'relative' }}>
+            {/* Modal Header with Back Arrow */}
+            {isModal && onClose && (
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    mb: 3,
+                    pt: 2
+                }}>
+                    <Button
+                        onClick={onClose}
+                        sx={{
+                            minWidth: 0,
+                            p: 0.5,
+                            mr: 1,
+                            color: '#6e6e73',
+                            background: 'none',
+                            borderRadius: '50%',
+                            '&:hover': {
+                                background: '#f2f2f7',
+                                color: '#111',
+                            },
+                            boxShadow: 'none',
+                        }}
+                        aria-label="Close Create Shipment"
+                    >
+                        <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
+                    </Button>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                        Create New Shipment
+                    </Typography>
+                </Box>
+            )}
+
             <div className="row">
                 <div className="col-12">
                     <div className="container">
-                        <div className="section-header">
-                            <h2>Create New Shipment</h2>
-                            {companyData && (
-                                <p className="text-muted">
-                                    Creating shipment for {companyData.name || companyData.companyName || 'Your Company'}
-                                </p>
-                            )}
-                        </div>
+                        {!isModal && (
+                            <div className="section-header">
+                                <h2>Create New Shipment</h2>
+                                {companyData && (
+                                    <p className="text-muted">
+                                        Creating shipment for {companyData.name || companyData.companyName || 'Your Company'}
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {error && (
                             <div className="alert alert-danger alert-dismissible fade show" role="alert">
@@ -1018,8 +1126,13 @@ const CreateShipmentContent = () => {
                                     dataCompleteness={dataCompleteness}
                                     onStepClick={(step) => {
                                         const stepSlug = STEP_SLUGS[step];
-                                        const path = activeDraftId ? `/create-shipment/${stepSlug}/${activeDraftId}` : `/create-shipment/${stepSlug}`;
-                                        navigate(path);
+                                        if (isModal) {
+                                            // In modal mode, just change the step without navigation
+                                            setCurrentStep(step);
+                                        } else {
+                                            const path = activeDraftId ? `/create-shipment/${stepSlug}/${activeDraftId}` : `/create-shipment/${stepSlug}`;
+                                            navigate(path);
+                                        }
                                     }}
                                 />
                                 <form id="shipmentForm" className="needs-validation" noValidate onSubmit={handleSubmit}>
@@ -1030,22 +1143,14 @@ const CreateShipmentContent = () => {
                     </div>
                 </div>
             </div>
-
-            {companyData?.id && <ShipmentAgent
-                companyId={companyData?.id}
-                inModal={false}
-                isPanelOpen={isChatOpen}
-                setIsPanelOpen={setIsChatOpen}
-                currentShipmentId={activeDraftId}
-            />}
         </div>
     );
 };
 
-const CreateShipment = () => {
+const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null }) => {
     return (
         <ShipmentFormProvider>
-            <CreateShipmentContent />
+            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} />
         </ShipmentFormProvider>
     );
 };

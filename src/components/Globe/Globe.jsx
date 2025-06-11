@@ -486,7 +486,7 @@ void main() {
     gl_FragColor = vec4(atmColor, atmOpacity) * factor;
 }`;
 
-const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showOverlays = true, statusCounts = {} }, ref) => {
+const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showOverlays = true, statusCounts = {}, onOpenTrackingDrawer }, ref) => {
     const mountRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -1381,6 +1381,16 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
         setIsPaused(prev => !prev);
     }, []);
 
+    // Handler for clicking on shipment ID in badge
+    const handleShipmentIdClick = useCallback(() => {
+        const currentShipment = activeShipment || shipments[0];
+        if (currentShipment && onOpenTrackingDrawer) {
+            // Use shipmentID for tracking
+            const trackingId = currentShipment.shipmentID || currentShipment.trackingNumber || currentShipment.id;
+            onOpenTrackingDrawer(trackingId);
+        }
+    }, [activeShipment, shipments, onOpenTrackingDrawer]);
+
     // Update the animation progress logic - COMMENTED OUT UNTIL FIXED
     // useEffect(() => {
     //     if (!shipments.length || isPaused || userInteracting) return;
@@ -1453,7 +1463,13 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
             )}
 
             {!loading && shipments.length > 0 && (
-                <Box sx={{ position: 'absolute', bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' }, right: { xs: '1rem', sm: '1.5rem', md: '2rem' }, zIndex: 7 }}>
+                <Box sx={{
+                    position: 'absolute',
+                    bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' },
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 7
+                }}>
                     <Box sx={{ display: 'flex', minWidth: { xs: '280px', sm: '350px', md: '420px' }, height: { xs: '80px', sm: '90px', md: '100px' }, background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', position: 'relative' }}>
                         {/* Progress bar at the top of the badge - COMMENTED OUT UNTIL FIXED */}
                         {/* <Box
@@ -1484,7 +1500,21 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                         </Box>
                         <Box sx={{ flex: 1, padding: { xs: '8px 12px', sm: '12px 16px', md: '16px 20px' }, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative' }}>
                             <Box>
-                                <Typography variant="h4" sx={{ color: 'white', fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.875rem' }, fontWeight: 700 }}>
+                                <Typography
+                                    variant="h4"
+                                    onClick={handleShipmentIdClick}
+                                    sx={{
+                                        color: 'white',
+                                        fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.875rem' },
+                                        fontWeight: 700,
+                                        cursor: onOpenTrackingDrawer ? 'pointer' : 'default',
+                                        '&:hover': onOpenTrackingDrawer ? {
+                                            color: '#60A5FA',
+                                            textDecoration: 'underline'
+                                        } : {}
+                                    }}
+                                    title={onOpenTrackingDrawer ? "Click to view tracking details" : undefined}
+                                >
                                     #{(activeShipment || shipments[0])?.trackingNumber || 'Loading...'}
                                 </Typography>
                                 <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' }, display: 'block' }}>

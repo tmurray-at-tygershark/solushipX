@@ -12,7 +12,9 @@ import {
     Toolbar,
     TablePagination,
     Drawer,
-    IconButton
+    IconButton,
+    Dialog,
+    Slide
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -21,7 +23,7 @@ import {
     Refresh as RefreshIcon,
     ArrowBackIosNew as ArrowBackIosNewIcon
 } from '@mui/icons-material';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { collection, getDocs, query, where, orderBy, doc, deleteDoc } from 'firebase/firestore';
@@ -53,6 +55,14 @@ import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticSt
 
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
+
+// Import CreateShipment for the modal
+const CreateShipmentComponent = React.lazy(() => import('../CreateShipment'));
+
+// Transition component for modal
+const Transition = React.forwardRef(function Transition(props, ref) {
+    return <Slide direction="up" ref={ref} {...props} />;
+});
 
 const ShipmentsX = ({ isModal = false, onClose = null }) => {
 
@@ -122,6 +132,9 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     const [currentView, setCurrentView] = useState('table'); // 'table' or 'detail'
     const [selectedShipmentId, setSelectedShipmentId] = useState(null);
     const [isSliding, setIsSliding] = useState(false);
+
+    // Add CreateShipment modal state
+    const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -631,6 +644,17 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
         }, 50);
     };
 
+    // Handler for opening CreateShipment modal
+    const handleOpenCreateShipmentModal = () => {
+        setIsCreateShipmentModalOpen(true);
+    };
+
+    // Handler for return to shipments from CreateShipment modal (just close the modal since we're already in shipments)
+    const handleReturnToShipmentsFromCreateShipment = () => {
+        console.log('handleReturnToShipmentsFromCreateShipment called in ShipmentsX');
+        setIsCreateShipmentModalOpen(false);
+    };
+
 
 
     const navigate = useNavigate();
@@ -776,8 +800,7 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                                         variant="contained"
                                         size="small"
                                         startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-                                        component={Link}
-                                        to="/create-shipment"
+                                        onClick={handleOpenCreateShipmentModal}
                                         sx={{
                                             bgcolor: '#0f172a',
                                             '&:hover': { bgcolor: '#1e293b' },
@@ -1182,6 +1205,49 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                     </Suspense>
                 </Box>
             </Drawer>
+
+            {/* Create Shipment Fullscreen Modal */}
+            <Dialog
+                open={isCreateShipmentModalOpen}
+                onClose={() => setIsCreateShipmentModalOpen(false)}
+                TransitionComponent={Transition}
+                fullWidth
+                maxWidth="xl"
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: { xs: '100%', md: '95vh' },
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
+                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CreateShipmentComponent
+                            isModal={true}
+                            onClose={() => setIsCreateShipmentModalOpen(false)}
+                            onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                        />
+                    </Suspense>
+                </Box>
+            </Dialog>
         </div >
     );
 };

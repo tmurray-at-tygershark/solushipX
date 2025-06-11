@@ -1,7 +1,7 @@
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 2rem 1rem;
+    padding: 0 1rem 2rem 1rem;
 }
 
 .section-header {
@@ -79,9 +79,9 @@
 }
 
 .stepper-wrapper {
-    margin: 2rem 0;
+    margin: 1rem 0;
     position: relative;
-    padding-bottom: 30px;
+    padding-bottom: 15px;
 }
 
 .stepper {
@@ -183,7 +183,7 @@ button.step-circle.clickable:hover {
     background: white;
     border-radius: 12px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    padding: 2rem;
+    padding: 1rem;
     margin-bottom: 2rem;
 }
 

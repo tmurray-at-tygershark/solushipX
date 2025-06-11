@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -18,9 +18,11 @@ import {
     CalendarToday as CalendarIcon,
     LocalShipping as ShippingIcon,
     Close as CloseIcon,
+    QrCode as QrCodeIcon,
 } from '@mui/icons-material';
 import StatusChip from '../StatusChip/StatusChip';
 import ShipmentTimeline from './ShipmentTimeline';
+import QRCode from 'qrcode';
 
 // Helper functions (copied from Tracking.jsx)
 const getStatusColor = (status) => {
@@ -125,6 +127,45 @@ const TrackingDetailSidebar = ({
     trackingNumber,
     onClose
 }) => {
+    // QR Code state
+    const [qrCodeUrl, setQrCodeUrl] = useState(null);
+    const [qrCodeLoading, setQrCodeLoading] = useState(false);
+
+    // Generate QR code for tracking URL
+    const generateQRCode = async (trackingId) => {
+        if (!trackingId || trackingId === 'N/A') {
+            setQrCodeUrl(null);
+            return;
+        }
+
+        try {
+            setQrCodeLoading(true);
+            const trackingUrl = `${window.location.origin}/tracking/${encodeURIComponent(trackingId)}`;
+            const qrDataUrl = await QRCode.toDataURL(trackingUrl, {
+                width: 150,
+                margin: 2,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            });
+            setQrCodeUrl(qrDataUrl);
+        } catch (error) {
+            console.error('Error generating QR code:', error);
+            setQrCodeUrl(null);
+        } finally {
+            setQrCodeLoading(false);
+        }
+    };
+
+    // Generate QR code when shipment data is available
+    useEffect(() => {
+        if (shipmentData?.shipmentID || trackingNumber) {
+            const trackingId = shipmentData?.shipmentID || trackingNumber;
+            generateQRCode(trackingId);
+        }
+    }, [shipmentData?.shipmentID, trackingNumber]);
+
     const copyToClipboard = async (text, label) => {
         try {
             await navigator.clipboard.writeText(text);
@@ -255,6 +296,67 @@ const TrackingDetailSidebar = ({
                                 Status
                             </Typography>
                             <StatusChip status={shipmentData?.status} />
+                        </Box>
+
+                        {/* QR Code Section */}
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                QR Code
+                            </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                                {qrCodeLoading ? (
+                                    <Box sx={{
+                                        width: 150,
+                                        height: 150,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 1
+                                    }}>
+                                        <CircularProgress size={24} />
+                                    </Box>
+                                ) : qrCodeUrl ? (
+                                    <Box sx={{
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                        p: 1,
+                                        bgcolor: 'background.paper'
+                                    }}>
+                                        <img
+                                            src={qrCodeUrl}
+                                            alt="Tracking QR Code"
+                                            style={{
+                                                width: 130,
+                                                height: 130,
+                                                display: 'block'
+                                            }}
+                                        />
+                                    </Box>
+                                ) : (
+                                    <Box sx={{
+                                        width: 150,
+                                        height: 150,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        border: '1px dashed',
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                        bgcolor: 'grey.50'
+                                    }}>
+                                        <QrCodeIcon sx={{ fontSize: '2rem', color: 'text.secondary' }} />
+                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                                            No QR Code
+                                        </Typography>
+                                    </Box>
+                                )}
+                            </Box>
                         </Box>
 
                         {/* Estimated Delivery */}

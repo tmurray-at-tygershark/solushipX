@@ -337,7 +337,7 @@ const SimpleMap = React.memo(({ address, title }) => {
     );
 });
 
-const Review = ({ onPrevious, onNext, activeDraftId }) => {
+const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments }) => {
     const theme = useTheme();
     const navigate = useNavigate();
     const { formData, clearFormData } = useShipmentForm();
@@ -805,14 +805,20 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
     };
 
     const handleBookingComplete = () => {
-        console.log('handleBookingComplete called - user clicked Continue');
-        // Remove any automatic delays/timers - user must manually finish
+        console.log('handleBookingComplete called - user clicked Return to Shipments');
+
+        // Close the booking dialog first
         setShowBookingDialog(false);
         clearFormData();
-        // Navigate directly to shipments instead of using onNext prop
-        // Use replace to ensure we don't have navigation history issues
-        console.log('Navigating to /shipments');
-        navigate('/shipments', { replace: true });
+
+        // Use the callback if provided (modal mode), otherwise navigate directly
+        if (onReturnToShipments) {
+            console.log('Using onReturnToShipments callback for modal state management');
+            onReturnToShipments();
+        } else {
+            console.log('No callback provided, navigating directly to /shipments');
+            navigate('/shipments', { replace: true });
+        }
     };
 
     // NEW: Generate Canpar labels after booking
@@ -1670,26 +1676,14 @@ const Review = ({ onPrevious, onNext, activeDraftId }) => {
                                             Document Status: {labelGenerationStatus}
                                         </Typography>
                                     )}
-                                    <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 2 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
                                         <Button
                                             onClick={handleBookingComplete}
-                                            variant="outlined"
-                                            size="large"
-                                            sx={{ minWidth: 160 }}
-                                        >
-                                            Return to Shipments
-                                        </Button>
-                                        <Button
-                                            onClick={() => {
-                                                setShowBookingDialog(false);
-                                                clearFormData();
-                                                navigate(`/shipment/${shipmentId}`, { replace: true });
-                                            }}
                                             variant="contained"
                                             size="large"
-                                            sx={{ minWidth: 160, bgcolor: '#1a237e' }}
+                                            sx={{ minWidth: 200, bgcolor: '#1a237e' }}
                                         >
-                                            View Shipment
+                                            Return to Shipments
                                         </Button>
                                     </Box>
                                 </>

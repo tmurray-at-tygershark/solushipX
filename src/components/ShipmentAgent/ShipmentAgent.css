@@ -2,7 +2,7 @@
 .shipment-agent-container {
     display: flex;
     flex-direction: column;
-    height: 700px; /* Increased from 600px for more message visibility */
+    height: 500px; /* Reduced from 700px for better Dashboard fit */
     width: 450px; /* Increased from 380px for more comfortable reading */
     position: fixed;
     bottom: 100px; /* Position above the toggle button */
@@ -44,20 +44,20 @@
 /* Normal slide-out panel chat area height */
 .shipment-agent-chat {
     flex: 1;
-    padding: 20px; /* Increased from 16px for more space */
-    padding-bottom: 24px; /* Add extra padding at bottom */
+    padding: 16px; /* Reduced from 20px to fit smaller container */
+    padding-bottom: 20px; /* Reduced from 24px */
     overflow-y: auto;
     overflow-x: hidden; /* Prevent horizontal scrolling */
     scroll-behavior: smooth;
     background-color: #f9fafc;
     display: flex;
     flex-direction: column;
-    gap: 16px; /* Increased from 12px for better message separation */
+    gap: 12px; /* Reduced from 16px for better fit */
     position: relative;
     width: 100%;
     box-sizing: border-box;
     /* Ensure this doesn't push the input area off-screen */
-    max-height: calc(100% - 150px); /* Adjusted for larger input area */
+    max-height: calc(100% - 130px); /* Reduced from 150px for smaller container */
 }
 
 .shipment-agent-toggle {
@@ -458,6 +458,8 @@ textarea.chat-input {
 @media (max-width: 768px) {
     .shipment-agent-container {
         width: 90%; /* Increased from 85% */
+        height: 400px; /* Even smaller on mobile */
+        bottom: 80px; /* Closer to bottom on mobile */
     }
 }
 
