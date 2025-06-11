@@ -578,40 +578,59 @@ const Dashboard = () => {
 
             {/* Shipments Fullscreen Modal */}
             <Dialog
-                fullScreen
                 open={isShipmentsModalOpen}
                 onClose={() => setIsShipmentsModalOpen(false)}
                 TransitionComponent={Transition}
+                fullWidth
+                maxWidth="xl"
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
                 PaperProps={{
                     sx: {
-                        bgcolor: 'rgba(255, 255, 255, 0.9)',
-                        backdropFilter: 'blur(10px)',
+                        height: { xs: '100%', md: '95vh' },
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
+                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
                     }
                 }}
             >
-                <AppBar sx={{ position: 'relative', bgcolor: 'rgba(255, 255, 255, 0.8)', boxShadow: 'none', borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
-                    <Toolbar>
-                        <Typography sx={{ ml: 2, flex: 1, color: 'black', fontWeight: 600 }} variant="h6" component="div">
-                            Shipments
-                        </Typography>
-                        <IconButton
-                            edge="end"
-                            color="inherit"
-                            onClick={() => setIsShipmentsModalOpen(false)}
-                            aria-label="close"
-                            sx={{ color: 'black' }}
-                        >
-                            <CloseIcon />
-                        </IconButton>
-                    </Toolbar>
-                </AppBar>
-                <Suspense fallback={
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                        <CircularProgress />
-                    </Box>
-                }>
-                    <ShipmentsComponent />
-                </Suspense>
+                <IconButton
+                    aria-label="close"
+                    onClick={() => setIsShipmentsModalOpen(false)}
+                    sx={{
+                        position: 'absolute',
+                        right: 16,
+                        top: 16,
+                        color: 'grey.600',
+                        zIndex: 1,
+                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                        '&:hover': {
+                            backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                            color: 'black',
+                        }
+                    }}
+                >
+                    <CloseIcon />
+                </IconButton>
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <ShipmentsComponent />
+                    </Suspense>
+                </Box>
             </Dialog>
 
             {/* Globe - always rendered but opacity is controlled */}

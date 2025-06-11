@@ -1838,7 +1838,7 @@ const ShipmentDetail = () => {
                     try {
                         const docRef = doc(db, 'shipments', id);
                         const docSnap = await getDoc(docRef);
-                        
+
                         if (docSnap.exists()) {
                             docId = docSnap.id;
                             shipmentData = { id: docSnap.id, ...docSnap.data() };

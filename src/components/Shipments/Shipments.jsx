@@ -433,6 +433,7 @@ const Shipments = () => {
 
     // Status update progress dialog state
     const [statusProgressDialogOpen, setStatusProgressDialogOpen] = useState(false);
+    const [filtersOpen, setFiltersOpen] = useState(false);
 
     const [updateProgress, setUpdateProgress] = useState({
         show: false,
@@ -1890,16 +1891,28 @@ const Shipments = () => {
     }, [shipments]);
 
     return (
-        <div className="shipments-container">
-            <Paper className="shipments-paper">
-                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="shipments-container" style={{ backgroundColor: 'transparent' }}>
+            <Paper className="shipments-paper" sx={{ backgroundColor: 'transparent', boxShadow: 'none' }}>
+                <Box sx={{ width: '100%', minHeight: '100vh', p: { xs: 2, md: 3 } }}>
+                    <Box sx={{ maxWidth: '1600px', margin: '0 auto' }}>
                         {/* Header Section */}
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
                             <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
                                 Shipments
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<FilterIcon />}
+                                    onClick={() => setFiltersOpen(!filtersOpen)}
+                                    sx={{
+                                        color: '#64748b',
+                                        borderColor: '#e2e8f0',
+                                        bgcolor: filtersOpen ? '#f8fafc' : 'transparent',
+                                    }}
+                                >
+                                    {filtersOpen ? 'Hide Filters' : 'Show Filters'}
+                                </Button>
                                 {selected.length > 0 && (
                                     <Button
                                         variant="outlined"
@@ -1955,7 +1968,7 @@ const Shipments = () => {
                         </Box>
 
                         {/* Main Content */}
-                        <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                        <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none' }}>
                             <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Tabs value={selectedTab} onChange={handleTabChange}>
                                     <Tab label={`All (${stats.total})`} value="all" />
@@ -1969,356 +1982,358 @@ const Shipments = () => {
                             </Toolbar>
 
                             {/* Search and Filter Section */}
-                            <Box sx={{ p: 3, bgcolor: '#ffffff', borderRadius: 2 }}>
-                                <Grid container spacing={2} alignItems="center">
-                                    {/* Shipment ID Search */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <TextField
-                                            fullWidth
-                                            label="Shipment ID"
-                                            placeholder="Search by Shipment ID (e.g. SH-12345)"
-                                            value={searchFields.shipmentId}
-                                            onChange={(e) => setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }))}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.shipmentId && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => setSearchFields(prev => ({ ...prev, shipmentId: '' }))}
-                                                        >
-                                                            <ClearIcon />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Reference Number */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <TextField
-                                            fullWidth
-                                            label="Reference Number"
-                                            placeholder="Search by reference number"
-                                            value={searchFields.referenceNumber}
-                                            onChange={(e) => setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <DescriptionIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.referenceNumber && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => setSearchFields(prev => ({ ...prev, referenceNumber: '' }))}
-                                                        >
-                                                            <ClearIcon />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Tracking Number */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <TextField
-                                            fullWidth
-                                            label="Tracking / PRO Number"
-                                            placeholder="Search by tracking number"
-                                            value={searchFields.trackingNumber}
-                                            onChange={(e) => setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }))}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <QrCodeIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.trackingNumber && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => setSearchFields(prev => ({ ...prev, trackingNumber: '' }))}
-                                                        >
-                                                            <ClearIcon />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Date Range Picker */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                            <DateRangePicker
-                                                value={dateRange}
-                                                onChange={(newValue) => setDateRange(newValue)}
-                                                label="Date Range"
-                                                slotProps={{
-                                                    textField: {
-                                                        size: "small",
-                                                        fullWidth: true,
-                                                        variant: "outlined",
-                                                        placeholder: "",
-                                                        sx: {
-                                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        },
-                                                        InputProps: {
-                                                            startAdornment: (
-                                                                <InputAdornment position="start">
-                                                                    <CalendarIcon sx={{ color: '#64748b' }} />
-                                                                </InputAdornment>
-                                                            )
-                                                        }
-                                                    },
-                                                    actionBar: {
-                                                        actions: ['clear', 'today', 'accept']
-                                                    },
-                                                    separator: {
-                                                        children: ''
-                                                    }
+                            <Collapse in={filtersOpen}>
+                                <Box sx={{ p: 3, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                    <Grid container spacing={2} alignItems="center">
+                                        {/* Shipment ID Search */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <TextField
+                                                fullWidth
+                                                label="Shipment ID"
+                                                placeholder="Search by Shipment ID (e.g. SH-12345)"
+                                                value={searchFields.shipmentId}
+                                                onChange={(e) => setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }))}
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
                                                 }}
-                                                calendars={2}
-                                                sx={{ width: '100%' }}
+                                                InputProps={{
+                                                    startAdornment: (
+                                                        <InputAdornment position="start">
+                                                            <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                        </InputAdornment>
+                                                    ),
+                                                    endAdornment: searchFields.shipmentId && (
+                                                        <InputAdornment position="end">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setSearchFields(prev => ({ ...prev, shipmentId: '' }))}
+                                                            >
+                                                                <ClearIcon />
+                                                            </IconButton>
+                                                        </InputAdornment>
+                                                    )
+                                                }}
                                             />
-                                        </LocalizationProvider>
-                                    </Grid>
-                                </Grid>
+                                        </Grid>
 
-                                {/* Second Row */}
-                                <Grid container spacing={2} alignItems="center" sx={{ mt: 2 }}>
-                                    {/* Customer Search with Autocomplete */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <Autocomplete
-                                            fullWidth
-                                            options={Object.entries(customers).map(([id, name]) => ({ id, name }))}
-                                            getOptionLabel={(option) => option.name}
-                                            value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
-                                            onChange={(event, newValue) => setSelectedCustomer(newValue?.id || '')}
-                                            renderInput={(params) => (
-                                                <TextField
-                                                    {...params}
-                                                    label="Search Customers"
-                                                    placeholder="Search customers"
-                                                    size="small"
-                                                    variant="outlined"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
-                                                        '& .MuiInputLabel-root': {
-                                                            fontSize: '12px',
-                                                            '&.MuiInputLabel-shrink': {
-                                                                fontSize: '12px'
+                                        {/* Reference Number */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <TextField
+                                                fullWidth
+                                                label="Reference Number"
+                                                placeholder="Search by reference number"
+                                                value={searchFields.referenceNumber}
+                                                onChange={(e) => setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                                InputProps={{
+                                                    startAdornment: (
+                                                        <InputAdornment position="start">
+                                                            <DescriptionIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                        </InputAdornment>
+                                                    ),
+                                                    endAdornment: searchFields.referenceNumber && (
+                                                        <InputAdornment position="end">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setSearchFields(prev => ({ ...prev, referenceNumber: '' }))}
+                                                            >
+                                                                <ClearIcon />
+                                                            </IconButton>
+                                                        </InputAdornment>
+                                                    )
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Tracking Number */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <TextField
+                                                fullWidth
+                                                label="Tracking / PRO Number"
+                                                placeholder="Search by tracking number"
+                                                value={searchFields.trackingNumber}
+                                                onChange={(e) => setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }))}
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                                InputProps={{
+                                                    startAdornment: (
+                                                        <InputAdornment position="start">
+                                                            <QrCodeIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                        </InputAdornment>
+                                                    ),
+                                                    endAdornment: searchFields.trackingNumber && (
+                                                        <InputAdornment position="end">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setSearchFields(prev => ({ ...prev, trackingNumber: '' }))}
+                                                            >
+                                                                <ClearIcon />
+                                                            </IconButton>
+                                                        </InputAdornment>
+                                                    )
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Date Range Picker */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                                <DateRangePicker
+                                                    value={dateRange}
+                                                    onChange={(newValue) => setDateRange(newValue)}
+                                                    label="Date Range"
+                                                    slotProps={{
+                                                        textField: {
+                                                            size: "small",
+                                                            fullWidth: true,
+                                                            variant: "outlined",
+                                                            placeholder: "",
+                                                            sx: {
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            },
+                                                            InputProps: {
+                                                                startAdornment: (
+                                                                    <InputAdornment position="start">
+                                                                        <CalendarIcon sx={{ color: '#64748b' }} />
+                                                                    </InputAdornment>
+                                                                )
                                                             }
                                                         },
-                                                        '& .MuiOutlinedInput-root': { minHeight: '40px' }
+                                                        actionBar: {
+                                                            actions: ['clear', 'today', 'accept']
+                                                        },
+                                                        separator: {
+                                                            children: ''
+                                                        }
                                                     }}
+                                                    calendars={2}
+                                                    sx={{ width: '100%' }}
                                                 />
-                                            )}
-                                            sx={{
-                                                '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
-                                                '& .MuiInputLabel-root': {
+                                            </LocalizationProvider>
+                                        </Grid>
+                                    </Grid>
+
+                                    {/* Second Row */}
+                                    <Grid container spacing={2} alignItems="center" sx={{ mt: 2 }}>
+                                        {/* Customer Search with Autocomplete */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <Autocomplete
+                                                fullWidth
+                                                options={Object.entries(customers).map(([id, name]) => ({ id, name }))}
+                                                getOptionLabel={(option) => option.name}
+                                                value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
+                                                onChange={(event, newValue) => setSelectedCustomer(newValue?.id || '')}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        label="Search Customers"
+                                                        placeholder="Search customers"
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{
+                                                            '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                            '& .MuiInputLabel-root': {
+                                                                fontSize: '12px',
+                                                                '&.MuiInputLabel-shrink': {
+                                                                    fontSize: '12px'
+                                                                }
+                                                            },
+                                                            '& .MuiOutlinedInput-root': { minHeight: '40px' }
+                                                        }}
+                                                    />
+                                                )}
+                                                sx={{
+                                                    '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                    '& .MuiInputLabel-root': {
+                                                        fontSize: '12px',
+                                                        '&.MuiInputLabel-shrink': {
+                                                            fontSize: '12px'
+                                                        }
+                                                    },
+                                                    '& .MuiOutlinedInput-root': { minHeight: '40px' },
                                                     fontSize: '12px',
-                                                    '&.MuiInputLabel-shrink': {
-                                                        fontSize: '12px'
-                                                    }
-                                                },
-                                                '& .MuiOutlinedInput-root': { minHeight: '40px' },
-                                                fontSize: '12px',
-                                                minHeight: '40px',
-                                                display: 'flex',
-                                                alignItems: 'center'
-                                            }}
-                                            ListboxProps={{
-                                                sx: { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Carrier Selection with Sub-carriers */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <FormControl fullWidth>
-                                            <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
-                                            <Select
-                                                value={filters.carrier}
-                                                onChange={(e) => setFilters(prev => ({
-                                                    ...prev,
-                                                    carrier: e.target.value
-                                                }))}
-                                                label="Carrier"
-                                                sx={{ fontSize: '12px' }}
-                                                MenuProps={{
-                                                    PaperProps: {
-                                                        sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
-                                                    }
+                                                    minHeight: '40px',
+                                                    display: 'flex',
+                                                    alignItems: 'center'
                                                 }}
-                                            >
-                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
-                                                {carrierOptions.map((group) => [
-                                                    <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
-                                                    ...group.carriers.map((carrier) => (
-                                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
-                                                            {carrier.name}
-                                                        </MenuItem>
-                                                    ))
-                                                ])}
-                                            </Select>
-                                        </FormControl>
-                                    </Grid>
-
-                                    {/* Shipment Type */}
-                                    <Grid item xs={12} sm={6} md={2}>
-                                        <FormControl fullWidth>
-                                            <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
-                                            <Select
-                                                value={filters.shipmentType}
-                                                onChange={(e) => setFilters(prev => ({
-                                                    ...prev,
-                                                    shipmentType: e.target.value
-                                                }))}
-                                                label="Type"
-                                                sx={{ fontSize: '12px' }}
-                                                MenuProps={{
-                                                    PaperProps: {
-                                                        sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
-                                                    }
+                                                ListboxProps={{
+                                                    sx: { fontSize: '12px' }
                                                 }}
-                                            >
-                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
-                                                <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
-                                                <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
-                                            </Select>
-                                        </FormControl>
+                                            />
+                                        </Grid>
+
+                                        {/* Carrier Selection with Sub-carriers */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <FormControl fullWidth>
+                                                <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
+                                                <Select
+                                                    value={filters.carrier}
+                                                    onChange={(e) => setFilters(prev => ({
+                                                        ...prev,
+                                                        carrier: e.target.value
+                                                    }))}
+                                                    label="Carrier"
+                                                    sx={{ fontSize: '12px' }}
+                                                    MenuProps={{
+                                                        PaperProps: {
+                                                            sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                        }
+                                                    }}
+                                                >
+                                                    <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
+                                                    {carrierOptions.map((group) => [
+                                                        <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
+                                                        ...group.carriers.map((carrier) => (
+                                                            <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
+                                                                {carrier.name}
+                                                            </MenuItem>
+                                                        ))
+                                                    ])}
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+
+                                        {/* Shipment Type */}
+                                        <Grid item xs={12} sm={6} md={2}>
+                                            <FormControl fullWidth>
+                                                <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
+                                                <Select
+                                                    value={filters.shipmentType}
+                                                    onChange={(e) => setFilters(prev => ({
+                                                        ...prev,
+                                                        shipmentType: e.target.value
+                                                    }))}
+                                                    label="Type"
+                                                    sx={{ fontSize: '12px' }}
+                                                    MenuProps={{
+                                                        PaperProps: {
+                                                            sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                        }
+                                                    }}
+                                                >
+                                                    <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
+                                                    <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                    <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+
+                                        {/* Enhanced Status Filter */}
+                                        <Grid item xs={12} sm={6} md={3}>
+                                            <EnhancedStatusFilter
+                                                value={filters.enhancedStatus || ''}
+                                                onChange={(value) => setFilters(prev => ({
+                                                    ...prev,
+                                                    enhancedStatus: value,
+                                                    // Keep legacy status for backward compatibility
+                                                    status: value ? enhancedToLegacy(value) : 'all'
+                                                }))}
+                                                label="Shipment Status"
+                                                showGroups={true}
+                                                showSearch={true}
+                                                fullWidth={true}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiSelect-select': { fontSize: '12px' },
+                                                    '& .MuiMenuItem-root': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Clear Filters Button */}
+                                        {(Object.values(searchFields).some(val => val !== '') ||
+                                            filters.carrier !== 'all' ||
+                                            filters.shipmentType !== 'all' ||
+                                            filters.status !== 'all' ||
+                                            dateRange[0] || dateRange[1]) && (
+                                                <Grid item xs={12} sm={6} md={1}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        onClick={handleClearFilters}
+                                                        startIcon={<ClearIcon />}
+                                                        sx={{
+                                                            borderColor: '#e2e8f0',
+                                                            color: '#64748b',
+                                                            '&:hover': {
+                                                                borderColor: '#cbd5e1',
+                                                                bgcolor: '#f8fafc'
+                                                            }
+                                                        }}
+                                                    >
+                                                        Clear
+                                                    </Button>
+                                                </Grid>
+                                            )}
                                     </Grid>
 
-                                    {/* Enhanced Status Filter */}
-                                    <Grid item xs={12} sm={6} md={3}>
-                                        <EnhancedStatusFilter
-                                            value={filters.enhancedStatus || ''}
-                                            onChange={(value) => setFilters(prev => ({
-                                                ...prev,
-                                                enhancedStatus: value,
-                                                // Keep legacy status for backward compatibility
-                                                status: value ? enhancedToLegacy(value) : 'all'
-                                            }))}
-                                            label="Shipment Status"
-                                            showGroups={true}
-                                            showSearch={true}
-                                            fullWidth={true}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiSelect-select': { fontSize: '12px' },
-                                                '& .MuiMenuItem-root': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Clear Filters Button */}
+                                    {/* Active Filters Display */}
                                     {(Object.values(searchFields).some(val => val !== '') ||
                                         filters.carrier !== 'all' ||
                                         filters.shipmentType !== 'all' ||
                                         filters.status !== 'all' ||
                                         dateRange[0] || dateRange[1]) && (
-                                            <Grid item xs={12} sm={6} md={1}>
-                                                <Button
-                                                    fullWidth
-                                                    variant="outlined"
-                                                    onClick={handleClearFilters}
-                                                    startIcon={<ClearIcon />}
-                                                    sx={{
-                                                        borderColor: '#e2e8f0',
-                                                        color: '#64748b',
-                                                        '&:hover': {
-                                                            borderColor: '#cbd5e1',
-                                                            bgcolor: '#f8fafc'
-                                                        }
-                                                    }}
-                                                >
-                                                    Clear
-                                                </Button>
-                                            </Grid>
+                                            <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                <Typography variant="body2" sx={{ color: '#64748b', mr: 1, display: 'flex', alignItems: 'center' }}>
+                                                    <FilterAltIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                                                    Active Filters:
+                                                </Typography>
+                                                {Object.entries(searchFields).map(([key, value]) => value && (
+                                                    <Chip
+                                                        key={key}
+                                                        label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`}
+                                                        onDelete={() => setSearchFields(prev => ({ ...prev, [key]: '' }))}
+                                                        size="small"
+                                                        sx={{ bgcolor: '#f1f5f9' }}
+                                                    />
+                                                ))}
+                                                {filters.carrier !== 'all' && (
+                                                    <Chip
+                                                        label={`Carrier: ${carrierOptions.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || filters.carrier}`}
+                                                        onDelete={() => setFilters(prev => ({ ...prev, carrier: 'all' }))}
+                                                        size="small"
+                                                        sx={{ bgcolor: '#f1f5f9' }}
+                                                    />
+                                                )}
+                                                {filters.shipmentType !== 'all' && (
+                                                    <Chip
+                                                        label={`Type: ${filters.shipmentType}`}
+                                                        onDelete={() => setFilters(prev => ({ ...prev, shipmentType: 'all' }))}
+                                                        size="small"
+                                                        sx={{ bgcolor: '#f1f5f9' }}
+                                                    />
+                                                )}
+                                                {filters.status !== 'all' && (
+                                                    <Chip
+                                                        label={`Status: ${filters.status}`}
+                                                        onDelete={() => setFilters(prev => ({ ...prev, status: 'all' }))}
+                                                        size="small"
+                                                        sx={{ bgcolor: '#f1f5f9' }}
+                                                    />
+                                                )}
+                                                {(dateRange[0] || dateRange[1]) && (
+                                                    <Chip
+                                                        label={`Date: ${dateRange[0]?.format('MMM D, YYYY')} - ${dateRange[1]?.format('MMM D, YYYY')}`}
+                                                        onDelete={() => setDateRange([null, null])}
+                                                        size="small"
+                                                        sx={{ bgcolor: '#f1f5f9' }}
+                                                    />
+                                                )}
+                                            </Box>
                                         )}
-                                </Grid>
-
-                                {/* Active Filters Display */}
-                                {(Object.values(searchFields).some(val => val !== '') ||
-                                    filters.carrier !== 'all' ||
-                                    filters.shipmentType !== 'all' ||
-                                    filters.status !== 'all' ||
-                                    dateRange[0] || dateRange[1]) && (
-                                        <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                            <Typography variant="body2" sx={{ color: '#64748b', mr: 1, display: 'flex', alignItems: 'center' }}>
-                                                <FilterAltIcon sx={{ fontSize: 16, mr: 0.5 }} />
-                                                Active Filters:
-                                            </Typography>
-                                            {Object.entries(searchFields).map(([key, value]) => value && (
-                                                <Chip
-                                                    key={key}
-                                                    label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`}
-                                                    onDelete={() => setSearchFields(prev => ({ ...prev, [key]: '' }))}
-                                                    size="small"
-                                                    sx={{ bgcolor: '#f1f5f9' }}
-                                                />
-                                            ))}
-                                            {filters.carrier !== 'all' && (
-                                                <Chip
-                                                    label={`Carrier: ${carrierOptions.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || filters.carrier}`}
-                                                    onDelete={() => setFilters(prev => ({ ...prev, carrier: 'all' }))}
-                                                    size="small"
-                                                    sx={{ bgcolor: '#f1f5f9' }}
-                                                />
-                                            )}
-                                            {filters.shipmentType !== 'all' && (
-                                                <Chip
-                                                    label={`Type: ${filters.shipmentType}`}
-                                                    onDelete={() => setFilters(prev => ({ ...prev, shipmentType: 'all' }))}
-                                                    size="small"
-                                                    sx={{ bgcolor: '#f1f5f9' }}
-                                                />
-                                            )}
-                                            {filters.status !== 'all' && (
-                                                <Chip
-                                                    label={`Status: ${filters.status}`}
-                                                    onDelete={() => setFilters(prev => ({ ...prev, status: 'all' }))}
-                                                    size="small"
-                                                    sx={{ bgcolor: '#f1f5f9' }}
-                                                />
-                                            )}
-                                            {(dateRange[0] || dateRange[1]) && (
-                                                <Chip
-                                                    label={`Date: ${dateRange[0]?.format('MMM D, YYYY')} - ${dateRange[1]?.format('MMM D, YYYY')}`}
-                                                    onDelete={() => setDateRange([null, null])}
-                                                    size="small"
-                                                    sx={{ bgcolor: '#f1f5f9' }}
-                                                />
-                                            )}
-                                        </Box>
-                                    )}
-                            </Box>
+                                </Box>
+                            </Collapse>
 
                             {/* Shipments Table */}
                             <TableContainer>
