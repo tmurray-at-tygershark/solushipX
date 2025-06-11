@@ -48,7 +48,7 @@ const ShipmentGlobe = lazy(() => import('../Globe/Globe'));
 const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
 
 // Lazy load the Shipments component for the modal
-const ShipmentsComponent = lazy(() => import('../Shipments/Shipments'));
+const ShipmentsComponent = lazy(() => import('../Shipments/ShipmentsX'));
 
 // Transition for the modal
 const Transition = forwardRef(function Transition(props, ref) {
@@ -604,24 +604,6 @@ const Dashboard = () => {
                     }
                 }}
             >
-                <IconButton
-                    aria-label="close"
-                    onClick={() => setIsShipmentsModalOpen(false)}
-                    sx={{
-                        position: 'absolute',
-                        right: 16,
-                        top: 16,
-                        color: 'grey.600',
-                        zIndex: 1,
-                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                        '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.1)',
-                            color: 'black',
-                        }
-                    }}
-                >
-                    <CloseIcon />
-                </IconButton>
                 <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
                     <Suspense fallback={
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
@@ -632,6 +614,31 @@ const Dashboard = () => {
                     </Suspense>
                 </Box>
             </Dialog>
+
+            {/* Floating Close Button */}
+            {isShipmentsModalOpen && (
+                <IconButton
+                    onClick={() => setIsShipmentsModalOpen(false)}
+                    sx={{
+                        position: 'fixed',
+                        right: { xs: 24, md: 40 },
+                        top: { xs: 24, md: 40 },
+                        zIndex: 1500,
+                        backgroundColor: 'black',
+                        color: 'white',
+                        width: '40px',
+                        height: '40px',
+                        border: '2px solid white',
+                        '&:hover': {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            transform: 'scale(1.05)',
+                            transition: 'all 0.2s ease-in-out'
+                        }
+                    }}
+                >
+                    <CloseIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+            )}
 
             {/* Globe - always rendered but opacity is controlled */}
             <Box sx={{
