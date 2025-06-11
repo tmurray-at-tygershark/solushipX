@@ -55,6 +55,7 @@ import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticSt
 const ShipmentDetail = React.lazy(() => import('../ShipmentDetail/ShipmentDetail'));
 
 const ShipmentsX = ({ isModal = false, onClose = null }) => {
+
     // Auth and company context
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading, companyData } = useCompany();
@@ -585,13 +586,18 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
 
     // Reload when filters change
     useEffect(() => {
+        // Don't reload shipments when in detail view to prevent race conditions
+        if (currentView === 'detail') {
+            return;
+        }
+
         if (!authLoading && !companyCtxLoading && companyIdForAddress) {
             const timeoutId = setTimeout(() => {
                 loadShipments();
             }, 300); // Debounce for 300ms
             return () => clearTimeout(timeoutId);
         }
-    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress]);
+    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress, currentView]);
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -607,7 +613,9 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
         // Small delay to allow state to update before animation
         setTimeout(() => {
             setCurrentView('detail');
-            setTimeout(() => setIsSliding(false), 300); // Match CSS transition duration
+            setTimeout(() => {
+                setIsSliding(false);
+            }, 300); // Match CSS transition duration
         }, 50);
     };
 
@@ -622,6 +630,8 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
             }, 300); // Match CSS transition duration
         }, 50);
     };
+
+
 
     const navigate = useNavigate();
 
@@ -940,7 +950,11 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                                         <CircularProgress />
                                     </Box>
                                 }>
-                                    <ShipmentDetail shipmentId={selectedShipmentId} />
+                                    <ShipmentDetail
+                                        key={selectedShipmentId}
+                                        shipmentId={selectedShipmentId}
+                                        onBack={handleBackToTable}
+                                    />
                                 </Suspense>
                             </Box>
                         )}

@@ -94,6 +94,7 @@ import {
     FileCopy as FileCopyIcon,
     Refresh as RefreshIcon,
     ArrowBack as ArrowBackIcon,
+    ArrowBackIosNew as ArrowBackIosNewIcon,
     ZoomIn as ZoomInIcon,
     CheckCircleOutline as CheckCircleOutlineIcon,
     Pause as PauseIcon,
@@ -610,7 +611,7 @@ const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', 
     );
 });
 
-const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
+const ShipmentDetail = ({ shipmentId: propShipmentId, onBack }) => {
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -718,6 +719,14 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
 
     // Use prop shipmentId if provided, otherwise fall back to URL parameter
     const shipmentId = propShipmentId || id;
+
+    // Skip Google Maps loading entirely to prevent conflicts with other loaders
+    // Google Maps is already available globally from other components
+    React.useEffect(() => {
+        if (window.google && window.google.maps) {
+            setIsGoogleMapsLoaded(true);
+        }
+    }, []);
 
     useEffect(() => {
         if (!shipment?.id && !shipment?.shipmentID) {
@@ -2788,752 +2797,682 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
     }
 
     return (
-        <LoadScript
-            googleMapsApiKey={mapsApiKey}
-            libraries={GOOGLE_MAPS_LIBRARIES}
-            onLoad={() => setIsGoogleMapsLoaded(true)}
-            onError={(error) => {
-                console.error('Google Maps loading error:', error);
-                setMapError('Failed to load Google Maps');
-            }}
-        >
+        <Box sx={{ width: '100%' }}>
             <ErrorBoundary>
-                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                        <Paper sx={{ p: 3, borderRadius: 2, boxShadow: 1, mb: 3 }}>
-                            {/* Breadcrumb Navigation and Action Buttons */}
-                            <Box sx={{ mb: 3 }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                    <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                                        Shipment Detail
-                                    </Typography>
+                <Box sx={{ width: '100%', bgcolor: 'transparent', minHeight: '100vh' }}>
+                    {/* Header Section */}
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        mb: 2,
+                        flexWrap: 'wrap',
+                        gap: 1
+                    }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {onBack && (
+                                <Button
+                                    onClick={onBack}
+                                    sx={{
+                                        minWidth: 0,
+                                        p: 0.5,
+                                        mr: 1,
+                                        color: '#6e6e73',
+                                        background: 'none',
+                                        borderRadius: '50%',
+                                        '&:hover': {
+                                            background: '#f2f2f7',
+                                            color: '#111',
+                                        },
+                                        boxShadow: 'none',
+                                    }}
+                                    aria-label="Back to Shipments"
+                                >
+                                    <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
+                                </Button>
+                            )}
+                            <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                Shipment Detail
+                            </Typography>
+                        </Box>
 
-                                    {/* Enhanced Action Buttons */}
-                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                        {/* Print Label Button - Only show when labels exist */}
-                                        {!isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && shipmentDocuments.labels?.length > 0 && (
-                                            <Button
-                                                onClick={handlePrintLabelClick}
-                                                startIcon={actionStates.printLabel.loading ?
-                                                    <CircularProgress size={16} /> : <PrintIcon />}
-                                                disabled={actionStates.printLabel.loading}
-                                                sx={{
-                                                    textTransform: 'none',
-                                                    fontWeight: 500,
-                                                    px: 2,
-                                                    minWidth: 140
-                                                }}
-                                                color="primary"
-                                            >
-                                                {actionStates.printLabel.loading ? 'Loading...' : 'Print Labels'}
-                                            </Button>
-                                        )}
+                        {/* Enhanced Action Buttons */}
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            {/* Print Label Button - Only show when labels exist */}
+                            {!isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && shipmentDocuments.labels?.length > 0 && (
+                                <Button
+                                    onClick={handlePrintLabelClick}
+                                    startIcon={actionStates.printLabel.loading ?
+                                        <CircularProgress size={16} /> : <PrintIcon />}
+                                    disabled={actionStates.printLabel.loading}
+                                    sx={{
+                                        textTransform: 'none',
+                                        fontWeight: 500,
+                                        px: 2,
+                                        minWidth: 140,
+                                        fontSize: '0.875rem',
+                                        py: 0.5
+                                    }}
+                                    size="small"
+                                >
+                                    {actionStates.printLabel.loading ? 'Loading...' : 'Print Labels'}
+                                </Button>
+                            )}
 
-                                        {/* BOL Button - For Freight shipments */}
-                                        {isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && (
-                                            <Button
-                                                onClick={handlePrintBOL}
-                                                startIcon={actionStates.printBOL.loading ?
-                                                    <CircularProgress size={16} /> : <DescriptionIcon />}
-                                                disabled={actionStates.printBOL.loading}
-                                                sx={{
-                                                    textTransform: 'none',
-                                                    fontWeight: 500,
-                                                    px: 2
-                                                }}
-                                            >
-                                                {actionStates.printBOL.loading ? 'Loading...' : 'Print BOL'}
-                                            </Button>
-                                        )}
+                            {/* BOL Button - For Freight shipments */}
+                            {isFreightShipment && shipment?.status !== 'draft' && !documentsLoading && (
+                                <Button
+                                    onClick={handlePrintBOL}
+                                    startIcon={actionStates.printBOL.loading ?
+                                        <CircularProgress size={16} /> : <DescriptionIcon />}
+                                    disabled={actionStates.printBOL.loading}
+                                    sx={{
+                                        textTransform: 'none',
+                                        fontWeight: 500,
+                                        px: 2,
+                                        fontSize: '0.875rem',
+                                        py: 0.5
+                                    }}
+                                    size="small"
+                                >
+                                    {actionStates.printBOL.loading ? 'Loading...' : 'Print BOL'}
+                                </Button>
+                            )}
 
-                                        {/* Print Shipment - Always available */}
-                                        <Button
-                                            onClick={handlePrintShipment}
-                                            startIcon={actionStates.printShipment.loading ?
-                                                <CircularProgress size={16} /> : <LocalShippingIcon />}
-                                            disabled={actionStates.printShipment.loading}
+                            {/* Print Shipment - Always available */}
+                            <Button
+                                onClick={handlePrintShipment}
+                                startIcon={actionStates.printShipment.loading ?
+                                    <CircularProgress size={16} /> : <LocalShippingIcon />}
+                                disabled={actionStates.printShipment.loading}
+                                sx={{
+                                    textTransform: 'none',
+                                    fontWeight: 500,
+                                    px: 2,
+                                    fontSize: '0.875rem',
+                                    py: 0.5
+                                }}
+                                size="small"
+                            >
+                                {actionStates.printShipment.loading ? 'Generating...' : 'Print Shipment'}
+                            </Button>
+
+                            {/* Document Status Indicator */}
+                            {(documentsLoading || actionStates.generateBOL.loading) && (
+                                <Chip
+                                    size="small"
+                                    label={actionStates.generateBOL.loading ? "Generating BOL..." : "Loading documents..."}
+                                    icon={<CircularProgress size={16} />}
+                                    variant="outlined"
+                                    sx={{ ml: 1 }}
+                                />
+                            )}
+
+                            {documentsError && (
+                                <Chip
+                                    size="small"
+                                    label="Document error"
+                                    color="error"
+                                    variant="outlined"
+                                    sx={{ ml: 1 }}
+                                    onClick={() => fetchShipmentDocuments()}
+                                    clickable
+                                />
+                            )}
+
+                            {!documentsLoading && !documentsError && !actionStates.generateBOL.loading && shipment?.status !== 'draft' && (
+                                <Chip
+                                    size="small"
+                                    label={`${(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0)} docs`}
+                                    color={(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0) > 0 ? "success" : "default"}
+                                    variant="outlined"
+                                    sx={{ ml: 1 }}
+                                />
+                            )}
+                        </Box>
+                    </Box>
+
+                    {/* Main Content */}
+                    <Box id="shipment-detail-content">
+                        {/* Customer and Shipment Summary Section */}
+                        <Box sx={{ bgcolor: 'white', borderRadius: 2, mb: 3, border: '1px solid #e2e8f0' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                    <Typography variant="h6">Shipment Summary</Typography>
+                                </Box>
+                                {/* Cancel Button */}
+                                {canCancelShipment() && (
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={handleCancelShipmentClick}
+                                        sx={{
+                                            borderColor: 'text.secondary',
+                                            color: 'text.secondary',
+                                            textTransform: 'none',
+                                            fontSize: '0.875rem',
+                                            minWidth: 'auto',
+                                            px: 2,
+                                            '&:hover': {
+                                                borderColor: 'error.main',
+                                                color: 'error.main',
+                                                bgcolor: 'transparent'
+                                            }
+                                        }}
+                                    >
+                                        Cancel Shipment
+                                    </Button>
+                                )}
+                            </Box>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Shipment ID</Typography>
+                                    <Link
+                                        to={`/tracking/${encodeURIComponent(shipment?.shipmentID || 'N/A')}`}
+                                        style={{ textDecoration: 'none' }}
+                                    >
+                                        <Typography
+                                            variant="body2"
                                             sx={{
-                                                textTransform: 'none',
-                                                fontWeight: 500,
-                                                px: 2
+                                                fontWeight: 600,
+                                                color: 'primary.main',
+                                                cursor: 'pointer',
+                                                '&:hover': {
+                                                    textDecoration: 'underline',
+                                                    color: 'primary.dark'
+                                                }
                                             }}
                                         >
-                                            {actionStates.printShipment.loading ? 'Generating...' : 'Print Shipment'}
-                                        </Button>
+                                            {shipment?.shipmentID || 'N/A'}
+                                        </Typography>
+                                    </Link>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Company ID</Typography>
+                                    <Typography variant="body2">{shipment?.companyID || 'N/A'}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Customer ID</Typography>
+                                    <Typography variant="body2">{shipment?.shipTo?.customerID || 'N/A'}</Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={6} md={3}>
+                                    <Typography variant="caption" color="text.secondary">Created At</Typography>
+                                    <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
+                                </Grid>
+                            </Grid>
+                        </Box>
 
-                                        {/* Document Status Indicator */}
-                                        {(documentsLoading || actionStates.generateBOL.loading) && (
-                                            <Chip
-                                                size="small"
-                                                label={actionStates.generateBOL.loading ? "Generating BOL..." : "Loading documents..."}
-                                                icon={<CircularProgress size={16} />}
-                                                variant="outlined"
-                                                sx={{ ml: 1 }}
-                                            />
-                                        )}
-
-                                        {documentsError && (
-                                            <Chip
-                                                size="small"
-                                                label="Document error"
-                                                color="error"
-                                                variant="outlined"
-                                                sx={{ ml: 1 }}
-                                                onClick={() => fetchShipmentDocuments()}
-                                                clickable
-                                            />
-                                        )}
-
-                                        {!documentsLoading && !documentsError && !actionStates.generateBOL.loading && shipment?.status !== 'draft' && (
-                                            <Chip
-                                                size="small"
-                                                label={`${(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0)} docs`}
-                                                color={(shipmentDocuments.labels?.length || 0) + (shipmentDocuments.bol?.length || 0) + (shipmentDocuments.other?.length || 0) > 0 ? "success" : "default"}
-                                                variant="outlined"
-                                                sx={{ ml: 1 }}
-                                            />
-                                        )}
-                                    </Box>
-                                </Box>
-
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <HomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
-                                    <Typography
-                                        component={Link}
-                                        to="/dashboard"
-                                        sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
-                                    >
-                                        Dashboard
-                                    </Typography>
-                                    <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                                    <Typography
-                                        component={Link}
-                                        to="/shipments"
-                                        sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
-                                    >
-                                        Shipments
-                                    </Typography>
-                                    <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                                    <Typography color="text.primary" sx={{ fontWeight: 600 }}>
-                                        {shipment?.shipmentID || 'Shipment'}
-                                    </Typography>
-                                </Box>
+                        {/* Shipment Information Section */}
+                        <Box sx={{ bgcolor: 'white', borderRadius: 2, mb: 3, p: 3, border: '1px solid #e2e8f0' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                                <LocalShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                <Typography variant="h6">Shipment Information</Typography>
                             </Box>
-                            {/* Add id to the main content container */}
-                            <Box id="shipment-detail-content">
-                                {/* Customer and Shipment Summary Section */}
-                                <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                            <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                            <Typography variant="h6">Shipment Summary</Typography>
-                                        </Box>
-                                        {/* Cancel Button */}
-                                        {canCancelShipment() && (
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={handleCancelShipmentClick}
-                                                sx={{
-                                                    borderColor: 'text.secondary',
-                                                    color: 'text.secondary',
-                                                    textTransform: 'none',
-                                                    fontSize: '0.875rem',
-                                                    minWidth: 'auto',
-                                                    px: 2,
-                                                    '&:hover': {
-                                                        borderColor: 'error.main',
-                                                        color: 'error.main',
-                                                        bgcolor: 'transparent'
-                                                    }
-                                                }}
-                                            >
-                                                Cancel Shipment
-                                            </Button>
-                                        )}
-                                    </Box>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={6} md={3}>
-                                            <Typography variant="caption" color="text.secondary">Shipment ID</Typography>
-                                            <Link
-                                                to={`/tracking/${encodeURIComponent(shipment?.shipmentID || 'N/A')}`}
-                                                style={{ textDecoration: 'none' }}
-                                            >
-                                                <Typography
-                                                    variant="body2"
-                                                    sx={{
-                                                        fontWeight: 600,
-                                                        color: 'primary.main',
-                                                        cursor: 'pointer',
-                                                        '&:hover': {
-                                                            textDecoration: 'underline',
-                                                            color: 'primary.dark'
-                                                        }
-                                                    }}
-                                                >
-                                                    {shipment?.shipmentID || 'N/A'}
+
+                            <Grid container spacing={3}>
+                                {/* Basic Information */}
+                                <Grid item xs={12} md={3}>
+                                    <Box sx={{
+                                        p: 2,
+                                        bgcolor: 'background.default',
+                                        borderRadius: 1,
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        height: '100%'
+                                    }}>
+                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                            Basic Information
+                                        </Typography>
+                                        <Stack spacing={2}>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
+                                                <Typography variant="body2">{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Reference Number</Typography>
+                                                <Typography variant="body2">{shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}</Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Bill Type</Typography>
+                                                <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                                                    {shipment?.shipmentInfo?.shipmentBillType?.toLowerCase() || 'N/A'}
                                                 </Typography>
-                                            </Link>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6} md={3}>
-                                            <Typography variant="caption" color="text.secondary">Company ID</Typography>
-                                            <Typography variant="body2">{shipment?.companyID || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6} md={3}>
-                                            <Typography variant="caption" color="text.secondary">Customer ID</Typography>
-                                            <Typography variant="body2">{shipment?.shipTo?.customerID || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6} md={3}>
-                                            <Typography variant="caption" color="text.secondary">Created At</Typography>
-                                            <Typography variant="body2">{shipment?.createdAt?.toDate ? shipment.createdAt.toDate().toLocaleString() : (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')}</Typography>
-                                        </Grid>
-                                    </Grid>
-                                </Paper>
+                                            </Box>
+                                        </Stack>
+                                    </Box>
+                                </Grid>
 
-                                {/* Shipment Information Section */}
-                                <Grid item xs={12}>
-                                    <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                            <LocalShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                            <Typography variant="h6">Shipment Information</Typography>
-                                        </Box>
+                                {/* Timing Information */}
+                                <Grid item xs={12} md={3}>
+                                    <Box sx={{
+                                        p: 2,
+                                        bgcolor: 'background.default',
+                                        borderRadius: 1,
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        height: '100%'
+                                    }}>
+                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                            Timing Information
+                                        </Typography>
+                                        <Stack spacing={2}>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
+                                                <Typography variant="body2">
+                                                    {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
+                                                </Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Estimated Delivery</Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '0.9rem' }} />
+                                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                        {(() => {
+                                                            const deliveryDate =
+                                                                shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                                getBestRateInfo?.transit?.estimatedDelivery ||
+                                                                getBestRateInfo?.estimatedDeliveryDate;
 
-                                        <Grid container spacing={3}>
-                                            {/* Basic Information */}
-                                            <Grid item xs={12} md={3}>
-                                                <Box sx={{
-                                                    p: 2,
-                                                    bgcolor: 'background.default',
-                                                    borderRadius: 1,
-                                                    border: '1px solid',
-                                                    borderColor: 'divider',
-                                                    height: '100%'
-                                                }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                        Basic Information
+                                                            if (deliveryDate) {
+                                                                try {
+                                                                    const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                                                                    return date.toLocaleDateString('en-US', {
+                                                                        weekday: 'short',
+                                                                        month: 'short',
+                                                                        day: 'numeric',
+                                                                        year: 'numeric'
+                                                                    });
+                                                                } catch (error) {
+                                                                    return 'Invalid Date';
+                                                                }
+                                                            }
+                                                            return 'N/A';
+                                                        })()}
                                                     </Typography>
-                                                    <Stack spacing={2}>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
-                                                            <Typography variant="body2">{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Reference Number</Typography>
-                                                            <Typography variant="body2">{shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}</Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Bill Type</Typography>
-                                                            <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
-                                                                {shipment?.shipmentInfo?.shipmentBillType?.toLowerCase() || 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Stack>
                                                 </Box>
-                                            </Grid>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
+                                                <Typography variant="body2">
+                                                    {shipment?.shipmentInfo?.earliestPickupTime && shipment?.shipmentInfo?.latestPickupTime
+                                                        ? `${shipment.shipmentInfo.earliestPickupTime} - ${shipment.shipmentInfo.latestPickupTime}`
+                                                        : '09:00 - 17:00'}
+                                                </Typography>
+                                            </Box>
+                                        </Stack>
+                                    </Box>
+                                </Grid>
 
-                                            {/* Timing Information */}
-                                            <Grid item xs={12} md={3}>
-                                                <Box sx={{
-                                                    p: 2,
-                                                    bgcolor: 'background.default',
-                                                    borderRadius: 1,
-                                                    border: '1px solid',
-                                                    borderColor: 'divider',
-                                                    height: '100%'
-                                                }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                        Timing Information
-                                                    </Typography>
-                                                    <Stack spacing={2}>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
-                                                            <Typography variant="body2">
-                                                                {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Estimated Delivery</Typography>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '0.9rem' }} />
-                                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                                    {(() => {
-                                                                        const deliveryDate =
-                                                                            shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                                                            getBestRateInfo?.transit?.estimatedDelivery ||
-                                                                            getBestRateInfo?.estimatedDeliveryDate;
-
-                                                                        if (deliveryDate) {
-                                                                            try {
-                                                                                const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
-                                                                                return date.toLocaleDateString('en-US', {
-                                                                                    weekday: 'short',
-                                                                                    month: 'short',
-                                                                                    day: 'numeric',
-                                                                                    year: 'numeric'
-                                                                                });
-                                                                            } catch (error) {
-                                                                                return 'Invalid Date';
-                                                                            }
-                                                                        }
-                                                                        return 'N/A';
-                                                                    })()}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
-                                                            <Typography variant="body2">
-                                                                {shipment?.shipmentInfo?.earliestPickupTime && shipment?.shipmentInfo?.latestPickupTime
-                                                                    ? `${shipment.shipmentInfo.earliestPickupTime} - ${shipment.shipmentInfo.latestPickupTime}`
-                                                                    : '09:00 - 17:00'}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Stack>
+                                {/* Tracking Information */}
+                                <Grid item xs={12} md={3}>
+                                    <Box sx={{
+                                        p: 2,
+                                        bgcolor: 'background.default',
+                                        borderRadius: 1,
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        height: '100%'
+                                    }}>
+                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                            Tracking & Status
+                                        </Typography>
+                                        <Stack spacing={2}>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Current Status</Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                                    <StatusChip status={shipment?.status} />
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={handleRefreshStatus}
+                                                        disabled={smartUpdateLoading || actionStates.refreshStatus.loading || shipment?.status === 'draft'}
+                                                        sx={{
+                                                            padding: '4px',
+                                                            '&:hover': { bgcolor: 'action.hover' }
+                                                        }}
+                                                        title="Refresh status"
+                                                    >
+                                                        {smartUpdateLoading || actionStates.refreshStatus.loading ?
+                                                            <CircularProgress size={14} /> :
+                                                            <RefreshIcon sx={{ fontSize: 16 }} />
+                                                        }
+                                                    </IconButton>
                                                 </Box>
-                                            </Grid>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Carrier</Typography>
+                                                <CarrierDisplay
+                                                    carrierName={getBestRateInfo?.carrier}
+                                                    carrierData={carrierData}
+                                                    size="small"
+                                                    isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                                />
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    <Link
+                                                        to={`/tracking/${(() => {
+                                                            const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
+                                                                carrierData?.name?.toLowerCase().includes('canpar') ||
+                                                                carrierData?.carrierID === 'CANPAR';
 
-                                            {/* Tracking Information */}
-                                            <Grid item xs={12} md={3}>
-                                                <Box sx={{
-                                                    p: 2,
-                                                    bgcolor: 'background.default',
-                                                    borderRadius: 1,
-                                                    border: '1px solid',
-                                                    borderColor: 'divider',
-                                                    height: '100%'
-                                                }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                        Tracking & Status
-                                                    </Typography>
-                                                    <Stack spacing={2}>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Current Status</Typography>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                                                                <StatusChip status={shipment?.status} />
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={handleRefreshStatus}
-                                                                    disabled={smartUpdateLoading || actionStates.refreshStatus.loading || shipment?.status === 'draft'}
-                                                                    sx={{
-                                                                        padding: '4px',
-                                                                        '&:hover': { bgcolor: 'action.hover' }
-                                                                    }}
-                                                                    title="Refresh status"
-                                                                >
-                                                                    {smartUpdateLoading || actionStates.refreshStatus.loading ?
-                                                                        <CircularProgress size={14} /> :
-                                                                        <RefreshIcon sx={{ fontSize: 16 }} />
-                                                                    }
-                                                                </IconButton>
-                                                            </Box>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Carrier</Typography>
-                                                            <CarrierDisplay
-                                                                carrierName={getBestRateInfo?.carrier}
-                                                                carrierData={carrierData}
-                                                                size="small"
-                                                                isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
-                                                            />
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <Link
-                                                                    to={`/tracking/${(() => {
-                                                                        const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                                                                            carrierData?.name?.toLowerCase().includes('canpar') ||
-                                                                            carrierData?.carrierID === 'CANPAR';
-
-                                                                        if (isCanparShipment) {
-                                                                            return shipment?.trackingNumber ||
-                                                                                shipment?.carrierBookingConfirmation?.trackingNumber ||
-                                                                                shipment?.selectedRate?.TrackingNumber ||
-                                                                                shipment?.selectedRate?.Barcode ||
-                                                                                shipment?.id;
-                                                                        } else {
-                                                                            return shipment?.carrierBookingConfirmation?.proNumber ||
-                                                                                shipment?.carrierBookingConfirmation?.confirmationNumber ||
-                                                                                shipment?.trackingNumber ||
-                                                                                shipment?.id;
-                                                                        }
-                                                                    })()}`}
-                                                                    style={{ textDecoration: 'none' }}
-                                                                >
-                                                                    <Box sx={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 0.5,
-                                                                        '&:hover': { color: 'primary.dark' }
-                                                                    }}>
-                                                                        <AssignmentIcon sx={{ color: 'primary.main', fontSize: '0.9rem' }} />
-                                                                        <Typography
-                                                                            variant="body2"
-                                                                            sx={{
-                                                                                fontWeight: 500,
-                                                                                color: 'primary.main',
-                                                                                '&:hover': { textDecoration: 'underline' }
-                                                                            }}
-                                                                        >
-                                                                            {(() => {
-                                                                                const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                                                                                    carrierData?.name?.toLowerCase().includes('canpar') ||
-                                                                                    carrierData?.carrierID === 'CANPAR';
-
-                                                                                if (isCanparShipment) {
-                                                                                    return shipment?.trackingNumber ||
-                                                                                        shipment?.carrierBookingConfirmation?.trackingNumber ||
-                                                                                        shipment?.selectedRate?.TrackingNumber ||
-                                                                                        shipment?.selectedRate?.Barcode ||
-                                                                                        shipment?.id ||
-                                                                                        'N/A';
-                                                                                } else {
-                                                                                    return shipment?.carrierBookingConfirmation?.proNumber ||
-                                                                                        shipment?.carrierBookingConfirmation?.confirmationNumber ||
-                                                                                        shipment?.trackingNumber ||
-                                                                                        shipment?.id ||
-                                                                                        'N/A';
-                                                                                }
-                                                                            })()}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                </Link>
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => {
-                                                                        const trackingNum = (() => {
-                                                                            const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
-                                                                                carrierData?.name?.toLowerCase().includes('canpar') ||
-                                                                                carrierData?.carrierID === 'CANPAR';
-                                                                            if (isCanparShipment) {
-                                                                                return shipment?.trackingNumber ||
-                                                                                    shipment?.carrierBookingConfirmation?.trackingNumber ||
-                                                                                    shipment?.selectedRate?.TrackingNumber ||
-                                                                                    shipment?.selectedRate?.Barcode ||
-                                                                                    shipment?.id;
-                                                                            } else {
-                                                                                return shipment?.carrierBookingConfirmation?.proNumber ||
-                                                                                    shipment?.carrierBookingConfirmation?.confirmationNumber ||
-                                                                                    shipment?.trackingNumber ||
-                                                                                    shipment?.id;
-                                                                            }
-                                                                        })();
-                                                                        if (trackingNum && trackingNum !== 'N/A') {
-                                                                            navigator.clipboard.writeText(trackingNum);
-                                                                            showSnackbar('Tracking number copied!', 'success');
-                                                                        } else {
-                                                                            showSnackbar('No tracking number to copy.', 'warning');
-                                                                        }
-                                                                    }}
-                                                                    sx={{ padding: '2px' }}
-                                                                    title="Copy tracking number"
-                                                                >
-                                                                    <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                                                                </IconButton>
-                                                            </Box>
-                                                        </Box>
-                                                        <Box>
-                                                            <Typography variant="caption" color="text.secondary">Last Updated</Typography>
-                                                            <Typography variant="body2">
+                                                            if (isCanparShipment) {
+                                                                return shipment?.trackingNumber ||
+                                                                    shipment?.carrierBookingConfirmation?.trackingNumber ||
+                                                                    shipment?.selectedRate?.TrackingNumber ||
+                                                                    shipment?.selectedRate?.Barcode ||
+                                                                    shipment?.id;
+                                                            } else {
+                                                                return shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                    shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                    shipment?.trackingNumber ||
+                                                                    shipment?.id;
+                                                            }
+                                                        })()}`}
+                                                        style={{ textDecoration: 'none' }}
+                                                    >
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 0.5,
+                                                            '&:hover': { color: 'primary.dark' }
+                                                        }}>
+                                                            <AssignmentIcon sx={{ color: 'primary.main', fontSize: '0.9rem' }} />
+                                                            <Typography
+                                                                variant="body2"
+                                                                sx={{
+                                                                    fontWeight: 500,
+                                                                    color: 'primary.main',
+                                                                    '&:hover': { textDecoration: 'underline' }
+                                                                }}
+                                                            >
                                                                 {(() => {
-                                                                    const lastUpdated = getLastUpdatedTimestamp(shipment, mergedEvents);
-                                                                    return lastUpdated ? formatTimestamp(lastUpdated) : 'N/A';
+                                                                    const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
+                                                                        carrierData?.name?.toLowerCase().includes('canpar') ||
+                                                                        carrierData?.carrierID === 'CANPAR';
+
+                                                                    if (isCanparShipment) {
+                                                                        return shipment?.trackingNumber ||
+                                                                            shipment?.carrierBookingConfirmation?.trackingNumber ||
+                                                                            shipment?.selectedRate?.TrackingNumber ||
+                                                                            shipment?.selectedRate?.Barcode ||
+                                                                            shipment?.id ||
+                                                                            'N/A';
+                                                                    } else {
+                                                                        return shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                            shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                            shipment?.trackingNumber ||
+                                                                            shipment?.id ||
+                                                                            'N/A';
+                                                                    }
                                                                 })()}
                                                             </Typography>
                                                         </Box>
-                                                    </Stack>
-                                                </Box>
-                                            </Grid>
-
-                                            {/* Service Options */}
-                                            <Grid item xs={12} md={3}>
-                                                {console.log("ShipmentDetail Service Options - shipment.shipmentInfo:", shipment?.shipmentInfo)}
-                                                <Box sx={{
-                                                    p: 2,
-                                                    bgcolor: 'background.default',
-                                                    borderRadius: 1,
-                                                    border: '1px solid',
-                                                    borderColor: 'divider',
-                                                    height: '100%'
-                                                }}>
-                                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                                        Service Options
-                                                    </Typography>
-                                                    <Stack spacing={2}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="caption" color="text.secondary">Hold for Pickup</Typography>
-                                                            <Chip
-                                                                size="small"
-                                                                label={(shipment?.shipmentInfo?.holdForPickup === true || String(shipment?.shipmentInfo?.holdForPickup).toLowerCase() === "true") ? "Yes" : "No"}
-                                                                color={(shipment?.shipmentInfo?.holdForPickup === true || String(shipment?.shipmentInfo?.holdForPickup).toLowerCase() === "true") ? "primary" : "default"}
-                                                                variant="outlined"
-                                                            />
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="caption" color="text.secondary">International</Typography>
-                                                            <Chip
-                                                                size="small"
-                                                                label={shipment?.shipFrom?.country && shipment?.shipTo?.country && shipment.shipFrom.country !== shipment.shipTo.country ? "Yes" : "No"}
-                                                                color={shipment?.shipFrom?.country && shipment?.shipTo?.country && shipment.shipFrom.country !== shipment.shipTo.country ? "primary" : "default"}
-                                                                variant="outlined"
-                                                            />
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="caption" color="text.secondary">Saturday Delivery</Typography>
-                                                            <Chip
-                                                                size="small"
-                                                                label={(shipment?.shipmentInfo?.saturdayDelivery === true || String(shipment?.shipmentInfo?.saturdayDelivery).toLowerCase() === "true") ? "Yes" : "No"}
-                                                                color={(shipment?.shipmentInfo?.saturdayDelivery === true || String(shipment?.shipmentInfo?.saturdayDelivery).toLowerCase() === "true") ? "primary" : "default"}
-                                                                variant="outlined"
-                                                            />
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Typography variant="caption" color="text.secondary">Signature Required</Typography>
-                                                            <Chip
-                                                                size="small"
-                                                                label={(shipment?.shipmentInfo?.signatureRequired === true || String(shipment?.shipmentInfo?.signatureRequired).toLowerCase() === "true") ? "Yes" : "No"}
-                                                                color={(shipment?.shipmentInfo?.signatureRequired === true || String(shipment?.shipmentInfo?.signatureRequired).toLowerCase() === "true") ? "primary" : "default"}
-                                                                variant="outlined"
-                                                            />
-                                                        </Box>
-                                                    </Stack>
-                                                </Box>
-                                            </Grid>
-                                        </Grid>
-                                    </Paper>
-                                </Grid>                                {/* Documents Section - Only show for non-draft shipments */}
-                                {shipment?.status !== 'draft' && (
-                                    <Grid item xs={12}>
-                                        <Paper sx={{ mt: 3 }}>
-                                            <Box
-                                                sx={{
-                                                    p: 2,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    borderBottom: '1px solid #e0e0e0'
-                                                }}
-                                            >
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <DescriptionIcon sx={{ color: '#000' }} />
-                                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                        Documents
-                                                    </Typography>
-                                                </Box>
-                                                <IconButton onClick={() => toggleSection('documents')}>
-                                                    <ExpandMoreIcon
-                                                        sx={{
-                                                            transform: expandedSections.documents ? 'rotate(180deg)' : 'none',
-                                                            transition: 'transform 0.3s',
-                                                            color: '#666'
-                                                        }}
-                                                    />
-                                                </IconButton>
-                                            </Box>
-                                            <Collapse in={expandedSections.documents}>
-                                                <Box sx={{ p: 3 }}>
-                                                    {documentsLoading ? (
-                                                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                                                            <CircularProgress />
-                                                        </Box>
-                                                    ) : documentsError ? (
-                                                        <Alert
-                                                            severity="error"
-                                                            action={
-                                                                <Button
-                                                                    color="inherit"
-                                                                    size="small"
-                                                                    onClick={() => fetchShipmentDocuments()}
-                                                                >
-                                                                    Retry
-                                                                </Button>
+                                                    </Link>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            const trackingNum = (() => {
+                                                                const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
+                                                                    carrierData?.name?.toLowerCase().includes('canpar') ||
+                                                                    carrierData?.carrierID === 'CANPAR';
+                                                                if (isCanparShipment) {
+                                                                    return shipment?.trackingNumber ||
+                                                                        shipment?.carrierBookingConfirmation?.trackingNumber ||
+                                                                        shipment?.selectedRate?.TrackingNumber ||
+                                                                        shipment?.selectedRate?.Barcode ||
+                                                                        shipment?.id;
+                                                                } else {
+                                                                    return shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                        shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                        shipment?.trackingNumber ||
+                                                                        shipment?.id;
+                                                                }
+                                                            })();
+                                                            if (trackingNum && trackingNum !== 'N/A') {
+                                                                navigator.clipboard.writeText(trackingNum);
+                                                                showSnackbar('Tracking number copied!', 'success');
+                                                            } else {
+                                                                showSnackbar('No tracking number to copy.', 'warning');
                                                             }
+                                                        }}
+                                                        sx={{ padding: '2px' }}
+                                                        title="Copy tracking number"
+                                                    >
+                                                        <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                                    </IconButton>
+                                                </Box>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Last Updated</Typography>
+                                                <Typography variant="body2">
+                                                    {(() => {
+                                                        const lastUpdated = getLastUpdatedTimestamp(shipment, mergedEvents);
+                                                        return lastUpdated ? formatTimestamp(lastUpdated) : 'N/A';
+                                                    })()}
+                                                </Typography>
+                                            </Box>
+                                        </Stack>
+                                    </Box>
+                                </Grid>
+
+                                {/* Service Options */}
+                                <Grid item xs={12} md={3}>
+                                    {console.log("ShipmentDetail Service Options - shipment.shipmentInfo:", shipment?.shipmentInfo)}
+                                    <Box sx={{
+                                        p: 2,
+                                        bgcolor: 'background.default',
+                                        borderRadius: 1,
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        height: '100%'
+                                    }}>
+                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                            Service Options
+                                        </Typography>
+                                        <Stack spacing={2}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <Typography variant="caption" color="text.secondary">Hold for Pickup</Typography>
+                                                <Chip
+                                                    size="small"
+                                                    label={(shipment?.shipmentInfo?.holdForPickup === true || String(shipment?.shipmentInfo?.holdForPickup).toLowerCase() === "true") ? "Yes" : "No"}
+                                                    color={(shipment?.shipmentInfo?.holdForPickup === true || String(shipment?.shipmentInfo?.holdForPickup).toLowerCase() === "true") ? "primary" : "default"}
+                                                    variant="outlined"
+                                                />
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <Typography variant="caption" color="text.secondary">International</Typography>
+                                                <Chip
+                                                    size="small"
+                                                    label={shipment?.shipFrom?.country && shipment?.shipTo?.country && shipment.shipFrom.country !== shipment.shipTo.country ? "Yes" : "No"}
+                                                    color={shipment?.shipFrom?.country && shipment?.shipTo?.country && shipment.shipFrom.country !== shipment.shipTo.country ? "primary" : "default"}
+                                                    variant="outlined"
+                                                />
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <Typography variant="caption" color="text.secondary">Saturday Delivery</Typography>
+                                                <Chip
+                                                    size="small"
+                                                    label={(shipment?.shipmentInfo?.saturdayDelivery === true || String(shipment?.shipmentInfo?.saturdayDelivery).toLowerCase() === "true") ? "Yes" : "No"}
+                                                    color={(shipment?.shipmentInfo?.saturdayDelivery === true || String(shipment?.shipmentInfo?.saturdayDelivery).toLowerCase() === "true") ? "primary" : "default"}
+                                                    variant="outlined"
+                                                />
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <Typography variant="caption" color="text.secondary">Signature Required</Typography>
+                                                <Chip
+                                                    size="small"
+                                                    label={(shipment?.shipmentInfo?.signatureRequired === true || String(shipment?.shipmentInfo?.signatureRequired).toLowerCase() === "true") ? "Yes" : "No"}
+                                                    color={(shipment?.shipmentInfo?.signatureRequired === true || String(shipment?.shipmentInfo?.signatureRequired).toLowerCase() === "true") ? "primary" : "default"}
+                                                    variant="outlined"
+                                                />
+                                            </Box>
+                                        </Stack>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                        </Box>
+
+                        {/* Documents Section - Only show for non-draft shipments */}
+                        {shipment?.status !== 'draft' && (
+                            <Grid item xs={12}>
+                                <Paper sx={{ mt: 3 }}>
+                                    <Box
+                                        sx={{
+                                            p: 2,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            borderBottom: '1px solid #e0e0e0'
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <DescriptionIcon sx={{ color: '#000' }} />
+                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                Documents
+                                            </Typography>
+                                        </Box>
+                                        <IconButton onClick={() => toggleSection('documents')}>
+                                            <ExpandMoreIcon
+                                                sx={{
+                                                    transform: expandedSections.documents ? 'rotate(180deg)' : 'none',
+                                                    transition: 'transform 0.3s',
+                                                    color: '#666'
+                                                }}
+                                            />
+                                        </IconButton>
+                                    </Box>
+                                    <Collapse in={expandedSections.documents}>
+                                        <Box sx={{ p: 3 }}>
+                                            {documentsLoading ? (
+                                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                                                    <CircularProgress />
+                                                </Box>
+                                            ) : documentsError ? (
+                                                <Alert
+                                                    severity="error"
+                                                    action={
+                                                        <Button
+                                                            color="inherit"
+                                                            size="small"
+                                                            onClick={() => fetchShipmentDocuments()}
                                                         >
-                                                            Failed to load documents: {documentsError}
-                                                        </Alert>
-                                                    ) : Object.values(shipmentDocuments).flat().length === 0 ? (
-                                                        <Alert severity="info">
-                                                            No documents available yet. Documents will be available after the shipment is booked.
-                                                        </Alert>
-                                                    ) : (
-                                                        <Grid container spacing={2}>
-                                                            {/* Labels */}
-                                                            {shipmentDocuments.labels?.length > 0 && (
-                                                                <Grid item xs={12}>
-                                                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-                                                                        Shipping Labels
-                                                                    </Typography>
-                                                                    <Grid container spacing={1}>
-                                                                        {shipmentDocuments.labels
-                                                                            .filter(label => {
-                                                                                const filename = (label.filename || '').toLowerCase();
-                                                                                const docType = (label.documentType || '').toLowerCase();
-                                                                                const isBOL = label.isGeneratedBOL === true ||
-                                                                                    label.metadata?.generated === true ||
-                                                                                    label.metadata?.eshipplus?.generated === true ||
-                                                                                    label.metadata?.polaris?.generated === true ||
-                                                                                    label.metadata?.canpar?.generated === true ||
-                                                                                    filename.includes('bol') ||
-                                                                                    filename.includes('bill-of-lading') ||
-                                                                                    filename.includes('bill_of_lading') ||
-                                                                                    filename.includes('billoflading') ||
-                                                                                    docType.includes('bol') ||
-                                                                                    docType.includes('bill of lading');
-                                                                                return !isBOL;
-                                                                            })
-                                                                            .map((label) => (
-                                                                                <Grid item key={label.id}>
-                                                                                    <Chip
-                                                                                        icon={<PictureAsPdfIcon />}
-                                                                                        label={label.filename || 'Label'}
-                                                                                        onClick={() => viewPdfInModal(label.id, label.filename, 'Shipping Label')}
-                                                                                        clickable
-                                                                                        color="primary"
-                                                                                        variant="outlined"
-                                                                                    />
-                                                                                </Grid>
-                                                                            ))}
-                                                                    </Grid>
-                                                                </Grid>
-                                                            )}
-
-                                                            {/* BOL */}
-                                                            <Grid item xs={12}>
-                                                                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-                                                                    Bill of Lading
-                                                                </Typography>
-                                                                <Grid container spacing={1}>
-                                                                    {shipmentDocuments.bol
-                                                                        .filter(bol => {
-                                                                            const filename = (bol.filename || '').toUpperCase();
-                                                                            return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
-                                                                        })
-                                                                        .map((bol) => (
-                                                                            <Grid item key={bol.id}>
-                                                                                <Chip
-                                                                                    icon={<DescriptionIcon />}
-                                                                                    label={bol.filename || 'BOL'}
-                                                                                    onClick={() => viewPdfInModal(bol.id, bol.filename, 'Bill of Lading')}
-                                                                                    clickable
-                                                                                    color="secondary"
-                                                                                    variant="outlined"
-                                                                                />
-                                                                            </Grid>
-                                                                        ))}
-                                                                </Grid>
+                                                            Retry
+                                                        </Button>
+                                                    }
+                                                >
+                                                    Failed to load documents: {documentsError}
+                                                </Alert>
+                                            ) : Object.values(shipmentDocuments).flat().length === 0 ? (
+                                                <Alert severity="info">
+                                                    No documents available yet. Documents will be available after the shipment is booked.
+                                                </Alert>
+                                            ) : (
+                                                <Grid container spacing={2}>
+                                                    {/* Labels */}
+                                                    {shipmentDocuments.labels?.length > 0 && (
+                                                        <Grid item xs={12}>
+                                                            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                                                                Shipping Labels
+                                                            </Typography>
+                                                            <Grid container spacing={1}>
+                                                                {shipmentDocuments.labels
+                                                                    .filter(label => {
+                                                                        const filename = (label.filename || '').toLowerCase();
+                                                                        const docType = (label.documentType || '').toLowerCase();
+                                                                        const isBOL = label.isGeneratedBOL === true ||
+                                                                            label.metadata?.generated === true ||
+                                                                            label.metadata?.eshipplus?.generated === true ||
+                                                                            label.metadata?.polaris?.generated === true ||
+                                                                            label.metadata?.canpar?.generated === true ||
+                                                                            filename.includes('bol') ||
+                                                                            filename.includes('bill-of-lading') ||
+                                                                            filename.includes('bill_of_lading') ||
+                                                                            filename.includes('billoflading') ||
+                                                                            docType.includes('bol') ||
+                                                                            docType.includes('bill of lading');
+                                                                        return !isBOL;
+                                                                    })
+                                                                    .map((label) => (
+                                                                        <Grid item key={label.id}>
+                                                                            <Chip
+                                                                                icon={<PictureAsPdfIcon />}
+                                                                                label={label.filename || 'Label'}
+                                                                                onClick={() => viewPdfInModal(label.id, label.filename, 'Shipping Label')}
+                                                                                clickable
+                                                                                color="primary"
+                                                                                variant="outlined"
+                                                                            />
+                                                                        </Grid>
+                                                                    ))}
                                                             </Grid>
-
-                                                            {/* Other Documents */}
-                                                            {shipmentDocuments.other?.length > 0 && (
-                                                                <Grid item xs={12}>
-                                                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-                                                                        Other Documents
-                                                                    </Typography>
-                                                                    <Grid container spacing={1}>
-                                                                        {shipmentDocuments.other.map((doc) => (
-                                                                            <Grid item key={doc.id}>
-                                                                                <Chip
-                                                                                    icon={<DescriptionIcon />}
-                                                                                    label={doc.filename || 'Document'}
-                                                                                    onClick={() => viewPdfInModal(doc.id, doc.filename, 'Document')}
-                                                                                    clickable
-                                                                                    variant="outlined"
-                                                                                />
-                                                                            </Grid>
-                                                                        ))}
-                                                                    </Grid>
-                                                                </Grid>
-                                                            )}
                                                         </Grid>
                                                     )}
-                                                </Box>
-                                            </Collapse>
-                                        </Paper>
-                                    </Grid>
-                                )}
 
+                                                    {/* BOL */}
+                                                    <Grid item xs={12}>
+                                                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                                                            Bill of Lading
+                                                        </Typography>
+                                                        <Grid container spacing={1}>
+                                                            {shipmentDocuments.bol
+                                                                .filter(bol => {
+                                                                    const filename = (bol.filename || '').toUpperCase();
+                                                                    return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
+                                                                })
+                                                                .map((bol) => (
+                                                                    <Grid item key={bol.id}>
+                                                                        <Chip
+                                                                            icon={<DescriptionIcon />}
+                                                                            label={bol.filename || 'BOL'}
+                                                                            onClick={() => viewPdfInModal(bol.id, bol.filename, 'Bill of Lading')}
+                                                                            clickable
+                                                                            color="secondary"
+                                                                            variant="outlined"
+                                                                        />
+                                                                    </Grid>
+                                                                ))}
+                                                        </Grid>
+                                                    </Grid>
 
-                                {/* Main Content Grid - Two Columns */}
-                                <Grid container spacing={3} sx={{ mt: 2 }}>
-                                    {/* Maps Row */}
-                                    <Grid item xs={12} sx={{ mb: 3 }}>
-                                        <Grid container spacing={3}>
-                                            {/* Ship From Map */}
-                                            <Grid item xs={12} md={6}>
-                                                <Paper>
-                                                    <Box
-                                                        sx={{
-                                                            p: 2,
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            borderBottom: '1px solid #e0e0e0'
-                                                        }}
-                                                    >
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <LocationOnIcon sx={{ color: '#000' }} />
-                                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                                Ship From Location
+                                                    {/* Other Documents */}
+                                                    {shipmentDocuments.other?.length > 0 && (
+                                                        <Grid item xs={12}>
+                                                            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                                                                Other Documents
                                                             </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                    <Box sx={{ p: 2 }}>
-                                                        <Typography variant="body1" sx={{ mb: 1 }}>
-                                                            {getAddress(shipment, 'shipFrom')?.company || 'N/A'}
-                                                        </Typography>
-                                                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
-                                                            {formatAddress(getAddress(shipment, 'shipFrom'))}
-                                                        </Typography>
-                                                        {isGoogleMapsLoaded && getAddress(shipment, 'shipFrom') && (
-                                                            <SimpleMap
-                                                                address={getAddress(shipment, 'shipFrom')}
-                                                                title="Ship From Location"
-                                                            />
-                                                        )}
-                                                    </Box>
-                                                </Paper>
-                                            </Grid>
+                                                            <Grid container spacing={1}>
+                                                                {shipmentDocuments.other.map((doc) => (
+                                                                    <Grid item key={doc.id}>
+                                                                        <Chip
+                                                                            icon={<DescriptionIcon />}
+                                                                            label={doc.filename || 'Document'}
+                                                                            onClick={() => viewPdfInModal(doc.id, doc.filename, 'Document')}
+                                                                            clickable
+                                                                            variant="outlined"
+                                                                        />
+                                                                    </Grid>
+                                                                ))}
+                                                            </Grid>
+                                                        </Grid>
+                                                    )}
+                                                </Grid>
+                                            )}
+                                        </Box>
+                                    </Collapse>
+                                </Paper>
+                            </Grid>
+                        )}
 
-                                            {/* Ship To Map */}
-                                            <Grid item xs={12} md={6}>
-                                                <Paper>
-                                                    <Box
-                                                        sx={{
-                                                            p: 2,
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            borderBottom: '1px solid #e0e0e0'
-                                                        }}
-                                                    >
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <LocationOnIcon sx={{ color: '#000' }} />
-                                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                                Ship To Location
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                    <Box sx={{ p: 2 }}>
-                                                        <Typography variant="body1" sx={{ mb: 1 }}>
-                                                            {getAddress(shipment, 'shipTo')?.company || 'N/A'}
-                                                        </Typography>
-                                                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
-                                                            {formatAddress(getAddress(shipment, 'shipTo'))}
-                                                        </Typography>
-                                                        {isGoogleMapsLoaded && getAddress(shipment, 'shipTo') && (
-                                                            <SimpleMap
-                                                                address={getAddress(shipment, 'shipTo')}
-                                                                title="Ship To Location"
-                                                            />
-                                                        )}
-                                                    </Box>
-                                                </Paper>
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
 
-                                    {/* Rates Row */}
-                                    <Grid item xs={12} sx={{ mb: 3 }}>
+                        {/* Main Content Grid - Two Columns */}
+                        <Grid container spacing={3} sx={{ mt: 2 }}>
+                            {/* Maps Row */}
+                            <Grid item xs={12} sx={{ mb: 3 }}>
+                                <Grid container spacing={3}>
+                                    {/* Ship From Map */}
+                                    <Grid item xs={12} md={6}>
                                         <Paper>
                                             <Box
                                                 sx={{
@@ -3545,240 +3484,32 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
                                                 }}
                                             >
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <MoneyIcon sx={{ color: '#000' }} />
+                                                    <LocationOnIcon sx={{ color: '#000' }} />
                                                     <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                        Rate Details
+                                                        Ship From Location
                                                     </Typography>
                                                 </Box>
-                                                <IconButton onClick={() => toggleSection('rate')}>
-                                                    <ExpandMoreIcon
-                                                        sx={{
-                                                            transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
-                                                            transition: 'transform 0.3s',
-                                                            color: '#666'
-                                                        }}
-                                                    />
-                                                </IconButton>
                                             </Box>
-                                            <Collapse in={expandedSections.rate}>
-                                                <Box sx={{ p: 3 }}>
-                                                    {console.log('ShipmentDetail Rate Details bestRateInfo:', JSON.stringify(getBestRateInfo))}
-                                                    <Grid container spacing={3}>
-                                                        {/* Left Column - Service Details */}
-                                                        <Grid item xs={12} md={4}>
-                                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Carrier & Service
-                                                                    </Typography>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                                                                        <CarrierDisplay
-                                                                            carrierName={getBestRateInfo?.carrier}
-                                                                            carrierData={carrierData}
-                                                                            size="small"
-                                                                            isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
-                                                                        />
-                                                                        {getBestRateInfo?.service && (
-                                                                            <>
-                                                                                <Typography variant="body2" color="text.secondary">-</Typography>
-                                                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                                                    {getBestRateInfo.service}
-                                                                                </Typography>
-                                                                            </>
-                                                                        )}
-                                                                    </Box>
-                                                                </Box>
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Transit Time
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {getBestRateInfo?.transitDays || 0} {getBestRateInfo?.transitDays === 1 ? 'day' : 'days'}
-                                                                    </Typography>
-                                                                </Box>
-                                                                <Box>
-                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                        Delivery Date
-                                                                    </Typography>
-                                                                    <Typography variant="body1">
-                                                                        {(() => {
-                                                                            const deliveryDate =
-                                                                                shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                                                                getBestRateInfo?.transit?.estimatedDelivery ||
-                                                                                getBestRateInfo?.estimatedDeliveryDate;
-
-                                                                            if (deliveryDate) {
-                                                                                try {
-                                                                                    const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
-                                                                                    return date.toLocaleDateString('en-US', {
-                                                                                        weekday: 'short',
-                                                                                        year: 'numeric',
-                                                                                        month: 'short',
-                                                                                        day: 'numeric'
-                                                                                    });
-                                                                                } catch (error) {
-                                                                                    console.error('Error formatting delivery date:', error);
-                                                                                    return 'Invalid Date';
-                                                                                }
-                                                                            }
-                                                                            return 'N/A';
-                                                                        })()}
-                                                                    </Typography>
-                                                                </Box>
-                                                            </Box>
-                                                        </Grid>
-
-                                                        {/* Middle Column - Charges */}
-                                                        <Grid item xs={12} md={4}>
-                                                            {(() => {
-                                                                const safeNumber = (value) => {
-                                                                    const num = parseFloat(value);
-                                                                    return isNaN(num) ? 0 : num;
-                                                                };
-
-                                                                if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
-                                                                    const validDetails = getBestRateInfo.billingDetails.filter(detail =>
-                                                                        detail &&
-                                                                        detail.name &&
-                                                                        (detail.amount !== undefined && detail.amount !== null)
-                                                                    );
-
-                                                                    if (validDetails.length > 0) {
-                                                                        return (
-                                                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                                                {validDetails.map((detail, index) => (
-                                                                                    <Box key={index}>
-                                                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                            {detail.name}
-                                                                                        </Typography>
-                                                                                        <Typography variant="body1">
-                                                                                            ${safeNumber(detail.amount).toFixed(2)}
-                                                                                        </Typography>
-                                                                                    </Box>
-                                                                                ))}
-                                                                            </Box>
-                                                                        );
-                                                                    }
-                                                                }
-
-                                                                const breakdownItems = [];
-                                                                const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
-                                                                if (freight > 0) {
-                                                                    breakdownItems.push({ name: 'Freight Charges', amount: freight });
-                                                                }
-
-                                                                const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
-                                                                if (fuel > 0) {
-                                                                    breakdownItems.push({ name: 'Fuel Charges', amount: fuel });
-                                                                }
-
-                                                                const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
-                                                                if (service > 0) {
-                                                                    breakdownItems.push({ name: 'Service Charges', amount: service });
-                                                                }
-
-                                                                const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
-                                                                if (accessorial > 0) {
-                                                                    breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial });
-                                                                }
-
-                                                                if (getBestRateInfo?.guaranteed) {
-                                                                    const guarantee = safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge);
-                                                                    if (guarantee > 0) {
-                                                                        breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee });
-                                                                    }
-                                                                }
-
-                                                                if (breakdownItems.length > 0) {
-                                                                    return (
-                                                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                                                            {breakdownItems.map((item, index) => (
-                                                                                <Box key={index}>
-                                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                        {item.name}
-                                                                                    </Typography>
-                                                                                    <Typography variant="body1">
-                                                                                        ${item.amount.toFixed(2)}
-                                                                                    </Typography>
-                                                                                </Box>
-                                                                            ))}
-                                                                        </Box>
-                                                                    );
-                                                                }
-
-                                                                return (
-                                                                    <Box sx={{ display: 'grid', gap: 2 }}>
-                                                                        <Box>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Freight Charges
-                                                                            </Typography>
-                                                                            <Typography variant="body1">
-                                                                                ${(getBestRateInfo?.pricing?.freight ||
-                                                                                    getBestRateInfo?.freightCharge ||
-                                                                                    getBestRateInfo?.freightCharges || 0).toFixed(2)}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                        <Box>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Fuel Charges
-                                                                            </Typography>
-                                                                            <Typography variant="body1">
-                                                                                ${(getBestRateInfo?.pricing?.fuel ||
-                                                                                    getBestRateInfo?.fuelCharge ||
-                                                                                    getBestRateInfo?.fuelCharges || 0).toFixed(2)}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                        <Box>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Service Charges
-                                                                            </Typography>
-                                                                            <Typography variant="body1">
-                                                                                ${(getBestRateInfo?.pricing?.service ||
-                                                                                    getBestRateInfo?.serviceCharges || 0).toFixed(2)}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                    </Box>
-                                                                );
-                                                            })()}
-                                                        </Grid>
-
-                                                        {/* Right Column - Total */}
-                                                        <Grid item xs={12} md={4}>
-                                                            <Paper
-                                                                elevation={0}
-                                                                sx={{
-                                                                    p: 2,
-                                                                    borderRadius: 2,
-                                                                    border: '1px solid #e0e0e0',
-                                                                    bgcolor: 'background.default',
-                                                                    height: '100%',
-                                                                    display: 'flex',
-                                                                    flexDirection: 'column',
-                                                                    justifyContent: 'center'
-                                                                }}
-                                                            >
-                                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
-                                                                    Total Charges
-                                                                </Typography>
-                                                                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
-                                                                    ${(getBestRateInfo?.pricing?.total ||
-                                                                        getBestRateInfo?.totalCharges || 0).toFixed(2)}
-                                                                </Typography>
-                                                                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                                                                    {getBestRateInfo?.pricing?.currency ||
-                                                                        getBestRateInfo?.currency || 'USD'}
-                                                                </Typography>
-                                                            </Paper>
-                                                        </Grid>
-                                                    </Grid>
-                                                </Box>
-                                            </Collapse>
+                                            <Box sx={{ p: 2 }}>
+                                                <Typography variant="body1" sx={{ mb: 1 }}>
+                                                    {getAddress(shipment, 'shipFrom')?.company || 'N/A'}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
+                                                    {formatAddress(getAddress(shipment, 'shipFrom'))}
+                                                </Typography>
+                                                {isGoogleMapsLoaded && getAddress(shipment, 'shipFrom') && (
+                                                    <SimpleMap
+                                                        address={getAddress(shipment, 'shipFrom')}
+                                                        title="Ship From Location"
+                                                    />
+                                                )}
+                                            </Box>
                                         </Paper>
                                     </Grid>
 
-                                    {/* Packages Section */}
-                                    <Grid item xs={12}>
-                                        <Paper sx={{ mb: 3 }}>
+                                    {/* Ship To Map */}
+                                    <Grid item xs={12} md={6}>
+                                        <Paper>
                                             <Box
                                                 sx={{
                                                     p: 2,
@@ -3789,344 +3520,626 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
                                                 }}
                                             >
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <BoxIcon sx={{ color: '#000' }} />
+                                                    <LocationOnIcon sx={{ color: '#000' }} />
                                                     <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                        Packages
+                                                        Ship To Location
                                                     </Typography>
                                                 </Box>
-                                                <IconButton onClick={() => toggleSection('packages')}>
-                                                    <ExpandMoreIcon
-                                                        sx={{
-                                                            transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
-                                                            transition: 'transform 0.3s',
-                                                            color: '#666'
-                                                        }}
-                                                    />
-                                                </IconButton>
                                             </Box>
-                                            <Collapse in={expandedSections.packages}>
-                                                <Box sx={{ p: 3 }}>
-                                                    <Grid container spacing={2}>
-                                                        {allPackages.length === 0 && (
-                                                            <Grid item xs={12}><Typography>No packages found</Typography></Grid>
-                                                        )}
-                                                        {allPackages.map((pkg, index) => (
-                                                            <Grid item xs={12} sm={6} md={4} key={index}>
-                                                                <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid #e0e0e0', bgcolor: 'background.default' }}>
-                                                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                                                        Package {index + 1}
-                                                                    </Typography>
-                                                                    <Box sx={{ display: 'grid', gap: 1 }}>
-                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Description
-                                                                            </Typography>
-                                                                            <Typography variant="body1">{pkg.description || pkg.itemDescription || 'N/A'}</Typography>
-                                                                        </Box>
-                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Quantity
-                                                                            </Typography>
-                                                                            <Typography variant="body1">{pkg.quantity || pkg.packagingQuantity || 1} {parseInt(pkg.quantity || pkg.packagingQuantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
-                                                                        </Box>
-                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Weight
-                                                                            </Typography>
-                                                                            <Typography variant="body1">{pkg.weight || 'N/A'} lbs</Typography>
-                                                                        </Box>
-                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Dimensions
-                                                                            </Typography>
-                                                                            <Typography variant="body1">
-                                                                                {pkg.dimensions ?
-                                                                                    `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
-                                                                                    (pkg.length && pkg.width && pkg.height ? `${pkg.length}" × ${pkg.width}" × ${pkg.height}"` : 'N/A')
-                                                                                }
-                                                                            </Typography>
-                                                                        </Box>
-                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Freight Class
-                                                                            </Typography>
-                                                                            <Typography variant="body1">{pkg.freightClass || 'N/A'}</Typography>
-                                                                        </Box>
-                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                                                Declared Value
-                                                                            </Typography>
-                                                                            <Typography variant="body1">${(pkg.value || pkg.declaredValue || 0).toFixed(2)}</Typography>
-                                                                        </Box>
-                                                                    </Box>
-                                                                </Paper>
-                                                            </Grid>
-                                                        ))}
-                                                    </Grid>
-                                                    {allPackages.length > 3 && (
-                                                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                                                            <Button
-                                                                onClick={() => setShowAllPackages(!showAllPackages)}
-                                                                sx={{ color: '#000', '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}
-                                                            >
-                                                                {showAllPackages ? 'Show Less' : `Show ${allPackages.length - 3} More Packages`}
-                                                            </Button>
-                                                        </Box>
-                                                    )}
-                                                </Box>
-                                            </Collapse>
+                                            <Box sx={{ p: 2 }}>
+                                                <Typography variant="body1" sx={{ mb: 1 }}>
+                                                    {getAddress(shipment, 'shipTo')?.company || 'N/A'}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line', mb: 2 }}>
+                                                    {formatAddress(getAddress(shipment, 'shipTo'))}
+                                                </Typography>
+                                                {isGoogleMapsLoaded && getAddress(shipment, 'shipTo') && (
+                                                    <SimpleMap
+                                                        address={getAddress(shipment, 'shipTo')}
+                                                        title="Ship To Location"
+                                                    />
+                                                )}
+                                            </Box>
                                         </Paper>
                                     </Grid>
+                                </Grid>
+                            </Grid>
 
-                                    {/* Route Map and Shipment History in one row */}
-                                    <Grid container spacing={3}>
-                                        {/* Route Map Section - Left Column */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper>
-                                                <Box
-                                                    sx={{
-                                                        p: 2,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        borderBottom: '1px solid #e0e0e0'
-                                                    }}
-                                                >
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <MapIcon sx={{ color: '#000' }} />
-                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
-                                                            Route Map
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                                <Box sx={{ p: 3 }}>
-                                                    {isGoogleMapsLoaded ? (
+                            {/* Rates Row */}
+                            <Grid item xs={12} sx={{ mb: 3 }}>
+                                <Paper>
+                                    <Box
+                                        sx={{
+                                            p: 2,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            borderBottom: '1px solid #e0e0e0'
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <MoneyIcon sx={{ color: '#000' }} />
+                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                Rate Details
+                                            </Typography>
+                                        </Box>
+                                        <IconButton onClick={() => toggleSection('rate')}>
+                                            <ExpandMoreIcon
+                                                sx={{
+                                                    transform: expandedSections.rate ? 'rotate(180deg)' : 'none',
+                                                    transition: 'transform 0.3s',
+                                                    color: '#666'
+                                                }}
+                                            />
+                                        </IconButton>
+                                    </Box>
+                                    <Collapse in={expandedSections.rate}>
+                                        <Box sx={{ p: 3 }}>
+                                            {console.log('ShipmentDetail Rate Details bestRateInfo:', JSON.stringify(getBestRateInfo))}
+                                            <Grid container spacing={3}>
+                                                {/* Left Column - Service Details */}
+                                                <Grid item xs={12} md={4}>
+                                                    <Box sx={{ display: 'grid', gap: 2 }}>
                                                         <Box>
-                                                            <Box sx={{
-                                                                height: '600px',
-                                                                borderRadius: '12px',
-                                                                overflow: 'hidden',
-                                                                position: 'relative'
-                                                            }}>
-                                                                <GoogleMap
-                                                                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                                    center={directions?.request?.origin || mapCenter}
-                                                                    zoom={8}
-                                                                    onLoad={handleMapLoad}
-                                                                    options={mapOptions}
-                                                                >
-                                                                    {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
-                                                                        <DirectionsRenderer
-                                                                            directions={directions}
-                                                                            options={{
-                                                                                suppressMarkers: true,
-                                                                                preserveViewport: true,
-                                                                                polylineOptions: {
-                                                                                    strokeWeight: 10,
-                                                                                    strokeOpacity: 1.0,
-                                                                                    geodesic: true,
-                                                                                    clickable: false
-                                                                                },
-                                                                                routeIndex: 0,
-                                                                                draggable: false
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                    {directions?.request?.origin && (
-                                                                        <Marker
-                                                                            position={directions.request.origin}
-                                                                            icon={{
-                                                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                                                scale: 12,
-                                                                                fillColor: '#2196f3',
-                                                                                fillOpacity: 1,
-                                                                                strokeColor: '#ffffff',
-                                                                                strokeWeight: 2
-                                                                            }}
-                                                                            label={{
-                                                                                text: 'A',
-                                                                                color: '#ffffff',
-                                                                                fontSize: '14px',
-                                                                                fontWeight: 'bold'
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                    {directions?.request?.destination && (
-                                                                        <Marker
-                                                                            position={directions.request.destination}
-                                                                            icon={{
-                                                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                                                scale: 12,
-                                                                                fillColor: '#f44336',
-                                                                                fillOpacity: 1,
-                                                                                strokeColor: '#ffffff',
-                                                                                strokeWeight: 2
-                                                                            }}
-                                                                            label={{
-                                                                                text: 'B',
-                                                                                color: '#ffffff',
-                                                                                fontSize: '14px',
-                                                                                fontWeight: 'bold'
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                </GoogleMap>
-                                                                {/* Route Summary Overlay */}
-                                                                <Box sx={{
-                                                                    position: 'absolute',
-                                                                    top: 16,
-                                                                    left: 16,
-                                                                    background: 'rgba(255, 255, 255, 0.95)',
-                                                                    backdropFilter: 'blur(10px)',
-                                                                    borderRadius: '16px',
-                                                                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-                                                                    p: 2,
-                                                                    zIndex: 1,
-                                                                    minWidth: '200px'
-                                                                }}>
-                                                                    <Box sx={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 2,
-                                                                        p: 1.5,
-                                                                        borderRadius: '12px',
-                                                                        background: 'rgba(25, 118, 210, 0.04)'
-                                                                    }}>
-                                                                        <LocationIcon sx={{
-                                                                            color: 'primary.main',
-                                                                            fontSize: 28,
-                                                                            opacity: 0.9
-                                                                        }} />
-                                                                        <Box sx={{ flex: 1 }}>
-                                                                            <Typography variant="subtitle2" sx={{
-                                                                                color: 'text.secondary',
-                                                                                fontSize: '0.75rem',
-                                                                                fontWeight: 500,
-                                                                                textTransform: 'uppercase',
-                                                                                letterSpacing: '0.5px'
-                                                                            }}>
-                                                                                Total Distance
-                                                                            </Typography>
-                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                <Typography variant="h6" sx={{
-                                                                                    color: 'primary.main',
-                                                                                    fontWeight: 700,
-                                                                                    fontSize: '1.25rem',
-                                                                                    lineHeight: 1.2
-                                                                                }}>
-                                                                                    {directions?.routes[0]?.legs[0]?.distance?.value &&
-                                                                                        convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                Carrier & Service
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                                                                <CarrierDisplay
+                                                                    carrierName={getBestRateInfo?.carrier}
+                                                                    carrierData={carrierData}
+                                                                    size="small"
+                                                                    isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                                                />
+                                                                {getBestRateInfo?.service && (
+                                                                    <>
+                                                                        <Typography variant="body2" color="text.secondary">-</Typography>
+                                                                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                                            {getBestRateInfo.service}
+                                                                        </Typography>
+                                                                    </>
+                                                                )}
+                                                            </Box>
+                                                        </Box>
+                                                        <Box>
+                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                Transit Time
+                                                            </Typography>
+                                                            <Typography variant="body1">
+                                                                {getBestRateInfo?.transitDays || 0} {getBestRateInfo?.transitDays === 1 ? 'day' : 'days'}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Box>
+                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                Delivery Date
+                                                            </Typography>
+                                                            <Typography variant="body1">
+                                                                {(() => {
+                                                                    const deliveryDate =
+                                                                        shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                                        getBestRateInfo?.transit?.estimatedDelivery ||
+                                                                        getBestRateInfo?.estimatedDeliveryDate;
+
+                                                                    if (deliveryDate) {
+                                                                        try {
+                                                                            const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                                                                            return date.toLocaleDateString('en-US', {
+                                                                                weekday: 'short',
+                                                                                year: 'numeric',
+                                                                                month: 'short',
+                                                                                day: 'numeric'
+                                                                            });
+                                                                        } catch (error) {
+                                                                            console.error('Error formatting delivery date:', error);
+                                                                            return 'Invalid Date';
+                                                                        }
+                                                                    }
+                                                                    return 'N/A';
+                                                                })()}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                </Grid>
+
+                                                {/* Middle Column - Charges */}
+                                                <Grid item xs={12} md={4}>
+                                                    {(() => {
+                                                        const safeNumber = (value) => {
+                                                            const num = parseFloat(value);
+                                                            return isNaN(num) ? 0 : num;
+                                                        };
+
+                                                        if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
+                                                            const validDetails = getBestRateInfo.billingDetails.filter(detail =>
+                                                                detail &&
+                                                                detail.name &&
+                                                                (detail.amount !== undefined && detail.amount !== null)
+                                                            );
+
+                                                            if (validDetails.length > 0) {
+                                                                return (
+                                                                    <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                        {validDetails.map((detail, index) => (
+                                                                            <Box key={index}>
+                                                                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                    {detail.name}
                                                                                 </Typography>
-                                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                    <Typography component="span" sx={{
-                                                                                        fontSize: '0.875rem',
-                                                                                        fontWeight: 500,
-                                                                                        color: 'text.secondary'
-                                                                                    }}>
-                                                                                        {useMetric ? 'km' : 'mi'}
-                                                                                    </Typography>
-                                                                                    <Button
-                                                                                        onClick={() => setUseMetric(!useMetric)}
-                                                                                        sx={{
-                                                                                            minWidth: 'auto',
-                                                                                            p: 1,
-                                                                                            borderRadius: '8px',
-                                                                                            background: 'rgba(25, 118, 210, 0.08)',
-                                                                                            color: 'primary.main',
-                                                                                            '&:hover': {
-                                                                                                background: 'rgba(25, 118, 210, 0.12)'
-                                                                                            }
-                                                                                        }}
-                                                                                    >
-                                                                                        <SwapHorizIcon sx={{ fontSize: 20 }} />
-                                                                                    </Button>
-                                                                                </Box>
+                                                                                <Typography variant="body1">
+                                                                                    ${safeNumber(detail.amount).toFixed(2)}
+                                                                                </Typography>
                                                                             </Box>
+                                                                        ))}
+                                                                    </Box>
+                                                                );
+                                                            }
+                                                        }
+
+                                                        const breakdownItems = [];
+                                                        const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
+                                                        if (freight > 0) {
+                                                            breakdownItems.push({ name: 'Freight Charges', amount: freight });
+                                                        }
+
+                                                        const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
+                                                        if (fuel > 0) {
+                                                            breakdownItems.push({ name: 'Fuel Charges', amount: fuel });
+                                                        }
+
+                                                        const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
+                                                        if (service > 0) {
+                                                            breakdownItems.push({ name: 'Service Charges', amount: service });
+                                                        }
+
+                                                        const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
+                                                        if (accessorial > 0) {
+                                                            breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial });
+                                                        }
+
+                                                        if (getBestRateInfo?.guaranteed) {
+                                                            const guarantee = safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge);
+                                                            if (guarantee > 0) {
+                                                                breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee });
+                                                            }
+                                                        }
+
+                                                        if (breakdownItems.length > 0) {
+                                                            return (
+                                                                <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                    {breakdownItems.map((item, index) => (
+                                                                        <Box key={index}>
+                                                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                                {item.name}
+                                                                            </Typography>
+                                                                            <Typography variant="body1">
+                                                                                ${item.amount.toFixed(2)}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    ))}
+                                                                </Box>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <Box sx={{ display: 'grid', gap: 2 }}>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Freight Charges
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(getBestRateInfo?.pricing?.freight ||
+                                                                            getBestRateInfo?.freightCharge ||
+                                                                            getBestRateInfo?.freightCharges || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Fuel Charges
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(getBestRateInfo?.pricing?.fuel ||
+                                                                            getBestRateInfo?.fuelCharge ||
+                                                                            getBestRateInfo?.fuelCharges || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Service Charges
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        ${(getBestRateInfo?.pricing?.service ||
+                                                                            getBestRateInfo?.serviceCharges || 0).toFixed(2)}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        );
+                                                    })()}
+                                                </Grid>
+
+                                                {/* Right Column - Total */}
+                                                <Grid item xs={12} md={4}>
+                                                    <Paper
+                                                        elevation={0}
+                                                        sx={{
+                                                            p: 2,
+                                                            borderRadius: 2,
+                                                            border: '1px solid #e0e0e0',
+                                                            bgcolor: 'background.default',
+                                                            height: '100%',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            justifyContent: 'center'
+                                                        }}
+                                                    >
+                                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
+                                                            Total Charges
+                                                        </Typography>
+                                                        <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
+                                                            ${(getBestRateInfo?.pricing?.total ||
+                                                                getBestRateInfo?.totalCharges || 0).toFixed(2)}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                                                            {getBestRateInfo?.pricing?.currency ||
+                                                                getBestRateInfo?.currency || 'USD'}
+                                                        </Typography>
+                                                    </Paper>
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    </Collapse>
+                                </Paper>
+                            </Grid>
+
+                            {/* Packages Section */}
+                            <Grid item xs={12}>
+                                <Paper sx={{ mb: 3 }}>
+                                    <Box
+                                        sx={{
+                                            p: 2,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            borderBottom: '1px solid #e0e0e0'
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <BoxIcon sx={{ color: '#000' }} />
+                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                Packages
+                                            </Typography>
+                                        </Box>
+                                        <IconButton onClick={() => toggleSection('packages')}>
+                                            <ExpandMoreIcon
+                                                sx={{
+                                                    transform: expandedSections.packages ? 'rotate(180deg)' : 'none',
+                                                    transition: 'transform 0.3s',
+                                                    color: '#666'
+                                                }}
+                                            />
+                                        </IconButton>
+                                    </Box>
+                                    <Collapse in={expandedSections.packages}>
+                                        <Box sx={{ p: 3 }}>
+                                            <Grid container spacing={2}>
+                                                {allPackages.length === 0 && (
+                                                    <Grid item xs={12}><Typography>No packages found</Typography></Grid>
+                                                )}
+                                                {allPackages.map((pkg, index) => (
+                                                    <Grid item xs={12} sm={6} md={4} key={index}>
+                                                        <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid #e0e0e0', bgcolor: 'background.default' }}>
+                                                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                                                                Package {index + 1}
+                                                            </Typography>
+                                                            <Box sx={{ display: 'grid', gap: 1 }}>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Description
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.description || pkg.itemDescription || 'N/A'}</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Quantity
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.quantity || pkg.packagingQuantity || 1} {parseInt(pkg.quantity || pkg.packagingQuantity || 1) > 1 ? 'pieces' : 'piece'}</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Weight
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.weight || 'N/A'} lbs</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Dimensions
+                                                                    </Typography>
+                                                                    <Typography variant="body1">
+                                                                        {pkg.dimensions ?
+                                                                            `${pkg.dimensions.length || 0}" × ${pkg.dimensions.width || 0}" × ${pkg.dimensions.height || 0}"` :
+                                                                            (pkg.length && pkg.width && pkg.height ? `${pkg.length}" × ${pkg.width}" × ${pkg.height}"` : 'N/A')
+                                                                        }
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Freight Class
+                                                                    </Typography>
+                                                                    <Typography variant="body1">{pkg.freightClass || 'N/A'}</Typography>
+                                                                </Box>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                                        Declared Value
+                                                                    </Typography>
+                                                                    <Typography variant="body1">${(pkg.value || pkg.declaredValue || 0).toFixed(2)}</Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        </Paper>
+                                                    </Grid>
+                                                ))}
+                                            </Grid>
+                                            {allPackages.length > 3 && (
+                                                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                                                    <Button
+                                                        onClick={() => setShowAllPackages(!showAllPackages)}
+                                                        sx={{ color: '#000', '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}
+                                                    >
+                                                        {showAllPackages ? 'Show Less' : `Show ${allPackages.length - 3} More Packages`}
+                                                    </Button>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    </Collapse>
+                                </Paper>
+                            </Grid>
+
+                            {/* Route Map and Shipment History in one row */}
+                            <Grid container spacing={3}>
+                                {/* Route Map Section - Left Column */}
+                                <Grid item xs={12} md={6}>
+                                    <Paper>
+                                        <Box
+                                            sx={{
+                                                p: 2,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                borderBottom: '1px solid #e0e0e0'
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <MapIcon sx={{ color: '#000' }} />
+                                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                                                    Route Map
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                        <Box sx={{ p: 3 }}>
+                                            {isGoogleMapsLoaded ? (
+                                                <Box>
+                                                    <Box sx={{
+                                                        height: '600px',
+                                                        borderRadius: '12px',
+                                                        overflow: 'hidden',
+                                                        position: 'relative'
+                                                    }}>
+                                                        <GoogleMap
+                                                            mapContainerStyle={{ width: '100%', height: '100%' }}
+                                                            center={directions?.request?.origin || mapCenter}
+                                                            zoom={8}
+                                                            onLoad={handleMapLoad}
+                                                            options={mapOptions}
+                                                        >
+                                                            {directions && directions.routes && directions.routes.length > 0 && directions.routes[0].overview_polyline && directions.routes[0].legs && directions.routes[0].legs.length > 0 && (
+                                                                <DirectionsRenderer
+                                                                    directions={directions}
+                                                                    options={{
+                                                                        suppressMarkers: true,
+                                                                        preserveViewport: true,
+                                                                        polylineOptions: {
+                                                                            strokeWeight: 10,
+                                                                            strokeOpacity: 1.0,
+                                                                            geodesic: true,
+                                                                            clickable: false
+                                                                        },
+                                                                        routeIndex: 0,
+                                                                        draggable: false
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {directions?.request?.origin && (
+                                                                <Marker
+                                                                    position={directions.request.origin}
+                                                                    icon={{
+                                                                        path: window.google.maps.SymbolPath.CIRCLE,
+                                                                        scale: 12,
+                                                                        fillColor: '#2196f3',
+                                                                        fillOpacity: 1,
+                                                                        strokeColor: '#ffffff',
+                                                                        strokeWeight: 2
+                                                                    }}
+                                                                    label={{
+                                                                        text: 'A',
+                                                                        color: '#ffffff',
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 'bold'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {directions?.request?.destination && (
+                                                                <Marker
+                                                                    position={directions.request.destination}
+                                                                    icon={{
+                                                                        path: window.google.maps.SymbolPath.CIRCLE,
+                                                                        scale: 12,
+                                                                        fillColor: '#f44336',
+                                                                        fillOpacity: 1,
+                                                                        strokeColor: '#ffffff',
+                                                                        strokeWeight: 2
+                                                                    }}
+                                                                    label={{
+                                                                        text: 'B',
+                                                                        color: '#ffffff',
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 'bold'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </GoogleMap>
+                                                        {/* Route Summary Overlay */}
+                                                        <Box sx={{
+                                                            position: 'absolute',
+                                                            top: 16,
+                                                            left: 16,
+                                                            background: 'rgba(255, 255, 255, 0.95)',
+                                                            backdropFilter: 'blur(10px)',
+                                                            borderRadius: '16px',
+                                                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                                                            p: 2,
+                                                            zIndex: 1,
+                                                            minWidth: '200px'
+                                                        }}>
+                                                            <Box sx={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 2,
+                                                                p: 1.5,
+                                                                borderRadius: '12px',
+                                                                background: 'rgba(25, 118, 210, 0.04)'
+                                                            }}>
+                                                                <LocationIcon sx={{
+                                                                    color: 'primary.main',
+                                                                    fontSize: 28,
+                                                                    opacity: 0.9
+                                                                }} />
+                                                                <Box sx={{ flex: 1 }}>
+                                                                    <Typography variant="subtitle2" sx={{
+                                                                        color: 'text.secondary',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 500,
+                                                                        textTransform: 'uppercase',
+                                                                        letterSpacing: '0.5px'
+                                                                    }}>
+                                                                        Total Distance
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <Typography variant="h6" sx={{
+                                                                            color: 'primary.main',
+                                                                            fontWeight: 700,
+                                                                            fontSize: '1.25rem',
+                                                                            lineHeight: 1.2
+                                                                        }}>
+                                                                            {directions?.routes[0]?.legs[0]?.distance?.value &&
+                                                                                convertDistance(directions.routes[0].legs[0].distance.value)}
+                                                                        </Typography>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                            <Typography component="span" sx={{
+                                                                                fontSize: '0.875rem',
+                                                                                fontWeight: 500,
+                                                                                color: 'text.secondary'
+                                                                            }}>
+                                                                                {useMetric ? 'km' : 'mi'}
+                                                                            </Typography>
+                                                                            <Button
+                                                                                onClick={() => setUseMetric(!useMetric)}
+                                                                                sx={{
+                                                                                    minWidth: 'auto',
+                                                                                    p: 1,
+                                                                                    borderRadius: '8px',
+                                                                                    background: 'rgba(25, 118, 210, 0.08)',
+                                                                                    color: 'primary.main',
+                                                                                    '&:hover': {
+                                                                                        background: 'rgba(25, 118, 210, 0.12)'
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <SwapHorizIcon sx={{ fontSize: 20 }} />
+                                                                            </Button>
                                                                         </Box>
                                                                     </Box>
                                                                 </Box>
                                                             </Box>
                                                         </Box>
-                                                    ) : (
-                                                        <Box sx={{
-                                                            height: '600px',
-                                                            borderRadius: '12px',
-                                                            bgcolor: '#f5f5f5',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <Typography color="text.secondary">Loading map...</Typography>
-                                                        </Box>
-                                                    )}
+                                                    </Box>
                                                 </Box>
-                                            </Paper>
-                                        </Grid>
+                                            ) : (
+                                                <Box sx={{
+                                                    height: '600px',
+                                                    borderRadius: '12px',
+                                                    bgcolor: '#f5f5f5',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}>
+                                                    <Typography color="text.secondary">Loading map...</Typography>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    </Paper>
+                                </Grid>
 
-                                        {/* Shipment History Section - Right Column */}
-                                        <Grid item xs={12} md={6}>
-                                            <Paper sx={{ height: '100%' }} elevation={1}>
-                                                <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                                                    <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <AccessTimeIcon />
-                                                        Shipment History
+                                {/* Shipment History Section - Right Column */}
+                                <Grid item xs={12} md={6}>
+                                    <Paper sx={{ height: '100%' }} elevation={1}>
+                                        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                                            <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <AccessTimeIcon />
+                                                Shipment History
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{
+                                            p: 2,
+                                            height: '600px',
+                                            overflowY: 'auto',
+                                            '&::-webkit-scrollbar': {
+                                                width: '8px',
+                                            },
+                                            '&::-webkit-scrollbar-track': {
+                                                background: '#f1f1f1',
+                                                borderRadius: '4px',
+                                            },
+                                            '&::-webkit-scrollbar-thumb': {
+                                                background: '#888',
+                                                borderRadius: '4px',
+                                                '&:hover': {
+                                                    background: '#555',
+                                                },
+                                            },
+                                        }}>
+                                            {historyLoading ? (
+                                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                                                    <CircularProgress size={24} />
+                                                </Box>
+                                            ) : mergedEvents.length === 0 ? (
+                                                <Box sx={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    p: 4,
+                                                    textAlign: 'center'
+                                                }}>
+                                                    <TimelineIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                                                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                                                        No History Available
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Tracking and event information will appear here as they become available.
                                                     </Typography>
                                                 </Box>
-                                                <Box sx={{
-                                                    p: 2,
-                                                    height: '600px',
-                                                    overflowY: 'auto',
-                                                    '&::-webkit-scrollbar': {
-                                                        width: '8px',
-                                                    },
-                                                    '&::-webkit-scrollbar-track': {
-                                                        background: '#f1f1f1',
-                                                        borderRadius: '4px',
-                                                    },
-                                                    '&::-webkit-scrollbar-thumb': {
-                                                        background: '#888',
-                                                        borderRadius: '4px',
-                                                        '&:hover': {
-                                                            background: '#555',
-                                                        },
-                                                    },
-                                                }}>
-                                                    {historyLoading ? (
-                                                        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                                                            <CircularProgress size={24} />
-                                                        </Box>
-                                                    ) : mergedEvents.length === 0 ? (
-                                                        <Box sx={{
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            p: 4,
-                                                            textAlign: 'center'
-                                                        }}>
-                                                            <TimelineIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                                                            <Typography variant="h6" color="text.secondary" gutterBottom>
-                                                                No History Available
-                                                            </Typography>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Tracking and event information will appear here as they become available.
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <ShipmentTimeline events={mergedEvents} shipmentId={shipment?.id} />
-                                                    )}
-                                                </Box>
-                                            </Paper>
-                                        </Grid>
-                                    </Grid>
+                                            ) : (
+                                                <ShipmentTimeline events={mergedEvents} shipmentId={shipment?.id} />
+                                            )}
+                                        </Box>
+                                    </Paper>
                                 </Grid>
-                            </Box>
-                        </Paper>
+                            </Grid>
+                        </Grid>
                     </Box>
+                </Paper>
+        </Box>
                 </Box >
             </ErrorBoundary >
-            <style>
-                {`
+    <style>
+        {`
                     @media print {
                         @page {
                             size: A4;
@@ -4200,242 +4213,273 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
                         }
                     }
                 `}
-            </style>
-            {/* Enhanced Print Label Configuration Dialog */}
-            <Dialog
-                open={printLabelMenuOpen}
-                onClose={handlePrintLabelClose}
-                maxWidth="sm"
-                fullWidth
-                PaperProps={{
-                    sx: { borderRadius: 2 }
-                }}
-            >
-                <DialogTitle sx={{ pb: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <PrintIcon color="primary" />
-                        <Typography variant="h6">Print Shipping Labels</Typography>
-                    </Box>
-                </DialogTitle>
-                <DialogContent sx={{ pt: 2 }}>
-                    <Grid container spacing={3}>
-                        {/* Label Type Selection for eShipPlus */}
-                        {isEShipPlusCarrier && shipmentDocuments.labels?.length > 1 && ( // Restored isEShipPlusCarrier
-                            <Grid item xs={12}>
-                                <Typography variant="subtitle2" gutterBottom>
-                                    Label Type
+    </style>
+{/* Enhanced Print Label Configuration Dialog */ }
+<Dialog
+    open={printLabelMenuOpen}
+    onClose={handlePrintLabelClose}
+    maxWidth="sm"
+    fullWidth
+    PaperProps={{
+        sx: { borderRadius: 2 }
+    }}
+>
+    <DialogTitle sx={{ pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PrintIcon color="primary" />
+            <Typography variant="h6">Print Shipping Labels</Typography>
+        </Box>
+    </DialogTitle>
+    <DialogContent sx={{ pt: 2 }}>
+        <Grid container spacing={3}>
+            {/* Label Type Selection for eShipPlus */}
+            {isEShipPlusCarrier && shipmentDocuments.labels?.length > 1 && ( // Restored isEShipPlusCarrier
+                <Grid item xs={12}>
+                    <Typography variant="subtitle2" gutterBottom>
+                        Label Type
+                    </Typography>
+                    <ToggleButtonGroup
+                        value={labelConfig.labelType}
+                        exclusive
+                        onChange={(e, newType) => newType && handleLabelTypeChange(newType)}
+                        size="small"
+                        fullWidth
+                    >
+                        <ToggleButton value="4x6" sx={{ textTransform: 'none' }}>
+                            <Box sx={{ textAlign: 'center' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                    4" x 6" Standard
                                 </Typography>
-                                <ToggleButtonGroup
-                                    value={labelConfig.labelType}
-                                    exclusive
-                                    onChange={(e, newType) => newType && handleLabelTypeChange(newType)}
-                                    size="small"
-                                    fullWidth
-                                >
-                                    <ToggleButton value="4x6" sx={{ textTransform: 'none' }}>
-                                        <Box sx={{ textAlign: 'center' }}>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                4" x 6" Standard
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                Standard thermal labels
-                                            </Typography>
-                                        </Box>
-                                    </ToggleButton>
-                                    <ToggleButton value="Thermal" sx={{ textTransform: 'none' }}> {/* Changed value to 'Thermal' */}
-                                        <Box sx={{ textAlign: 'center' }}>
-                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                                Thermal Printer
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                e.g., Avery 3" x 4", specialized thermal
-                                            </Typography>
-                                        </Box>
-                                    </ToggleButton>
-                                </ToggleButtonGroup>
-                            </Grid>
-                        )}
-
-                        {/* Quantity Selection */}
-                        <Grid item xs={12}>
-                            <Typography variant="subtitle2" gutterBottom>
-                                Number of Labels
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <IconButton
-                                    onClick={() => handleQuantityChange(Math.max(1, labelConfig.quantity - 1))}
-                                    disabled={labelConfig.quantity <= 1}
-                                    size="small"
-                                >
-                                    <RemoveIcon />
-                                </IconButton>
-                                <TextField
-                                    type="number" // Explicitly set type to number
-                                    value={labelConfig.quantity}
-                                    onChange={(e) => {
-                                        const inputValue = e.target.value;
-
-                                        if (inputValue === '') {
-                                            handleQuantityChange(''); // Allow state to hold empty string
-                                            return;
-                                        }
-                                        const num = parseInt(inputValue, 10);
-
-                                        if (!isNaN(num)) {
-                                            const clampedValue = Math.min(Math.max(1, num), 10);
-                                            handleQuantityChange(clampedValue);
-                                        }
-                                        // If !isNaN(num) is false, do nothing, keeping the last valid state or empty string.
-                                        // The browser's type="number" handling should prevent most truly invalid characters.
-                                    }}
-                                    size="small"
-                                    sx={{ width: 80 }}
-                                    inputProps={{
-                                        min: 1,
-                                        max: 10,
-                                        style: { textAlign: 'center' }
-                                    }}
-                                />
-                                <IconButton
-                                    onClick={() => handleQuantityChange(Math.min(10, labelConfig.quantity + 1))}
-                                    disabled={labelConfig.quantity >= 10}
-                                    size="small"
-                                >
-                                    <AddIcon />
-                                </IconButton>
-                                <Box sx={{ flexGrow: 1 }}>
-                                    <Slider
-                                        value={Number(labelConfig.quantity) || 1} // Ensure Slider gets a number
-                                        onChange={(e, newValue) => handleQuantityChange(newValue)}
-                                        min={1}
-                                        max={10}
-                                        marks
-                                        valueLabelDisplay="auto"
-                                        size="small"
-                                    />
-                                </Box>
+                                <Typography variant="caption" color="text.secondary">
+                                    Standard thermal labels
+                                </Typography>
                             </Box>
-                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                {labelConfig.quantity > 1 &&
-                                    `All ${labelConfig.quantity} labels will be combined into a single PDF document`
-                                }
-                            </Typography>
-                        </Grid>
-                    </Grid>
-                </DialogContent>
-                <DialogActions sx={{ p: 3, pt: 1 }}>
-                    <Button
-                        onClick={handlePrintLabelClose}
-                        color="inherit"
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={() => handlePrintLabel(Number(labelConfig.quantity) || 1, labelConfig.labelType)} // Ensure numeric quantity
-                        variant="contained"
-                        startIcon={<PrintIcon />}
-                        disabled={actionStates.printLabel.loading}
-                    >
-                        {actionStates.printLabel.loading ? 'Generating...' :
-                            `Generate ${Number(labelConfig.quantity) || 1} Label${(Number(labelConfig.quantity) || 1) > 1 ? 's' : ''}` // Ensure numeric display
-                        }
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                        </ToggleButton>
+                        <ToggleButton value="Thermal" sx={{ textTransform: 'none' }}> {/* Changed value to 'Thermal' */}
+                            <Box sx={{ textAlign: 'center' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                    Thermal Printer
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    e.g., Avery 3" x 4", specialized thermal
+                                </Typography>
+                            </Box>
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+                </Grid>
+            )}
 
-            {/* PDF Viewer Modal */}
-            <Dialog
-                open={pdfViewerOpen}
-                onClose={() => {
-                    setPdfViewerOpen(false);
-                    if (currentPdfUrl?.startsWith('blob:')) {
-                        URL.revokeObjectURL(currentPdfUrl);
-                    }
-                    setCurrentPdfUrl(null);
-                }}
-                maxWidth="lg"
-                fullWidth
-                PaperProps={{
-                    sx: {
-                        height: '90vh',
-                        borderRadius: 2
-                    }
-                }}
-            >
-                <DialogTitle sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    borderBottom: '1px solid',
-                    borderColor: 'divider'
-                }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <PictureAsPdfIcon color="error" />
-                        <Typography variant="h6">{currentPdfTitle}</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                            onClick={() => {
-                                if (currentPdfUrl) {
-                                    window.open(currentPdfUrl, '_blank');
-                                }
-                            }}
-                            startIcon={<FileDownloadIcon />}
-                            size="small"
-                        >
-                            Download
-                        </Button>
-                        <IconButton onClick={() => {
-                            setPdfViewerOpen(false);
-                            if (currentPdfUrl?.startsWith('blob:')) {
-                                URL.revokeObjectURL(currentPdfUrl);
+            {/* Quantity Selection */}
+            <Grid item xs={12}>
+                <Typography variant="subtitle2" gutterBottom>
+                    Number of Labels
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <IconButton
+                        onClick={() => handleQuantityChange(Math.max(1, labelConfig.quantity - 1))}
+                        disabled={labelConfig.quantity <= 1}
+                        size="small"
+                    >
+                        <RemoveIcon />
+                    </IconButton>
+                    <TextField
+                        type="number" // Explicitly set type to number
+                        value={labelConfig.quantity}
+                        onChange={(e) => {
+                            const inputValue = e.target.value;
+
+                            if (inputValue === '') {
+                                handleQuantityChange(''); // Allow state to hold empty string
+                                return;
                             }
-                            setCurrentPdfUrl(null);
-                        }}>
-                            <CloseIcon />
-                        </IconButton>
-                    </Box>
-                </DialogTitle>
-                <DialogContent sx={{ p: 0, height: '100%' }}>
-                    {currentPdfUrl && (
-                        <Box sx={{ height: '100%', width: '100%' }}>
-                            <iframe
-                                src={currentPdfUrl}
-                                style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    border: 'none'
-                                }}
-                                title={currentPdfTitle}
-                            />
-                        </Box>
-                    )}
-                </DialogContent>
-            </Dialog>
+                            const num = parseInt(inputValue, 10);
 
-            {/* Cancel Shipment Confirmation Modal */}
-            <Dialog
-                open={cancelModalOpen}
-                onClose={handleCancelModalClose}
-                maxWidth="sm"
-                fullWidth
-                PaperProps={{
-                    sx: {
-                        borderRadius: 2,
-                        p: 1
+                            if (!isNaN(num)) {
+                                const clampedValue = Math.min(Math.max(1, num), 10);
+                                handleQuantityChange(clampedValue);
+                            }
+                            // If !isNaN(num) is false, do nothing, keeping the last valid state or empty string.
+                            // The browser's type="number" handling should prevent most truly invalid characters.
+                        }}
+                        size="small"
+                        sx={{ width: 80 }}
+                        inputProps={{
+                            min: 1,
+                            max: 10,
+                            style: { textAlign: 'center' }
+                        }}
+                    />
+                    <IconButton
+                        onClick={() => handleQuantityChange(Math.min(10, labelConfig.quantity + 1))}
+                        disabled={labelConfig.quantity >= 10}
+                        size="small"
+                    >
+                        <AddIcon />
+                    </IconButton>
+                    <Box sx={{ flexGrow: 1 }}>
+                        <Slider
+                            value={Number(labelConfig.quantity) || 1} // Ensure Slider gets a number
+                            onChange={(e, newValue) => handleQuantityChange(newValue)}
+                            min={1}
+                            max={10}
+                            marks
+                            valueLabelDisplay="auto"
+                            size="small"
+                        />
+                    </Box>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    {labelConfig.quantity > 1 &&
+                        `All ${labelConfig.quantity} labels will be combined into a single PDF document`
+                    }
+                </Typography>
+            </Grid>
+        </Grid>
+    </DialogContent>
+    <DialogActions sx={{ p: 3, pt: 1 }}>
+        <Button
+            onClick={handlePrintLabelClose}
+            color="inherit"
+        >
+            Cancel
+        </Button>
+        <Button
+            onClick={() => handlePrintLabel(Number(labelConfig.quantity) || 1, labelConfig.labelType)} // Ensure numeric quantity
+            variant="contained"
+            startIcon={<PrintIcon />}
+            disabled={actionStates.printLabel.loading}
+        >
+            {actionStates.printLabel.loading ? 'Generating...' :
+                `Generate ${Number(labelConfig.quantity) || 1} Label${(Number(labelConfig.quantity) || 1) > 1 ? 's' : ''}` // Ensure numeric display
+            }
+        </Button>
+    </DialogActions>
+</Dialog>
+
+{/* PDF Viewer Modal */ }
+<Dialog
+    open={pdfViewerOpen}
+    onClose={() => {
+        setPdfViewerOpen(false);
+        if (currentPdfUrl?.startsWith('blob:')) {
+            URL.revokeObjectURL(currentPdfUrl);
+        }
+        setCurrentPdfUrl(null);
+    }}
+    maxWidth="lg"
+    fullWidth
+    PaperProps={{
+        sx: {
+            height: '90vh',
+            borderRadius: 2
+        }
+    }}
+>
+    <DialogTitle sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottom: '1px solid',
+        borderColor: 'divider'
+    }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PictureAsPdfIcon color="error" />
+            <Typography variant="h6">{currentPdfTitle}</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+                onClick={() => {
+                    if (currentPdfUrl) {
+                        window.open(currentPdfUrl, '_blank');
                     }
                 }}
+                startIcon={<FileDownloadIcon />}
+                size="small"
             >
-                <DialogTitle sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    pb: 2
-                }}>
-                    <CancelIcon sx={{ color: 'warning.main' }} />
-                    <Typography variant="h6">Cancel Shipment</Typography>
-                </DialogTitle>
-                <DialogContent>
+                Download
+            </Button>
+            <IconButton onClick={() => {
+                setPdfViewerOpen(false);
+                if (currentPdfUrl?.startsWith('blob:')) {
+                    URL.revokeObjectURL(currentPdfUrl);
+                }
+                setCurrentPdfUrl(null);
+            }}>
+                <CloseIcon />
+            </IconButton>
+        </Box>
+    </DialogTitle>
+    <DialogContent sx={{ p: 0, height: '100%' }}>
+        {currentPdfUrl && (
+            <Box sx={{ height: '100%', width: '100%' }}>
+                <iframe
+                    src={currentPdfUrl}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        border: 'none'
+                    }}
+                    title={currentPdfTitle}
+                />
+            </Box>
+        )}
+    </DialogContent>
+</Dialog>
+
+{/* Cancel Shipment Confirmation Modal */ }
+<Dialog
+    open={cancelModalOpen}
+    onClose={handleCancelModalClose}
+    maxWidth="sm"
+    fullWidth
+    PaperProps={{
+        sx: {
+            borderRadius: 2,
+            p: 1
+        }
+    }}
+>
+    <DialogTitle sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        pb: 2
+    }}>
+        <CancelIcon sx={{ color: 'warning.main' }} />
+        <Typography variant="h6">Cancel Shipment</Typography>
+    </DialogTitle>
+    <DialogContent>
+        {(() => {
+            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+
+            const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+                getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+                getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+
+            const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
+
+            return (
+                <>
+                    <Typography variant="body1" sx={{ mb: 2 }}>
+                        Are you sure you want to cancel this shipment?
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        <strong>Shipment ID:</strong> {shipment?.shipmentID}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        <strong>Carrier:</strong> {carrierName}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        <strong>Tracking Number:</strong> {(() => {
+                            return shipment?.carrierBookingConfirmation?.proNumber ||
+                                shipment?.carrierBookingConfirmation?.confirmationNumber ||
+                                shipment?.trackingNumber ||
+                                'N/A';
+                        })()}
+                    </Typography>
+
                     {(() => {
                         const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
                             getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
@@ -4445,6 +4489,7 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
                             getBestRateInfo?.sourceCarrierName === 'Canpar' ||
                             getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
 
+                        const hasCancellationEndpoint = isEShipPlusShipment || isCanparShipment;
                         const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
 
                         return (
@@ -4467,122 +4512,90 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
                                     })()}
                                 </Typography>
 
-                                {(() => {
-                                    const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
-                                        getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-                                        getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
-
-                                    const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
-                                        getBestRateInfo?.sourceCarrierName === 'Canpar' ||
-                                        getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
-
-                                    const hasCancellationEndpoint = isEShipPlusShipment || isCanparShipment;
-                                    const carrierName = getBestRateInfo?.carrier || 'Unknown carrier';
-
-                                    return (
-                                        <>
-                                            <Typography variant="body1" sx={{ mb: 2 }}>
-                                                Are you sure you want to cancel this shipment?
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                <strong>Shipment ID:</strong> {shipment?.shipmentID}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                <strong>Carrier:</strong> {carrierName}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                                <strong>Tracking Number:</strong> {(() => {
-                                                    return shipment?.carrierBookingConfirmation?.proNumber ||
-                                                        shipment?.carrierBookingConfirmation?.confirmationNumber ||
-                                                        shipment?.trackingNumber ||
-                                                        'N/A';
-                                                })()}
-                                            </Typography>
-
-                                            {hasCancellationEndpoint ? (
-                                                <Alert severity="warning" sx={{ mt: 2 }}>
-                                                    This action will immediately cancel the shipment with {carrierName}. This cannot be undone.
-                                                </Alert>
-                                            ) : (
-                                                <Alert severity="info" sx={{ mt: 2 }}>
-                                                    <Typography variant="body2" sx={{ mb: 1 }}>
-                                                        <strong>Manual Processing Required:</strong>
-                                                    </Typography>
-                                                    <Typography variant="body2">
-                                                        Cancellation for {carrierName} shipments requires manual processing by your Soluship representative.
-                                                        This will mark the shipment as cancelled in the system and notify your rep to process the cancellation with the carrier.
-                                                    </Typography>
-                                                </Alert>
-                                            )}
-                                        </>
-                                    );
-                                })()}
+                                {hasCancellationEndpoint ? (
+                                    <Alert severity="warning" sx={{ mt: 2 }}>
+                                        This action will immediately cancel the shipment with {carrierName}. This cannot be undone.
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="info" sx={{ mt: 2 }}>
+                                        <Typography variant="body2" sx={{ mb: 1 }}>
+                                            <strong>Manual Processing Required:</strong>
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            Cancellation for {carrierName} shipments requires manual processing by your Soluship representative.
+                                            This will mark the shipment as cancelled in the system and notify your rep to process the cancellation with the carrier.
+                                        </Typography>
+                                    </Alert>
+                                )}
                             </>
                         );
                     })()}
-                </DialogContent>
-                <DialogActions sx={{ p: 3, gap: 1 }}>
-                    <Button
-                        onClick={handleCancelModalClose}
-                        disabled={cancelLoading}
-                        sx={{ textTransform: 'none' }}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleCancelShipment}
-                        variant="contained"
-                        color="error"
-                        disabled={cancelLoading}
-                        sx={{ textTransform: 'none' }}
-                    >
-                        {cancelLoading ? (
-                            <>
-                                <CircularProgress size={16} sx={{ mr: 1 }} />
-                                Processing...
-                            </>
-                        ) : (() => {
-                            const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
-                                getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
-                                getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
+                </>
+            );
+        })()}
+    </DialogContent>
+    <DialogActions sx={{ p: 3, gap: 1 }}>
+        <Button
+            onClick={handleCancelModalClose}
+            disabled={cancelLoading}
+            sx={{ textTransform: 'none' }}
+        >
+            Cancel
+        </Button>
+        <Button
+            onClick={handleCancelShipment}
+            variant="contained"
+            color="error"
+            disabled={cancelLoading}
+            sx={{ textTransform: 'none' }}
+        >
+            {cancelLoading ? (
+                <>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    Processing...
+                </>
+            ) : (() => {
+                const isEShipPlusShipment = getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
+                    getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
+                    getBestRateInfo?.carrier?.toLowerCase().includes('eshipplus');
 
-                            const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
-                                getBestRateInfo?.sourceCarrierName === 'Canpar' ||
-                                getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
+                const isCanparShipment = getBestRateInfo?.displayCarrierId === 'CANPAR' ||
+                    getBestRateInfo?.sourceCarrierName === 'Canpar' ||
+                    getBestRateInfo?.carrier?.toLowerCase().includes('canpar');
 
-                            return (isEShipPlusShipment || isCanparShipment) ? 'Cancel Shipment' : 'Request Cancellation';
-                        })()}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                return (isEShipPlusShipment || isCanparShipment) ? 'Cancel Shipment' : 'Request Cancellation';
+            })()}
+        </Button>
+    </DialogActions>
+</Dialog>
 
-            {/* Enhanced Snackbar for User Feedback */}
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={snackbar.severity === 'error' ? 8000 : 4000}
-                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-                <Alert
-                    onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-                    severity={snackbar.severity}
-                    variant="filled"
-                    sx={{
-                        width: '100%',
-                        borderRadius: 2,
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
-                    }}
-                >
-                    {snackbar.message}
-                    {/* Show additional smart update info if available */}
-                    {updateResult && hasUpdates && (
-                        <Box sx={{ mt: 1, fontSize: '0.875rem', opacity: 0.9 }}>
-                            {getUpdateStatusMessage()}
-                        </Box>
-                    )}
-                </Alert>
-            </Snackbar>
-        </LoadScript >
+{/* Enhanced Snackbar for User Feedback */ }
+<Snackbar
+    open={snackbar.open}
+    autoHideDuration={snackbar.severity === 'error' ? 8000 : 4000}
+    onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+>
+    <Alert
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        severity={snackbar.severity}
+        variant="filled"
+        sx={{
+            width: '100%',
+            borderRadius: 2,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+        }}
+    >
+        {snackbar.message}
+        {/* Show additional smart update info if available */}
+        {updateResult && hasUpdates && (
+            <Box sx={{ mt: 1, fontSize: '0.875rem', opacity: 0.9 }}>
+                {getUpdateStatusMessage()}
+            </Box>
+        )}
+    </Alert>
+</Snackbar>
+        </Box >
     );
 };
 
