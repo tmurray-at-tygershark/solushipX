@@ -33,7 +33,34 @@ import { loadGoogleMaps } from '../../utils/googleMapsLoader';
 import StatusChip from '../StatusChip/StatusChip';
 import './Globe.css';
 
+// Calculates the sun's position based on the current date for realistic lighting.
+const getSunPosition = (date) => {
+    // Day of the year (1-365)
+    const dayOfYear = (Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000;
 
+    // Solar declination (approximate) - determines the sun's latitude
+    const declination = -23.45 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
+
+    // Time of day in hours (UTC)
+    const utcTime = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+
+    // Longitude of the sun. Noon (12:00 UTC) corresponds to longitude 0 (Prime Meridian).
+    const sunLongitude = (utcTime - 12) * 15;
+
+    const latRad = THREE.MathUtils.degToRad(declination);
+    const lonRad = THREE.MathUtils.degToRad(sunLongitude);
+
+    // A large distance simulates parallel rays from a distant sun
+    const sunDistance = 150;
+
+    // Convert from spherical (lat, lon) to Cartesian (x, y, z) coordinates
+    const sunX = sunDistance * Math.cos(latRad) * Math.cos(lonRad);
+    const sunY = sunDistance * Math.sin(latRad);
+    const sunZ = sunDistance * Math.cos(latRad) * Math.sin(lonRad);
+
+    // The globe model in this scene has an inverted Z-axis, so we must match it.
+    return new THREE.Vector3(sunX, sunY, -sunZ);
+};
 
 // Component to handle carrier logo fetching and display
 const CarrierLogo = ({ activeShipment }) => {
@@ -512,7 +539,7 @@ void main() {
     gl_FragColor = vec4(atmColor, atmOpacity) * factor;
 }`;
 
-const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusCounts = {} }) => {
+const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlays = true, statusCounts = {} }, ref) => {
     const mountRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -523,6 +550,7 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const isInitializedRef = useRef(false);
     const routesInitializedRef = useRef(false);
     const activeTimeoutsRef = useRef(new Set());
+    const directionalLightRef = useRef(null);
 
     // Real-time data state
     const [realTimeShipments, setRealTimeShipments] = useState([]);
@@ -799,6 +827,12 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         setIsFullScreen(prev => !prev);
     }, []);
 
+    // Expose imperative methods to the parent component
+    React.useImperativeHandle(ref, () => ({
+        resetView,
+        toggleFullScreen,
+    }));
+
     // Shared Region Navigation Component to avoid duplication
     const RegionNavigationButtons = ({ isFullscreenMode = false }) => (
         <Box sx={{
@@ -844,98 +878,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     {region.label}
                 </Button>
             ))}
-        </Box>
-    );
-
-    // Shared Top Controls Component to avoid duplication
-    const TopControlsComponent = ({ isFullscreenMode = false }) => (
-        <Box sx={{
-            position: 'absolute',
-            top: 24,
-            right: isFullscreenMode ? 80 : 16, // Leave space for close button in fullscreen
-            zIndex: isFullscreenMode ? 10001 : 6,
-            display: 'flex',
-            gap: 1,
-            alignItems: 'center'
-        }}>
-            {/* SoluShipX Logo */}
-            <Box sx={{
-                background: 'rgba(0, 0, 0, 0.3)',
-                backdropFilter: 'blur(20px)',
-                borderRadius: '8px',
-                padding: '8px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '36px'
-            }}>
-                <img
-                    src="/images/solushipx_logo_white.png"
-                    alt="SoluShipX"
-                    style={{
-                        height: '20px',
-                        width: 'auto',
-                        objectFit: 'contain'
-                    }}
-                />
-            </Box>
-
-            {/* Control Buttons */}
-            {isSearchMode && (
-                <Button
-                    size="small"
-                    onClick={handleResume}
-                    sx={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        color: 'white',
-                        minWidth: '80px',
-                        height: '36px',
-                        fontSize: '0.75rem',
-                        '&:hover': {
-                            background: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    }}
-                >
-                    Resume Auto
-                </Button>
-            )}
-
-            {/* Reset View Button */}
-            <IconButton
-                onClick={resetView}
-                sx={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    backdropFilter: 'blur(20px)',
-                    color: 'white',
-                    width: '36px',
-                    height: '36px',
-                    '&:hover': {
-                        background: 'rgba(0, 0, 0, 0.5)'
-                    }
-                }}
-            >
-                <RefreshIcon />
-            </IconButton>
-
-            {/* Fullscreen Button - Only in normal view */}
-            {!isFullscreenMode && (
-                <IconButton
-                    onClick={toggleFullScreen}
-                    sx={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        color: 'white',
-                        width: '36px',
-                        height: '36px',
-                        '&:hover': {
-                            background: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    }}
-                >
-                    <FullscreenIcon />
-                </IconButton>
-            )}
         </Box>
     );
 
@@ -1231,11 +1173,13 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
                 resizeHandlerRef.current = { handleResize, resizeObserver };
 
-                const ambientLight = new THREE.AmbientLight(0x404080, 0.3);
+                // A soft, neutral ambient light to ensure the dark side is not completely black
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.7);
                 scene.add(ambientLight);
 
-                const directionalLight = new THREE.DirectionalLight(0xfff4e6, 2.2);
-                directionalLight.position.set(-12, 10, 15);
+                // This directional light simulates the sun. Its position is updated in real-time.
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 2.8);
+                directionalLightRef.current = directionalLight; // Store ref to update in animate loop
                 scene.add(directionalLight);
 
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -1306,6 +1250,11 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     animationId = requestAnimationFrame(animate);
                     controls.update();
                     const time = performance.now();
+
+                    // Update sun position for real-time day/night cycle
+                    if (directionalLightRef.current) {
+                        directionalLightRef.current.position.copy(getSunPosition(new Date()));
+                    }
 
                     if (!userInteracting) {
                         clouds.rotateY(0.0001 * params.speedFactor);
@@ -1504,7 +1453,15 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
             )}
             {showOverlays && !loading && (
-                <Box sx={{ position: 'absolute', top: 16, left: 16, display: 'flex', flexDirection: 'column', gap: 0.8, zIndex: 5 }}>
+                <Box sx={{
+                    position: 'absolute',
+                    top: { xs: '64px', sm: '72px' }, // Push down to avoid new header
+                    left: 16,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.8,
+                    zIndex: 5
+                }}>
                     {[
                         { key: 'pending', label: 'Ready To Ship', color: '#FFA726', value: realtimeStatusCounts.pending || 0 },
                         { key: 'transit', label: 'In Transit', color: '#42A5F5', value: realtimeStatusCounts.transit || 0 },
@@ -1565,7 +1522,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     {globeContent}
 
                     {/* Render Controls in Fullscreen */}
-                    {!loading && <TopControlsComponent isFullscreenMode={true} />}
                     {!loading && <RegionNavigationButtons isFullscreenMode={true} />}
                 </Box>
             </Box>
@@ -1585,11 +1541,10 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             {/* Render Globe and Overlays */}
             {globeContent}
 
-            {/* Always render controls in normal view */}
-            {!loading && <TopControlsComponent isFullscreenMode={false} />}
+            {/* Controls are now handled by the parent Dashboard component */}
             {!loading && <RegionNavigationButtons isFullscreenMode={false} />}
         </Box>
     );
-};
+});
 
 export default React.memo(ShipmentGlobe);

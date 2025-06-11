@@ -16,6 +16,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import UserDetail from './components/Admin/Users/UserDetail.jsx';
+import AppLayout from './components/AppLayout';
 
 // Lazy-loaded Pages
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
@@ -281,42 +282,24 @@ function AppRoutes() {
 
 function App() {
     return (
-        <ErrorBoundary>
-            <AuthProvider>
-                <CompanyProvider>
-                    <LocalizationProvider dateAdapter={AdapterDayjs}>
-                        <SnackbarProvider maxSnack={3} autoHideDuration={4000}>
-                            <Router>
-                                <CssBaseline />
-                                <Box sx={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    minHeight: '100vh',
-                                    width: '100%'
-                                }}>
-                                    <ConditionalNotificationBar />
-                                    <RouteChangeHandler />
-                                    <Navigation />
-                                    <Box
-                                        component="main"
-                                        className="main-content"
-                                        sx={{
-                                            flexGrow: 1,
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            width: '100%'
-                                        }}
-                                    >
-                                        <AppRoutes />
-                                    </Box>
-                                    <Footer />
-                                </Box>
-                            </Router>
-                        </SnackbarProvider>
-                    </LocalizationProvider>
-                </CompanyProvider>
-            </AuthProvider>
-        </ErrorBoundary>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <SnackbarProvider>
+                <Router>
+                    <AuthProvider>
+                        <CompanyProvider>
+                            <CssBaseline />
+                            <ErrorBoundary>
+                                <ConditionalNotificationBar />
+                                <RouteChangeHandler />
+                                <AppLayout>
+                                    <AppRoutes />
+                                </AppLayout>
+                            </ErrorBoundary>
+                        </CompanyProvider>
+                    </AuthProvider>
+                </Router>
+            </SnackbarProvider>
+        </LocalizationProvider>
     );
 }
 

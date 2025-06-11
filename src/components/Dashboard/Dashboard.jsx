@@ -1,8 +1,32 @@
-import React, { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, lazy, Suspense, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Box,
-    CircularProgress
+    CircularProgress,
+    Drawer,
+    List,
+    ListItem,
+    ListItemButton,
+    ListItemIcon,
+    ListItemText,
+    IconButton,
+    TextField,
+    InputAdornment,
 } from '@mui/material';
+import {
+    Menu as MenuIcon,
+    Search as SearchIcon,
+    Dashboard as DashboardIcon,
+    Assessment as AssessmentIcon,
+    People as PeopleIcon,
+    LocalShipping as LocalShippingIcon,
+    Settings as SettingsIcon,
+    Notifications as NotificationsIcon,
+    AccountCircle as AccountCircleIcon,
+    Business as BusinessIcon,
+    Refresh as RefreshIcon,
+    Fullscreen as FullscreenIcon,
+} from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -10,6 +34,9 @@ import { useCompany } from '../../contexts/CompanyContext';
 
 // Lazy load the Globe component to prevent it from loading on other pages
 const ShipmentGlobe = lazy(() => import('../Globe/Globe'));
+
+// Lazy load the Tracking component for the drawer
+const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
 
 // Helper function to format Firestore timestamp
 const formatDate = (timestamp) => {
@@ -111,6 +138,14 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
     const { companyIdForAddress, loading: companyLoading } = useCompany();
+    const navigate = useNavigate();
+
+    // State for new UI elements
+    const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
+    const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
+    const [trackingNumber, setTrackingNumber] = useState('');
+
+    const globeRef = useRef(null); // Ref to access Globe's methods
 
     // Calculate date range for last 30 days
     const thirtyDaysAgo = useMemo(() => {
@@ -240,6 +275,40 @@ const Dashboard = () => {
         }, { pending: 0, transit: 0, delivered: 0, delayed: 0 });
     }, [shipments]);
 
+    const handleTrackShipment = () => {
+        if (trackingNumber.trim()) {
+            // The tracking component inside the drawer will use its own logic
+            // We just need to open the drawer
+            setIsTrackingDrawerOpen(true);
+        }
+    };
+
+    const handleResetView = () => {
+        if (globeRef.current) {
+            globeRef.current.resetView();
+        }
+    };
+
+    const handleToggleFullscreen = () => {
+        if (globeRef.current) {
+            globeRef.current.toggleFullScreen();
+        }
+    };
+
+    const menuItems = [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+        { text: 'Shipments', icon: <LocalShippingIcon />, path: '/shipments' },
+        { text: 'Customers', icon: <PeopleIcon />, path: '/customers' },
+        { text: 'Carriers', icon: <BusinessIcon />, path: '/carriers' },
+        { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
+    ];
+
+    const profileMenuItems = [
+        { text: 'Profile', icon: <AccountCircleIcon />, path: '/profile' },
+        { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
+        { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
+    ];
+
     // Show loading state while company data is loading
     if (companyLoading || loading) {
         return (
@@ -258,13 +327,104 @@ const Dashboard = () => {
 
     // Main container with corrected height calculation
     return (
-        <Box sx={{
-            height: 'calc(100vh - 64px)', // Full viewport height minus header
-            overflow: 'hidden', // Prevent any potential scrollbars from appearing
-            display: 'flex',
-            flexDirection: 'column'
-        }}>
-            <GlobeWrapper shipments={shipments} statusCounts={statusCounts} />
+        <Box sx={{ height: '100vh', width: '100vw', overflow: 'hidden', position: 'relative', bgcolor: '#000' }}>
+            {/* New Embedded Header */}
+            <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                p: 2,
+                zIndex: 10,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
+            }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <IconButton onClick={() => setIsNavDrawerOpen(true)} sx={{ color: 'white' }}>
+                        <MenuIcon />
+                    </IconButton>
+                    <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 24, cursor: 'pointer' }} onClick={() => navigate('/dashboard')} />
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TextField
+                        variant="standard"
+                        placeholder="Track a shipment..."
+                        value={trackingNumber}
+                        onChange={(e) => setTrackingNumber(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />
+                                </InputAdornment>
+                            ),
+                            disableUnderline: true,
+                            style: { color: 'white' }
+                        }}
+                        sx={{
+                            bgcolor: 'rgba(255, 255, 255, 0.1)',
+                            borderRadius: '20px',
+                            p: '4px 16px',
+                            width: '300px'
+                        }}
+                    />
+                    <IconButton onClick={handleResetView} sx={{ color: 'white' }}>
+                        <RefreshIcon />
+                    </IconButton>
+                    <IconButton onClick={handleToggleFullscreen} sx={{ color: 'white' }}>
+                        <FullscreenIcon />
+                    </IconButton>
+                </Box>
+            </Box>
+
+            {/* Navigation Drawer (Left) */}
+            <Drawer anchor="left" open={isNavDrawerOpen} onClose={() => setIsNavDrawerOpen(false)}>
+                <Box sx={{ width: 250, bgcolor: '#111827', height: '100%', color: 'white' }} role="presentation">
+                    <List>
+                        {menuItems.map((item) => (
+                            <ListItem key={item.text} disablePadding>
+                                <ListItemButton onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}>
+                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)' }}>{item.icon}</ListItemIcon>
+                                    <ListItemText primary={item.text} />
+                                </ListItemButton>
+                            </ListItem>
+                        ))}
+                    </List>
+                    <Box sx={{ flexGrow: 1 }} />
+                    <List>
+                        {profileMenuItems.map((item) => (
+                            <ListItem key={item.text} disablePadding>
+                                <ListItemButton onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}>
+                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)' }}>{item.icon}</ListItemIcon>
+                                    <ListItemText primary={item.text} />
+                                </ListItemButton>
+                            </ListItem>
+                        ))}
+                    </List>
+                </Box>
+            </Drawer>
+
+            {/* Tracking Drawer (Right) */}
+            <Drawer anchor="right" open={isTrackingDrawerOpen} onClose={() => setIsTrackingDrawerOpen(false)}>
+                <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
+                    <Suspense fallback={<CircularProgress sx={{ m: 4 }} />}>
+                        {/* Pass trackingNumber to the component so it can auto-fetch */}
+                        <TrackingDrawerContent trackingIdentifier={trackingNumber} isDrawer={true} />
+                    </Suspense>
+                </Box>
+            </Drawer>
+
+            <Suspense fallback={<CircularProgress />}>
+                <ShipmentGlobe
+                    ref={globeRef}
+                    shipments={shipments.slice(0, 50)}
+                    width="100%"
+                    showOverlays={true}
+                    statusCounts={statusCounts}
+                />
+            </Suspense>
         </Box>
     );
 };
