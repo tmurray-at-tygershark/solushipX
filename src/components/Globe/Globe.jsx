@@ -1472,6 +1472,25 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         }
     }, [shipments.length, addShipmentRoutes, loading]);
 
+    // Effect to handle canvas re-parenting for fullscreen mode
+    useEffect(() => {
+        const renderer = rendererRef.current;
+        const mountNode = mountRef.current;
+        const resizeHandler = resizeHandlerRef.current?.handleResize;
+
+        if (!loading && renderer && mountNode) {
+            // If the canvas isn't inside the current mount node, move it.
+            if (mountNode.children.length === 0) {
+                mountNode.appendChild(renderer.domElement);
+            }
+
+            // Always trigger a resize after a short delay to ensure dimensions are correct
+            if (resizeHandler) {
+                setTimeout(resizeHandler, 100);
+            }
+        }
+    }, [isFullScreen, loading]); // This effect runs whenever the view toggles between normal and fullscreen
+
     const handleTogglePause = useCallback(() => {
         setIsPaused(prev => !prev);
     }, []);
@@ -1529,36 +1548,46 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     </Box>
                 </Box>
             )}
-
-            {!loading && !isFullScreen && <RegionNavigationButtons isFullscreenMode={false} />}
-            {!isFullScreen && <TopControlsComponent isFullscreenMode={false} />}
         </>
     );
 
     if (isFullScreen) {
         return (
             <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#000000', zIndex: 9999 }}>
-                <Box onClick={toggleFullScreen} sx={{ position: 'absolute', top: 24, right: 24, background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(20px)', borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10000 }}>
-                    <Typography sx={{ color: 'white', fontSize: '1.2rem' }}>✕</Typography>
-                </Box>
-                <TopControlsComponent isFullscreenMode={true} />
+                {/* Close Fullscreen Button */}
+                <IconButton onClick={toggleFullScreen} sx={{ position: 'absolute', top: 24, right: 24, background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(20px)', borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10002, color: 'white' }}>
+                    <FullscreenExitIcon />
+                </IconButton>
+
+                {/* Main Content Area */}
                 <Box className="globe-container" sx={{ position: 'relative', width: '100vw', height: '100vh' }}>
+                    {/* Render Globe and Overlays */}
                     {globeContent}
+
+                    {/* Render Controls in Fullscreen */}
+                    {!loading && <TopControlsComponent isFullscreenMode={true} />}
                     {!loading && <RegionNavigationButtons isFullscreenMode={true} />}
                 </Box>
             </Box>
         );
     }
 
+    // Default (non-fullscreen) view
     return (
         <Box className="globe-container" sx={{
             position: 'relative',
             width,
-            height: '100%',
+            height: '100%', // Use 100% to fill parent
             backgroundColor: '#000000',
-            borderRadius: '8px'
+            borderRadius: '8px',
+            overflow: 'hidden' // Hide anything that might spill out
         }}>
+            {/* Render Globe and Overlays */}
             {globeContent}
+
+            {/* Always render controls in normal view */}
+            {!loading && <TopControlsComponent isFullscreenMode={false} />}
+            {!loading && <RegionNavigationButtons isFullscreenMode={false} />}
         </Box>
     );
 };
