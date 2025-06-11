@@ -536,7 +536,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     const [activeShipment, setActiveShipment] = useState(null);
     const [isPaused, setIsPaused] = useState(false);
     const [manualNavigation, setManualNavigation] = useState(false);
-    const pausedTimeRef = useRef(0);
 
     // Camera position references for region navigation (calibrated from user data)
     const defaultCameraPosition = { x: -8, y: 10, z: 16 };
@@ -556,6 +555,249 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
     // Globe is self-sufficient - uses only its own enhanced query with carrier tracking data
     const shipments = realTimeShipments;
+
+    // Helper function to create managed timeouts that get cleaned up on unmount
+    const createManagedTimeout = useCallback((callback, delay) => {
+        const timeoutId = setTimeout(() => {
+            activeTimeoutsRef.current.delete(timeoutId);
+            if (isMountedRef.current) {
+                callback();
+            }
+        }, delay);
+
+        activeTimeoutsRef.current.add(timeoutId);
+        return timeoutId;
+    }, []);
+
+    // Moved to component scope to be accessible by all effects
+    const addShipmentRoutes = useCallback(async (scene, shipments) => {
+        console.log(`📦 Total shipments received:`, shipments.length);
+
+        const group = scene.children.find(child => child.type === 'Group');
+        if (!group) {
+            console.error("❌ Could not find the main group to add routes to.");
+            return;
+        }
+
+        const validShipments = shipments.filter(s => {
+            const status = s.status?.toLowerCase();
+            return status && status !== 'draft' && status !== 'cancelled' && status !== 'void';
+        });
+        console.log(`🚚 Valid shipments (non-draft/cancelled/void):`, validShipments.length);
+
+        // Arrays to track animated objects for the animation loop
+        const animatedArcs = [];
+        const animatedParticles = [];
+
+        scene.userData.animatedArcs = animatedArcs;
+        scene.userData.animatedParticles = animatedParticles;
+        scene.userData.totalShipments = validShipments.length;
+        scene.userData.currentShipmentIndex = 0;
+        scene.userData.isProcessingShipments = true;
+        scene.userData.maxDelay = validShipments.length * 4000;
+
+        // ROBUST PROCESSING: Use an async loop instead of a fragile setTimeout chain
+        const processAllShipments = async () => {
+            for (const [index, shipment] of validShipments.entries()) {
+                try {
+                    console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
+
+                    const originCoords = await getCityCoordinates(shipment.origin);
+                    const destCoords = await getCityCoordinates(shipment.destination);
+
+                    if (originCoords && destCoords) {
+                        const startVec = latLngToVector3(originCoords.lat, originCoords.lng, 10.05);
+                        const endVec = latLngToVector3(destCoords.lat, destCoords.lng, 10.05);
+                        const distance = startVec.distanceTo(endVec);
+
+                        const arcHeight = Math.max(2, distance * 0.5);
+                        const mid = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
+                        mid.normalize().multiplyScalar(10 + arcHeight);
+
+                        const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
+                        const points = curve.getPoints(100);
+
+                        const trailLength = 25;
+                        const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
+                        const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
+                        const tubeRadius = 0.02;
+                        const tubularSegments = trailLength - 1;
+                        const radialSegments = 8;
+                        const trailGeometry = new THREE.TubeGeometry(trailCurve, tubularSegments, tubeRadius, radialSegments, false);
+
+                        const material = new THREE.MeshStandardMaterial({
+                            color: getStatusColor(shipment.status),
+                            opacity: 0, // Start fully transparent, fade in during animation
+                            transparent: true,
+                            emissive: new THREE.Color(getStatusColor(shipment.status)),
+                            emissiveIntensity: 0.3,
+                            roughness: 0.5,
+                            metalness: 0.1
+                        });
+                        const arc = new THREE.Mesh(trailGeometry, material);
+
+                        // --- NEW SEQUENTIAL TIMING LOGIC ---
+                        const TRAVEL_DURATION = 2000; // 2.0 seconds for the arc to travel
+                        const HOLD_DURATION = 3000;   // 3.0 seconds to hold the full arc
+                        const FADE_DURATION = 500;    // 0.5 seconds to fade out
+                        const SINGLE_CYCLE_DURATION = TRAVEL_DURATION + HOLD_DURATION + FADE_DURATION;
+
+                        const animationStartDelay = index * SINGLE_CYCLE_DURATION; // Each animation starts after the previous one *completely* finishes
+                        const currentTime = performance.now();
+
+                        arc.userData = {
+                            isAnimatedArc: true,
+                            originalOpacity: 0.95,
+                            status: shipment.status,
+                            shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
+                            animationStartTime: currentTime + animationStartDelay,
+                            originalDelay: animationStartDelay,
+                            curve: curve,
+                            points: points,
+                            trailLength: trailLength,
+                            progress: 0,
+                            badgeSynced: false,
+                            shipmentData: shipment,
+                            sequentialIndex: index,
+                            // Store new timing constants
+                            TRAVEL_DURATION,
+                            HOLD_DURATION,
+                            FADE_DURATION,
+                            SINGLE_CYCLE_DURATION
+                        };
+                        group.add(arc);
+                        animatedArcs.push(arc);
+
+                        const originGeo = new THREE.SphereGeometry(0.04, 8, 8);
+                        const originMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.9 });
+                        const originMarker = new THREE.Mesh(originGeo, originMat);
+                        originMarker.position.copy(startVec);
+                        originMarker.userData = { isMarker: true, parentArc: arc, originalOpacity: 0.9 };
+                        group.add(originMarker);
+
+                        const destGeo = new THREE.SphereGeometry(0.04, 8, 8);
+                        const destMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.9 });
+                        const destMarker = new THREE.Mesh(destGeo, destMat);
+                        destMarker.position.copy(endVec);
+                        destMarker.userData = { isMarker: true, parentArc: arc, originalOpacity: 0.9 };
+                        group.add(destMarker);
+
+                        animatedArcs.push(originMarker, destMarker);
+
+                        if (shipment.status?.toLowerCase() === 'in_transit') {
+                            const particleGeo = new THREE.SphereGeometry(0.12, 12, 12);
+                            const particleMat = new THREE.MeshBasicMaterial({
+                                color: 0xffffff,
+                                transparent: true,
+                                opacity: 1.0,
+                                emissive: new THREE.Color(0xffffff),
+                                emissiveIntensity: 0.8
+                            });
+                            const particle = new THREE.Mesh(particleGeo, particleMat);
+                            particle.position.copy(startVec);
+                            particle.userData = {
+                                isMovingParticle: true,
+                                curve: curve,
+                                progress: Math.random() * 0.3,
+                                speed: 0.008 + Math.random() * 0.004,
+                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
+                                sequentialIndex: index
+                            };
+                            group.add(particle);
+                            animatedParticles.push(particle);
+
+                            const trailGeo = new THREE.SphereGeometry(0.2, 12, 12);
+                            const trailMat = new THREE.MeshBasicMaterial({
+                                color: getStatusColor(shipment.status),
+                                transparent: true,
+                                opacity: 0.4,
+                                emissive: new THREE.Color(getStatusColor(shipment.status)),
+                                emissiveIntensity: 1.0
+                            });
+                            const trailParticle = new THREE.Mesh(trailGeo, trailMat);
+                            trailParticle.position.copy(startVec);
+                            trailParticle.userData = {
+                                isMovingParticle: true,
+                                isTrailParticle: true,
+                                parentParticle: particle,
+                                curve: curve,
+                                progress: Math.random() * 0.3,
+                                speed: 0.006 + Math.random() * 0.003,
+                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
+                                sequentialIndex: index
+                            };
+                            group.add(trailParticle);
+                            animatedParticles.push(trailParticle);
+                        }
+                    } else {
+                        console.warn(`❌ Skipping shipment ${shipment.id} - missing coordinates.`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error processing shipment ${shipment.id}:`, error);
+                }
+            }
+            console.log(`✅ All ${validShipments.length} shipments processed.`);
+            if (scene.userData) {
+                scene.userData.isProcessingShipments = false;
+            }
+        };
+
+        processAllShipments();
+
+    }, [createManagedTimeout]);
+
+    const animateCameraTo = useCallback((position, target = { x: 0, y: 0, z: 0 }, duration = 1500) => {
+        if (!cameraRef.current || !rendererRef.current || !sceneRef.current) return;
+        const camera = cameraRef.current;
+        const controls = camera.userData?.controls;
+        if (controls) controls.enabled = false;
+
+        const startPosition = camera.position.clone();
+        const startTarget = controls ? controls.target.clone() : new THREE.Vector3();
+        const startTime = performance.now();
+
+        const animateFrame = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easedProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+
+            camera.position.lerpVectors(startPosition, position, easedProgress);
+            if (controls) {
+                controls.target.lerpVectors(startTarget, target, easedProgress);
+                controls.update();
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animateFrame);
+            } else {
+                if (controls) controls.enabled = true;
+            }
+        };
+        animateFrame();
+    }, []);
+
+    const resetView = useCallback(() => {
+        animateCameraTo(defaultCameraPosition, new THREE.Vector3(0, 0, 0));
+        setUserInteracting(false);
+    }, [animateCameraTo, defaultCameraPosition]);
+
+    const goToNorthAmerica = useCallback(() => animateCameraTo(regionPositions.northAmerica, new THREE.Vector3(0, 0, 0)), [animateCameraTo, regionPositions.northAmerica]);
+    const goToEurope = useCallback(() => animateCameraTo(regionPositions.europe, new THREE.Vector3(0, 0, 0)), [animateCameraTo, regionPositions.europe]);
+    const goToAsia = useCallback(() => animateCameraTo(regionPositions.asia, new THREE.Vector3(0, 0, 0)), [animateCameraTo, regionPositions.asia]);
+    const goToSouthAmerica = useCallback(() => animateCameraTo(regionPositions.southAmerica, new THREE.Vector3(0, 0, 0)), [animateCameraTo, regionPositions.southAmerica]);
+
+    const handleResume = useCallback(() => {
+        setIsSearchMode(false);
+        setSearchTerm('');
+        setActiveShipment(null);
+        setIsPaused(false);
+        setManualNavigation(false);
+        setUserInteracting(false);
+    }, []);
+
+    const toggleFullScreen = useCallback(() => {
+        setIsFullScreen(prev => !prev);
+    }, []);
 
     // Shared Region Navigation Component to avoid duplication
     const RegionNavigationButtons = ({ isFullscreenMode = false }) => (
@@ -702,19 +944,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
 
     // Store resize handler for cleanup
     const resizeHandlerRef = useRef(null);
-
-    // Helper function to create managed timeouts that get cleaned up on unmount
-    const createManagedTimeout = useCallback((callback, delay) => {
-        const timeoutId = setTimeout(() => {
-            activeTimeoutsRef.current.delete(timeoutId);
-            if (isMountedRef.current) {
-                callback();
-            }
-        }, delay);
-
-        activeTimeoutsRef.current.add(timeoutId);
-        return timeoutId;
-    }, []);
 
     // Real-time shipment data listener with carrier tracking data
     useEffect(() => {
@@ -905,7 +1134,6 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
             console.log('🔄 Cleared geocoding cache for fresh coordinates');
             geocodingCache.clear();
 
-            // Load Google Maps API for proper geocoding
             try {
                 console.log('📍 Loading Google Maps API for accurate geocoding...');
                 await loadGoogleMaps();
@@ -919,37 +1147,26 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     mountRef.current.innerHTML = '';
                 }
 
-                // Get actual pixel dimensions from container with multiple fallbacks
                 const containerRect = mountRef.current?.getBoundingClientRect();
                 const containerWidth = containerRect?.width || mountRef.current?.offsetWidth || mountRef.current?.clientWidth;
                 const containerHeight = containerRect?.height || mountRef.current?.offsetHeight || mountRef.current?.clientHeight;
 
-                // Use container dimensions if available, otherwise fall back to props or parent
                 const actualWidth = containerWidth > 0 ? containerWidth :
                     (mountRef.current?.parentElement?.offsetWidth || width || 800);
                 const actualHeight = containerHeight > 0 ? containerHeight :
                     (mountRef.current?.parentElement?.offsetHeight || height || 600);
 
-                // Debug canvas dimensions and DOM state
                 console.log('🎯 Canvas setup:', {
-                    originalWidth: width,
-                    originalHeight: height,
                     actualWidth,
                     actualHeight,
-                    containerWidth: mountRef.current?.offsetWidth,
-                    containerHeight: mountRef.current?.offsetHeight,
-                    mountElement: !!mountRef.current
                 });
 
-                // Enhanced setup for North America focus
                 THREE.ColorManagement.enabled = true;
                 scene = new THREE.Scene();
                 sceneRef.current = scene;
                 camera = new THREE.PerspectiveCamera(45, actualWidth / actualHeight, 1, 1000);
-
-                // Position camera to focus on North America with optimal viewing angle - zoomed in more
-                camera.position.set(-8, 10, 16); // Closer view for better detail (was 28)
-                camera.lookAt(0, 0, 0); // Look at globe center
+                camera.position.set(-8, 10, 16);
+                camera.lookAt(0, 0, 0);
 
                 renderer = new THREE.WebGLRenderer({
                     antialias: true,
@@ -958,395 +1175,110 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 });
                 renderer.setSize(actualWidth, actualHeight);
                 renderer.outputColorSpace = THREE.SRGBColorSpace;
-                renderer.setClearColor(0x000000, 1); // Black background for subtle star field
-                renderer.sortObjects = true; // Enable proper transparency sorting
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+                renderer.setClearColor(0x000000, 1);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-                // Add WebGL context loss detection
-                const canvas = renderer.domElement;
-                canvas.addEventListener('webglcontextlost', (event) => {
-                    console.error('🚨 WebGL context lost! Preventing default and attempting recovery...');
-                    event.preventDefault();
-                    if (animationId) cancelAnimationFrame(animationId);
-                }, false);
-
-                canvas.addEventListener('webglcontextrestored', () => {
-                    console.log('🔄 WebGL context restored, reinitializing globe...');
-                    // The component will reinitialize automatically due to React
-                }, false);
-
-                // Store references for fullscreen resizing
                 rendererRef.current = renderer;
                 cameraRef.current = camera;
 
-                // Debug renderer setup
-                console.log('🎮 Renderer setup:', {
-                    canvasWidth: renderer.domElement.width,
-                    canvasHeight: renderer.domElement.height,
-                    pixelRatio: renderer.getPixelRatio()
-                });
-
-                // Ensure canvas is visible and properly styled
                 renderer.domElement.style.display = 'block';
                 renderer.domElement.style.width = '100%';
                 renderer.domElement.style.height = '100%';
                 mountRef.current.appendChild(renderer.domElement);
 
-                // Enhanced orbit controls with advanced features
                 controls = new OrbitControls(camera, renderer.domElement);
                 controls.enableDamping = true;
-                controls.dampingFactor = 0.08; // Smoother damping
-                controls.minDistance = 10.5; // Minimum zoom - just above surface (radius=10)
-                controls.maxDistance = 50; // Reduced maximum zoom level for closer view  
-                controls.target.set(0, 0, 0); // Look at globe center
-                controls.rotateSpeed = 0.4; // More responsive rotation
-                controls.zoomSpeed = 1.2; // Better zoom responsiveness
+                controls.dampingFactor = 0.08;
+                controls.minDistance = 10.5;
+                controls.maxDistance = 50;
+                controls.target.set(0, 0, 0);
+                controls.rotateSpeed = 0.4;
+                controls.zoomSpeed = 1.2;
                 controls.panSpeed = 1.0;
-                controls.autoRotate = false; // Can be toggled
-                controls.autoRotateSpeed = 0.5;
+                controls.autoRotate = false;
 
-                // Add interaction event listeners to stop auto-rotation when user drags
                 controls.addEventListener('start', () => {
-                    if (isMountedRef.current) {
-                        console.log('🎯 User started interacting with globe - stopping auto-rotation');
-                    }
-                    setUserInteracting(true);
+                    if (isMountedRef.current) setUserInteracting(true);
                 });
 
-                controls.addEventListener('end', () => {
-                    if (isMountedRef.current) {
-                        console.log('🎯 User finished interacting with globe - keeping position');
-
-                        // 📍 COORDINATE LOGGING FOR CALIBRATION
-                        console.log('\n🌍 === GLOBE POSITION CALIBRATION DATA ===');
-                        console.log('📷 Camera Position:', {
-                            x: camera.position.x.toFixed(3),
-                            y: camera.position.y.toFixed(3),
-                            z: camera.position.z.toFixed(3)
-                        });
-                        console.log('🎯 Camera Target:', {
-                            x: controls.target.x.toFixed(3),
-                            y: controls.target.y.toFixed(3),
-                            z: controls.target.z.toFixed(3)
-                        });
-                        console.log('🌐 Globe Rotation:', {
-                            x: group.rotation.x.toFixed(3),
-                            y: group.rotation.y.toFixed(3),
-                            z: group.rotation.z.toFixed(3)
-                        });
-                        console.log('📐 Camera Rotation:', {
-                            x: camera.rotation.x.toFixed(3),
-                            y: camera.rotation.y.toFixed(3),
-                            z: camera.rotation.z.toFixed(3)
-                        });
-                        console.log('🔍 Camera Distance from Origin:', camera.position.distanceTo(new THREE.Vector3(0, 0, 0)).toFixed(3));
-                        console.log('🎪 Controls Distance:', controls.getDistance().toFixed(3));
-                        console.log('=== END CALIBRATION DATA ===\n');
-                    }
-
-                    // Note: We don't restart auto-rotation - user's position is maintained
-                });
-
-                // Rotation change listener removed to reduce console noise
-
-                // Enable keyboard controls for advanced navigation
-                controls.enableKeys = true;
-                controls.keys = {
-                    LEFT: 'ArrowLeft', // Pan left
-                    UP: 'ArrowUp',     // Pan up  
-                    RIGHT: 'ArrowRight', // Pan right
-                    BOTTOM: 'ArrowDown'  // Pan down
-                };
-                controls.listenToKeyEvents(window); // Important: listen to window key events
-
-                // Smooth transitions for better UX
-                controls.enableZoom = true;
-                controls.enableRotate = true;
-                controls.enablePan = true;
-
-                // Store controls reference in camera for region navigation
                 camera.userData = { controls: controls };
 
-                // Add window resize handler for responsive globe with debouncing
                 let resizeTimeout;
                 const handleResize = () => {
                     if (!mountRef.current || !renderer || !camera) return;
 
-                    // Debounce resize events for better performance
                     clearTimeout(resizeTimeout);
                     resizeTimeout = setTimeout(() => {
-                        // Get current container dimensions
                         const containerRect = mountRef.current.getBoundingClientRect();
-                        const newWidth = containerRect.width || mountRef.current.offsetWidth || mountRef.current.clientWidth;
-                        const newHeight = containerRect.height || mountRef.current.offsetHeight || mountRef.current.clientHeight;
+                        const newWidth = containerRect.width;
+                        const newHeight = containerRect.height;
 
-                        // Fallback to parent container if dimensions are 0
-                        const finalWidth = newWidth > 0 ? newWidth : (mountRef.current.parentElement?.offsetWidth || width);
-                        const finalHeight = newHeight > 0 ? newHeight : (mountRef.current.parentElement?.offsetHeight || height);
-
-                        // Only resize if dimensions actually changed significantly (avoid micro-adjustments)
-                        const currentWidth = renderer.domElement.width / renderer.getPixelRatio();
-                        const currentHeight = renderer.domElement.height / renderer.getPixelRatio();
-
-                        if (Math.abs(finalWidth - currentWidth) < 5 && Math.abs(finalHeight - currentHeight) < 5) {
-                            return;
-                        }
-
-                        // Update camera aspect ratio
-                        camera.aspect = finalWidth / finalHeight;
+                        camera.aspect = newWidth / newHeight;
                         camera.updateProjectionMatrix();
-
-                        // Update renderer size
-                        renderer.setSize(finalWidth, finalHeight);
+                        renderer.setSize(newWidth, newHeight);
                         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-                        // Force canvas to fill container
-                        const canvas = renderer.domElement;
-                        canvas.style.width = '100%';
-                        canvas.style.height = '100%';
-                        canvas.style.display = 'block';
-
-                        if (isMountedRef.current) {
-                            console.log('🔄 Globe resized:', {
-                                width: finalWidth,
-                                height: finalHeight,
-                                aspect: (finalWidth / finalHeight).toFixed(2),
-                                containerRect: { w: containerRect.width, h: containerRect.height }
-                            });
-                        }
-
-                        // Force immediate render after resize
                         renderer.render(scene, camera);
-                    }, 150); // Slightly longer debounce for stability
+                    }, 150);
                 };
 
-                // Add resize event listener
                 window.addEventListener('resize', handleResize);
 
-                // Add ResizeObserver for more accurate container size detection
                 let resizeObserver;
                 if (window.ResizeObserver && mountRef.current) {
-                    resizeObserver = new ResizeObserver((entries) => {
-                        for (const entry of entries) {
-                            // Trigger resize handler when container size changes
-                            handleResize();
-                        }
-                    });
+                    resizeObserver = new ResizeObserver(handleResize);
                     resizeObserver.observe(mountRef.current);
-
-                    if (isMountedRef.current) {
-                        console.log('🔍 ResizeObserver attached to Globe container for accurate dimension tracking');
-                    }
                 }
 
-                // Store resize handler and observer for cleanup
                 resizeHandlerRef.current = { handleResize, resizeObserver };
 
-                // Enhanced dramatic lighting setup for realistic terrain rendering
-                const ambientLight = new THREE.AmbientLight(0x404080, 0.3); // Reduced ambient for more dramatic shadows
+                const ambientLight = new THREE.AmbientLight(0x404080, 0.3);
                 scene.add(ambientLight);
 
-                // Primary directional light - enhanced for terrain detail visibility  
-                const directionalLight = new THREE.DirectionalLight(0xfff4e6, 2.2); // Increased intensity for bump mapping
-                directionalLight.position.set(-12, 10, 15); // Adjusted for better terrain lighting
-                directionalLight.target.position.set(0, 0, 0);
-                directionalLight.castShadow = false; // Disable shadows for performance
+                const directionalLight = new THREE.DirectionalLight(0xfff4e6, 2.2);
+                directionalLight.position.set(-12, 10, 15);
                 scene.add(directionalLight);
-                scene.add(directionalLight.target);
 
-                // Secondary fill light for realistic contrast
-                const fillLight = new THREE.DirectionalLight(0xe6f3ff, 0.8); // Increased fill light for terrain detail
-                fillLight.position.set(10, -6, -10); // Enhanced positioning for better fill lighting
-                fillLight.target.position.set(0, 0, 0);
-                scene.add(fillLight);
-                scene.add(fillLight.target);
-
-                // Add subtle rim lighting for atmospheric effect
-                const rimLight = new THREE.DirectionalLight(0xb3d9ff, 0.4); // Cool rim light
-                rimLight.position.set(0, 0, -20); // Behind the globe for rim effect
-                rimLight.target.position.set(0, 0, 0);
-                scene.add(rimLight);
-                scene.add(rimLight.target);
-
-                // Add neutral environment for PBR material to prevent black appearance
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
-                const neutralEnv = pmremGenerator.fromScene(new THREE.Scene(), 0.04).texture;
-                scene.environment = neutralEnv;
+                scene.environment = pmremGenerator.fromScene(new THREE.Scene(), 0.04).texture;
                 pmremGenerator.dispose();
 
-                // Create group for globe rotation
                 group = new THREE.Group();
+                group.rotation.y = -0.3;
 
-                // Set rotation with slight right turn for better initial view
-                // Rotate slightly right to show more of North America/Pacific
-                const initialRotationY = -0.3; // ~17° right rotation for better continent positioning
-                const initialRotationX = 0; // 0° - no X rotation
-
-                group.rotation.y = initialRotationY;
-                group.rotation.x = initialRotationX;
-
-                // Load textures with error handling
                 const textureLoader = new THREE.TextureLoader();
-                console.log('🌍 Loading Earth textures...');
-
-                const loadTextureWithFallback = (url, fallbackFn = null) => {
-                    return new Promise((resolve) => {
-                        textureLoader.load(
-                            url,
-                            resolve, // success
-                            undefined, // progress
-                            (error) => { // error
-                                console.warn(`Failed to load texture: ${url}`, error);
-                                if (fallbackFn) {
-                                    console.log('🔄 Using fallback texture');
-                                    resolve(fallbackFn());
-                                } else {
-                                    // Create a basic colored texture as fallback
-                                    const canvas = document.createElement('canvas');
-                                    canvas.width = canvas.height = 64;
-                                    const ctx = canvas.getContext('2d');
-                                    ctx.fillStyle = '#444444';
-                                    ctx.fillRect(0, 0, 64, 64);
-                                    resolve(new THREE.CanvasTexture(canvas));
-                                }
-                            }
-                        );
-                    });
-                };
-
                 const [dayMap, normalMap, bumpMap, cloudsMap] = await Promise.all([
-                    loadTextureWithFallback(EARTH_TEXTURES.day),
-                    loadTextureWithFallback(EARTH_TEXTURES.normal),
-                    loadTextureWithFallback(EARTH_TEXTURES.bump),
-                    loadTextureWithFallback(EARTH_TEXTURES.clouds)
+                    textureLoader.loadAsync(EARTH_TEXTURES.day),
+                    textureLoader.loadAsync(EARTH_TEXTURES.normal),
+                    textureLoader.loadAsync(EARTH_TEXTURES.bump),
+                    textureLoader.loadAsync(EARTH_TEXTURES.clouds)
                 ]);
-
                 dayMap.colorSpace = THREE.SRGBColorSpace;
 
-                // Debug texture loading
-                console.log('✅ All Earth textures loaded successfully');
-                console.log('🗻 Normal map dimensions:', normalMap.image?.width, 'x', normalMap.image?.height);
-                console.log('🌍 Earth day map dimensions:', dayMap.image?.width, 'x', dayMap.image?.height);
-                console.log('🏔️ Bump map dimensions:', bumpMap.image?.width, 'x', bumpMap.image?.height);
-
-                // Create efficient programmatic star field
-                const createProgrammaticStarField = () => {
-                    const starCount = 1000; // Reduced for memory efficiency
-                    const starPositions = new Float32Array(starCount * 3);
-                    const starSizes = new Float32Array(starCount);
-                    const starColors = new Float32Array(starCount * 3);
-
-                    for (let i = 0; i < starCount; i++) {
-                        // Random positions on a large sphere
-                        const radius = 400 + Math.random() * 100; // Variable distance for depth
-                        const theta = Math.random() * Math.PI * 2;
-                        const phi = Math.acos(2 * Math.random() - 1);
-
-                        const x = radius * Math.sin(phi) * Math.cos(theta);
-                        const y = radius * Math.sin(phi) * Math.sin(theta);
-                        const z = radius * Math.cos(phi);
-
-                        starPositions[i * 3] = x;
-                        starPositions[i * 3 + 1] = y;
-                        starPositions[i * 3 + 2] = z;
-
-                        // More prominent star sizes with better distribution
-                        const sizeRandom = Math.random();
-                        if (sizeRandom < 0.05) {
-                            // 5% very bright stars
-                            starSizes[i] = 4 + Math.random() * 3;
-                        } else if (sizeRandom < 0.2) {
-                            // 15% bright stars
-                            starSizes[i] = 2 + Math.random() * 2;
-                        } else {
-                            // 80% normal stars
-                            starSizes[i] = 0.8 + Math.random() * 1.2;
-                        }
-
-                        // Brighter, more prominent star colors
-                        const colorVariation = Math.random();
-                        if (colorVariation < 0.6) {
-                            // Most stars are bright white
-                            starColors[i * 3] = 0.95 + Math.random() * 0.05;    // R
-                            starColors[i * 3 + 1] = 0.95 + Math.random() * 0.05; // G
-                            starColors[i * 3 + 2] = 1.0;                         // B
-                        } else if (colorVariation < 0.8) {
-                            // Some are bright blue
-                            starColors[i * 3] = 0.8 + Math.random() * 0.2;     // R
-                            starColors[i * 3 + 1] = 0.9 + Math.random() * 0.1; // G
-                            starColors[i * 3 + 2] = 1.0;                        // B
-                        } else {
-                            // Some are bright yellow/orange
-                            starColors[i * 3] = 1.0;                           // R
-                            starColors[i * 3 + 1] = 0.9 + Math.random() * 0.1; // G
-                            starColors[i * 3 + 2] = 0.7 + Math.random() * 0.2; // B
-                        }
-                    }
-
-                    const starGeometry = new THREE.BufferGeometry();
-                    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-                    starGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
-                    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
-
-                    const starMaterial = new THREE.PointsMaterial({
-                        size: 2, // Larger base size
-                        sizeAttenuation: true,
-                        vertexColors: true,
-                        transparent: true,
-                        opacity: 1.0, // Full opacity for prominence
-                        blending: THREE.AdditiveBlending
-                    });
-
-                    const stars = new THREE.Points(starGeometry, starMaterial);
-                    return stars;
-                };
-
-                const starField = createProgrammaticStarField();
-                scene.add(starField); // Add directly to scene, not rotating group
-                console.log('✨ Prominent programmatic star field added to scene');
-
-                // Create realistic Earth with bump mapping and proper materials
                 const earthGeo = new THREE.SphereGeometry(10, 64, 64);
-                earthGeo.computeBoundingSphere();
-
-                // Enhanced Earth material with realistic bump mapping and lighting response
                 const earthMat = new THREE.MeshStandardMaterial({
                     map: dayMap,
                     normalMap: normalMap,
                     bumpMap: bumpMap,
-                    bumpScale: 0.4, // Increased for more pronounced terrain relief
-                    roughness: 0.7, // Slightly more reflective for realistic surface
-                    metalness: 0.05, // Subtle metallic properties for mineral content
-                    envMapIntensity: 0.4, // Enhanced environment reflection for realism
-                    normalScale: new THREE.Vector2(1.2, 1.2), // Enhanced normal mapping intensity
-                    // Enhanced for dramatic lighting response
-                    emissive: new THREE.Color(0x000000), // No emission
-                    emissiveIntensity: 0.0
+                    bumpScale: 0.4,
+                    roughness: 0.7,
+                    metalness: 0.05,
+                    envMapIntensity: 0.4,
+                    normalScale: new THREE.Vector2(1.2, 1.2),
                 });
-
                 earth = new THREE.Mesh(earthGeo, earthMat);
-                // ✅ Removed arbitrary rotation - coordinates now align properly with texture
-                earth.renderOrder = 0; // Render first (solid base)
                 group.add(earth);
 
-                // Create clouds - Simple translucent setup
-                const cloudGeo = new THREE.SphereGeometry(10.1, 32, 32); // Slightly higher
-                cloudGeo.computeBoundingSphere();
+                const cloudGeo = new THREE.SphereGeometry(10.1, 32, 32);
                 const cloudsMat = new THREE.MeshLambertMaterial({
                     map: cloudsMap,
                     transparent: true,
-                    opacity: 0.3, // Light transparency
+                    opacity: 0.3,
                     depthWrite: false,
-                    color: 0xffffff
                 });
                 clouds = new THREE.Mesh(cloudGeo, cloudsMat);
-                // ✅ Removed arbitrary rotation - clouds now align with Earth texture
-                clouds.renderOrder = 1; // Render after Earth
                 group.add(clouds);
 
-                // Create atmosphere - Franky's exact setup
                 const atmosGeo = new THREE.SphereGeometry(12.5, 64, 64);
-                atmosGeo.computeBoundingSphere();
                 const atmosMat = new THREE.ShaderMaterial({
                     vertexShader: atmosphereVertexShader,
                     fragmentShader: atmosphereFragmentShader,
@@ -1359,1458 +1291,212 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                     side: THREE.BackSide
                 });
                 atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
-                atmosphere.renderOrder = 2; // Render last (outermost transparent layer)
                 group.add(atmosphere);
 
                 scene.add(group);
 
-
-
-                // Remove the redundant marker since we have one in testCities
-
-                // Add shipment routes if any exist
                 if (shipments && shipments.length > 0) {
-                    console.log('🚚 Adding initial shipment routes to globe...');
                     await addShipmentRoutes(scene, shipments);
                     routesInitializedRef.current = true;
                 }
 
-                // Click debugging removed - coordinate mapping is now correct
+                setLoading(false);
 
-                console.log('✅ Globe initialized with carrier logos, reduced zoom, dramatic lighting');
-                console.log('🔍 Scene objects count:', scene.children.length);
-                console.log('🌍 Earth object:', earth ? 'Created' : 'Missing');
-                console.log('☁️ Clouds object:', clouds ? 'Created' : 'Missing');
-                console.log('🌌 Atmosphere object:', atmosphere ? 'Created' : 'Missing');
-
-                // Only set loading to false after everything is ready
-                setTimeout(() => {
-                    setLoading(false);
-                    console.log('🎯 Globe loading state cleared - ready for display');
-                }, 100); // Small delay to ensure smooth initialization
-
-                // Test immediate render before animation
-                renderer.render(scene, camera);
-                console.log('🎬 Test render completed');
-
-                // Animation loop - with dynamic shipment animations
-                let frameCount = 0;
                 const animate = () => {
                     animationId = requestAnimationFrame(animate);
-                    if (controls) controls.update();
+                    controls.update();
+                    const time = performance.now();
 
-                    const interval = 0.016;
-                    const time = performance.now() * 0.001; // Time in seconds
-
-                    // Only rotate clouds for subtle animation (no more Earth spinning)
                     if (!userInteracting) {
-                        // Only rotate clouds for gentle atmospheric movement
-                        clouds.rotateY(interval * 0.003 * params.speedFactor);
+                        clouds.rotateY(0.0001 * params.speedFactor);
                     }
 
-                    // Realistic Earth with proper bump mapping - no separate night lights needed
+                    if (scene.userData.animatedArcs && !isPaused) {
+                        let maxAnimationTime = scene.userData.maxAnimationTime || 0;
+                        if (maxAnimationTime === 0 && scene.userData.animatedArcs.length > 0) {
+                            scene.userData.animatedArcs.forEach(arc => {
+                                if (!arc.userData.isMarker) {
+                                    maxAnimationTime = Math.max(maxAnimationTime, arc.userData.animationStartTime + arc.userData.SINGLE_CYCLE_DURATION);
+                                }
+                            });
+                            scene.userData.maxAnimationTime = maxAnimationTime;
+                        }
 
-                    // UNIFIED TIMING SYSTEM: Badge and Animation Synchronization
-                    // ALL timing calculations MUST use the exact same constants and logic
-                    // to prevent any drift between badge switching and arc animations
-                    // Sequential shooting star animation with trail movement
-                    // In manual navigation mode, only animate the selected shipment continuously
-                    // In auto mode, run the full sequence when not paused
-                    if (scene.userData.animatedArcs && (!isPaused || manualNavigation)) {
-                        const currentTime = time * 1000; // Convert to milliseconds
+                        if (maxAnimationTime > 0 && time > maxAnimationTime) {
+                            const cycleStartTime = time;
+                            scene.userData.animatedArcs.forEach(arc => {
+                                if (!arc.userData.isMarker) {
+                                    arc.userData.animationStartTime = cycleStartTime + arc.userData.originalDelay;
+                                    arc.userData.animationComplete = false;
+                                    arc.userData.badgeSynced = false;
+                                    arc.userData.fullArcGeometryCreated = false;
+                                }
+                            });
+                            scene.userData.maxAnimationTime = 0;
+                        }
 
                         scene.userData.animatedArcs.forEach(arc => {
                             if (arc.userData.isMarker) {
-                                // Markers follow parent arc's visibility exactly
                                 const parentArc = arc.userData.parentArc;
-                                if (parentArc && parentArc.userData) {
-                                    arc.material.opacity = parentArc.visible ? arc.userData.originalOpacity : 0;
-                                    arc.visible = parentArc.visible;
+                                arc.visible = parentArc ? parentArc.visible : false;
+                                return;
+                            }
+
+                            const { animationStartTime, TRAVEL_DURATION, HOLD_DURATION, FADE_DURATION, SINGLE_CYCLE_DURATION, curve, trailLength } = arc.userData;
+                            const timeSinceStart = time - animationStartTime;
+
+                            if (timeSinceStart >= 0 && timeSinceStart <= SINGLE_CYCLE_DURATION) {
+                                arc.visible = true;
+                                const progress = Math.min(timeSinceStart / TRAVEL_DURATION, 1.0);
+
+                                // Sync badge as soon as animation starts
+                                if (progress > 0 && !arc.userData.badgeSynced) {
+                                    arc.userData.badgeSynced = true;
+                                    setActiveShipment(arc.userData.shipmentData);
+                                    setCurrentShipmentIndex(arc.userData.sequentialIndex);
                                 }
-                            } else if (arc.userData.isAnimatedArc) {
-                                // Handle manual navigation mode - simple static display
-                                if (manualNavigation) {
-                                    if (arc.userData.isManuallySelected) {
-                                        // Keep the manually selected arc visible and static
-                                        arc.visible = true;
-                                        // Arc geometry and opacity are already set by showSpecificShipmentArc
-                                    } else {
-                                        // Hide all other arcs in manual navigation mode
-                                        arc.visible = false;
-                                        arc.material.opacity = 0;
+
+                                // Phase 1: Travel (Fade in and shoot across)
+                                if (timeSinceStart <= TRAVEL_DURATION) {
+                                    const newTrailPoints = [];
+                                    for (let i = 0; i < trailLength; i++) {
+                                        const trailProgress = Math.max(0, progress - (i * 0.04));
+                                        newTrailPoints.push(curve.getPoint(trailProgress));
                                     }
-                                    return; // Skip auto-animation logic in manual mode
-                                }
-                                if (arc.userData.isShootingArc) {
-                                    // Handle shooting arc animation with trail movement - UNIFIED TIMING
-                                    const ANIMATION_DURATION = arc.userData.ANIMATION_DURATION;
-                                    const HOLD_DURATION = arc.userData.HOLD_DURATION;
-                                    const TOTAL_DURATION = arc.userData.TOTAL_DURATION;
-                                    const timeSinceStart = currentTime - arc.userData.animationStartTime;
+                                    const newTrailCurve = new THREE.CatmullRomCurve3(newTrailPoints);
+                                    if (arc.geometry) arc.geometry.dispose();
+                                    arc.geometry = new THREE.TubeGeometry(newTrailCurve, trailLength - 1, 0.02, 8, false);
+                                    arc.material.opacity = Math.min(progress * 5, 1.0) * arc.userData.originalOpacity;
 
-                                    // Check if animation should start - EXACT timing match with badge
-                                    if (timeSinceStart >= 0 && timeSinceStart <= TOTAL_DURATION) {
-                                        arc.visible = true;
-                                        const progress = Math.min(timeSinceStart / ANIMATION_DURATION, 1.0);
-
-                                        // Sync badge with currently animating arc - EXACT timing at animation start (NO tolerance window)
-                                        if (timeSinceStart >= 0 && timeSinceStart <= 16.67 && !arc.userData.badgeSynced) { // Single frame window at 60fps
-                                            arc.userData.badgeSynced = true;
-
-                                            // Use stored shipment data from arc userData
-                                            const shipmentForArc = arc.userData.shipmentData;
-                                            if (shipmentForArc) {
-                                                // Update active shipment at EXACT same time as arc
-                                                setActiveShipment(shipmentForArc);
-                                                console.log(`🎯 Badge synced with arc animation for shipment: ${shipmentForArc.trackingNumber || shipmentForArc.id}`);
-                                            }
-                                        }
-
-                                        // Handle animation phases: active animation vs hold phase - UNIFIED TIMING
-                                        if (timeSinceStart <= ANIMATION_DURATION) {
-                                            // Active animation phase with trail movement
-                                            arc.userData.progress = progress;
-
-                                            // Calculate trail positions with movement for tube geometry
-                                            const trailLength = arc.userData.trailLength;
-                                            const newTrailPoints = [];
-
-                                            for (let i = 0; i < trailLength; i++) {
-                                                // Create trailing effect - each point follows behind the main progress
-                                                const trailProgress = Math.max(0, progress - (i * 0.04)); // 0.04 spacing between trail points
-
-                                                if (trailProgress > 0) {
-                                                    const point = arc.userData.curve.getPoint(trailProgress);
-                                                    newTrailPoints.push(point);
-                                                } else {
-                                                    // If trail point hasn't started yet, use the starting position
-                                                    const startPoint = arc.userData.curve.getPoint(0);
-                                                    newTrailPoints.push(startPoint);
-                                                }
-                                            }
-
-                                            // Only recreate geometry if trail points actually changed significantly
-                                            if (!arc.userData.lastTrailPoints ||
-                                                arc.userData.lastTrailPoints.length !== newTrailPoints.length ||
-                                                newTrailPoints.some((point, i) =>
-                                                    !arc.userData.lastTrailPoints[i] ||
-                                                    point.distanceTo(arc.userData.lastTrailPoints[i]) > 0.1
-                                                )) {
-
-                                                const newTrailCurve = new THREE.CatmullRomCurve3(newTrailPoints);
-                                                const newTubeGeometry = new THREE.TubeGeometry(newTrailCurve, trailLength - 1, 0.02, 8, false);
-
-                                                // Dispose old geometry and update
-                                                if (arc.geometry) arc.geometry.dispose();
-                                                arc.geometry = newTubeGeometry;
-
-                                                // Store trail points for comparison
-                                                arc.userData.lastTrailPoints = newTrailPoints.map(p => p.clone());
-                                            }
-
-                                            // Dynamic opacity for trail effect (smooth throughout)
-                                            let intensity;
-                                            if (progress < 0.1) {
-                                                // Quick fade-in
-                                                intensity = progress * 10;
-                                            } else {
-                                                // Full intensity throughout the rest of animation (no fade-out at end)
-                                                intensity = 1.0;
-                                            }
-
-                                            arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
-
-                                            // Enhanced color with shooting effect
-                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            const brightnessMultiplier = 1.0 + intensity * 0.5;
-                                            arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
-                                        } else {
-                                            // Hold phase - keep full arc visible with smooth transition (only create once)
-                                            if (!arc.userData.fullArcGeometryCreated) {
-                                                const fullArcCurve = arc.userData.curve;
-                                                const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
-
-                                                // Dispose old geometry and update to full arc
-                                                if (arc.geometry) arc.geometry.dispose();
-                                                arc.geometry = fullTubeGeometry;
-                                                arc.userData.fullArcGeometryCreated = true;
-                                            }
-
-                                            // Smooth transition from animation opacity (no sudden change)
-                                            arc.material.opacity = 0.9 * arc.userData.originalOpacity; // Slightly dimmer but smooth
-                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            arc.material.color = baseColor;
-                                        }
-
-                                    } else if (timeSinceStart > TOTAL_DURATION) {
-                                        // Animation completed - mark as done and hide - EXACT timing
-                                        arc.userData.animationComplete = true;
-                                        arc.userData.hasAnimated = true;
-                                        arc.visible = false;
-                                        arc.material.opacity = 0;
-
-                                        // Mark badge as handled when arc animation completes - EXACT timing
-                                        if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
-                                            arc.userData.badgeHidden = true;
-                                        }
-
-                                        // Schedule cleanup after a delay to prevent memory accumulation
-                                        if (!arc.userData.cleanupScheduled) {
-                                            arc.userData.cleanupScheduled = true;
-                                            setTimeout(() => {
-                                                if (arc.geometry) arc.geometry.dispose();
-                                                if (arc.material) arc.material.dispose();
-                                                if (arc.parent) arc.parent.remove(arc);
-                                                console.log(`🧹 Cleaned up completed arc for shipment ${arc.userData.shipmentId}`);
-                                            }, 10000); // Clean up 10 seconds after completion
-                                        }
-                                    } else {
-                                        // Animation hasn't started yet
-                                        arc.visible = false;
-                                        arc.material.opacity = 0;
+                                    // Phase 2: Hold (Display full arc)
+                                } else if (timeSinceStart <= TRAVEL_DURATION + HOLD_DURATION) {
+                                    if (!arc.userData.fullArcGeometryCreated) {
+                                        if (arc.geometry) arc.geometry.dispose();
+                                        arc.geometry = new THREE.TubeGeometry(curve, 100, 0.02, 8, false);
+                                        arc.userData.fullArcGeometryCreated = true;
                                     }
+                                    arc.material.opacity = arc.userData.originalOpacity;
+
+                                    // Phase 3: Fade Out
                                 } else {
-                                    // Animation already completed - keep hidden
-                                    arc.visible = false;
-                                    arc.material.opacity = 0;
+                                    const fadeProgress = (timeSinceStart - (TRAVEL_DURATION + HOLD_DURATION)) / FADE_DURATION;
+                                    arc.material.opacity = (1.0 - fadeProgress) * arc.userData.originalOpacity;
                                 }
+
                             } else {
-                                // Handle legacy static arc animation - converted to sequential timing - UNIFIED TIMING
-                                if (!arc.userData.animationComplete) {
-                                    const ANIMATION_DURATION = arc.userData.ANIMATION_DURATION || 2500;
-                                    const HOLD_DURATION = arc.userData.HOLD_DURATION || 4500;
-                                    const TOTAL_DURATION = arc.userData.TOTAL_DURATION || (ANIMATION_DURATION + HOLD_DURATION);
-                                    const timeSinceStart = currentTime - arc.userData.animationStartTime;
-
-                                    if (timeSinceStart >= 0 && timeSinceStart <= TOTAL_DURATION) {
-                                        arc.visible = true;
-                                        const progress = Math.min(timeSinceStart / ANIMATION_DURATION, 1.0);
-
-                                        // Sync badge with currently animating arc (legacy fallback) - EXACT timing
-                                        if (timeSinceStart >= 0 && timeSinceStart <= 16.67 && !arc.userData.badgeSynced) { // Single frame window at 60fps
-                                            arc.userData.badgeSynced = true;
-
-                                            // Use stored shipment data from arc userData
-                                            const shipmentForArc = arc.userData.shipmentData;
-                                            if (shipmentForArc) {
-                                                // Update active shipment at EXACT same time as arc
-                                                setActiveShipment(shipmentForArc);
-                                                console.log(`🎯 Badge synced with legacy arc animation for shipment: ${shipmentForArc.trackingNumber || shipmentForArc.id}`);
-                                            }
-                                        }
-
-                                        if (timeSinceStart <= ANIMATION_DURATION) {
-                                            // Active animation phase with smooth opacity
-                                            let intensity;
-                                            if (progress < 0.1) {
-                                                // Quick fade-in
-                                                intensity = progress * 10;
-                                            } else {
-                                                // Full intensity throughout (no flicker at end)
-                                                intensity = 1.0;
-                                            }
-
-                                            arc.material.opacity = Math.min(intensity, 1.0) * arc.userData.originalOpacity;
-                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            const brightnessMultiplier = 1.0 + intensity * 0.5;
-                                            arc.material.color = baseColor.clone().multiplyScalar(brightnessMultiplier);
-                                        } else {
-                                            // Hold phase - smooth transition from animation
-                                            arc.material.opacity = 0.9 * arc.userData.originalOpacity; // Match main animation hold opacity
-                                            const baseColor = new THREE.Color(getStatusColor(arc.userData.status));
-                                            arc.material.color = baseColor;
-                                        }
-
-                                    } else if (timeSinceStart > TOTAL_DURATION) {
-                                        // Animation completed - EXACT timing
-                                        arc.userData.animationComplete = true;
-                                        arc.visible = false;
-                                        arc.material.opacity = 0;
-
-                                        // Mark badge as handled when legacy arc animation completes - EXACT timing
-                                        if (arc.userData.badgeSynced && !arc.userData.badgeHidden) {
-                                            arc.userData.badgeHidden = true;
-                                        }
-                                    } else {
-                                        arc.visible = false;
-                                        arc.material.opacity = 0;
-                                    }
-                                } else {
-                                    // Animation already completed
-                                    arc.visible = false;
-                                    arc.material.opacity = 0;
-                                }
+                                arc.visible = false;
+                                arc.userData.fullArcGeometryCreated = false; // Reset for next loop
                             }
                         });
                     }
-
-                    // Animate moving particles for in-transit shipments with sequential timing
-                    if (scene.userData.animatedParticles && !isPaused) {
-                        const particleCount = scene.userData.animatedParticles.length;
-                        for (let i = 0; i < particleCount; i++) {
-                            const particle = scene.userData.animatedParticles[i];
-
-                            // Check if this particle should be active based on sequential timing - UNIFIED TIMING
-                            const SHIPMENT_INTERVAL = 4000; // Same as arc timing
-                            const PARTICLE_TOTAL_DURATION = 7000; // Same as arc timing (2.5s + 4.5s)
-                            const sequentialDelay = particle.userData.sequentialIndex * SHIPMENT_INTERVAL;
-                            const particleTimeSinceStart = (time * 1000) - sequentialDelay;
-
-                            if (particleTimeSinceStart >= 0 && particleTimeSinceStart <= PARTICLE_TOTAL_DURATION) { // EXACT match with arc timing
-                                particle.visible = true;
-                                particle.userData.progress += particle.userData.speed;
-
-                                // Reset particle when it reaches destination
-                                if (particle.userData.progress >= 1.0) {
-                                    particle.userData.progress = 0;
-                                }
-
-                                // Update particle position along curve
-                                const point = particle.userData.curve.getPoint(particle.userData.progress);
-                                particle.position.copy(point);
-
-                                // Particle opacity based on position (fade at ends)
-                                const fadeDistance = 0.1;
-                                let opacity = 1.0;
-                                if (particle.userData.progress < fadeDistance) {
-                                    opacity = particle.userData.progress / fadeDistance;
-                                } else if (particle.userData.progress > 1.0 - fadeDistance) {
-                                    opacity = (1.0 - particle.userData.progress) / fadeDistance;
-                                }
-                                particle.material.opacity = opacity * 0.9;
-
-                                // Optimized glow effect (less frequent calculations)
-                                if (frameCount % 3 === 0) { // Update every 3rd frame for performance
-                                    const glowIntensity = Math.sin(time * 15) * 0.2 + 0.8;
-                                    particle.material.opacity *= glowIntensity;
-                                }
-                            } else {
-                                particle.visible = false;
-                            }
-                        }
-                    }
-
-                    // Optimized rendering - only render when needed
                     renderer.render(scene, camera);
-
-                    // Debug first few frames and performance monitoring
-                    frameCount++;
-                    if (frameCount < 5) {
-                        console.log(`🎬 Frame ${frameCount} rendered with ${scene.userData.animatedArcs?.length || 0} animated elements`);
-                    }
-
-                    // Performance monitoring every 60 frames (~1 second)
-                    if (frameCount % 60 === 0 && frameCount > 0) {
-                        const renderTime = performance.now() - time * 1000;
-                        if (renderTime > 16.67) { // Alert if frame takes longer than 60fps
-                            console.warn(`⚠️ Performance: Frame ${frameCount} took ${renderTime.toFixed(2)}ms (should be <16.67ms for 60fps)`);
-                        }
-
-                        // Memory monitoring
-                        const memInfo = renderer.info.memory;
-                        const renderInfo = renderer.info.render;
-
-                        if (memInfo.geometries > 100 || memInfo.textures > 50) {
-                            console.warn(`⚠️ High memory usage: ${memInfo.geometries} geometries, ${memInfo.textures} textures`);
-                        }
-
-                        if (frameCount % 600 === 0) { // Every 10 seconds
-                            console.log(`📊 Performance stats: Geometries: ${memInfo.geometries}, Textures: ${memInfo.textures}, Draw calls: ${renderInfo.calls}`);
-                        }
-
-                        // Emergency cleanup if we have too many objects
-                        if (memInfo.geometries > 200) {
-                            console.warn('🚨 Emergency cleanup triggered - too many geometries!');
-                            scene.userData.animatedArcs?.forEach((arc, index) => {
-                                if (arc.userData.animationComplete && index % 2 === 0) { // Clean up every other completed arc
-                                    if (arc.geometry) arc.geometry.dispose();
-                                    if (arc.material) arc.material.dispose();
-                                    if (arc.parent) arc.parent.remove(arc);
-                                }
-                            });
-                        }
-                    }
                 };
                 animate();
 
             } catch (error) {
                 console.error('Error initializing globe:', error);
-                isInitializedRef.current = false; // Reset on error
+                isInitializedRef.current = false;
                 setLoading(false);
             }
         };
 
-        // Helper function to get carrier logo path
-        const getCarrierLogoPath = (shipment) => {
-            // First, check if this is an eShip Plus shipment - use primary carrier logo
-            const carrierName = shipment.selectedRate?.carrier ||
-                shipment.selectedRateRef?.carrier ||
-                shipment.carrier ||
-                shipment.selectedRate?.CarrierName || '';
-
-            const isEShipPlus = shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
-                shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
-                shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
-                shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
-                // Enhanced detection for freight carriers (which are typically eShipPlus)
-                carrierName.toLowerCase().includes('freight') ||
-                carrierName.toLowerCase().includes('ltl') ||
-                carrierName.toLowerCase().includes('fedex freight') ||
-                carrierName.toLowerCase().includes('road runner') ||
-                carrierName.toLowerCase().includes('roadrunner') ||
-                carrierName.toLowerCase().includes('estes') ||
-                carrierName.toLowerCase().includes('yrc') ||
-                carrierName.toLowerCase().includes('xpo') ||
-                carrierName.toLowerCase().includes('old dominion') ||
-                carrierName.toLowerCase().includes('odfl') ||
-                carrierName.toLowerCase().includes('saia') ||
-                carrierName.toLowerCase().includes('ward');
-
-            if (isEShipPlus) {
-                console.log(`🚛 eShip Plus shipment detected for ${shipment.id}, using eShip logo`);
-                return '/images/carrier-badges/eship.png';
-            }
-
-            // For non-eShip Plus shipments, use the already extracted carrier name
-            if (!carrierName) {
-                console.log(`🚛 No carrier name found for shipment ${shipment.id}`);
-                return null;
-            }
-
-            // Normalize carrier name to match logo filenames
-            const normalizedName = carrierName.toLowerCase()
-                .replace(/\s+/g, '')  // Remove spaces
-                .replace(/[^a-z0-9]/g, ''); // Remove special characters
-
-            // Map common carrier names to logo files
-            const carrierLogoMap = {
-                'fedex': 'fedex.png',
-                'ups': 'ups.png',
-                'usps': 'usps.png',
-                'dhl': 'dhl.png',
-                'canadapost': 'canadapost.png',
-                'canpar': 'canpar.png',
-                'purolator': 'purolator.png',
-                'polaristransportation': 'polaristransportation.png',
-                'eship': 'eship.png',
-                'eshipplus': 'eship.png', // Use eship logo for eshipplus
-                // Add common variations
-                'fedexground': 'fedex.png',
-                'fedexexpress': 'fedex.png',
-                'upsground': 'ups.png',
-                'uspspriority': 'usps.png',
-                'polaris': 'polaristransportation.png',
-            };
-
-            const logoFile = carrierLogoMap[normalizedName];
-            if (logoFile) {
-                console.log(`🚛 Found carrier logo for ${carrierName} -> ${logoFile}`);
-                return `/images/carrier-badges/${logoFile}`;
-            } else {
-                console.log(`🚛 No logo mapping found for carrier: ${carrierName} (normalized: ${normalizedName})`);
-                return null;
-            }
-        };
-
-        const addShipmentRoutes = async (scene, shipments) => {
-            console.log(`📦 Total shipments received:`, shipments.length);
-            console.log(`📦 Full shipments data:`, shipments.slice(0, 3)); // Show first 3 for debugging
-
-            // Debug shipment data structure
-            if (shipments.length > 0) {
-                const firstShipment = shipments[0];
-                console.log(`🔍 First shipment structure:`, Object.keys(firstShipment));
-                console.log(`🔍 Address fields check:`, {
-                    originAddress: firstShipment.originAddress,
-                    destinationAddress: firstShipment.destinationAddress,
-                    shipFrom: firstShipment.shipFrom,
-                    shipTo: firstShipment.shipTo,
-                    origin: firstShipment.origin,
-                    destination: firstShipment.destination,
-                    from: firstShipment.from,
-                    to: firstShipment.to
-                });
-                console.log(`🚛 Carrier info:`, {
-                    carrier: firstShipment.carrier,
-                    selectedRateCarrier: firstShipment.selectedRate?.carrier,
-                    selectedRateRefCarrier: firstShipment.selectedRateRef?.carrier
-                });
-            }
-
-            const validShipments = shipments.filter(s => {
-                const status = s.status?.toLowerCase();
-                return status && status !== 'draft' && status !== 'cancelled' && status !== 'void';
-            });
-            console.log(`🚚 Valid shipments (non-draft/cancelled/void):`, validShipments.length);
-            console.log(`🚚 Valid shipments statuses:`, validShipments.map(s => s.status));
-            console.log(`🚚 Starting sequential shipment processing for performance...`);
-
-            // Arrays to track animated objects for the animation loop
-            const animatedArcs = [];
-            const animatedParticles = [];
-
-            // Initialize scene metadata for sequential processing
-            scene.userData.animatedArcs = animatedArcs;
-            scene.userData.animatedParticles = animatedParticles;
-            scene.userData.totalShipments = validShipments.length;
-            scene.userData.currentShipmentIndex = 0;
-            scene.userData.isProcessingShipments = true;
-            scene.userData.maxDelay = validShipments.length * 4000; // Total time for one full cycle (4s per shipment)
-
-            // Sequential processing function
-            const processNextShipment = async (index) => {
-                if (index >= validShipments.length) {
-                    console.log(`✅ All ${validShipments.length} shipments processed sequentially`);
-                    if (scene.userData) {
-                        scene.userData.isProcessingShipments = false;
-                    }
-                    return;
-                }
-
-                const shipment = validShipments[index];
-                try {
-                    console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
-                    console.log(`📍 Origin: ${shipment.origin}`);
-                    console.log(`📍 Destination: ${shipment.destination}`);
-
-                    const originCoords = await getCityCoordinates(shipment.origin);
-                    const destCoords = await getCityCoordinates(shipment.destination);
-
-                    console.log(`🗺️ Origin coords:`, originCoords);
-                    console.log(`🗺️ Dest coords:`, destCoords);
-
-                    if (originCoords && destCoords) {
-                        const startVec = latLngToVector3(originCoords.lat, originCoords.lng, 10.05);
-                        const endVec = latLngToVector3(destCoords.lat, destCoords.lng, 10.05);
-                        const distance = startVec.distanceTo(endVec);
-
-                        // Create arc with proper height based on distance
-                        const arcHeight = Math.max(2, distance * 0.5);
-                        const mid = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
-                        mid.normalize().multiplyScalar(10 + arcHeight);
-
-                        // Create smooth curve with more points for better arcs
-                        const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
-                        const points = curve.getPoints(100);
-
-                        // Create thick 3D tube arc with trail effect for movement
-                        const trailLength = 25; // Number of points in the shooting trail (increased for visibility)
-                        const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
-
-                        // Create tube geometry for actually thick arcs
-                        const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
-                        const tubeRadius = 0.02; // Thin tube radius for elegant visibility
-                        const tubularSegments = trailLength - 1;
-                        const radialSegments = 8; // Circular cross-section
-                        const trailGeometry = new THREE.TubeGeometry(trailCurve, tubularSegments, tubeRadius, radialSegments, false);
-
-                        // Enhanced material for thick tube effect with glow
-                        const material = new THREE.MeshStandardMaterial({
-                            color: getStatusColor(shipment.status),
-                            opacity: 0.95,
-                            transparent: true,
-                            emissive: new THREE.Color(getStatusColor(shipment.status)),
-                            emissiveIntensity: 0.3,
-                            roughness: 0.5,
-                            metalness: 0.1
-                        });
-                        const arc = new THREE.Mesh(trailGeometry, material);
-
-                        // UNIFIED TIMING SYSTEM - Badge and Animation use EXACTLY the same timing
-                        const ANIMATION_DURATION = 2500; // 2.5s animation (faster movement)
-                        const HOLD_DURATION = 4500; // 4.5s hold (2.0s longer for better visibility)
-                        const TOTAL_DURATION = ANIMATION_DURATION + HOLD_DURATION; // 7.0s total
-                        const SHIPMENT_INTERVAL = 4000; // 4s between shipments for better flow
-                        const animationStartDelay = index * SHIPMENT_INTERVAL;
-                        const currentTime = performance.now(); // Get current time when creating arc
-
-                        // Debug shipment data before storing
-                        console.log('🔍 Storing shipment data in arc userData:', {
-                            shipmentId: shipment.id,
-                            hasCarrierTrackingData: !!shipment.carrierTrackingData,
-                            carrierFromTrackingData: shipment.carrierTrackingData?.carrier,
-                            carrierFromRawData: shipment.carrierTrackingData?.rawData?.carrier,
-                            shipmentKeys: Object.keys(shipment)
-                        });
-
-                        arc.userData = {
-                            isAnimatedArc: true,
-                            isShootingArc: true, // Flag for shooting animation
-                            originalOpacity: 0.95,
-                            status: shipment.status,
-                            shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
-                            animationStartTime: currentTime + animationStartDelay,
-                            originalDelay: animationStartDelay, // Store original delay for reference
-                            curve: curve,
-                            points: points,
-                            trailLength: trailLength,
-                            trailPoints: trailPoints,
-                            progress: 0, // Current position along the curve (0 to 1)
-                            badgeSynced: false, // Track badge synchronization
-                            badgeHidden: false, // Track badge hiding
-                            lastCycle: -1, // Track animation cycles for looping
-                            shipmentData: shipment, // Store full shipment data for badge
-                            sequentialIndex: index, // Track processing order
-                            // UNIFIED TIMING - Use exact same constants as animation loop
-                            ANIMATION_DURATION: ANIMATION_DURATION,
-                            HOLD_DURATION: HOLD_DURATION,
-                            TOTAL_DURATION: TOTAL_DURATION
-                        };
-                        group.add(arc); // Add to rotating Earth group
-                        animatedArcs.push(arc);
-
-                        // No glow layers for thin line approach - keep it clean and simple
-
-                        // Create visible endpoint markers - bigger than the tube arcs
-                        const originGeo = new THREE.SphereGeometry(0.04, 8, 8); // Bigger markers, twice the tube size
-                        const originMat = new THREE.MeshBasicMaterial({
-                            color: 0x00ff00, // Green for origin
-                            transparent: true,
-                            opacity: 0.9
-                        });
-                        const originMarker = new THREE.Mesh(originGeo, originMat);
-                        originMarker.position.copy(startVec);
-                        originMarker.userData = {
-                            isMarker: true,
-                            parentArc: arc,
-                            originalOpacity: 0.9
-                        };
-                        group.add(originMarker);
-
-                        const destGeo = new THREE.SphereGeometry(0.04, 8, 8); // Bigger markers, twice the tube size
-                        const destMat = new THREE.MeshBasicMaterial({
-                            color: 0xff0000, // Red for destination
-                            transparent: true,
-                            opacity: 0.9
-                        });
-                        const destMarker = new THREE.Mesh(destGeo, destMat);
-                        destMarker.position.copy(endVec);
-                        destMarker.userData = {
-                            isMarker: true,
-                            parentArc: arc,
-                            originalOpacity: 0.9
-                        };
-                        group.add(destMarker);
-
-                        // Add all markers to animated arcs for visibility control
-                        animatedArcs.push(originMarker, destMarker);
-
-                        // Add enhanced animated particles for in-transit shipments
-                        if (shipment.status?.toLowerCase() === 'in_transit') {
-                            // Main bright particle
-                            const particleGeo = new THREE.SphereGeometry(0.12, 12, 12); // Larger particle
-                            const particleMat = new THREE.MeshBasicMaterial({
-                                color: 0xffffff,
-                                transparent: true,
-                                opacity: 1.0,
-                                emissive: new THREE.Color(0xffffff),
-                                emissiveIntensity: 0.8
-                            });
-                            const particle = new THREE.Mesh(particleGeo, particleMat);
-                            particle.position.copy(startVec);
-                            particle.userData = {
-                                isMovingParticle: true,
-                                curve: curve,
-                                progress: Math.random() * 0.3, // Start at different positions
-                                speed: 0.008 + Math.random() * 0.004, // Faster movement
-                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
-                                sequentialIndex: index
-                            };
-                            group.add(particle); // Add to rotating Earth group
-                            animatedParticles.push(particle);
-
-                            // Trailing glow particle
-                            const trailGeo = new THREE.SphereGeometry(0.2, 12, 12);
-                            const trailMat = new THREE.MeshBasicMaterial({
-                                color: getStatusColor(shipment.status),
-                                transparent: true,
-                                opacity: 0.4,
-                                emissive: new THREE.Color(getStatusColor(shipment.status)),
-                                emissiveIntensity: 1.0
-                            });
-                            const trailParticle = new THREE.Mesh(trailGeo, trailMat);
-                            trailParticle.position.copy(startVec);
-                            trailParticle.userData = {
-                                isMovingParticle: true,
-                                isTrailParticle: true,
-                                parentParticle: particle,
-                                curve: curve,
-                                progress: Math.random() * 0.3,
-                                speed: 0.006 + Math.random() * 0.003, // Slightly slower for trailing effect
-                                shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
-                                sequentialIndex: index
-                            };
-                            group.add(trailParticle);
-                            animatedParticles.push(trailParticle);
-                        }
-
-                        console.log(`✅ Shipment ${index + 1} geocoded and added - scheduling next in ${SHIPMENT_INTERVAL}ms`);
-
-                        // Schedule next shipment processing with overlap for better flow - UNIFIED TIMING
-                        createManagedTimeout(() => {
-                            processNextShipment(index + 1);
-                        }, SHIPMENT_INTERVAL); // Use same interval as animation timing
-
-                    } else {
-                        console.warn(`❌ Skipping shipment ${shipment.id} - missing coordinates, processing next...`);
-                        // Process next shipment immediately if current one fails
-                        createManagedTimeout(() => processNextShipment(index + 1), 100);
-                    }
-                } catch (error) {
-                    console.error(`❌ Error processing shipment ${shipment.id}:`, error);
-                    // Process next shipment immediately if current one fails
-                    createManagedTimeout(() => processNextShipment(index + 1), 100);
-                }
-            };
-
-            // Start sequential processing with the first shipment
-            if (validShipments.length > 0) {
-                processNextShipment(0);
-            } else {
-                console.log(`ℹ️ No valid shipments to process`);
-                scene.userData.isProcessingShipments = false;
-            }
-
-            console.log(`✅ Sequential processing initialized for ${validShipments.length} shipments`);
-            console.log(`🔄 Total cycle time: ${validShipments.length * 4000}ms (${((validShipments.length * 4000) / 1000 / 60).toFixed(1)} minutes)`);
-            console.log(`🎯 UNIFIED TIMING: 2.5s animation + 4.5s hold = 7.0s total, 4.0s intervals - Badge+Arc perfectly synchronized`);
-        };
-
-        // Small delay to ensure DOM is ready and prevent double initialization in React Strict Mode
-        const timeoutId = setTimeout(initializeGlobe, 50); // Slightly longer delay for stability
-
-        // Add manual coordinate logging with 'C' key for calibration (outside initializeGlobe)
-        const handleKeyPress = (event) => {
-            if (event.key.toLowerCase() === 'c' && !event.ctrlKey && !event.metaKey && cameraRef.current && sceneRef.current) {
-                const camera = cameraRef.current;
-                const controls = camera.userData?.controls;
-                const scene = sceneRef.current;
-                const group = scene.children.find(child => child.type === 'Group');
-
-                console.log('\n🔧 === MANUAL CALIBRATION LOG (C key pressed) ===');
-                console.log('📷 Camera Position:', {
-                    x: camera.position.x.toFixed(3),
-                    y: camera.position.y.toFixed(3),
-                    z: camera.position.z.toFixed(3)
-                });
-                console.log('🎯 Camera Target:', {
-                    x: controls?.target.x.toFixed(3) || 'N/A',
-                    y: controls?.target.y.toFixed(3) || 'N/A',
-                    z: controls?.target.z.toFixed(3) || 'N/A'
-                });
-                console.log('🌐 Globe Rotation:', {
-                    x: group?.rotation.x.toFixed(3) || 'N/A',
-                    y: group?.rotation.y.toFixed(3) || 'N/A',
-                    z: group?.rotation.z.toFixed(3) || 'N/A'
-                });
-                console.log('📐 Camera Rotation:', {
-                    x: camera.rotation.x.toFixed(3),
-                    y: camera.rotation.y.toFixed(3),
-                    z: camera.rotation.z.toFixed(3)
-                });
-                console.log('🔍 Distance from Origin:', camera.position.distanceTo(new THREE.Vector3(0, 0, 0)).toFixed(3));
-                console.log('🎪 Controls Distance:', controls?.getDistance().toFixed(3) || 'N/A');
-                console.log('=== END MANUAL LOG ===\n');
-            }
-        };
-        window.addEventListener('keydown', handleKeyPress);
+        const timeoutId = setTimeout(initializeGlobe, 50);
 
         return () => {
             console.log('🧹 Globe: Component unmounting - cleaning up resources');
-
-            // Mark component as unmounted
             isMountedRef.current = false;
 
-            // Remove resize event listener and observer
             if (resizeHandlerRef.current) {
-                if (typeof resizeHandlerRef.current === 'function') {
-                    // Legacy cleanup for old format
-                    window.removeEventListener('resize', resizeHandlerRef.current);
-                } else if (resizeHandlerRef.current.handleResize) {
-                    // New cleanup format
-                    window.removeEventListener('resize', resizeHandlerRef.current.handleResize);
-
-                    // Disconnect ResizeObserver
-                    if (resizeHandlerRef.current.resizeObserver) {
-                        resizeHandlerRef.current.resizeObserver.disconnect();
-                        console.log('🧹 Globe: ResizeObserver disconnected');
-                    }
+                window.removeEventListener('resize', resizeHandlerRef.current.handleResize);
+                if (resizeHandlerRef.current.resizeObserver) {
+                    resizeHandlerRef.current.resizeObserver.disconnect();
                 }
-                resizeHandlerRef.current = null;
             }
 
             clearTimeout(timeoutId);
             if (animationId) cancelAnimationFrame(animationId);
-
-            // Cancel all active timeouts
-            activeTimeoutsRef.current.forEach(timeoutId => {
-                clearTimeout(timeoutId);
-            });
+            activeTimeoutsRef.current.forEach(clearTimeout);
             activeTimeoutsRef.current.clear();
-            console.log('🧹 Globe: Cancelled all active timeouts');
 
-            // Reset initialization flags
             isInitializedRef.current = false;
             routesInitializedRef.current = false;
 
-            // Comprehensive Three.js resource cleanup
             if (scene) {
-                console.log('🧹 Starting comprehensive Three.js cleanup...');
-
-                // Dispose of all animated arcs and their resources
-                if (scene.userData.animatedArcs) {
-                    scene.userData.animatedArcs.forEach(arc => {
-                        if (arc.geometry) arc.geometry.dispose();
-                        if (arc.material) {
-                            if (arc.material.map) arc.material.map.dispose();
-                            arc.material.dispose();
-                        }
-                        if (arc.parent) arc.parent.remove(arc);
-                    });
-                    scene.userData.animatedArcs = [];
-                }
-
-                // Dispose of all animated particles and their resources
-                if (scene.userData.animatedParticles) {
-                    scene.userData.animatedParticles.forEach(particle => {
-                        if (particle.geometry) particle.geometry.dispose();
-                        if (particle.material) {
-                            if (particle.material.map) particle.material.map.dispose();
-                            particle.material.dispose();
-                        }
-                        if (particle.parent) particle.parent.remove(particle);
-                    });
-                    scene.userData.animatedParticles = [];
-                }
-
-                // Dispose of main globe objects
                 scene.traverse((object) => {
                     if (object.geometry) object.geometry.dispose();
                     if (object.material) {
-                        if (Array.isArray(object.material)) {
-                            object.material.forEach(mat => {
-                                if (mat.map) mat.map.dispose();
-                                if (mat.normalMap) mat.normalMap.dispose();
-                                if (mat.bumpMap) mat.bumpMap.dispose();
-                                if (mat.emissiveMap) mat.emissiveMap.dispose();
-                                if (mat.roughnessMap) mat.roughnessMap.dispose();
-                                mat.dispose();
+                        const materials = Array.isArray(object.material) ? object.material : [object.material];
+                        materials.forEach(mat => {
+                            Object.values(mat).forEach(value => {
+                                if (value && typeof value.dispose === 'function') {
+                                    value.dispose();
+                                }
                             });
-                        } else {
-                            if (object.material.map) object.material.map.dispose();
-                            if (object.material.normalMap) object.material.normalMap.dispose();
-                            if (object.material.bumpMap) object.material.bumpMap.dispose();
-                            if (object.material.emissiveMap) object.material.emissiveMap.dispose();
-                            if (object.material.roughnessMap) object.material.roughnessMap.dispose();
-                            object.material.dispose();
-                        }
+                            mat.dispose();
+                        });
                     }
                 });
-
-                // Clear the scene
                 while (scene.children.length > 0) {
                     scene.remove(scene.children[0]);
                 }
-
-                console.log('✅ Three.js resources disposed');
             }
 
-            // Dispose of renderer
             if (renderer) {
                 renderer.dispose();
-                console.log('✅ Renderer disposed');
-            }
-
-            // Remove DOM element
-            if (mountRef.current && renderer?.domElement) {
-                try {
+                if (mountRef.current && renderer.domElement) {
                     mountRef.current.removeChild(renderer.domElement);
-                } catch (e) {
-                    console.warn('Canvas cleanup warning:', e.message);
                 }
             }
-
-            // Remove keyboard event listener
-            window.removeEventListener('keydown', handleKeyPress);
-
-            // Clear geocoding cache to free memory
             geocodingCache.clear();
-            console.log('🧹 Globe cleanup completed');
         };
-    }, [width, height, shipments.length]); // Only reinitialize if dimensions or shipment count changes
+    }, [addShipmentRoutes, width, height]);
 
-    // Separate effect to update shipment routes without reinitializing globe
     useEffect(() => {
-        // Only update routes if globe is initialized and routes were previously initialized
-        if (sceneRef.current && shipments.length > 0 && !loading && isInitializedRef.current && routesInitializedRef.current) {
-            console.log('🔄 Updating shipment routes without reinitializing globe...');
-
+        if (sceneRef.current && shipments.length > 0 && !loading && isInitializedRef.current) {
+            console.log('🔄 Updating shipment routes...');
             const scene = sceneRef.current;
-            const group = scene.children.find(child => child.type === 'Group');
 
-            if (group) {
-                // Clear old animated arcs and particles
-                if (scene.userData.animatedArcs) {
-                    scene.userData.animatedArcs.forEach(arc => {
-                        if (arc.geometry) arc.geometry.dispose();
-                        if (arc.material) arc.material.dispose();
-                        if (arc.parent) arc.parent.remove(arc);
-                    });
-                    scene.userData.animatedArcs = [];
-                }
-
-                if (scene.userData.animatedParticles) {
-                    scene.userData.animatedParticles.forEach(particle => {
-                        if (particle.geometry) particle.geometry.dispose();
-                        if (particle.material) particle.material.dispose();
-                        if (particle.parent) particle.parent.remove(particle);
-                    });
-                    scene.userData.animatedParticles = [];
-                }
-
-                // Add new shipment routes
-                const addShipmentRoutes = async (scene, shipments) => {
-                    const validShipments = shipments.filter(s => {
-                        const status = s.status?.toLowerCase();
-                        return status && status !== 'draft' && status !== 'cancelled' && status !== 'void';
-                    });
-                    console.log(`🚚 Updating ${validShipments.length} shipment routes (excluding cancelled/void)...`);
-
-                    const animatedArcs = [];
-                    const animatedParticles = [];
-
-                    scene.userData.animatedArcs = animatedArcs;
-                    scene.userData.animatedParticles = animatedParticles;
-                    scene.userData.totalShipments = validShipments.length;
-                    scene.userData.currentShipmentIndex = 0;
-                    scene.userData.isProcessingShipments = true;
-
-                    // Process shipments without delays for instant update
-                    for (let index = 0; index < validShipments.length; index++) {
-                        const shipment = validShipments[index];
-                        try {
-                            const originCoords = await getCityCoordinates(shipment.origin);
-                            const destCoords = await getCityCoordinates(shipment.destination);
-
-                            if (originCoords && destCoords) {
-                                const startVec = latLngToVector3(originCoords.lat, originCoords.lng, 10.05);
-                                const endVec = latLngToVector3(destCoords.lat, destCoords.lng, 10.05);
-                                const distance = startVec.distanceTo(endVec);
-                                const arcHeight = Math.max(2, distance * 0.5);
-                                const mid = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
-                                mid.normalize().multiplyScalar(10 + arcHeight);
-
-                                const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
-                                const trailLength = 25;
-                                const trailPoints = new Array(trailLength).fill().map(() => startVec.clone());
-                                const trailCurve = new THREE.CatmullRomCurve3(trailPoints);
-                                const trailGeometry = new THREE.TubeGeometry(trailCurve, trailLength - 1, 0.02, 8, false);
-
-                                const material = new THREE.MeshStandardMaterial({
-                                    color: getStatusColor(shipment.status),
-                                    opacity: 0.95,
-                                    transparent: true,
-                                    emissive: new THREE.Color(getStatusColor(shipment.status)),
-                                    emissiveIntensity: 0.3,
-                                    roughness: 0.5,
-                                    metalness: 0.1
-                                });
-                                const arc = new THREE.Mesh(trailGeometry, material);
-
-                                const ANIMATION_DURATION = 2500; // UNIFIED TIMING
-                                const HOLD_DURATION = 4500; // UNIFIED TIMING
-                                const animationStartDelay = index * 4000; // UNIFIED TIMING
-                                const currentTime = performance.now();
-
-                                arc.userData = {
-                                    isAnimatedArc: true,
-                                    isShootingArc: true,
-                                    originalOpacity: 0.95,
-                                    status: shipment.status,
-                                    shipmentId: shipment.shipmentID || shipment.shipmentId || shipment.id,
-                                    animationStartTime: currentTime + animationStartDelay,
-                                    curve: curve,
-                                    trailLength: trailLength,
-                                    trailPoints: trailPoints,
-                                    progress: 0,
-                                    badgeSynced: false,
-                                    badgeHidden: false,
-                                    shipmentData: shipment,
-                                    sequentialIndex: index,
-                                    // UNIFIED TIMING - Use exact same constants as animation loop
-                                    ANIMATION_DURATION: ANIMATION_DURATION,
-                                    HOLD_DURATION: HOLD_DURATION,
-                                    TOTAL_DURATION: ANIMATION_DURATION + HOLD_DURATION
-                                };
-
-                                group.add(arc);
-                                animatedArcs.push(arc);
-
-                                // Add markers
-                                const originGeo = new THREE.SphereGeometry(0.04, 8, 8);
-                                const originMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.9 });
-                                const originMarker = new THREE.Mesh(originGeo, originMat);
-                                originMarker.position.copy(startVec);
-                                originMarker.userData = { isMarker: true, parentArc: arc, originalOpacity: 0.9 };
-                                group.add(originMarker);
-
-                                const destGeo = new THREE.SphereGeometry(0.04, 8, 8);
-                                const destMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.9 });
-                                const destMarker = new THREE.Mesh(destGeo, destMat);
-                                destMarker.position.copy(endVec);
-                                destMarker.userData = { isMarker: true, parentArc: arc, originalOpacity: 0.9 };
-                                group.add(destMarker);
-
-                                animatedArcs.push(originMarker, destMarker);
-                            }
-                        } catch (error) {
-                            console.error(`❌ Error updating shipment route ${shipment.id}:`, error);
-                        }
-                    }
-
-                    console.log(`✅ Updated ${validShipments.length} shipment routes`);
-                };
-
-                addShipmentRoutes(scene, shipments);
+            if (scene.userData.animatedArcs) {
+                scene.userData.animatedArcs.forEach(arc => {
+                    if (arc.geometry) arc.geometry.dispose();
+                    if (arc.material) arc.material.dispose();
+                    if (arc.parent) arc.parent.remove(arc);
+                });
             }
+
+            scene.userData.animatedArcs = [];
+            scene.userData.animatedParticles = [];
+            scene.userData.maxAnimationTime = 0;
+
+            addShipmentRoutes(scene, shipments);
         }
-    }, [JSON.stringify(shipments.map(s => ({ id: s.id, status: s.status, origin: s.origin, destination: s.destination })))]); // Only when shipment data actually changes
+    }, [shipments.length, addShipmentRoutes, loading]);
 
-    // Enhanced UI Functions
-
-
-
-
-
-    // Auto-advance shipments when not in search mode or manual navigation
-    useEffect(() => {
-        // Only auto-advance if not in search mode, not paused, and not in manual navigation mode
-        if (!isSearchMode && !isPaused && !manualNavigation && shipments.length > 0) {
-            const interval = setInterval(() => {
-                setCurrentShipmentIndex(prev => (prev + 1) % shipments.length);
-            }, 5000); // Keep index cycling for other features
-
-            return () => clearInterval(interval);
-        }
-    }, [isSearchMode, isPaused, manualNavigation, shipments.length]);
-
-
-
-
-
-    // Search functionality
-    const handleSearch = useCallback((searchValue) => {
-        setSearchTerm(searchValue);
-
-        if (!searchValue.trim()) {
-            setIsSearchMode(false);
-            setActiveShipment(null);
-            return;
-        }
-
-        const foundShipment = shipments.find(s =>
-            s.trackingNumber?.toLowerCase().includes(searchValue.toLowerCase()) ||
-            (s.shipmentID || s.shipmentId || s.id)?.toLowerCase().includes(searchValue.toLowerCase())
-        );
-
-        if (foundShipment) {
-            const enhancedShipment = {
-                ...foundShipment
-            };
-
-            setIsSearchMode(true);
-            setActiveShipment(enhancedShipment);
-            setUserInteracting(true); // Stop auto rotation
-        }
-    }, [shipments]);
-
-    // Resume auto mode
-    const handleResume = useCallback(() => {
-        setIsSearchMode(false);
-        setSearchTerm('');
-        setActiveShipment(null);
-        setIsPaused(false);
-        setManualNavigation(false);
-        setUserInteracting(false); // Resume auto rotation
-    }, []);
-
-    // Show specific shipment arc for manual navigation - SIMPLE AND CLEAR
-    const showSpecificShipmentArc = useCallback((shipmentIndex) => {
-        if (!sceneRef.current?.userData?.animatedArcs || shipmentIndex < 0 || shipmentIndex >= shipments.length) {
-            return;
-        }
-
-        console.log(`🎯 Showing shipment arc for index: ${shipmentIndex}`);
-
-        // Find the arc for this shipment
-        const arcs = sceneRef.current.userData.animatedArcs;
-        const targetArc = arcs.find(arc =>
-            !arc.userData.isMarker &&
-            arc.userData.sequentialIndex === shipmentIndex
-        );
-
-        if (targetArc && targetArc.userData.curve) {
-            // Show the full arc immediately - no complex animations
-            const fullArcCurve = targetArc.userData.curve;
-            const fullTubeGeometry = new THREE.TubeGeometry(fullArcCurve, 100, 0.02, 8, false);
-
-            // Update the arc's geometry to show full route
-            targetArc.geometry.dispose();
-            targetArc.geometry = fullTubeGeometry;
-
-            // Make it clearly visible
-            targetArc.visible = true;
-            targetArc.material.opacity = 0.95; // Full opacity for clear visibility
-
-            // Set appropriate color based on status
-            const baseColor = new THREE.Color(getStatusColor(targetArc.userData.status));
-            targetArc.material.color = baseColor;
-
-            // Simple flag to indicate this is the manually selected arc
-            targetArc.userData.isManuallySelected = true;
-
-            console.log(`✅ Shipment ${shipmentIndex} arc displayed clearly`);
-        } else {
-            console.warn(`❌ No arc found for shipment index: ${shipmentIndex}`);
-        }
-    }, [shipments.length]);
-
-    // Toggle pause/play
     const handleTogglePause = useCallback(() => {
-        setIsPaused(prev => {
-            const newPaused = !prev;
-            if (newPaused) {
-                // Store the time when paused and enter manual navigation
-                pausedTimeRef.current = performance.now();
-                setManualNavigation(true);
-
-                // If we're currently on a shipment, set it up for continuous looping
-                if (sceneRef.current?.userData?.animatedArcs && currentShipmentIndex >= 0) {
-                    // Find current arc and set it to manual loop mode
-                    const currentArc = sceneRef.current.userData.animatedArcs.find(arc =>
-                        !arc.userData.isMarker &&
-                        arc.userData.sequentialIndex === currentShipmentIndex
-                    );
-
-                    if (currentArc) {
-                        // Set up current shipment for continuous looping
-                        const currentTime = performance.now();
-                        currentArc.userData.manualLoopMode = true;
-                        currentArc.userData.manualLoopStartTime = currentTime;
-                        currentArc.userData.animationComplete = false;
-                        currentArc.userData.badgeSynced = false;
-                        currentArc.userData.badgeHidden = false;
-                        currentArc.userData.manualBadgeSynced = false;
-
-                        // Hide all other arcs
-                        sceneRef.current.userData.animatedArcs.forEach(arc => {
-                            if (!arc.userData.isMarker && arc !== currentArc) {
-                                arc.visible = false;
-                                arc.material.opacity = 0;
-                                arc.userData.manualLoopMode = false;
-                            }
-                        });
-
-                        console.log(`🔄 Paused and set up continuous looping for shipment ${currentShipmentIndex}`);
-                    }
-                }
-            } else {
-                // When resuming, clear manual navigation and restart auto-loop from NEXT shipment
-                setManualNavigation(false);
-
-                // Calculate next shipment index for seamless continuation  
-                const nextIndex = (currentShipmentIndex + 1) % shipments.length;
-
-                // Clear all manual loop modes and reset arcs
-                if (sceneRef.current?.userData?.animatedArcs) {
-                    sceneRef.current.userData.animatedArcs.forEach(arc => {
-                        if (!arc.userData.isMarker) {
-                            arc.visible = false;
-                            arc.material.opacity = 0;
-                            arc.userData.animationComplete = false;
-                            arc.userData.badgeSynced = false;
-                            arc.userData.badgeHidden = false;
-                            arc.userData.manualLoopMode = false;
-                            arc.userData.manualBadgeSynced = false;
-                        }
-                    });
-
-                    // Reset animation start times from the NEXT shipment
-                    const currentTime = performance.now();
-                    sceneRef.current.userData.animatedArcs.forEach((arc, index) => {
-                        if (!arc.userData.isMarker && arc.userData.sequentialIndex !== undefined) {
-                            // Calculate delay: start immediately for next shipment, then continue sequence
-                            const shipmentPosition = (arc.userData.sequentialIndex - nextIndex + shipments.length) % shipments.length;
-                            arc.userData.animationStartTime = currentTime + (shipmentPosition * 4000);
-                        }
-                    });
-                }
-
-                console.log(`🔄 Resumed auto-loop from shipment ${nextIndex}, restarting sequence`);
-            }
-            return newPaused;
-        });
-    }, [currentShipmentIndex, shipments.length]);
-
-    // Manual navigation functions - SIMPLE USER EXPERIENCE
-    const handlePreviousShipment = useCallback(() => {
-        if (shipments.length === 0) return;
-
-        // Pause auto-mode and enter manual browsing
-        setIsPaused(true);
-        setManualNavigation(true);
-
-        setCurrentShipmentIndex(prev => {
-            const newIndex = prev === 0 ? shipments.length - 1 : prev - 1;
-            const shipment = shipments[newIndex];
-
-            // Hide all arcs first
-            if (sceneRef.current?.userData?.animatedArcs) {
-                sceneRef.current.userData.animatedArcs.forEach(arc => {
-                    if (!arc.userData.isMarker) {
-                        arc.visible = false;
-                        arc.material.opacity = 0;
-                        arc.userData.isManuallySelected = false;
-                    }
-                });
-            }
-
-            // Immediately update badge and show the selected shipment's arc
-            setActiveShipment(shipment);
-            showSpecificShipmentArc(newIndex);
-
-            console.log(`◀️ Previous: ${shipment.trackingNumber || shipment.id} (${newIndex + 1}/${shipments.length})`);
-            return newIndex;
-        });
-    }, [shipments, showSpecificShipmentArc]);
-
-    const handleNextShipment = useCallback(() => {
-        if (shipments.length === 0) return;
-
-        // Pause auto-mode and enter manual browsing
-        setIsPaused(true);
-        setManualNavigation(true);
-
-        setCurrentShipmentIndex(prev => {
-            const newIndex = (prev + 1) % shipments.length;
-            const shipment = shipments[newIndex];
-
-            // Hide all arcs first
-            if (sceneRef.current?.userData?.animatedArcs) {
-                sceneRef.current.userData.animatedArcs.forEach(arc => {
-                    if (!arc.userData.isMarker) {
-                        arc.visible = false;
-                        arc.material.opacity = 0;
-                        arc.userData.isManuallySelected = false;
-                    }
-                });
-            }
-
-            // Immediately update badge and show the selected shipment's arc
-            setActiveShipment(shipment);
-            showSpecificShipmentArc(newIndex);
-
-            console.log(`▶️ Next: ${shipment.trackingNumber || shipment.id} (${newIndex + 1}/${shipments.length})`);
-            return newIndex;
-        });
-    }, [shipments, showSpecificShipmentArc]);
-
-    // Camera navigation functions for region switching
-    const animateCameraTo = useCallback((position, target = { x: 0, y: 0, z: 0 }, duration = 1500) => {
-        if (!cameraRef.current || !rendererRef.current || !sceneRef.current) return;
-
-        const camera = cameraRef.current;
-        const controls = camera.userData?.controls;
-
-        console.log(`🎥 Animating camera to position:`, position, 'target:', target);
-
-        // Disable controls during animation
-        if (controls) controls.enabled = false;
-
-        const startPosition = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
-        const startTarget = controls ? {
-            x: controls.target.x,
-            y: controls.target.y,
-            z: controls.target.z
-        } : { x: 0, y: 0, z: 0 };
-
-        const startTime = performance.now();
-
-        const animateFrame = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            // Smooth easing function
-            const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1;
-            const easedProgress = easeInOutCubic(progress);
-
-            // Interpolate camera position
-            camera.position.x = startPosition.x + (position.x - startPosition.x) * easedProgress;
-            camera.position.y = startPosition.y + (position.y - startPosition.y) * easedProgress;
-            camera.position.z = startPosition.z + (position.z - startPosition.z) * easedProgress;
-
-            // Interpolate target
-            if (controls) {
-                controls.target.x = startTarget.x + (target.x - startTarget.x) * easedProgress;
-                controls.target.y = startTarget.y + (target.y - startTarget.y) * easedProgress;
-                controls.target.z = startTarget.z + (target.z - startTarget.z) * easedProgress;
-                controls.update();
-            }
-
-            if (progress < 1) {
-                requestAnimationFrame(animateFrame);
-            } else {
-                // Re-enable controls after animation
-                if (controls) controls.enabled = true;
-                console.log(`✅ Camera animation completed`);
-            }
-        };
-
-        animateFrame();
+        setIsPaused(prev => !prev);
     }, []);
-
-    // Region navigation functions
-    const resetView = useCallback(() => {
-        console.log('🔄 Resetting to default view');
-        animateCameraTo(defaultCameraPosition, { x: 0, y: 0, z: 0 });
-        setUserInteracting(false); // Allow auto-rotation to resume if needed
-    }, [animateCameraTo]);
-
-    const goToNorthAmerica = useCallback(() => {
-        console.log('🌎 Navigating to North America');
-        const pos = regionPositions.northAmerica;
-        animateCameraTo(pos, pos.target);
-        setUserInteracting(true); // Prevent auto-rotation
-    }, [animateCameraTo]);
-
-    const goToEurope = useCallback(() => {
-        console.log('🌍 Navigating to Europe');
-        const pos = regionPositions.europe;
-        animateCameraTo(pos, pos.target);
-        setUserInteracting(true); // Prevent auto-rotation
-    }, [animateCameraTo]);
-
-    const goToAsia = useCallback(() => {
-        console.log('🌏 Navigating to Asia');
-        const pos = regionPositions.asia;
-        animateCameraTo(pos, pos.target);
-        setUserInteracting(true); // Prevent auto-rotation
-    }, [animateCameraTo]);
-
-    const goToSouthAmerica = useCallback(() => {
-        console.log('🌎 Navigating to South America');
-        const pos = regionPositions.southAmerica;
-        animateCameraTo(pos, pos.target);
-        setUserInteracting(true); // Prevent auto-rotation
-    }, [animateCameraTo]);
-
-    const toggleFullScreen = () => {
-        const willBeFullScreen = !isFullScreen;
-        console.log('🖼️ Toggling fullscreen mode:', { current: isFullScreen, willBe: willBeFullScreen });
-
-        setIsFullScreen(willBeFullScreen);
-
-        // Give time for DOM to update, then properly handle renderer
-        setTimeout(() => {
-            const renderer = rendererRef.current;
-            const camera = cameraRef.current;
-            const scene = sceneRef.current;
-
-            if (renderer && camera && scene) {
-                const container = mountRef.current;
-                if (container) {
-                    // Clear existing canvas first
-                    while (container.firstChild) {
-                        container.removeChild(container.firstChild);
-                    }
-
-                    // Get actual container dimensions
-                    const newWidth = willBeFullScreen ? window.innerWidth : container.clientWidth || width;
-                    const newHeight = willBeFullScreen ? window.innerHeight : container.clientHeight || height;
-
-                    console.log('🖼️ Resizing renderer for fullscreen toggle:', {
-                        willBeFullScreen,
-                        width: newWidth,
-                        height: newHeight,
-                        containerSize: { w: container.clientWidth, h: container.clientHeight }
-                    });
-
-                    // Update camera aspect ratio first
-                    camera.aspect = newWidth / newHeight;
-                    camera.updateProjectionMatrix();
-
-                    // Update renderer size
-                    renderer.setSize(newWidth, newHeight);
-                    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-                    // Re-append canvas to container
-                    container.appendChild(renderer.domElement);
-
-                    // Ensure canvas is properly sized and visible
-                    const canvas = renderer.domElement;
-                    canvas.style.width = '100%';
-                    canvas.style.height = '100%';
-                    canvas.style.display = 'block';
-
-                    // Force immediate render
-                    renderer.render(scene, camera);
-
-                    console.log('✅ Fullscreen globe re-attached and rendered');
-                }
-            }
-        }, 300); // Longer delay for fullscreen transition
-    };
 
     const globeContent = (
         <>
             <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
             {loading && (
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.95)', color: 'white', zIndex: 10 }}>
-                    <Typography variant="h6" sx={{ mb: 2 }}>Loading Globe...</Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.7, textAlign: 'center' }}>
-                        Initializing Earth textures and shipment data
-                    </Typography>
+                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.95)', color: 'white', zIndex: 10 }}>
+                    <Typography>Loading Globe...</Typography>
                 </Box>
             )}
             {showOverlays && !loading && (
                 <Box sx={{ position: 'absolute', top: 16, left: 16, display: 'flex', flexDirection: 'column', gap: 0.8, zIndex: 5 }}>
                     {[
-                        { key: 'pending', label: 'Ready To Ship', color: '#FFA726', value: realtimeStatusCounts.pending || statusCounts.pending || statusCounts.awaitingShipment || 0 },
-                        { key: 'transit', label: 'In Transit', color: '#42A5F5', value: realtimeStatusCounts.transit || statusCounts.transit || statusCounts.inTransit || 0 },
-                        { key: 'delivered', label: 'Delivered', color: '#66BB6A', value: realtimeStatusCounts.delivered || statusCounts.delivered || 0 },
-                        { key: 'delayed', label: 'Delayed', color: '#F44336', value: realtimeStatusCounts.delayed || statusCounts.delayed || 0 }
+                        { key: 'pending', label: 'Ready To Ship', color: '#FFA726', value: realtimeStatusCounts.pending || 0 },
+                        { key: 'transit', label: 'In Transit', color: '#42A5F5', value: realtimeStatusCounts.transit || 0 },
+                        { key: 'delivered', label: 'Delivered', color: '#66BB6A', value: realtimeStatusCounts.delivered || 0 },
+                        { key: 'delayed', label: 'Delayed', color: '#F44336', value: realtimeStatusCounts.delayed || 0 }
                     ].map(({ key, label, color, value }) => (
-                        <Box key={key} sx={{
-                            background: 'rgba(0, 0, 0, 0.3)',
-                            backdropFilter: 'blur(20px)',
-                            borderRadius: '8px',
-                            padding: '6px 10px',
-                            minWidth: '80px',
-                            textAlign: 'center',
-                            transition: 'all 0.3s ease',
-                            '&:hover': {
-                                background: 'rgba(0, 0, 0, 0.4)',
-                                transform: 'translateX(4px)'
-                            }
-                        }}>
-                            <Typography variant="caption" sx={{
-                                color: 'rgba(255, 255, 255, 0.7)',
-                                fontSize: '0.65rem',
-                                fontWeight: 500,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                display: 'block',
-                                marginBottom: '2px'
-                            }}>
+                        <Box key={key} sx={{ background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', padding: '6px 10px', minWidth: '80px', textAlign: 'center' }}>
+                            <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.65rem', fontWeight: 500, textTransform: 'uppercase', display: 'block' }}>
                                 {label}
                             </Typography>
-                            <Typography variant="h4" sx={{
-                                color: color,
-                                fontWeight: 700,
-                                fontSize: '1.8rem',
-                                lineHeight: 1,
-                                textShadow: `0 0 12px ${color}60`
-                            }}>
+                            <Typography variant="h4" sx={{ color: color, fontWeight: 700, fontSize: '1.8rem', lineHeight: 1, textShadow: `0 0 12px ${color}60` }}>
                                 {value}
                             </Typography>
                         </Box>
@@ -2818,217 +1504,46 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
                 </Box>
             )}
 
-
-
-            {/* Compact Badge (Bottom Right) - Always Visible */}
             {!loading && shipments.length > 0 && (
-                <Box sx={{
-                    position: 'absolute',
-                    bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
-                    right: { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
-                    zIndex: 7,
-                    transition: 'all 0.3s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1
-                }}>
-                    {/* Previous Button - Hidden for now */}
-                    {false && (
-                        <Box sx={{
-                            width: '36px',
-                            height: '36px',
-                            background: 'rgba(0, 0, 0, 0.3)',
-                            backdropFilter: 'blur(20px)',
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s ease',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            '&:hover': {
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                transform: 'scale(1.1)'
-                            }
-                        }} onClick={handlePreviousShipment}>
-                            <ChevronLeftIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
+                <Box sx={{ position: 'absolute', bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' }, right: { xs: '1rem', sm: '1.5rem', md: '2rem' }, zIndex: 7 }}>
+                    <Box sx={{ display: 'flex', minWidth: { xs: '280px', sm: '350px', md: '420px' }, height: { xs: '80px', sm: '90px', md: '100px' }, background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                        <Box sx={{ width: { xs: '80px', sm: '110px', md: '140px' }, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: { xs: '8px', sm: '12px', md: '16px' } }}>
+                            <CarrierLogo activeShipment={activeShipment || shipments[0]} />
                         </Box>
-                    )}
-
-                    {/* Main Badge - Always show current or first shipment */}
-                    <Box sx={{
-                        display: 'flex',
-                        minWidth: { xs: '280px', sm: '350px', md: '420px' }, // Responsive width
-                        height: { xs: '80px', sm: '90px', md: '100px' }, // Responsive height
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(255, 255, 255, 0.1)'
-                    }}>
-                        {/* Left: Carrier Logo Section */}
-                        <Box sx={{
-                            width: { xs: '80px', sm: '110px', md: '140px' }, // Responsive logo section width
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: { xs: '8px', sm: '12px', md: '16px' } // Responsive padding
-                        }}>
-                            <CarrierLogo activeShipment={activeShipment || shipments[currentShipmentIndex] || shipments[0]} />
-                        </Box>
-
-                        {/* Right: Info Section */}
-                        <Box sx={{
-                            flex: 1,
-                            padding: { xs: '8px 12px', sm: '12px 16px', md: '16px 20px' }, // Responsive padding
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'space-between',
-                            position: 'relative'
-                        }}>
-                            {/* Header with Tracking Number */}
+                        <Box sx={{ flex: 1, padding: { xs: '8px 12px', sm: '12px 16px', md: '16px 20px' }, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative' }}>
                             <Box>
-                                <Typography variant="h4" sx={{
-                                    color: 'white',
-                                    fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.875rem' }, // Responsive font size
-                                    fontWeight: 700,
-                                    letterSpacing: '0.5px'
-                                }}>
-                                    #{(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.trackingNumber || (activeShipment || shipments[currentShipmentIndex] || shipments[0])?.id || 'Loading...'}
+                                <Typography variant="h4" sx={{ color: 'white', fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.875rem' }, fontWeight: 700 }}>
+                                    #{(activeShipment || shipments[0])?.trackingNumber || 'Loading...'}
                                 </Typography>
-
-                                {/* Route - Using Scorecard Caption Style - No margin */}
-                                <Typography variant="caption" sx={{
-                                    color: '#9CA3AF',
-                                    fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' }, // Responsive font size
-                                    fontWeight: 500,
-                                    lineHeight: 1.2,
-                                    display: 'block'
-                                }}>
-                                    {(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.origin?.city || 'Origin'} → {(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.destination?.city || 'Destination'}
+                                <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' }, display: 'block' }}>
+                                    {(activeShipment || shipments[0])?.origin?.city || 'Origin'} → {(activeShipment || shipments[0])?.destination?.city || 'Destination'}
                                 </Typography>
                             </Box>
-
-                            {/* Status Chip - With Vertical Padding */}
-                            <Box sx={{
-                                alignSelf: 'flex-start',
-                                paddingY: '6px'
-                            }}>
-                                <StatusChip
-                                    status={(activeShipment || shipments[currentShipmentIndex] || shipments[0])?.status || 'pending'}
-                                    size="small"
-                                    sx={{
-                                        fontSize: '0.7rem',
-                                        height: '24px'
-                                    }}
-                                />
+                            <Box sx={{ alignSelf: 'flex-start', paddingY: '6px' }}>
+                                <StatusChip status={(activeShipment || shipments[0])?.status || 'pending'} size="small" sx={{ fontSize: '0.7rem', height: '24px' }} />
                             </Box>
-
-                            {/* Counter - Bottom Right Corner */}
-                            <Typography variant="caption" sx={{
-                                position: 'absolute',
-                                bottom: '8px',
-                                right: '8px',
-                                color: 'rgba(255, 255, 255, 0.6)',
-                                fontSize: '0.65rem',
-                                fontWeight: 500
-                            }}>
+                            <Typography variant="caption" sx={{ position: 'absolute', bottom: '8px', right: '8px', color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.65rem' }}>
                                 {currentShipmentIndex + 1} / {shipments.length}
                             </Typography>
                         </Box>
                     </Box>
-
-                    {/* Next Button - Hidden for now */}
-                    {false && (
-                        <Box sx={{
-                            width: '36px',
-                            height: '36px',
-                            background: 'rgba(0, 0, 0, 0.3)',
-                            backdropFilter: 'blur(20px)',
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s ease',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            '&:hover': {
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                transform: 'scale(1.1)'
-                            }
-                        }} onClick={handleNextShipment}>
-                            <ChevronRightIcon sx={{ color: 'white', fontSize: '1.2rem' }} />
-                        </Box>
-                    )}
                 </Box>
             )}
 
-            {/* Region Navigation Controls (Bottom Left) - Only in Normal View */}
             {!loading && !isFullScreen && <RegionNavigationButtons isFullscreenMode={false} />}
-
-            {/* Enhanced Top Right Controls */}
             {!isFullScreen && <TopControlsComponent isFullscreenMode={false} />}
         </>
     );
 
     if (isFullScreen) {
         return (
-            <Box sx={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100vw',
-                height: '100vh',
-                backgroundColor: '#000000', // Black background
-                zIndex: 9999,
-                backdropFilter: 'blur(10px)'
-            }}>
-                {/* Close Button */}
-                <Box
-                    onClick={toggleFullScreen}
-                    sx={{
-                        position: 'absolute',
-                        top: 24,
-                        right: 24,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '50%',
-                        width: 48,
-                        height: 48,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        zIndex: 10000,
-                        transition: 'all 0.3s ease',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        '&:hover': {
-                            background: 'rgba(255, 255, 255, 0.2)',
-                            transform: 'scale(1.1)'
-                        }
-                    }}
-                >
-                    <Typography sx={{
-                        color: 'white',
-                        fontSize: '1.2rem',
-                        fontWeight: 600,
-                        lineHeight: 1
-                    }}>
-                        ✕
-                    </Typography>
+            <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#000000', zIndex: 9999 }}>
+                <Box onClick={toggleFullScreen} sx={{ position: 'absolute', top: 24, right: 24, background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(20px)', borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10000 }}>
+                    <Typography sx={{ color: 'white', fontSize: '1.2rem' }}>✕</Typography>
                 </Box>
-
-                {/* Enhanced Fullscreen Controls */}
                 <TopControlsComponent isFullscreenMode={true} />
-
-                {/* Full Screen Globe Container */}
-                <Box className="globe-container" sx={{
-                    position: 'relative',
-                    width: '100vw',
-                    height: '100vh'
-                }}>
+                <Box className="globe-container" sx={{ position: 'relative', width: '100vw', height: '100vh' }}>
                     {globeContent}
-
-                    {/* Fullscreen Region Navigation Controls (Bottom Left) */}
                     {!loading && <RegionNavigationButtons isFullscreenMode={true} />}
                 </Box>
             </Box>
@@ -3039,8 +1554,8 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
         <Box className="globe-container" sx={{
             position: 'relative',
             width,
-            height: '100%', // Take up full height of parent container
-            backgroundColor: '#000000', // Black background
+            height: '100%',
+            backgroundColor: '#000000',
             borderRadius: '8px'
         }}>
             {globeContent}
@@ -3048,5 +1563,4 @@ const ShipmentGlobe = ({ width = 500, height = 600, showOverlays = true, statusC
     );
 };
 
-// Memoize the component to prevent unnecessary re-renders and improve performance isolation
-export default React.memo(ShipmentGlobe); 
+export default React.memo(ShipmentGlobe);
