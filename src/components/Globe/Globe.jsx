@@ -68,52 +68,23 @@ const CarrierLogo = ({ activeShipment }) => {
 
     React.useEffect(() => {
         const fetchCarrierLogo = async () => {
-            console.log('🚀 Starting fetchCarrierLogo for activeShipment:', activeShipment?.id);
-            console.log('🔄 useEffect triggered with dependencies:', {
-                shipmentId: activeShipment?.id,
-                topLevelCarrier: activeShipment?.carrier,
-                trackingDataCarrier: activeShipment?.carrierTrackingData?.carrier
-            });
-
             // Reset to null while fetching to prevent flash
             setCarrierLogoURL(null);
 
             if (!activeShipment) {
-                console.warn('❌ No activeShipment provided');
                 return;
             }
-
-            // Log the RAW carrierTrackingData to see what's actually there
-            console.log('🔍 RAW carrierTrackingData object:', activeShipment.carrierTrackingData);
-            console.log('🔍 RAW carrierTrackingData.rawData:', activeShipment.carrierTrackingData?.rawData);
 
             // Extract master carrier from carrierTrackingData.rawData.carrier
             const masterCarrier = activeShipment.carrierTrackingData?.rawData?.carrier;
 
-            console.log('🔍 Carrier extraction debug:', {
-                documentId: activeShipment.id,
-                shipmentID: activeShipment.shipmentID,
-                trackingNumber: activeShipment.trackingNumber,
-                masterCarrier: masterCarrier,
-                carrierTrackingDataExists: !!activeShipment.carrierTrackingData,
-                rawDataExists: !!activeShipment.carrierTrackingData?.rawData,
-                rawDataCarrier: activeShipment.carrierTrackingData?.rawData?.carrier
-            });
-
             if (!masterCarrier) {
-                console.warn('❌ No master carrier found in carrierTrackingData.rawData.carrier, using solushipx fallback');
                 setCarrierLogoURL('/images/carrier-badges/solushipx.png');
                 return;
             }
 
             // Convert master carrier to uppercase for database query
             const upperCaseCarrierID = masterCarrier.toUpperCase();
-
-            console.log('🔍 Querying carriers collection:', {
-                masterCarrier: masterCarrier,
-                upperCaseCarrierID: upperCaseCarrierID,
-                queryField: 'carrierID'
-            });
 
             try {
                 // Query carriers collection by carrierID field
@@ -131,17 +102,8 @@ const CarrierLogo = ({ activeShipment }) => {
                     const logoURL = carrierData.logoURL;
                     const logoFileName = carrierData.logoFileName;
 
-                    console.log('✅ Found carrier in database:', {
-                        documentId: carrierDoc.id,
-                        carrierID: carrierData.carrierID,
-                        logoURL: logoURL,
-                        logoFileName: logoFileName,
-                        carrierName: carrierData.carrierName || carrierData.name
-                    });
-
                     if (logoURL) {
                         // Use the complete logoURL directly from the database
-                        console.log('🖼️ Using database logoURL:', logoURL);
                         setCarrierLogoURL(logoURL);
                         return;
                     } else if (logoFileName) {
@@ -153,29 +115,20 @@ const CarrierLogo = ({ activeShipment }) => {
                             constructedURL = `/images/carrier-badges/${logoFileName}`;
                         }
 
-                        console.log('🖼️ Using constructed logo URL:', constructedURL);
                         setCarrierLogoURL(constructedURL);
                         return;
-                    } else {
-                        console.warn('⚠️ Carrier found but no logoURL or logoFileName field');
                     }
-                } else {
-                    console.warn('❌ No carrier found with carrierID:', upperCaseCarrierID);
                 }
-
             } catch (error) {
-                console.error('🚨 Error querying carriers collection:', error);
+                // Silent error handling
             }
 
             // Fallback to solushipx logo if database query fails
-            console.log('🔄 Using fallback logo: solushipx.png');
             setCarrierLogoURL('/images/carrier-badges/solushipx.png');
         };
 
         fetchCarrierLogo();
     }, [activeShipment?.id, activeShipment?.carrierTrackingData?.rawData?.carrier]);
-
-    console.log('🖼️ Rendering CarrierLogo with URL:', carrierLogoURL);
 
     // Don't render anything if no URL is set (prevents flash)
     if (!carrierLogoURL) {
@@ -204,34 +157,28 @@ const CarrierLogo = ({ activeShipment }) => {
                 objectFit: 'cover', // Fill the entire container
                 // filter: 'brightness(0) invert(1)', // Temporarily removed to test
             }}
-            onLoad={(e) => {
-                console.log('✅ Carrier logo loaded successfully:', e.target.src);
+            onLoad={() => {
+                // Silent success handling
             }}
             onError={(e) => {
-                console.error('🚨 Logo failed to load:', e.target.src);
-
                 // Try different fallback strategies
                 if (e.target.src.includes('firebasestorage.googleapis.com')) {
                     // Remote storage failed, try local eship.png
-                    console.error('🚨 Remote storage failed, trying local eship logo');
                     const localEshipURL = '/images/carrier-badges/eship.png';
                     e.target.src = localEshipURL;
                     setCarrierLogoURL(localEshipURL);
                 } else if (e.target.src.includes('eship.png') && !e.target.src.includes('solushipx')) {
                     // Local eship failed, try solushipx fallback
-                    console.error('🚨 Local eship failed, trying solushipx fallback');
                     const fallbackURL = '/images/carrier-badges/solushipx.png';
                     e.target.src = fallbackURL;
                     setCarrierLogoURL(fallbackURL);
                 } else if (!e.target.src.includes('solushipx')) {
                     // Any other failure, go straight to solushipx
-                    console.error('🚨 Trying solushipx fallback');
                     const fallbackURL = '/images/carrier-badges/solushipx.png';
                     e.target.src = fallbackURL;
                     setCarrierLogoURL(fallbackURL);
                 } else {
                     // Even solushipx failed, hide the image
-                    console.error('🚨 All logo attempts failed, hiding image');
                     e.target.style.display = 'none';
                 }
             }}

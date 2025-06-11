@@ -119,7 +119,6 @@ const ShipmentsX = () => {
             TRANSIT: 0,
             DELIVERY: 0,
             COMPLETED: 0,
-            EXCEPTIONS: 0,
             CANCELLED: 0,
             DRAFTS: 0
         };
@@ -138,7 +137,6 @@ const ShipmentsX = () => {
             awaitingShipment: groupCounts.PRE_SHIPMENT + groupCounts.BOOKING,
             inTransit: groupCounts.TRANSIT + groupCounts.DELIVERY,
             delivered: groupCounts.COMPLETED,
-            exceptions: groupCounts.EXCEPTIONS,
             cancelled: groupCounts.CANCELLED,
             drafts: groupCounts.DRAFTS
         };
@@ -413,12 +411,6 @@ const ShipmentsX = () => {
                 shipmentsData = shipmentsData.filter(s => {
                     const group = getShipmentStatusGroup(s);
                     return group === 'COMPLETED' && group !== 'DRAFTS';
-                });
-            } else if (selectedTab === 'Exceptions') {
-                // Include exceptions phase, exclude drafts
-                shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return group === 'EXCEPTIONS' && group !== 'DRAFTS';
                 });
             } else if (selectedTab === 'Cancelled') {
                 // Include cancelled and void phases, exclude drafts
@@ -745,7 +737,6 @@ const ShipmentsX = () => {
                                 <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
                                 <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
                                 <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
-                                <Tab label={`Exceptions (${stats.exceptions})`} value="Exceptions" />
                                 <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
                                 <Tab label={`Drafts (${stats.drafts})`} value="draft" />
                             </Tabs>
@@ -835,19 +826,72 @@ const ShipmentsX = () => {
                 selectedShipment={selectedShipment}
                 onPrintLabel={async (shipment) => {
                     try {
-                        // Check if shipment has a label
-                        const hasLabel = shipment.carrierBookingConfirmation?.labelUrl ||
-                            shipment.carrierTrackingData?.labelUrl ||
-                            shipment.selectedRate?.labelUrl;
+                        // Get document availability using the same logic as the menu
+                        const availability = await checkDocumentAvailability(shipment);
 
-                        if (!hasLabel) {
+                        if (!availability.hasLabels) {
+                            showSnackbar('No label available for this shipment', 'warning');
+                            return;
+                        }
+
+                        // Get the documents
+                        const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
+                        const documentsResult = await getShipmentDocumentsFunction({
+                            shipmentId: shipment.id,
+                            organized: true
+                        });
+
+                        if (!documentsResult.data || !documentsResult.data.success) {
+                            showSnackbar('Error loading label', 'error');
+                            return;
+                        }
+
+                        const documents = documentsResult.data.data;
+                        let labelUrl = null;
+
+                        // First check dedicated labels array
+                        if (documents.labels && documents.labels.length > 0) {
+                            labelUrl = documents.labels[0].downloadUrl;
+                        } else {
+                            // Check in other documents for potential labels
+                            const allDocs = Object.values(documents).flat();
+                            const potentialLabel = allDocs.find(doc => {
+                                const filename = (doc.filename || '').toLowerCase();
+                                const documentType = (doc.documentType || '').toLowerCase();
+                                const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
+
+                                // Exclude any BOL documents
+                                if (filename.includes('bol') ||
+                                    filename.includes('billoflading') ||
+                                    filename.includes('bill-of-lading') ||
+                                    documentType.includes('bol') ||
+                                    isGeneratedBOL) {
+                                    return false;
+                                }
+
+                                return filename.includes('label') ||
+                                    filename.includes('shipping') ||
+                                    filename.includes('ship') ||
+                                    filename.includes('print') ||
+                                    filename.includes('prolabel') ||
+                                    filename.includes('pro-label') ||
+                                    documentType.includes('label') ||
+                                    documentType.includes('shipping');
+                            });
+
+                            if (potentialLabel) {
+                                labelUrl = potentialLabel.downloadUrl;
+                            }
+                        }
+
+                        if (!labelUrl) {
                             showSnackbar('No label available for this shipment', 'warning');
                             return;
                         }
 
                         // Open PDF viewer dialog with label
                         setPdfViewerOpen(true);
-                        setPdfUrl(hasLabel);
+                        setPdfUrl(labelUrl);
                         setPdfTitle(`Label - ${shipment.shipmentID || shipment.id}`);
                     } catch (error) {
                         console.error('Error handling print label:', error);
@@ -865,19 +909,42 @@ const ShipmentsX = () => {
                             return;
                         }
 
-                        // Check if shipment has a BOL
-                        const hasBOL = shipment.carrierBookingConfirmation?.bolUrl ||
-                            shipment.carrierTrackingData?.bolUrl ||
-                            shipment.selectedRate?.bolUrl;
+                        // Get document availability using the same logic as the menu
+                        const availability = await checkDocumentAvailability(shipment);
 
-                        if (!hasBOL) {
+                        if (!availability.hasBOLs) {
+                            showSnackbar('No BOL available for this shipment', 'warning');
+                            return;
+                        }
+
+                        // Get the documents
+                        const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
+                        const documentsResult = await getShipmentDocumentsFunction({
+                            shipmentId: shipment.id,
+                            organized: true
+                        });
+
+                        if (!documentsResult.data || !documentsResult.data.success) {
+                            showSnackbar('Error loading BOL', 'error');
+                            return;
+                        }
+
+                        const documents = documentsResult.data.data;
+                        let bolUrl = null;
+
+                        // Check dedicated BOL array
+                        if (documents.bol && documents.bol.length > 0) {
+                            bolUrl = documents.bol[0].downloadUrl;
+                        }
+
+                        if (!bolUrl) {
                             showSnackbar('No BOL available for this shipment', 'warning');
                             return;
                         }
 
                         // Open PDF viewer dialog with BOL
                         setPdfViewerOpen(true);
-                        setPdfUrl(hasBOL);
+                        setPdfUrl(bolUrl);
                         setPdfTitle(`BOL - ${shipment.shipmentID || shipment.id}`);
                     } catch (error) {
                         console.error('Error handling print BOL:', error);

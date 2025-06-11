@@ -3,16 +3,11 @@ import {
     Dialog,
     DialogTitle,
     DialogContent,
+    IconButton,
     Box,
-    Typography,
-    Button,
-    IconButton
+    Button
 } from '@mui/material';
-import {
-    PictureAsPdf as PictureAsPdfIcon,
-    FileDownload as FileDownloadIcon,
-    Close as CloseIcon
-} from '@mui/icons-material';
+import { Close as CloseIcon, GetApp as DownloadIcon } from '@mui/icons-material';
 
 const PdfViewerDialog = ({ open, onClose, pdfUrl, title }) => {
     const handleDownload = () => {
@@ -21,65 +16,70 @@ const PdfViewerDialog = ({ open, onClose, pdfUrl, title }) => {
         }
     };
 
-    const handleClose = () => {
-        onClose();
-        // Clean up blob URL if needed
-        if (pdfUrl?.startsWith('blob:')) {
-            URL.revokeObjectURL(pdfUrl);
-        }
-    };
-
     return (
         <Dialog
             open={open}
-            onClose={handleClose}
-            maxWidth="lg"
+            onClose={onClose}
+            maxWidth="md"
             fullWidth
             PaperProps={{
                 sx: {
+                    width: '50%',
                     height: '90vh',
-                    borderRadius: 2
+                    borderRadius: 2,
+                    zIndex: 1600
+                }
+            }}
+            BackdropProps={{
+                sx: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    zIndex: 1599
                 }
             }}
         >
             <DialogTitle sx={{
+                m: 0,
+                p: 2,
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                borderBottom: '1px solid',
-                borderColor: 'divider'
+                backgroundColor: 'white',
+                position: 'sticky',
+                top: 0,
+                zIndex: 1
             }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <PictureAsPdfIcon color="error" />
-                    <Typography variant="h6">{title}</Typography>
+                    {title}
                 </Box>
-                <Box sx={{ display: 'flex', gap: 1 }}>
+                <Box>
                     <Button
+                        startIcon={<DownloadIcon />}
                         onClick={handleDownload}
-                        startIcon={<FileDownloadIcon />}
-                        size="small"
+                        sx={{ mr: 1 }}
                     >
                         Download
                     </Button>
-                    <IconButton onClick={handleClose}>
+                    <IconButton
+                        aria-label="close"
+                        onClick={onClose}
+                        sx={{
+                            color: (theme) => theme.palette.grey[500],
+                        }}
+                    >
                         <CloseIcon />
                     </IconButton>
                 </Box>
             </DialogTitle>
-            <DialogContent sx={{ p: 0, height: '100%' }}>
-                {pdfUrl && (
-                    <Box sx={{ height: '100%', width: '100%' }}>
-                        <iframe
-                            src={pdfUrl}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                border: 'none'
-                            }}
-                            title={title}
-                        />
-                    </Box>
-                )}
+            <DialogContent sx={{ p: 0, height: 'calc(100% - 64px)' }}>
+                <iframe
+                    src={pdfUrl}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        border: 'none'
+                    }}
+                    title="PDF Viewer"
+                />
             </DialogContent>
         </Dialog>
     );

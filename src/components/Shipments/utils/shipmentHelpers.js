@@ -90,11 +90,8 @@ export const getShipmentStatusGroup = (shipment) => {
     // Get the status and normalize it
     const status = shipment.status?.toLowerCase()?.trim();
 
-    console.log(`Debug: Shipment ${shipment.id} has status: "${shipment.status}" (normalized: "${status}")`);
-
     // Check for draft status first (highest priority)
     if (status === 'draft') {
-        console.log(`Debug: Shipment ${shipment.id} identified as DRAFTS`);
         return 'DRAFTS';
     }
 
@@ -105,7 +102,6 @@ export const getShipmentStatusGroup = (shipment) => {
     if (status === 'cancelled' || status === 'canceled' || status === 'void' || status === 'voided') return 'CANCELLED';
     if (status === 'exception' || status === 'delayed' || status === 'on_hold') return 'EXCEPTIONS';
 
-    console.log(`Debug: Shipment ${shipment.id} defaulting to PRE_SHIPMENT for status: "${status}"`);
     return 'PRE_SHIPMENT'; // Default for unknown statuses
 };
 
