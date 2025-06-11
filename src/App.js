@@ -21,7 +21,7 @@ import AppLayout from './components/AppLayout';
 // Lazy-loaded Pages
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
 const CreateShipment = lazy(() => import('./components/CreateShipment'));
-const ShipmentDetail = lazy(() => import('./components/ShipmentDetail/ShipmentDetail'));
+const ShipmentDetail = lazy(() => import('./components/ShipmentDetail/ShipmentDetailX'));
 const Shipments = lazy(() => import('./components/Shipments/Shipments'));
 const Tracking = lazy(() => import('./components/Tracking/Tracking'));
 const Customers = lazy(() => import('./components/Customers/Customers'));

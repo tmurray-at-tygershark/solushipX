@@ -1,0 +1,318 @@
+import { useState, useCallback } from 'react';
+import { functions } from '../../../firebase';
+import { httpsCallable } from 'firebase/functions';
+import html2pdf from 'html2pdf.js';
+import { PDFDocument } from 'pdf-lib';
+
+export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { labels: [], bol: [], other: [] }, viewPdfInModal) => {
+    // Enhanced state for action buttons with individual loading states
+    const [actionStates, setActionStates] = useState({
+        printLabel: { loading: false, error: null },
+        printBOL: { loading: false, error: null },
+        printShipment: { loading: false, error: null },
+        refreshStatus: { loading: false, error: null },
+        generateBOL: { loading: false, error: null },
+        cancelShipment: { loading: false, error: null }
+    });
+
+    // Snackbar for user feedback
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
+
+    // Helper to update action loading states
+    const setActionLoading = useCallback((action, loading, error = null) => {
+        setActionStates(prev => ({
+            ...prev,
+            [action]: { loading, error }
+        }));
+    }, []);
+
+    // Helper to show snackbar messages
+    const showSnackbar = useCallback((message, severity = 'info') => {
+        setSnackbar({ open: true, message, severity });
+    }, []);
+
+    // Helper function to multiply PDF labels
+    const multiplyPdfLabels = useCallback(async (pdfArrayBuffer, quantity) => {
+        try {
+            const sourcePdf = await PDFDocument.load(pdfArrayBuffer);
+            const targetPdf = await PDFDocument.create();
+
+            // Get the first page from source PDF
+            const [firstPage] = await targetPdf.copyPages(sourcePdf, [0]);
+            const { width, height } = firstPage.getSize();
+
+            // Add the page multiple times
+            for (let i = 0; i < quantity; i++) {
+                const [copiedPage] = await targetPdf.copyPages(sourcePdf, [0]);
+                targetPdf.addPage(copiedPage);
+            }
+
+            return await targetPdf.save();
+        } catch (error) {
+            console.error('Error multiplying PDF labels:', error);
+            throw error;
+        }
+    }, []);
+
+
+
+    // Enhanced print label function with quantity and type selection
+    const handlePrintLabel = useCallback(async (quantity = 1, labelType = '4x6') => {
+        try {
+            setActionLoading('printLabel', true);
+            showSnackbar(`Generating ${quantity} label(s)...`, 'info');
+
+            let labels = shipmentDocuments.labels || [];
+
+            // Fallback: If no labels but we have other documents, try to find shipping documents
+            if (labels.length === 0) {
+                console.log('No labels found, searching all documents for shipping documents...');
+                const allDocs = Object.values(shipmentDocuments).flat();
+
+                const potentialLabels = allDocs.filter(doc => {
+                    const filename = (doc.filename || '').toLowerCase();
+                    const documentType = (doc.documentType || '').toLowerCase();
+
+                    // Look for shipping-related documents
+                    return filename.includes('label') ||
+                        filename.includes('shipping') ||
+                        filename.includes('ship') ||
+                        filename.includes('print') ||
+                        // Specific eShipPlus ProLabel patterns
+                        filename.includes('prolabel') ||
+                        filename.includes('pro-label') ||
+                        filename.includes('prolabel4x6') ||
+                        filename.includes('prolabelavery') ||
+                        filename.includes('4x6inch') ||
+                        filename.includes('3x4inch') ||
+                        documentType.includes('label') ||
+                        documentType.includes('shipping') ||
+                        // For freight shipments, any PDF might be a label
+                        (shipment?.shipmentInfo?.shipmentType === 'freight' &&
+                            filename.includes('.pdf') &&
+                            !filename.includes('bol') &&
+                            !filename.includes('billoflading') &&
+                            !filename.includes('invoice'));
+                });
+
+                if (potentialLabels.length > 0) {
+                    console.log('Found potential shipping labels:', potentialLabels);
+                    labels = potentialLabels;
+                    showSnackbar('Found shipping documents to print', 'info');
+                } else {
+                    throw new Error('No shipping labels or documents available for this shipment');
+                }
+            }
+
+            let selectedLabel = labels[0];
+
+            // Check if this is an eShipPlus carrier
+            const isEShipPlusCarrier = carrierData?.name?.toLowerCase().includes('eshipplus') ||
+                carrierData?.carrierID === 'ESHIPPLUS';
+
+            // For eShipPlus, select based on label type if multiple are available
+            if (isEShipPlusCarrier && labels.length > 1) {
+                const typeToSearch = labelType === 'Thermal' ? 'avery3x4' : labelType;
+                const typeBasedLabel = labels.find(label => {
+                    const isAvery = label.filename?.toLowerCase().includes('avery') ||
+                        label.docType === 1 ||
+                        label.metadata?.eshipplus?.docType === 1;
+                    return typeToSearch === 'avery3x4' ? isAvery : !isAvery;
+                });
+                if (typeBasedLabel) selectedLabel = typeBasedLabel;
+            }
+
+            if (quantity === 1) {
+                // Single label - view directly
+                await viewPdfInModal(
+                    selectedLabel.id,
+                    selectedLabel.filename,
+                    `${labelType.toUpperCase()} ${labels.length > 0 ? 'Label' : 'Document'} - ${shipment?.shipmentID}`,
+                    'printLabel'
+                );
+            } else {
+                // Multiple labels - fetch PDF, multiply, and show in modal
+                const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
+                const result = await getDocumentDownloadUrlFunction({
+                    documentId: selectedLabel.id,
+                    shipmentId: shipment?.id
+                });
+
+                if (result.data.success) {
+                    const response = await fetch(result.data.downloadUrl);
+                    const pdfArrayBuffer = await response.arrayBuffer();
+                    const multipliedPdf = await multiplyPdfLabels(pdfArrayBuffer, quantity);
+
+                    // Create blob URL for the multiplied PDF and use modal
+                    const blob = new Blob([multipliedPdf], { type: 'application/pdf' });
+                    const multipliedPdfUrl = URL.createObjectURL(blob);
+
+                    // Use the modal instead of window.open
+                    await viewPdfInModal(
+                        null, // No document ID for generated PDF
+                        `${quantity}x-${selectedLabel.filename}`,
+                        `${quantity}x ${labelType.toUpperCase()} ${labels.length > 0 ? 'Labels' : 'Documents'} - ${shipment?.shipmentID}`,
+                        'printLabel',
+                        multipliedPdfUrl // Pass the blob URL directly
+                    );
+                } else {
+                    throw new Error('Failed to get download URL');
+                }
+            }
+
+            showSnackbar(`${quantity} ${labels.length > 0 ? 'label(s)' : 'document(s)'} ready for printing`, 'success');
+        } catch (error) {
+            console.error('Error printing label:', error);
+            showSnackbar('Failed to print document: ' + error.message, 'error');
+        } finally {
+            setActionLoading('printLabel', false);
+        }
+    }, [shipment?.id, shipment?.shipmentID, carrierData, shipmentDocuments, setActionLoading, showSnackbar, multiplyPdfLabels, viewPdfInModal]);
+
+    // Enhanced BOL handler
+    const handlePrintBOL = useCallback(async () => {
+        try {
+            setActionLoading('printBOL', true);
+            showSnackbar('Loading Bill of Lading...', 'info');
+
+            const bolDocuments = shipmentDocuments.bol || [];
+
+            if (bolDocuments.length > 0) {
+                // Enhanced BOL selection with priority for generated BOL
+                console.log('🔍 BOL Selection - Available BOL documents:', bolDocuments.map(doc => ({
+                    id: doc.id,
+                    filename: doc.filename,
+                    isGeneratedBOL: doc.isGeneratedBOL,
+                    replacesApiBOL: doc.replacesApiBOL,
+                    docType: doc.docType,
+                    carrier: doc.carrier,
+                    metadata: doc.metadata
+                })));
+
+                // Priority 1: Look for explicitly generated BOL with our flags
+                let generatedBOL = bolDocuments.find(doc =>
+                    doc.isGeneratedBOL === true ||
+                    doc.metadata?.generated === true ||
+                    doc.metadata?.eshipplus?.generated === true ||
+                    doc.metadata?.polaris?.generated === true ||
+                    doc.metadata?.canpar?.generated === true
+                );
+
+                // Priority 2: Look for BOL with generated filename pattern
+                if (!generatedBOL) {
+                    generatedBOL = bolDocuments.find(doc =>
+                        doc.filename?.includes('-bol') ||
+                        doc.filename?.includes('generated-bol') ||
+                        doc.filename?.includes('professional-bol')
+                    );
+                }
+
+                if (generatedBOL) {
+                    console.log('✅ Selected generated BOL document:', {
+                        id: generatedBOL.id,
+                        filename: generatedBOL.filename,
+                        isGeneratedBOL: generatedBOL.isGeneratedBOL,
+                        carrier: generatedBOL.carrier
+                    });
+
+                    showSnackbar('Opening generated BOL...', 'success');
+
+                    await viewPdfInModal(
+                        generatedBOL.id,
+                        generatedBOL.filename,
+                        `Generated BOL - ${shipment?.shipmentID}`,
+                        'printBOL'
+                    );
+                } else {
+                    // No generated BOL found, use the first available BOL
+                    showSnackbar('Opening BOL document...', 'success');
+                    await viewPdfInModal(
+                        bolDocuments[0].id,
+                        bolDocuments[0].filename,
+                        `BOL - ${shipment?.shipmentID}`,
+                        'printBOL'
+                    );
+                }
+            } else {
+                // No BOL documents exist - offer to generate one
+                const shouldGenerate = window.confirm(
+                    'No BOL document found. Would you like to generate a professional BOL document?'
+                );
+
+                if (shouldGenerate) {
+                    showSnackbar('BOL generation feature coming soon', 'info');
+                } else {
+                    showSnackbar('BOL generation cancelled', 'info');
+                }
+            }
+
+        } catch (error) {
+            console.error('Error printing BOL:', error);
+            showSnackbar(`Failed to print BOL: ${error.message}`, 'error');
+        } finally {
+            setActionLoading('printBOL', false);
+        }
+    }, [shipment?.id, shipment?.shipmentID, shipmentDocuments, setActionLoading, showSnackbar, viewPdfInModal]);
+
+    // Enhanced shipment print handler
+    const handlePrintShipment = useCallback(async () => {
+        try {
+            setActionLoading('printShipment', true);
+            showSnackbar('Generating shipment PDF...', 'info');
+
+            const element = document.getElementById('shipment-detail-content');
+            if (!element) {
+                throw new Error('Shipment detail content not found');
+            }
+
+            const opt = {
+                margin: 0.5,
+                filename: `shipment-${shipment?.shipmentID || shipment?.id}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                },
+                jsPDF: {
+                    unit: 'in',
+                    format: 'a4',
+                    orientation: 'portrait'
+                }
+            };
+
+            await html2pdf().set(opt).from(element).save();
+            showSnackbar('Shipment PDF downloaded successfully', 'success');
+        } catch (error) {
+            console.error('Error generating shipment PDF:', error);
+            showSnackbar('Failed to generate shipment PDF: ' + error.message, 'error');
+        } finally {
+            setActionLoading('printShipment', false);
+        }
+    }, [shipment?.shipmentID, shipment?.id, setActionLoading, showSnackbar]);
+
+    const handleRefreshStatus = useCallback(async () => {
+        showSnackbar('Refresh status functionality coming soon', 'info');
+    }, [showSnackbar]);
+
+    const handleCancelShipment = useCallback(async () => {
+        showSnackbar('Cancel shipment functionality coming soon', 'info');
+    }, [showSnackbar]);
+
+    return {
+        actionStates,
+        snackbar,
+        handlePrintLabel,
+        handlePrintBOL,
+        handlePrintShipment,
+        handleRefreshStatus,
+        handleCancelShipment,
+        showSnackbar,
+        setSnackbar,
+        setActionLoading
+    };
+};

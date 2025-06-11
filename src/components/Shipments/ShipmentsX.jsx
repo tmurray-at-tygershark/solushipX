@@ -51,8 +51,8 @@ import { carrierOptions } from './utils/carrierOptions';
 // Import hooks
 import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
 
-// Import ShipmentDetail for the sliding view
-const ShipmentDetail = React.lazy(() => import('../ShipmentDetail/ShipmentDetail'));
+// Import ShipmentDetailX for the sliding view
+const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
 
 const ShipmentsX = ({ isModal = false, onClose = null }) => {
 
@@ -912,31 +912,6 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                     <Box sx={{ width: '50%', minHeight: '100%', pl: 2, position: 'relative' }}>
                         {currentView === 'detail' && selectedShipmentId && (
                             <Box sx={{ position: 'relative', height: '100%' }}>
-                                {/* Back Button for Detail View */}
-                                <Box sx={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    zIndex: 10,
-                                    mb: 2
-                                }}>
-                                    <IconButton
-                                        onClick={handleBackToTable}
-                                        sx={{
-                                            bgcolor: 'rgba(255, 255, 255, 0.9)',
-                                            backdropFilter: 'blur(10px)',
-                                            border: '1px solid rgba(0, 0, 0, 0.1)',
-                                            '&:hover': {
-                                                bgcolor: 'rgba(255, 255, 255, 1)',
-                                                transform: 'scale(1.05)',
-                                            },
-                                            transition: 'all 0.2s ease',
-                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-                                        }}
-                                    >
-                                        <ArrowBackIosNewIcon sx={{ fontSize: 18 }} />
-                                    </IconButton>
-                                </Box>
 
                                 {/* Shipment Detail Content */}
                                 <Suspense fallback={
@@ -950,10 +925,10 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                                         <CircularProgress />
                                     </Box>
                                 }>
-                                    <ShipmentDetail
+                                    <ShipmentDetailX
                                         key={selectedShipmentId}
                                         shipmentId={selectedShipmentId}
-                                        onBack={handleBackToTable}
+                                        onBackToTable={handleBackToTable}
                                     />
                                 </Suspense>
                             </Box>
