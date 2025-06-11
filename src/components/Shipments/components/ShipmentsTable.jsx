@@ -24,7 +24,8 @@ const ShipmentsTable = ({
     searchFields,
     highlightSearchTerm,
     showSnackbar,
-    onOpenTrackingDrawer
+    onOpenTrackingDrawer,
+    onViewShipmentDetail
 }) => {
     const isAllSelected = shipments.length > 0 && selected.length === shipments.length;
     const isIndeterminate = selected.length > 0 && selected.length < shipments.length;
@@ -84,6 +85,7 @@ const ShipmentsTable = ({
                                 highlightSearchTerm={highlightSearchTerm}
                                 showSnackbar={showSnackbar}
                                 onOpenTrackingDrawer={onOpenTrackingDrawer}
+                                onViewShipmentDetail={onViewShipmentDetail}
                             />
                         ))
                     )}

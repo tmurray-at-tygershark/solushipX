@@ -486,7 +486,7 @@ void main() {
     gl_FragColor = vec4(atmColor, atmOpacity) * factor;
 }`;
 
-const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlays = true, statusCounts = {} }, ref) => {
+const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showOverlays = true, statusCounts = {} }, ref) => {
     const mountRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -510,6 +510,10 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
     const [activeShipment, setActiveShipment] = useState(null);
     const [isPaused, setIsPaused] = useState(false);
     const [manualNavigation, setManualNavigation] = useState(false);
+    const [animationProgress, setAnimationProgress] = useState(0);
+    const lastUpdateTimeRef = useRef(0);
+    const animationFrameRef = useRef(null);
+    const [progressTimer, setProgressTimer] = useState(null);
 
     // Camera position references for region navigation (calibrated from user data)
     const defaultCameraPosition = { x: -8, y: 10, z: 16 };
@@ -1215,12 +1219,28 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
                                 arc.visible = true;
                                 const progress = Math.min(timeSinceStart / TRAVEL_DURATION, 1.0);
 
-                                // Sync badge as soon as animation starts
+                                // Sync badge and progress bar as soon as animation starts
                                 if (progress > 0 && !arc.userData.badgeSynced) {
                                     arc.userData.badgeSynced = true;
                                     setActiveShipment(arc.userData.shipmentData);
                                     setCurrentShipmentIndex(arc.userData.sequentialIndex);
                                 }
+
+                                // Update progress bar based on current arc animation phase - COMMENTED OUT UNTIL FIXED
+                                // if (arc.userData.shipmentData === activeShipment) {
+                                //     let currentProgress = 0;
+                                //     if (timeSinceStart <= TRAVEL_DURATION) {
+                                //         // Travel phase (0-33.33%)
+                                //         currentProgress = (timeSinceStart / TRAVEL_DURATION) * 33.33;
+                                //     } else if (timeSinceStart <= TRAVEL_DURATION + HOLD_DURATION) {
+                                //         // Hold phase (33.33-66.66%)
+                                //         currentProgress = 33.33 + ((timeSinceStart - TRAVEL_DURATION) / HOLD_DURATION) * 33.33;
+                                //     } else {
+                                //         // Fade out phase (66.66-100%)
+                                //         currentProgress = 66.66 + ((timeSinceStart - (TRAVEL_DURATION + HOLD_DURATION)) / FADE_DURATION) * 33.33;
+                                //     }
+                                //     setAnimationProgress(Math.min(100, currentProgress));
+                                // }
 
                                 // Phase 1: Travel (Fade in and shoot across)
                                 if (timeSinceStart <= TRAVEL_DURATION) {
@@ -1361,6 +1381,41 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
         setIsPaused(prev => !prev);
     }, []);
 
+    // Update the animation progress logic - COMMENTED OUT UNTIL FIXED
+    // useEffect(() => {
+    //     if (!shipments.length || isPaused || userInteracting) return;
+
+    //     // Clear any existing progress timer
+    //     if (progressTimer) {
+    //         clearInterval(progressTimer);
+    //     }
+
+    //     // Reset progress to 0
+    //     setAnimationProgress(0);
+
+    //     // Start a new timer for this shipment
+    //     const SHIPMENT_DURATION = 5000; // 5 seconds per shipment
+    //     const timer = setInterval(() => {
+    //         setAnimationProgress(prev => {
+    //             const newProgress = prev + (100 / (SHIPMENT_DURATION / 100)); // Update every 100ms
+    //             if (newProgress >= 100) {
+    //                 clearInterval(timer);
+    //                 return 0; // Reset to 0 when complete
+    //             }
+    //             return newProgress;
+    //         });
+    //     }, 100);
+
+    //     setProgressTimer(timer);
+
+    //     // Cleanup function
+    //     return () => {
+    //         if (timer) {
+    //             clearInterval(timer);
+    //         }
+    //     };
+    // }, [activeShipment, progressTimer]); // Fixed dependencies
+
     const globeContent = (
         <>
             <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
@@ -1399,7 +1454,31 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
 
             {!loading && shipments.length > 0 && (
                 <Box sx={{ position: 'absolute', bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' }, right: { xs: '1rem', sm: '1.5rem', md: '2rem' }, zIndex: 7 }}>
-                    <Box sx={{ display: 'flex', minWidth: { xs: '280px', sm: '350px', md: '420px' }, height: { xs: '80px', sm: '90px', md: '100px' }, background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <Box sx={{ display: 'flex', minWidth: { xs: '280px', sm: '350px', md: '420px' }, height: { xs: '80px', sm: '90px', md: '100px' }, background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', position: 'relative' }}>
+                        {/* Progress bar at the top of the badge - COMMENTED OUT UNTIL FIXED */}
+                        {/* <Box
+                            sx={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                height: '1px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                                zIndex: 2,
+                                borderRadius: '1px 1px 0 0',
+                                overflow: 'hidden'
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    height: '100%',
+                                    width: `${animationProgress}%`,
+                                    backgroundColor: 'white',
+                                    transition: 'width 0.3s ease-out',
+                                    boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)'
+                                }}
+                            />
+                        </Box> */}
                         <Box sx={{ width: { xs: '80px', sm: '110px', md: '140px' }, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: { xs: '8px', sm: '12px', md: '16px' } }}>
                             <CarrierLogo activeShipment={activeShipment || shipments[0]} />
                         </Box>
@@ -1415,9 +1494,33 @@ const ShipmentGlobe = React.forwardRef(({ width = 500, height = 600, showOverlay
                             <Box sx={{ alignSelf: 'flex-start', paddingY: '6px' }}>
                                 <StatusChip status={(activeShipment || shipments[0])?.status || 'pending'} size="small" sx={{ fontSize: '0.7rem', height: '24px' }} />
                             </Box>
-                            <Typography variant="caption" sx={{ position: 'absolute', bottom: '8px', right: '8px', color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.65rem' }}>
-                                {currentShipmentIndex + 1} / {shipments.length}
-                            </Typography>
+                            <Box sx={{
+                                position: 'absolute',
+                                bottom: 20,
+                                right: 20,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'flex-end',
+                                gap: 1,
+                                zIndex: 1000,
+                            }}>
+                                <Box sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    backdropFilter: 'blur(10px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.8rem' }}>
+                                            {currentShipmentIndex + 1}/{shipments.length}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                            </Box>
                         </Box>
                     </Box>
                 </Box>

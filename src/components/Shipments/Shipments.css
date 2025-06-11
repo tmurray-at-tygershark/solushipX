@@ -18,10 +18,23 @@
 
 .MuiTableBody-root .MuiTableCell-root {
     padding: 16px;
+    background-color: transparent !important;
+}
+
+.MuiTableBody-root .MuiTableCell-root a {
+    background-color: transparent !important;
+}
+
+.MuiTableBody-root .MuiTableCell-root a span {
+    background-color: transparent !important;
+}
+
+.MuiTableRow-root {
+    background-color: transparent !important;
 }
 
 .MuiTableRow-root:hover {
-    background-color: #f9fafb !important;
+    background-color: rgba(0, 0, 0, 0.02) !important;
 }
 
 /* Search and filter controls */
@@ -31,7 +44,7 @@
 }
 
 .MuiTextField-root .MuiOutlinedInput-root {
-    background-color: #fff;
+    background-color: transparent;
 }
 
 .MuiButton-outlined {
@@ -195,10 +208,26 @@
     color: #2c6ecb !important;
     text-decoration: none !important;
     font-weight: 500 !important;
+    background-color: transparent !important;
+    transition: all 0.2s ease-in-out;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
 }
 
 .shipment-link:hover {
     text-decoration: underline !important;
+    background-color: rgba(44, 110, 203, 0.1) !important;
+    transform: scale(1.02);
+}
+
+.shipment-link:focus {
+    outline: 2px solid #2c6ecb;
+    outline-offset: 2px;
+}
+
+.shipment-link span {
+    background-color: transparent !important;
 }
 
 .shipments-container {
@@ -269,4 +298,19 @@
 .shipments-paper .MuiPaper-root {
     background-color: #ffffff;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Sliding Animation Styles */
+.shipments-sliding-container {
+    will-change: transform;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.shipment-detail-view {
+    transform: translateZ(0); /* Enable hardware acceleration */
+}
+
+/* Smooth transitions for table rows */
+.MuiTableRow-root {
+    transition: all 0.2s ease-in-out;
 } 

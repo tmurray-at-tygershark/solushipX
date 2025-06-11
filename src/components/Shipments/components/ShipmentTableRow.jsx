@@ -27,7 +27,8 @@ const ShipmentTableRow = ({
     searchFields,
     highlightSearchTerm,
     showSnackbar,
-    onOpenTrackingDrawer
+    onOpenTrackingDrawer,
+    onViewShipmentDetail
 }) => {
     const isSelected = selected.indexOf(shipment.id) !== -1;
 
@@ -121,15 +122,16 @@ const ShipmentTableRow = ({
                             )}</span>
                         </Link>
                     ) : (
-                        <Link
-                            to={`/shipment/${shipment.shipmentID || shipment.id}`}
+                        <span
+                            onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
                             className="shipment-link"
+                            style={{ cursor: 'pointer' }}
                         >
                             <span>{highlightSearchTerm(
                                 shipment.shipmentID || shipment.id,
                                 searchFields.shipmentId
                             )}</span>
-                        </Link>
+                        </span>
                     )}
                     <IconButton
                         size="small"

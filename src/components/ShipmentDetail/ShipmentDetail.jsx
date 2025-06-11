@@ -610,7 +610,7 @@ const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', 
     );
 });
 
-const ShipmentDetail = () => {
+const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -715,6 +715,9 @@ const ShipmentDetail = () => {
         hasUpdates,
         wasSkipped
     } = useSmartStatusUpdate(shipment?.id, shipment);
+
+    // Use prop shipmentId if provided, otherwise fall back to URL parameter
+    const shipmentId = propShipmentId || id;
 
     useEffect(() => {
         if (!shipment?.id && !shipment?.shipmentID) {
@@ -1814,14 +1817,14 @@ const ShipmentDetail = () => {
             try {
                 setLoading(true);
 
-                console.log('ShipmentDetail: Fetching shipment with ID:', id);
+                console.log('ShipmentDetail: Fetching shipment with ID:', shipmentId);
                 let shipmentData = null;
                 let docId = null;
 
                 // First attempt: Query by shipmentID field
-                console.log('ShipmentDetail: Attempting to find shipment by shipmentID field:', id);
+                console.log('ShipmentDetail: Attempting to find shipment by shipmentID field:', shipmentId);
                 const shipmentsRef = collection(db, 'shipments');
-                const q = query(shipmentsRef, where('shipmentID', '==', id), limit(1));
+                const q = query(shipmentsRef, where('shipmentID', '==', shipmentId), limit(1));
                 const querySnapshot = await getDocs(q);
 
                 if (!querySnapshot.empty) {
@@ -1834,9 +1837,9 @@ const ShipmentDetail = () => {
                     });
                 } else {
                     // Second attempt: Try direct document ID lookup
-                    console.log('ShipmentDetail: No shipment found by shipmentID field, trying direct document lookup:', id);
+                    console.log('ShipmentDetail: No shipment found by shipmentID field, trying direct document lookup:', shipmentId);
                     try {
-                        const docRef = doc(db, 'shipments', id);
+                        const docRef = doc(db, 'shipments', shipmentId);
                         const docSnap = await getDoc(docRef);
 
                         if (docSnap.exists()) {
@@ -2044,10 +2047,10 @@ const ShipmentDetail = () => {
             }
         };
 
-        if (id) {
+        if (shipmentId) {
             fetchShipment();
         }
-    }, [id]);
+    }, [shipmentId]);
 
     useEffect(() => {
         const fetchMapsApiKey = async () => {

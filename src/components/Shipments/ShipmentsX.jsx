@@ -11,7 +11,8 @@ import {
     Tab,
     Toolbar,
     TablePagination,
-    Drawer
+    Drawer,
+    IconButton
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -50,7 +51,10 @@ import { carrierOptions } from './utils/carrierOptions';
 // Import hooks
 import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
 
-const ShipmentsX = () => {
+// Import ShipmentDetail for the sliding view
+const ShipmentDetail = React.lazy(() => import('../ShipmentDetail/ShipmentDetail'));
+
+const ShipmentsX = ({ isModal = false, onClose = null }) => {
     // Auth and company context
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading, companyData } = useCompany();
@@ -112,6 +116,11 @@ const ShipmentsX = () => {
     // Add tracking drawer state
     const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
     const [currentTrackingNumber, setCurrentTrackingNumber] = useState('');
+
+    // Add sliding view state for shipment detail
+    const [currentView, setCurrentView] = useState('table'); // 'table' or 'detail'
+    const [selectedShipmentId, setSelectedShipmentId] = useState(null);
+    const [isSliding, setIsSliding] = useState(false);
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -590,7 +599,40 @@ const ShipmentsX = () => {
         setIsTrackingDrawerOpen(true);
     };
 
+    // Add handlers for sliding between views
+    const handleViewShipmentDetail = (shipmentId) => {
+        setSelectedShipmentId(shipmentId);
+        setIsSliding(true);
+
+        // Small delay to allow state to update before animation
+        setTimeout(() => {
+            setCurrentView('detail');
+            setTimeout(() => setIsSliding(false), 300); // Match CSS transition duration
+        }, 50);
+    };
+
+    const handleBackToTable = () => {
+        setIsSliding(true);
+
+        setTimeout(() => {
+            setCurrentView('table');
+            setTimeout(() => {
+                setIsSliding(false);
+                setSelectedShipmentId(null);
+            }, 300); // Match CSS transition duration
+        }, 50);
+    };
+
     const navigate = useNavigate();
+
+    // Handle back button click
+    const handleBackClick = () => {
+        if (isModal && onClose) {
+            onClose();
+        } else {
+            navigate('/dashboard');
+        }
+    };
 
     // Show loading state
     if (authLoading || companyCtxLoading) {
@@ -625,224 +667,286 @@ const ShipmentsX = () => {
 
     return (
         <div className="shipments-container" style={{ backgroundColor: 'transparent' }}>
-            <Paper className="shipments-paper" sx={{ backgroundColor: 'transparent', boxShadow: 'none' }}>
-                <Box sx={{ width: '100%' }}>
-                    {/* Header Section */}
-                    <Box sx={{
+            <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                {/* Sliding Container */}
+                <Box
+                    sx={{
                         display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        mb: 2,
-                        flexWrap: 'wrap',
-                        gap: 1
-                    }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Button
-                                onClick={() => navigate('/dashboard')}
-                                sx={{
-                                    minWidth: 0,
-                                    p: 0.5,
-                                    mr: 1,
-                                    color: '#6e6e73',
-                                    background: 'none',
-                                    borderRadius: '50%',
-                                    '&:hover': {
-                                        background: '#f2f2f7',
-                                        color: '#111',
-                                    },
-                                    boxShadow: 'none',
-                                }}
-                                aria-label="Back to Dashboard"
-                            >
-                                <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
-                            </Button>
-                            <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                Shipments
-                            </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={<FilterIcon sx={{ fontSize: 16 }} />}
-                                onClick={() => setFiltersOpen(!filtersOpen)}
-                                sx={{
-                                    color: '#64748b',
-                                    borderColor: '#e2e8f0',
-                                    bgcolor: filtersOpen ? '#f8fafc' : 'transparent',
-                                    fontSize: '0.875rem',
-                                    py: 0.5
-                                }}
-                            >
-                                {filtersOpen ? 'Hide Filters' : 'Show Filters'}
-                            </Button>
-                            {selected.length > 0 && (
+                        width: '200%',
+                        height: '100%',
+                        transform: currentView === 'table' ? 'translateX(0%)' : 'translateX(-50%)',
+                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        willChange: 'transform'
+                    }}
+                >
+                    {/* Shipments Table View */}
+                    <Box sx={{ width: '50%', minHeight: '100%', pr: 2 }}>
+                        {/* Header Section */}
+                        <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            mb: 2,
+                            flexWrap: 'wrap',
+                            gap: 1
+                        }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Button
-                                    variant="outlined"
-                                    size="small"
-                                    startIcon={<RefreshIcon sx={{ fontSize: 16 }} />}
-                                    onClick={() => showSnackbar('Batch status update coming soon', 'info')}
+                                    onClick={handleBackClick}
                                     sx={{
-                                        color: '#059669',
-                                        borderColor: '#10b981',
-                                        '&:hover': { borderColor: '#059669', bgcolor: '#f0fdf4' },
-                                        fontSize: '0.875rem',
-                                        py: 0.5
-                                    }}
-                                >
-                                    Update Status ({selected.length})
-                                </Button>
-                            )}
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={<ExportIcon sx={{ fontSize: 16 }} />}
-                                onClick={() => setIsExportDialogOpen(true)}
-                                sx={{
-                                    color: '#64748b',
-                                    borderColor: '#e2e8f0',
-                                    fontSize: '0.875rem',
-                                    py: 0.5
-                                }}
-                            >
-                                Export
-                            </Button>
-                            {hasEnabledCarriers(companyData) ? (
-                                <Button
-                                    variant="contained"
-                                    size="small"
-                                    startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-                                    component={Link}
-                                    to="/create-shipment"
-                                    sx={{
-                                        bgcolor: '#0f172a',
-                                        '&:hover': { bgcolor: '#1e293b' },
-                                        fontSize: '0.875rem',
-                                        py: 0.5
-                                    }}
-                                >
-                                    Create shipment
-                                </Button>
-                            ) : (
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-                                    disabled
-                                    sx={{
-                                        color: '#9ca3af',
-                                        borderColor: '#e5e7eb',
-                                        '&.Mui-disabled': {
-                                            color: '#9ca3af',
-                                            borderColor: '#e5e7eb'
+                                        minWidth: 0,
+                                        p: 0.5,
+                                        mr: 1,
+                                        color: '#6e6e73',
+                                        background: 'none',
+                                        borderRadius: '50%',
+                                        '&:hover': {
+                                            background: '#f2f2f7',
+                                            color: '#111',
                                         },
+                                        boxShadow: 'none',
+                                    }}
+                                    aria-label="Back to Dashboard"
+                                >
+                                    <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
+                                </Button>
+                                <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+                                    Shipments
+                                </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<FilterIcon sx={{ fontSize: 16 }} />}
+                                    onClick={() => setFiltersOpen(!filtersOpen)}
+                                    sx={{
+                                        color: '#64748b',
+                                        borderColor: '#e2e8f0',
+                                        bgcolor: filtersOpen ? '#f8fafc' : 'transparent',
                                         fontSize: '0.875rem',
                                         py: 0.5
                                     }}
-                                    title="No carriers enabled for your company. Please configure carriers first."
                                 >
-                                    Create shipment
+                                    {filtersOpen ? 'Hide Filters' : 'Show Filters'}
                                 </Button>
-                            )}
+                                {selected.length > 0 && (
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        startIcon={<RefreshIcon sx={{ fontSize: 16 }} />}
+                                        onClick={() => showSnackbar('Batch status update coming soon', 'info')}
+                                        sx={{
+                                            color: '#059669',
+                                            borderColor: '#10b981',
+                                            '&:hover': { borderColor: '#059669', bgcolor: '#f0fdf4' },
+                                            fontSize: '0.875rem',
+                                            py: 0.5
+                                        }}
+                                    >
+                                        Update Status ({selected.length})
+                                    </Button>
+                                )}
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<ExportIcon sx={{ fontSize: 16 }} />}
+                                    onClick={() => setIsExportDialogOpen(true)}
+                                    sx={{
+                                        color: '#64748b',
+                                        borderColor: '#e2e8f0',
+                                        fontSize: '0.875rem',
+                                        py: 0.5
+                                    }}
+                                >
+                                    Export
+                                </Button>
+                                {hasEnabledCarriers(companyData) ? (
+                                    <Button
+                                        variant="contained"
+                                        size="small"
+                                        startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+                                        component={Link}
+                                        to="/create-shipment"
+                                        sx={{
+                                            bgcolor: '#0f172a',
+                                            '&:hover': { bgcolor: '#1e293b' },
+                                            fontSize: '0.875rem',
+                                            py: 0.5
+                                        }}
+                                    >
+                                        Create shipment
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+                                        disabled
+                                        sx={{
+                                            color: '#9ca3af',
+                                            borderColor: '#e5e7eb',
+                                            '&.Mui-disabled': {
+                                                color: '#9ca3af',
+                                                borderColor: '#e5e7eb'
+                                            },
+                                            fontSize: '0.875rem',
+                                            py: 0.5
+                                        }}
+                                        title="No carriers enabled for your company. Please configure carriers first."
+                                    >
+                                        Create shipment
+                                    </Button>
+                                )}
+                            </Box>
+                        </Box>
+
+                        {/* Main Content */}
+                        <Box sx={{ bgcolor: 'transparent' }}>
+                            <Toolbar sx={{
+                                borderBottom: 1,
+                                borderColor: '#e2e8f0',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                minHeight: 48,
+                                px: 1
+                            }}>
+                                <Tabs
+                                    value={selectedTab}
+                                    onChange={handleTabChange}
+                                    sx={{
+                                        '& .MuiTab-root': {
+                                            minHeight: 40,
+                                            fontSize: '0.875rem',
+                                            px: 2,
+                                            py: 1
+                                        }
+                                    }}
+                                >
+                                    <Tab label={`All (${stats.total})`} value="all" />
+                                    <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
+                                    <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
+                                    <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
+                                    <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
+                                    <Tab label={`Drafts (${stats.drafts})`} value="draft" />
+                                </Tabs>
+                            </Toolbar>
+
+                            {/* Filters Section */}
+                            <ShipmentFilters
+                                searchFields={searchFields}
+                                setSearchFields={setSearchFields}
+                                filters={filters}
+                                setFilters={setFilters}
+                                dateRange={dateRange}
+                                setDateRange={setDateRange}
+                                selectedCustomer={selectedCustomer}
+                                setSelectedCustomer={setSelectedCustomer}
+                                customers={customers}
+                                handleClearFilters={() => {
+                                    setSearchFields({
+                                        shipmentId: '',
+                                        referenceNumber: '',
+                                        trackingNumber: '',
+                                        customerName: '',
+                                        origin: '',
+                                        destination: ''
+                                    });
+                                    setFilters({
+                                        status: 'all',
+                                        carrier: 'all',
+                                        shipmentType: 'all'
+                                    });
+                                    setDateRange([null, null]);
+                                    setSelectedCustomer('');
+                                }}
+                                filtersOpen={filtersOpen}
+                            />
+
+                            {/* Shipments Table */}
+                            <ShipmentsTable
+                                loading={loading}
+                                shipments={shipments}
+                                selected={selected}
+                                onSelectAll={handleSelectAll}
+                                onSelect={handleSelect}
+                                onActionMenuOpen={handleActionMenuOpen}
+                                onRefreshStatus={handleRefreshShipmentStatus}
+                                refreshingStatus={refreshingStatus}
+                                customers={customers}
+                                carrierData={carrierData}
+                                searchFields={searchFields}
+                                highlightSearchTerm={highlightSearchTerm}
+                                showSnackbar={showSnackbar}
+                                onOpenTrackingDrawer={handleOpenTrackingDrawer}
+                                onViewShipmentDetail={handleViewShipmentDetail}
+                            />
+
+                            {/* Pagination */}
+                            <TablePagination
+                                component="div"
+                                count={totalCount}
+                                page={page}
+                                onPageChange={(event, newPage) => setPage(newPage)}
+                                rowsPerPage={rowsPerPage}
+                                onRowsPerPageChange={(event) => {
+                                    setRowsPerPage(parseInt(event.target.value, 10));
+                                    setPage(0);
+                                }}
+                                rowsPerPageOptions={[10, 25, 50, 100, { label: 'All', value: -1 }]}
+                            />
                         </Box>
                     </Box>
 
-                    {/* Main Content */}
-                    <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none' }}>
-                        <Toolbar sx={{
-                            borderBottom: 1,
-                            borderColor: '#e2e8f0',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            minHeight: 48,
-                            px: 1
-                        }}>
-                            <Tabs
-                                value={selectedTab}
-                                onChange={handleTabChange}
-                                sx={{
-                                    '& .MuiTab-root': {
-                                        minHeight: 40,
-                                        fontSize: '0.875rem',
-                                        px: 2,
-                                        py: 1
-                                    }
-                                }}
-                            >
-                                <Tab label={`All (${stats.total})`} value="all" />
-                                <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
-                                <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
-                                <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
-                                <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
-                                <Tab label={`Drafts (${stats.drafts})`} value="draft" />
-                            </Tabs>
-                        </Toolbar>
+                    {/* Shipment Detail View */}
+                    <Box sx={{ width: '50%', minHeight: '100%', pl: 2, position: 'relative' }}>
+                        {currentView === 'detail' && selectedShipmentId && (
+                            <Box sx={{ position: 'relative', height: '100%' }}>
+                                {/* Back Button for Detail View */}
+                                <Box sx={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    zIndex: 10,
+                                    mb: 2
+                                }}>
+                                    <IconButton
+                                        onClick={handleBackToTable}
+                                        sx={{
+                                            bgcolor: 'rgba(255, 255, 255, 0.9)',
+                                            backdropFilter: 'blur(10px)',
+                                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                                            '&:hover': {
+                                                bgcolor: 'rgba(255, 255, 255, 1)',
+                                                transform: 'scale(1.05)',
+                                            },
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                        }}
+                                    >
+                                        <ArrowBackIosNewIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                </Box>
 
-                        {/* Filters Section */}
-                        <ShipmentFilters
-                            searchFields={searchFields}
-                            setSearchFields={setSearchFields}
-                            filters={filters}
-                            setFilters={setFilters}
-                            dateRange={dateRange}
-                            setDateRange={setDateRange}
-                            selectedCustomer={selectedCustomer}
-                            setSelectedCustomer={setSelectedCustomer}
-                            customers={customers}
-                            handleClearFilters={() => {
-                                setSearchFields({
-                                    shipmentId: '',
-                                    referenceNumber: '',
-                                    trackingNumber: '',
-                                    customerName: '',
-                                    origin: '',
-                                    destination: ''
-                                });
-                                setFilters({
-                                    status: 'all',
-                                    carrier: 'all',
-                                    shipmentType: 'all'
-                                });
-                                setDateRange([null, null]);
-                                setSelectedCustomer('');
-                            }}
-                            filtersOpen={filtersOpen}
-                        />
-
-                        {/* Shipments Table */}
-                        <ShipmentsTable
-                            loading={loading}
-                            shipments={shipments}
-                            selected={selected}
-                            onSelectAll={handleSelectAll}
-                            onSelect={handleSelect}
-                            onActionMenuOpen={handleActionMenuOpen}
-                            onRefreshStatus={handleRefreshShipmentStatus}
-                            refreshingStatus={refreshingStatus}
-                            customers={customers}
-                            carrierData={carrierData}
-                            searchFields={searchFields}
-                            highlightSearchTerm={highlightSearchTerm}
-                            showSnackbar={showSnackbar}
-                            onOpenTrackingDrawer={handleOpenTrackingDrawer}
-                        />
-
-                        {/* Pagination */}
-                        <TablePagination
-                            component="div"
-                            count={totalCount}
-                            page={page}
-                            onPageChange={(event, newPage) => setPage(newPage)}
-                            rowsPerPage={rowsPerPage}
-                            onRowsPerPageChange={(event) => {
-                                setRowsPerPage(parseInt(event.target.value, 10));
-                                setPage(0);
-                            }}
-                            rowsPerPageOptions={[10, 25, 50, 100, { label: 'All', value: -1 }]}
-                        />
-                    </Paper>
+                                {/* Shipment Detail Content */}
+                                <Suspense fallback={
+                                    <Box sx={{
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        height: '100%',
+                                        pt: 8
+                                    }}>
+                                        <CircularProgress />
+                                    </Box>
+                                }>
+                                    <ShipmentDetail shipmentId={selectedShipmentId} />
+                                </Suspense>
+                            </Box>
+                        )}
+                    </Box>
                 </Box>
-            </Paper>
+            </Box>
 
             {/* Export Dialog */}
             <ExportDialog
@@ -1089,7 +1193,7 @@ const ShipmentsX = () => {
                     </Suspense>
                 </Box>
             </Drawer>
-        </div>
+        </div >
     );
 };
 

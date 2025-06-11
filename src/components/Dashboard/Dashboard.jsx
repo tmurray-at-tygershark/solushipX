@@ -202,24 +202,6 @@ const GlobeLoadingScreen = ({ phase = 'initializing' }) => {
                     </Box>
                 </Fade>
 
-                {/* Progress bar */}
-                <Box sx={{ width: '100%', mt: 3 }}>
-                    <LinearProgress
-                        variant="determinate"
-                        value={progress}
-                        sx={{
-                            height: 6,
-                            borderRadius: 3,
-                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                            '& .MuiLinearProgress-bar': {
-                                borderRadius: 3,
-                                background: 'linear-gradient(45deg, #60a5fa, #8b5cf6)',
-                                boxShadow: '0 0 20px rgba(96, 165, 250, 0.5)'
-                            }
-                        }}
-                    />
-                </Box>
-
                 {/* Phase indicators */}
                 <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 3 }}>
                     {loadingPhases.map((_, index) => (
@@ -537,28 +519,77 @@ const Dashboard = () => {
 
             {/* Navigation Drawer (Left) */}
             <Drawer anchor="left" open={isNavDrawerOpen} onClose={() => setIsNavDrawerOpen(false)}>
-                <Box sx={{ width: 250, bgcolor: '#111827', height: '100%', color: 'white', display: 'flex', flexDirection: 'column' }} role="presentation">
-                    <Box sx={{ p: 2, pl: 2.5, display: 'flex', justifyContent: 'flex-start' }}>
+                <Box sx={{
+                    width: 250,
+                    height: '100%',
+                    color: 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }} role="presentation">
+                    {/* Animated background particles */}
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: `
+                            radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
+                            radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                            radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
+                        `,
+                        animation: 'float 6s ease-in-out infinite'
+                    }} />
+                    <Box sx={{ p: 2, pl: 2.5, display: 'flex', justifyContent: 'flex-start', position: 'relative', zIndex: 1 }}>
                         <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 28 }} />
                     </Box>
-                    <List sx={{ flexGrow: 1 }}>
+                    <List sx={{ flexGrow: 1, position: 'relative', zIndex: 1 }}>
                         {menuItems.map((item) => (
                             <ListItem key={item.text} disablePadding>
-                                <ListItemButton onClick={() => { item.action(); setIsNavDrawerOpen(false); }}>
+                                <ListItemButton
+                                    onClick={() => { item.action(); setIsNavDrawerOpen(false); }}
+                                    sx={{
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                        }
+                                    }}
+                                >
                                     <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 40 }}>{item.icon}</ListItemIcon>
-                                    <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.9rem' }} />
+                                    <ListItemText
+                                        primary={item.text}
+                                        primaryTypographyProps={{
+                                            fontSize: '0.9rem',
+                                            color: 'white'
+                                        }}
+                                    />
                                 </ListItemButton>
                             </ListItem>
                         ))}
                     </List>
 
-                    <Box sx={{ px: 2, pb: 2 }}>
+                    <Box sx={{ px: 2, pb: 2, position: 'relative', zIndex: 1 }}>
                         <List>
                             {profileMenuItems.map((item) => (
                                 <ListItem key={item.text} disablePadding>
-                                    <ListItemButton onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}>
+                                    <ListItemButton
+                                        onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}
+                                        sx={{
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                            }
+                                        }}
+                                    >
                                         <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 40 }}>{item.icon}</ListItemIcon>
-                                        <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.9rem' }} />
+                                        <ListItemText
+                                            primary={item.text}
+                                            primaryTypographyProps={{
+                                                fontSize: '0.9rem',
+                                                color: 'white'
+                                            }}
+                                        />
                                     </ListItemButton>
                                 </ListItem>
                             ))}
@@ -579,7 +610,14 @@ const Dashboard = () => {
                             <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 'auto', mr: 1 }}>
                                 <LogoutIcon />
                             </ListItemIcon>
-                            <ListItemText primary="Logout" primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: 500 }} />
+                            <ListItemText
+                                primary="Logout"
+                                primaryTypographyProps={{
+                                    fontSize: '0.9rem',
+                                    fontWeight: 500,
+                                    color: 'white'
+                                }}
+                            />
                         </ListItemButton>
                     </Box>
                 </Box>
@@ -670,35 +708,15 @@ const Dashboard = () => {
                             <CircularProgress />
                         </Box>
                     }>
-                        <ShipmentsComponent />
+                        <ShipmentsComponent
+                            isModal={true}
+                            onClose={() => setIsShipmentsModalOpen(false)}
+                        />
                     </Suspense>
                 </Box>
             </Dialog>
 
-            {/* Floating Close Button */}
-            {isShipmentsModalOpen && (
-                <IconButton
-                    onClick={() => setIsShipmentsModalOpen(false)}
-                    sx={{
-                        position: 'fixed',
-                        right: { xs: 24, md: 40 },
-                        top: { xs: 24, md: 40 },
-                        zIndex: 1500,
-                        backgroundColor: 'black',
-                        color: 'white',
-                        width: '40px',
-                        height: '40px',
-                        border: '2px solid white',
-                        '&:hover': {
-                            backgroundColor: 'rgba(0,0,0,0.8)',
-                            transform: 'scale(1.05)',
-                            transition: 'all 0.2s ease-in-out'
-                        }
-                    }}
-                >
-                    <CloseIcon sx={{ fontSize: 20 }} />
-                </IconButton>
-            )}
+
 
             {/* Globe - always rendered but opacity is controlled */}
             <Box sx={{
