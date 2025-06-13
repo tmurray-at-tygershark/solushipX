@@ -42,8 +42,8 @@ const ModalHeader = ({
         if (navigationStack.length > 0) {
             return currentNavigationIndex > 0;
         }
-        // Always show back button if showBackButton is true or if we're in detail view
-        return showBackButton || title.toLowerCase().includes('shipment');
+        // Only show back button if explicitly requested
+        return showBackButton;
     };
 
     const handleBackClick = () => {

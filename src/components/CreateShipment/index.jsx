@@ -1069,6 +1069,8 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
             {isModal && (
                 <ModalHeader
                     title="Create New Shipment"
+                    onBack={onReturnToShipments}
+                    showBackButton={!!onReturnToShipments}
                     onClose={showCloseButton ? onClose : null}
                     showCloseButton={showCloseButton}
                 />

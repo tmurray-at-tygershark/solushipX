@@ -902,7 +902,7 @@ const Dashboard = () => {
                         <CreateShipmentComponent
                             isModal={true}
                             onClose={() => setIsCreateShipmentModalOpen(false)}
-                            onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                            onReturnToShipments={isShipmentsModalOpen ? handleReturnToShipmentsFromCreateShipment : null}
                             showCloseButton={true}
                         />
                     </LazyComponentWrapper>
