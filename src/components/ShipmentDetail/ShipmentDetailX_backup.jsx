@@ -10,8 +10,7 @@ import {
     DialogContent,
     DialogActions,
     Button,
-    IconButton,
-    Drawer
+    IconButton
 } from '@mui/material';
 import {
     PictureAsPdf as PictureAsPdfIcon,
@@ -25,6 +24,7 @@ import { collection, getDocs } from 'firebase/firestore';
 
 // Components
 import ShipmentHeader from './components/ShipmentHeader';
+import ShipmentSummary from './components/ShipmentSummary';
 import ShipmentInformation from './components/ShipmentInformation';
 import ShipmentDocuments from './components/ShipmentDocuments';
 import RateDetails from './components/RateDetails';
@@ -33,7 +33,6 @@ import LocationMaps from './components/LocationMaps';
 import RouteMap from './components/RouteMap';
 import ShipmentHistory from './components/ShipmentHistory';
 import LoadingSkeleton from './components/LoadingSkeleton';
-import TrackingDrawer from '../Tracking/Tracking';
 
 // Dialogs and Modals
 import PrintLabelDialog from './dialogs/PrintLabelDialog';
@@ -171,10 +170,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
     const [isMapReady, setIsMapReady] = useState(false);
     const [map, setMap] = useState(null);
     const [isMapLoaded, setIsMapLoaded] = useState(false);
-
-    // Tracking drawer state
-    const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
-    const [selectedTrackingNumber, setSelectedTrackingNumber] = useState(null);
 
     // Dark mode map styling - exactly like the original
     const mapStyles = [
@@ -603,17 +598,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         }
     }, [directions]);
 
-    // Handle opening tracking drawer
-    const handleOpenTrackingDrawer = (trackingNumber) => {
-        setSelectedTrackingNumber(trackingNumber);
-        setIsTrackingDrawerOpen(true);
-    };
-
-    const handleCloseTrackingDrawer = () => {
-        setIsTrackingDrawerOpen(false);
-        setSelectedTrackingNumber(null);
-    };
-
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -655,7 +639,12 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
 
                 {/* Main Content Container */}
                 <Box id="shipment-detail-content">
-                    {/* Shipment Information - Now the first section */}
+                    {/* Shipment Summary */}
+                    <ShipmentSummary
+                        shipment={shipment}
+                    />
+
+                    {/* Shipment Information */}
                     <ShipmentInformation
                         shipment={shipment}
                         getBestRateInfo={getBestRateInfo}
@@ -665,7 +654,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                         smartUpdateLoading={smartUpdateLoading}
                         onRefreshStatus={handleRefreshStatus}
                         onShowSnackbar={showSnackbar}
-                        onOpenTrackingDrawer={handleOpenTrackingDrawer}
                     />
 
                     {/* Documents Section */}
@@ -733,51 +721,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                         />
                     </Grid>
                 </Box>
-
-                {/* Tracking Drawer */}
-                {isTrackingDrawerOpen && (
-                    <Box
-                        onClick={handleCloseTrackingDrawer}
-                        sx={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            width: '100vw',
-                            height: '100vh',
-                            bgcolor: 'rgba(0,0,0,0.7)',
-                            zIndex: 1499,
-                            transition: 'opacity 0.3s',
-                        }}
-                    />
-                )}
-                <Drawer
-                    anchor="right"
-                    open={isTrackingDrawerOpen}
-                    onClose={handleCloseTrackingDrawer}
-                    PaperProps={{
-                        sx: {
-                            width: { xs: '90vw', sm: 400, md: 450 },
-                            height: '100%',
-                            bgcolor: '#0a0a0a',
-                            zIndex: 1500,
-                            position: 'fixed',
-                            right: 0,
-                            top: 0,
-                        }
-                    }}
-                    ModalProps={{
-                        keepMounted: true,
-                        sx: { zIndex: 1500 }
-                    }}
-                >
-                    <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
-                        <TrackingDrawer
-                            trackingIdentifier={selectedTrackingNumber}
-                            isDrawer={true}
-                            onClose={handleCloseTrackingDrawer}
-                        />
-                    </Box>
-                </Drawer>
             </Box>
 
             {/* Modals and Dialogs */}

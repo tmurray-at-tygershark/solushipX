@@ -128,30 +128,32 @@ const ShipmentDocuments = ({
                                 )}
 
                                 {/* BOL */}
-                                <Grid item xs={12}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-                                        Bill of Lading
-                                    </Typography>
-                                    <Grid container spacing={1}>
-                                        {shipmentDocuments.bol
-                                            .filter(bol => {
-                                                const filename = (bol.filename || '').toUpperCase();
-                                                return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
-                                            })
-                                            .map((bol) => (
-                                                <Grid item key={bol.id}>
-                                                    <Chip
-                                                        icon={<DescriptionIcon />}
-                                                        label={bol.filename || 'BOL'}
-                                                        onClick={() => onViewPdf(bol.id, bol.filename, 'Bill of Lading')}
-                                                        clickable
-                                                        color="secondary"
-                                                        variant="outlined"
-                                                    />
-                                                </Grid>
-                                            ))}
+                                {shipmentDocuments.bol?.length > 0 && (
+                                    <Grid item xs={12}>
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                                            Bill of Lading
+                                        </Typography>
+                                        <Grid container spacing={1}>
+                                            {shipmentDocuments.bol
+                                                .filter(bol => {
+                                                    const filename = (bol.filename || '').toUpperCase();
+                                                    return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
+                                                })
+                                                .map((bol) => (
+                                                    <Grid item key={bol.id}>
+                                                        <Chip
+                                                            icon={<DescriptionIcon />}
+                                                            label={bol.filename || 'BOL'}
+                                                            onClick={() => onViewPdf(bol.id, bol.filename, 'Bill of Lading')}
+                                                            clickable
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                        />
+                                                    </Grid>
+                                                ))}
+                                        </Grid>
                                     </Grid>
-                                </Grid>
+                                )}
 
                                 {/* Other Documents */}
                                 {shipmentDocuments.other?.length > 0 && (

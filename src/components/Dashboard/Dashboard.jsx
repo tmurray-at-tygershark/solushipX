@@ -1091,6 +1091,7 @@ const Dashboard = () => {
                         isPanelOpen={isChatOpen}
                         setIsPanelOpen={setIsChatOpen}
                         currentShipmentId={null}
+                        sx={{ zIndex: 1000 }}
                     />
                 </LazyComponentWrapper>
             )}

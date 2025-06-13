@@ -1440,9 +1440,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     // Create dynamic navigation object based on current state
     const getNavigationObject = () => {
         const currentView = navigationStack[navigationStack.length - 1];
+        const currentModalPage = modalNavigation.getCurrentPage();
+
         return {
             title: currentView?.component === 'shipment-detail'
-                ? '' // Remove title for shipment detail view
+                ? currentModalPage?.title || 'Shipment Detail' // Use shipment ID from modal navigation
                 : 'Shipments',
             canGoBack: navigationStack.length > 1,
             onBack: navigationStack.length > 1 ? popView : (onModalBack || onClose),

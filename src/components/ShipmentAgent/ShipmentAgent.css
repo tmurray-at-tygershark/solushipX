@@ -7,7 +7,7 @@
     position: fixed;
     bottom: 100px; /* Position above the toggle button */
     right: 20px;
-    z-index: 100000; /* Higher than any other element */
+    z-index: 1000; /* Lowered from 100000 to be below modals */
     box-shadow: -2px 2px 20px rgba(0, 0, 0, 0.25);
     background-color: #ffffff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -75,7 +75,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 99999; /* Same as overlay */
+    z-index: 999; /* Lowered from 99999 to be below modals */
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -443,7 +443,7 @@ textarea.chat-input {
     right: 0;
     bottom: 0;
     background-color: rgba(0, 0, 0, 0.4);
-    z-index: 99999; /* Just below the container */
+    z-index: 998; /* Lowered from 99999 to be below modals */
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s;

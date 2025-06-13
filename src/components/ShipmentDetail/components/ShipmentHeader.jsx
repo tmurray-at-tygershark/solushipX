@@ -10,7 +10,8 @@ import {
     Print as PrintIcon,
     Description as DescriptionIcon,
     LocalShipping as LocalShippingIcon,
-    ArrowBackIosNew as ArrowBackIosNewIcon
+    ArrowBackIosNew as ArrowBackIosNewIcon,
+    QrCode as QrCodeIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import StatusChip from '../../StatusChip/StatusChip';
@@ -100,23 +101,6 @@ const ShipmentHeader = ({
                         />
                     )}
 
-                    {!documentsLoading &&
-                        !documentsError &&
-                        !actionStates.generateBOL?.loading &&
-                        shipment?.status !== 'draft' && (
-                            <Chip
-                                size="small"
-                                label={`${(shipmentDocuments.labels?.length || 0) +
-                                    (shipmentDocuments.bol?.length || 0) +
-                                    (shipmentDocuments.other?.length || 0)} docs`}
-                                color={(shipmentDocuments.labels?.length || 0) +
-                                    (shipmentDocuments.bol?.length || 0) +
-                                    (shipmentDocuments.other?.length || 0) > 0 ? "success" : "default"}
-                                variant="outlined"
-                                sx={{ height: '32px' }}
-                            />
-                        )}
-
                     {/* Labels Button - Show when labels exist */}
                     {shipment?.status !== 'draft' &&
                         !documentsLoading &&
@@ -126,7 +110,7 @@ const ShipmentHeader = ({
                                 variant="outlined"
                                 size="small"
                                 startIcon={actionStates.printLabel.loading ?
-                                    <CircularProgress size={14} /> : <PrintIcon sx={{ fontSize: 14 }} />}
+                                    <CircularProgress size={14} /> : <QrCodeIcon sx={{ fontSize: 14 }} />}
                                 disabled={actionStates.printLabel.loading}
                                 sx={buttonStyle}
                             >

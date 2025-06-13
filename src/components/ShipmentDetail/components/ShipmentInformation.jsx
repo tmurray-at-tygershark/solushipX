@@ -91,7 +91,8 @@ const ShipmentInformation = ({
     actionStates,
     smartUpdateLoading,
     onRefreshStatus,
-    onShowSnackbar
+    onShowSnackbar,
+    onOpenTrackingDrawer
 }) => {
     const formatTimestamp = (timestamp) => {
         if (!timestamp) return 'Unknown time';
@@ -187,9 +188,33 @@ const ShipmentInformation = ({
     return (
         <Grid item xs={12}>
             <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
+                {/* Header with Shipment ID - No "Shipment ID" text, no link */}
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                    <LocalShippingIcon sx={{ mr: 1, color: 'primary.main' }} />
-                    <Typography variant="h6">Shipment Information</Typography>
+                    <Typography
+                        variant="h6"
+                        sx={{
+                            fontWeight: 600,
+                            color: 'text.primary'
+                        }}
+                    >
+                        {shipment?.shipmentID || 'N/A'}
+                    </Typography>
+                    <IconButton
+                        size="small"
+                        onClick={() => {
+                            const shipmentId = shipment?.shipmentID || 'N/A';
+                            if (shipmentId && shipmentId !== 'N/A') {
+                                navigator.clipboard.writeText(shipmentId);
+                                onShowSnackbar('Shipment ID copied!', 'success');
+                            } else {
+                                onShowSnackbar('No shipment ID to copy.', 'warning');
+                            }
+                        }}
+                        sx={{ padding: '4px', ml: 1 }}
+                        title="Copy shipment ID"
+                    >
+                        <ContentCopyIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+                    </IconButton>
                 </Box>
 
                 <Grid container spacing={3}>
@@ -203,17 +228,45 @@ const ShipmentInformation = ({
                             borderColor: 'divider',
                             height: '100%'
                         }}>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                                 Basic Information
                             </Typography>
                             <Stack spacing={2}>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Company ID</Typography>
+                                    <Typography variant="body2">{shipment?.companyID || 'N/A'}</Typography>
+                                </Box>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Customer ID</Typography>
+                                    <Typography variant="body2">{shipment?.shipTo?.customerID || 'N/A'}</Typography>
+                                </Box>
                                 <Box>
                                     <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
                                     <Typography variant="body2">{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
                                 </Box>
                                 <Box>
-                                    <Typography variant="caption" color="text.secondary">Reference Number</Typography>
-                                    <Typography variant="body2">{shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}</Typography>
+                                    <Typography variant="caption" color="text.secondary">Shipper Reference</Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <Typography variant="body2">
+                                            {shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}
+                                        </Typography>
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => {
+                                                const referenceNumber = shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A';
+                                                if (referenceNumber && referenceNumber !== 'N/A') {
+                                                    navigator.clipboard.writeText(referenceNumber);
+                                                    onShowSnackbar('Reference number copied!', 'success');
+                                                } else {
+                                                    onShowSnackbar('No reference number to copy.', 'warning');
+                                                }
+                                            }}
+                                            sx={{ padding: '2px' }}
+                                            title="Copy reference number"
+                                        >
+                                            <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                        </IconButton>
+                                    </Box>
                                 </Box>
                                 <Box>
                                     <Typography variant="caption" color="text.secondary">Bill Type</Typography>
@@ -235,10 +288,19 @@ const ShipmentInformation = ({
                             borderColor: 'divider',
                             height: '100%'
                         }}>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                                 Timing Information
                             </Typography>
                             <Stack spacing={2}>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Created At</Typography>
+                                    <Typography variant="body2">
+                                        {shipment?.createdAt?.toDate ?
+                                            shipment.createdAt.toDate().toLocaleString() :
+                                            (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')
+                                        }
+                                    </Typography>
+                                </Box>
                                 <Box>
                                     <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
                                     <Typography variant="body2">
@@ -296,7 +358,7 @@ const ShipmentInformation = ({
                             borderColor: 'divider',
                             height: '100%'
                         }}>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                                 Tracking & Status
                             </Typography>
                             <Stack spacing={2}>
@@ -333,30 +395,47 @@ const ShipmentInformation = ({
                                 <Box>
                                     <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <Link
-                                            component={RouterLink}
-                                            to={`/tracking/${getTrackingNumber()}`}
-                                            style={{ textDecoration: 'none' }}
-                                        >
+                                        {onOpenTrackingDrawer ? (
                                             <Box sx={{
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: 0.5,
-                                                '&:hover': { color: 'primary.dark' }
+                                                cursor: 'pointer',
+                                                '&:hover .tracking-text': { textDecoration: 'underline' }
+                                            }}>
+                                                <AssignmentIcon sx={{ color: 'primary.main', fontSize: '0.9rem' }} />
+                                                <Typography
+                                                    className="tracking-text"
+                                                    variant="body2"
+                                                    onClick={() => onOpenTrackingDrawer(getTrackingNumber())}
+                                                    sx={{
+                                                        fontWeight: 500,
+                                                        color: 'primary.main',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                    title="Click to open tracking details"
+                                                >
+                                                    {getTrackingNumber()}
+                                                </Typography>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 0.5
                                             }}>
                                                 <AssignmentIcon sx={{ color: 'primary.main', fontSize: '0.9rem' }} />
                                                 <Typography
                                                     variant="body2"
                                                     sx={{
                                                         fontWeight: 500,
-                                                        color: 'primary.main',
-                                                        '&:hover': { textDecoration: 'underline' }
+                                                        color: 'primary.main'
                                                     }}
                                                 >
                                                     {getTrackingNumber()}
                                                 </Typography>
                                             </Box>
-                                        </Link>
+                                        )}
                                         <IconButton
                                             size="small"
                                             onClick={handleCopyTracking}
@@ -390,7 +469,7 @@ const ShipmentInformation = ({
                             borderColor: 'divider',
                             height: '100%'
                         }}>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
                                 Service Options
                             </Typography>
                             <Stack spacing={2}>
