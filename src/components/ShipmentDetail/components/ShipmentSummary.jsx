@@ -3,18 +3,7 @@ import { Paper, Box, Typography, Grid, Button } from '@mui/material';
 import { Business as BusinessIcon } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 
-const ShipmentSummary = ({ shipment, onCancelShipment }) => {
-    // Check if shipment can be cancelled
-    const canCancelShipment = () => {
-        const currentStatus = shipment?.status?.toLowerCase();
-        return currentStatus !== 'delivered' &&
-            currentStatus !== 'in_transit' &&
-            currentStatus !== 'in transit' &&
-            currentStatus !== 'cancelled' &&
-            currentStatus !== 'void' &&
-            currentStatus !== 'draft';
-    };
-
+const ShipmentSummary = ({ shipment }) => {
     return (
         <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
@@ -22,29 +11,6 @@ const ShipmentSummary = ({ shipment, onCancelShipment }) => {
                     <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
                     <Typography variant="h6">Shipment Summary</Typography>
                 </Box>
-                {/* Cancel Button */}
-                {canCancelShipment() && (
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={onCancelShipment}
-                        sx={{
-                            borderColor: 'text.secondary',
-                            color: 'text.secondary',
-                            textTransform: 'none',
-                            fontSize: '0.875rem',
-                            minWidth: 'auto',
-                            px: 2,
-                            '&:hover': {
-                                borderColor: 'error.main',
-                                color: 'error.main',
-                                bgcolor: 'transparent'
-                            }
-                        }}
-                    >
-                        Cancel Shipment
-                    </Button>
-                )}
             </Box>
             <Grid container spacing={2}>
                 <Grid item xs={12} sm={6} md={3}>

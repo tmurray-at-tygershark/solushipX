@@ -634,6 +634,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                     onPrintShipment={handlePrintShipment}
                     fetchShipmentDocuments={fetchShipmentDocuments}
                     onBackToTable={onBackToTable}
+                    onCancelShipment={() => setCancelModalOpen(true)}
                 />
 
                 {/* Main Content Container */}
@@ -641,7 +642,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                     {/* Shipment Summary */}
                     <ShipmentSummary
                         shipment={shipment}
-                        onCancelShipment={() => setCancelModalOpen(true)}
                     />
 
                     {/* Shipment Information */}
