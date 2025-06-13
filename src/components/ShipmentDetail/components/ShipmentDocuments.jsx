@@ -45,8 +45,7 @@ const ShipmentDocuments = ({
                     }}
                 >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <DescriptionIcon sx={{ color: '#000' }} />
-                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#000' }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#000', fontSize: '16px' }}>
                             Documents
                         </Typography>
                     </Box>

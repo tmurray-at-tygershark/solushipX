@@ -11,7 +11,8 @@ import {
     Description as DescriptionIcon,
     LocalShipping as LocalShippingIcon,
     ArrowBackIosNew as ArrowBackIosNewIcon,
-    QrCode as QrCodeIcon
+    QrCode as QrCodeIcon,
+    ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import StatusChip from '../../StatusChip/StatusChip';
@@ -28,7 +29,8 @@ const ShipmentHeader = ({
     onPrintShipment,
     fetchShipmentDocuments,
     onBackToTable,
-    onCancelShipment
+    onCancelShipment,
+    onShowSnackbar
 }) => {
     const navigate = useNavigate();
     const isFreightShipment = shipment?.shipmentInfo?.shipmentType?.toLowerCase() === 'freight';
@@ -76,8 +78,48 @@ const ShipmentHeader = ({
                 flexWrap: 'wrap',
                 gap: 1
             }}>
-                {/* Left Side - Documents Status Chip + Action Buttons */}
+                {/* Left Side - Shipment ID + Documents Status Chip + Action Buttons */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {/* Shipment ID and Copy Button */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 1 }}>
+                        <Typography
+                            variant="h6"
+                            sx={{
+                                fontWeight: 600,
+                                color: 'text.primary',
+                                fontSize: '1.1rem'
+                            }}
+                        >
+                            {shipment?.shipmentID || 'N/A'}
+                        </Typography>
+                        <Button
+                            size="small"
+                            onClick={() => {
+                                const shipmentId = shipment?.shipmentID || 'N/A';
+                                if (shipmentId && shipmentId !== 'N/A') {
+                                    navigator.clipboard.writeText(shipmentId);
+                                    onShowSnackbar && onShowSnackbar('Shipment ID copied!', 'success');
+                                } else {
+                                    onShowSnackbar && onShowSnackbar('No shipment ID to copy.', 'warning');
+                                }
+                            }}
+                            variant="text"
+                            sx={{
+                                minWidth: 'auto',
+                                width: '32px',
+                                height: '32px',
+                                padding: 0,
+                                color: '#64748b',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(100, 116, 139, 0.1)'
+                                }
+                            }}
+                            title="Copy shipment ID"
+                        >
+                            <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                        </Button>
+                    </Box>
+
                     {/* Document Status Indicator */}
                     {(documentsLoading || actionStates.generateBOL?.loading) && (
                         <Chip

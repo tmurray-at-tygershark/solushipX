@@ -23,10 +23,22 @@ const PrintLabelDialog = ({
     shipment = null
 }) => {
     const handleQuantityChange = (event) => {
-        setLabelConfig(prev => ({
-            ...prev,
-            quantity: parseInt(event.target.value) || 1
-        }));
+        const value = event.target.value;
+        // Allow empty string for user to clear and type new number
+        if (value === '') {
+            setLabelConfig(prev => ({
+                ...prev,
+                quantity: ''
+            }));
+        } else {
+            const numValue = parseInt(value);
+            if (!isNaN(numValue) && numValue >= 1 && numValue <= 10) {
+                setLabelConfig(prev => ({
+                    ...prev,
+                    quantity: numValue
+                }));
+            }
+        }
     };
 
     const handleLabelTypeChange = (event) => {
@@ -37,7 +49,12 @@ const PrintLabelDialog = ({
     };
 
     const handlePrint = () => {
-        onPrint(labelConfig);
+        // Ensure quantity is a valid number before printing
+        const finalConfig = {
+            ...labelConfig,
+            quantity: labelConfig.quantity === '' ? 1 : labelConfig.quantity
+        };
+        onPrint(finalConfig);
         onClose();
     };
 
@@ -71,26 +88,6 @@ const PrintLabelDialog = ({
                             <MenuItem value="8.5x11">8.5" x 11" (Letter)</MenuItem>
                         </Select>
                     </FormControl>
-
-                    {shipment && (
-                        <Box sx={{
-                            p: 2,
-                            bgcolor: 'grey.50',
-                            borderRadius: 1,
-                            border: '1px solid',
-                            borderColor: 'grey.200'
-                        }}>
-                            <Typography variant="subtitle2" gutterBottom>
-                                Shipment Details:
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Shipment ID: {shipment.id}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Tracking: {shipment.trackingNumber || 'N/A'}
-                            </Typography>
-                        </Box>
-                    )}
                 </Box>
             </DialogContent>
             <DialogActions>

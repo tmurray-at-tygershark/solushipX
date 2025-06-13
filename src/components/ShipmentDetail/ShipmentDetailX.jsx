@@ -29,8 +29,6 @@ import ShipmentInformation from './components/ShipmentInformation';
 import ShipmentDocuments from './components/ShipmentDocuments';
 import RateDetails from './components/RateDetails';
 import PackageDetails from './components/PackageDetails';
-import LocationMaps from './components/LocationMaps';
-import RouteMap from './components/RouteMap';
 import ShipmentHistory from './components/ShipmentHistory';
 import LoadingSkeleton from './components/LoadingSkeleton';
 import TrackingDrawer from '../Tracking/Tracking';
@@ -142,15 +140,14 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         refreshShipment
     });
 
-    // UI State
-    const [expandedSections, setExpandedSections] = useState({
-        shipment: true,
-        locations: true,
-        packages: true,
-        rate: true,
-        route: true,
-        documents: true
-    });
+    // UI State - Remove expandedSections since we don't need collapsible sections anymore
+    // const [expandedSections, setExpandedSections] = useState({
+    //     shipment: true,
+    //     locations: true,
+    //     packages: true,
+    //     rate: true,
+    //     documents: true
+    // });
 
     // Modal States
     const [printLabelModalOpen, setPrintLabelModalOpen] = useState(false);
@@ -287,13 +284,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         labelType: '4x6'
     });
 
-    const toggleSection = (section) => {
-        setExpandedSections(prev => ({
-            ...prev,
-            [section]: !prev[section]
-        }));
-    };
-
     // Google Maps initialization effect - according to memory, check if window.google.maps is already available
     useEffect(() => {
         const initializeMaps = async () => {
@@ -332,36 +322,59 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         initializeMaps();
     }, []);
 
-    // Route calculation effect - using Google Routes API v2 like the original
+    // Route calculation effect - using the working logic from OLD-ShipmentDetail.jsx
     useEffect(() => {
         const calculateRoute = async () => {
-            if (!shipment?.shipFrom || !shipment?.shipTo || !window.google || !window.google.maps || !isGoogleMapsLoaded || !mapsApiKey || !isMapReady) {
+            if (!shipment?.shipFrom || !shipment?.shipTo || !window.google || !window.google.maps || !isGoogleMapsLoaded) {
                 console.log('Missing required data for route calculation:', {
                     hasShipFrom: !!shipment?.shipFrom,
                     hasShipTo: !!shipment?.shipTo,
                     hasGoogleMaps: !!window.google?.maps,
-                    isGoogleMapsLoaded,
-                    hasMapsApiKey: !!mapsApiKey,
-                    isMapReady
+                    isGoogleMapsLoaded
                 });
+                setDirections(null);
+                setMapError('Missing required data for route calculation');
                 return;
             }
 
             try {
+                setMapError(null);
+
                 const formatAddress = (address) => {
                     if (!address) return '';
-                    const components = [];
-                    if (address.company) components.push(address.company);
-                    if (address.street) components.push(address.street);
-                    if (address.street2) components.push(address.street2);
 
+                    const components = [];
+
+                    // Add company name if available
+                    if (address.company) {
+                        components.push(address.company);
+                    }
+
+                    // Add street address
+                    if (address.street) {
+                        components.push(address.street);
+                    }
+
+                    // Add street2 if available
+                    if (address.street2) {
+                        components.push(address.street2);
+                    }
+
+                    // Add city, state, and postal code
                     const cityStateZip = [];
                     if (address.city) cityStateZip.push(address.city);
                     if (address.state) cityStateZip.push(address.state);
                     if (address.postalCode) cityStateZip.push(address.postalCode);
-                    if (cityStateZip.length > 0) components.push(cityStateZip.join(', '));
 
-                    if (address.country) components.push(address.country);
+                    if (cityStateZip.length > 0) {
+                        components.push(cityStateZip.join(', '));
+                    }
+
+                    // Add country
+                    if (address.country) {
+                        components.push(address.country);
+                    }
+
                     return components.join(', ');
                 };
 
@@ -404,7 +417,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                             return await geocodeAddress(address, type);
                         } catch (error) {
                             if (i === maxRetries - 1) throw error;
-                            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
                         }
                     }
                 };
@@ -552,9 +565,11 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                 };
 
                 setDirections(directionsResult);
+                console.log('Route calculated successfully using Routes API v2');
             } catch (error) {
                 console.error('Error calculating route:', error);
-                setMapError('Error calculating route');
+                setDirections(null);
+                setMapError('Error calculating route: ' + error.message);
             }
         };
 
@@ -576,16 +591,10 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
             bounds.extend(directions.request.origin);
             bounds.extend(directions.request.destination);
 
-            // Add padding to the bounds
-            const padding = 15; // reduced from 25 to 15 pixels
-            const ne = bounds.getNorthEast();
-            const sw = bounds.getSouthWest();
-            const latPadding = (ne.lat() - sw.lat()) * 0.02; // reduced from 0.05 to 0.02 (2% padding)
-            const lngPadding = (ne.lng() - sw.lng()) * 0.02; // reduced from 0.05 to 0.02 (2% padding)
-            bounds.extend(new window.google.maps.LatLng(ne.lat() + latPadding, ne.lng() + lngPadding));
-            bounds.extend(new window.google.maps.LatLng(sw.lat() - latPadding, sw.lng() - lngPadding));
+            // Add appropriate padding to the bounds
+            const padding = 50; // Increased padding for better visibility
 
-            // Fit the map to the bounds
+            // Fit the map to the bounds with padding - let Google Maps determine optimal zoom
             map.fitBounds(bounds, {
                 padding: {
                     top: padding,
@@ -595,11 +604,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                 }
             });
 
-            // Set a closer zoom level
-            const currentZoom = map.getZoom();
-            if (currentZoom) {
-                map.setZoom(currentZoom + 2); // reduced from 5 to 2 for a more moderate zoom
-            }
+            // Don't override the zoom level - let fitBounds determine the best zoom to show the entire route
         }
     }, [directions]);
 
@@ -651,6 +656,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                     fetchShipmentDocuments={fetchShipmentDocuments}
                     onBackToTable={onBackToTable}
                     onCancelShipment={() => setCancelModalOpen(true)}
+                    onShowSnackbar={showSnackbar}
                 />
 
                 {/* Main Content Container */}
@@ -668,8 +674,8 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                         onOpenTrackingDrawer={handleOpenTrackingDrawer}
                     />
 
-                    {/* Documents Section */}
-                    <ShipmentDocuments
+                    {/* Documents Section - Hidden for now */}
+                    {/* <ShipmentDocuments
                         shipment={shipment}
                         expanded={expandedSections.documents}
                         onToggle={() => toggleSection('documents')}
@@ -678,27 +684,12 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                         documentsError={documentsError}
                         onRetryFetch={fetchShipmentDocuments}
                         onViewPdf={viewPdfInModal}
-                    />
+                    /> */}
 
                     {/* Main Content Grid */}
-                    <Grid container spacing={3} sx={{ mt: 2 }}>
-                        {/* Location Maps */}
-                        <LocationMaps
-                            shipment={shipment}
-                            isGoogleMapsLoaded={isGoogleMapsLoaded}
-                            formatAddress={(address) => {
-                                if (!address) return 'N/A';
-                                return `${address.street}${address.street2 ? ', ' + address.street2 : ''}\n${address.city}, ${address.state} ${address.postalCode}\n${address.country}`;
-                            }}
-                            getAddress={(shipment, type) => {
-                                return shipment?.[type] || shipment?.[type.toLowerCase()] || null;
-                            }}
-                        />
-
+                    <Grid container spacing={1} sx={{ mt: 1 }}>
                         {/* Rate Details */}
                         <RateDetails
-                            expanded={expandedSections.rate}
-                            onToggle={() => toggleSection('rate')}
                             getBestRateInfo={getBestRateInfo}
                             carrierData={carrierData}
                             shipment={shipment}
@@ -706,27 +697,10 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
 
                         {/* Package Details */}
                         <PackageDetails
-                            expanded={expandedSections.packages}
-                            onToggle={() => toggleSection('packages')}
                             packages={shipment?.packages || []}
                         />
 
-                        {/* Route Map and History - Side by Side */}
-                        <RouteMap
-                            isGoogleMapsLoaded={isGoogleMapsLoaded}
-                            directions={directions}
-                            mapCenter={mapCenter}
-                            handleMapLoad={handleMapLoad}
-                            mapOptions={mapOptions}
-                            convertDistance={(distanceInMeters) => {
-                                if (useMetric) {
-                                    return `${Math.round(distanceInMeters / 1000)} km`;
-                                }
-                                return `${Math.round(distanceInMeters / 1609.34)} mi`;
-                            }}
-                            useMetric={useMetric}
-                            setUseMetric={setUseMetric}
-                        />
+                        {/* Shipment History - Full Width */}
                         <ShipmentHistory
                             mergedEvents={mergedEvents}
                             historyLoading={historyLoading}

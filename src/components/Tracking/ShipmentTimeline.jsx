@@ -95,7 +95,7 @@ const ShipmentTimeline = ({ events }) => {
     if (!events || events.length === 0) {
         return (
             <Paper elevation={0} sx={{ mt: 3, p: 3, textAlign: 'center', border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
-                <Typography variant="body1" color="text.secondary">No tracking history available yet.</Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>No tracking history available yet.</Typography>
             </Paper>
         );
     }
@@ -159,11 +159,11 @@ const ShipmentTimeline = ({ events }) => {
                             borderColor: 'divider',
                             bgcolor: index === 0 ? 'action.hover' : 'background.paper',
                         }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5, fontSize: '12px' }}>
                                 {event.status || event.title || 'Status Unavailable'}
                             </Typography>
                             {(event.location && (typeof event.location === 'string' || event.location.city || event.location.state || event.location.postalCode)) && (
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontSize: '12px' }}>
                                     {typeof event.location === 'string'
                                         ? event.location
                                         : [
@@ -173,23 +173,23 @@ const ShipmentTimeline = ({ events }) => {
                                         ].filter(Boolean).join(', ')}
                                 </Typography>
                             )}
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '12px' }}>
                                 {formatTimestamp(event.timestamp)}
                             </Typography>
                             {event.description && (
-                                <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-line' }}>
+                                <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'pre-line', fontSize: '12px' }}>
                                     {event.description}
                                 </Typography>
                             )}
                             {event.userData && event.userData.email && (
                                 <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '12px' }}>
                                         {`User: ${event.userData.email}`}
                                     </Typography>
                                 </Box>
                             )}
                             {event.source && (
-                                <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
+                                <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5, fontSize: '12px' }}>
                                     (Source: {event.source})
                                 </Typography>
                             )}

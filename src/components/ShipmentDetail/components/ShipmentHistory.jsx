@@ -6,7 +6,6 @@ import {
     Box,
     CircularProgress
 } from '@mui/material';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import ShipmentTimeline from '../../Tracking/ShipmentTimeline';
 
@@ -15,32 +14,15 @@ const ShipmentHistory = ({
     historyLoading = false
 }) => {
     return (
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12}>
             <Paper sx={{ height: '100%' }} elevation={1}>
                 <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                    <Typography variant="h6" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <AccessTimeIcon />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '16px' }}>
                         Shipment History
                     </Typography>
                 </Box>
                 <Box sx={{
-                    p: 2,
-                    height: '600px',
-                    overflowY: 'auto',
-                    '&::-webkit-scrollbar': {
-                        width: '8px',
-                    },
-                    '&::-webkit-scrollbar-track': {
-                        background: '#f1f1f1',
-                        borderRadius: '4px',
-                    },
-                    '&::-webkit-scrollbar-thumb': {
-                        background: '#888',
-                        borderRadius: '4px',
-                        '&:hover': {
-                            background: '#555',
-                        },
-                    },
+                    p: 2
                 }}>
                     {historyLoading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
@@ -59,7 +41,7 @@ const ShipmentHistory = ({
                             <Typography variant="h6" color="text.secondary" gutterBottom>
                                 No History Available
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
                                 Tracking and event information will appear here as they become available.
                             </Typography>
                         </Box>

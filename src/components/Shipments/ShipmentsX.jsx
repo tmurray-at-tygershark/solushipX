@@ -903,7 +903,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         // Update modal navigation for proper back button handling
         modalNavigation.navigateTo({
-            title: `Shipment ${shipment.shipmentID || shipmentId}`,
+            title: `${shipment.shipmentID || shipmentId}`,
             shortTitle: shipment.shipmentID || shipmentId,
             component: 'shipment-detail',
             data: { shipmentId }
