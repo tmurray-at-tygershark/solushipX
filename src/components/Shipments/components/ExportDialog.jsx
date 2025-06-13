@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Dialog,
     DialogTitle,
@@ -9,8 +9,15 @@ import {
     Select,
     MenuItem,
     Button,
-    Typography
+    Typography,
+    Box,
+    IconButton
 } from '@mui/material';
+import {
+    PictureAsPdf as PictureAsPdfIcon,
+    FileDownload as FileDownloadIcon,
+    Close as CloseIcon
+} from '@mui/icons-material';
 
 const ExportDialog = ({
     open,
@@ -21,6 +28,10 @@ const ExportDialog = ({
     carrierData = {},
     customers = {}
 }) => {
+    // PDF viewer state
+    const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+    const [currentPdfUrl, setCurrentPdfUrl] = useState(null);
+    const [currentPdfTitle, setCurrentPdfTitle] = useState('');
 
     const handleExport = () => {
         if (!shipments || shipments.length === 0) {
@@ -31,12 +42,14 @@ const ExportDialog = ({
         try {
             if (selectedExportFormat === 'csv') {
                 exportToCSV();
+                onClose();
             } else if (selectedExportFormat === 'excel') {
                 exportToCSV(); // For now, use CSV for Excel too
+                onClose();
             } else if (selectedExportFormat === 'pdf') {
                 exportToPDF();
+                // Don't close the dialog yet - PDF viewer will open
             }
-            onClose();
         } catch (error) {
             console.error('Export error:', error);
             alert('Error exporting shipments. Please try again.');
@@ -102,8 +115,7 @@ const ExportDialog = ({
     };
 
     const exportToPDF = () => {
-        // Simple PDF export using window.print
-        const printWindow = window.open('', '_blank');
+        // Create HTML content for PDF
         const htmlContent = `
             <!DOCTYPE html>
             <html>
@@ -112,15 +124,23 @@ const ExportDialog = ({
                 <style>
                     body { font-family: Arial, sans-serif; margin: 20px; }
                     table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
                     th { background-color: #f2f2f2; font-weight: bold; }
                     tr:nth-child(even) { background-color: #f9f9f9; }
-                    h1 { color: #333; }
+                    h1 { color: #333; margin-bottom: 10px; }
+                    .header-info { margin-bottom: 20px; color: #666; }
+                    @media print {
+                        body { margin: 0; }
+                        .no-print { display: none; }
+                    }
                 </style>
             </head>
             <body>
                 <h1>Shipments Export</h1>
-                <p>Generated on: ${new Date().toLocaleDateString()}</p>
+                <div class="header-info">
+                    <p>Generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+                    <p>Total Shipments: ${shipments.length}</p>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -163,47 +183,118 @@ const ExportDialog = ({
             </html>
         `;
 
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-        }, 250);
+        // Create a blob URL for the HTML content
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+
+        // Set PDF viewer state
+        setCurrentPdfUrl(url);
+        setCurrentPdfTitle(`Shipments Export - ${new Date().toLocaleDateString()}`);
+        setPdfViewerOpen(true);
+    };
+
+    const handleClosePdfViewer = () => {
+        setPdfViewerOpen(false);
+        if (currentPdfUrl?.startsWith('blob:')) {
+            URL.revokeObjectURL(currentPdfUrl);
+        }
+        setCurrentPdfUrl(null);
+        setCurrentPdfTitle('');
+        onClose(); // Close the export dialog when PDF viewer closes
     };
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Export Shipments</DialogTitle>
-            <DialogContent>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Export {shipments.length} shipment{shipments.length !== 1 ? 's' : ''} to your selected format.
-                </Typography>
-                <FormControl fullWidth sx={{ mt: 2 }}>
-                    <InputLabel>Format</InputLabel>
-                    <Select
-                        value={selectedExportFormat}
-                        onChange={(e) => setSelectedExportFormat(e.target.value)}
-                        label="Format"
+        <>
+            <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+                <DialogTitle>Export Shipments</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Export {shipments.length} shipment{shipments.length !== 1 ? 's' : ''} to your selected format.
+                    </Typography>
+                    <FormControl fullWidth sx={{ mt: 2 }}>
+                        <InputLabel>Format</InputLabel>
+                        <Select
+                            value={selectedExportFormat}
+                            onChange={(e) => setSelectedExportFormat(e.target.value)}
+                            label="Format"
+                        >
+                            <MenuItem value="csv">CSV (Comma Separated Values)</MenuItem>
+                            <MenuItem value="excel">Excel (CSV format)</MenuItem>
+                            <MenuItem value="pdf">PDF (Preview & Print)</MenuItem>
+                        </Select>
+                    </FormControl>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={onClose}>Cancel</Button>
+                    <Button
+                        onClick={handleExport}
+                        variant="contained"
+                        disabled={!selectedExportFormat || shipments.length === 0}
                     >
-                        <MenuItem value="csv">CSV (Comma Separated Values)</MenuItem>
-                        <MenuItem value="excel">Excel (CSV format)</MenuItem>
-                        <MenuItem value="pdf">PDF (Print to PDF)</MenuItem>
-                    </Select>
-                </FormControl>
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button
-                    onClick={handleExport}
-                    variant="contained"
-                    disabled={!selectedExportFormat || shipments.length === 0}
-                >
-                    Export
-                </Button>
-            </DialogActions>
-        </Dialog>
+                        Export
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* PDF Viewer Dialog - Same as ShipmentDetailX */}
+            <Dialog
+                open={pdfViewerOpen}
+                onClose={handleClosePdfViewer}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        height: '90vh',
+                        borderRadius: 2
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: '1px solid',
+                    borderColor: 'divider'
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PictureAsPdfIcon color="error" />
+                        <Typography variant="h6">{currentPdfTitle}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            onClick={() => {
+                                if (currentPdfUrl) {
+                                    window.open(currentPdfUrl, '_blank');
+                                }
+                            }}
+                            startIcon={<FileDownloadIcon />}
+                            size="small"
+                        >
+                            Print/Download
+                        </Button>
+                        <IconButton onClick={handleClosePdfViewer}>
+                            <CloseIcon />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0, height: '100%' }}>
+                    {currentPdfUrl && (
+                        <Box sx={{ height: '100%', width: '100%' }}>
+                            <iframe
+                                src={currentPdfUrl}
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    border: 'none'
+                                }}
+                                title={currentPdfTitle}
+                            />
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
+        </>
     );
 };
 
-export default ExportDialog;
+export default ExportDialog; 

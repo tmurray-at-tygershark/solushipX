@@ -859,6 +859,7 @@ const Dashboard = () => {
                             showCloseButton={true}
                             onModalBack={modalStack.length > 0 ? handleModalBack : null}
                             deepLinkParams={shipmentsDeepLinkParams}
+                            onOpenCreateShipment={handleOpenCreateShipmentModal}
                         />
                     </LazyComponentWrapper>
                 </Box>

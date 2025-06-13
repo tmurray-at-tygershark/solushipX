@@ -95,9 +95,6 @@ export const ENHANCED_STATUSES = {
   40: { id: 40, name: 'Cancelled', category: 'CANCELLED', group: 'CANCELLED', color: '#b91c1c', description: 'Shipment cancelled' },
 
   // Additional missing statuses from user's list
-  118: { id: 118, name: 'Shipment tendered late', category: 'DELAY', group: 'EXCEPTIONS', color: '#dc2626', description: 'Late tender' },
-  120: { id: 120, name: 'Weather delay', category: 'DELAY', group: 'EXCEPTIONS', color: '#dc2626', description: 'Weather-related delay' },
-  302: { id: 302, name: 'Possible delay', category: 'DELAY', group: 'EXCEPTIONS', color: '#d97706', description: 'Possible delay' },
   303: { id: 303, name: 'Return to sender', category: 'RETURN', group: 'EXCEPTIONS', color: '#dc2626', description: 'Return to sender' },
 
   // Special Operations

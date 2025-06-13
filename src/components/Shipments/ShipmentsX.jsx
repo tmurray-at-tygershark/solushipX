@@ -28,7 +28,8 @@ import {
     Snackbar,
     Drawer,
     ListSubheader,
-    Autocomplete
+    Autocomplete,
+    Divider
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -42,12 +43,16 @@ import {
     Description as DescriptionIcon,
     QrCode as QrCodeIcon,
     FilterAlt as FilterAltIcon,
-    CalendarToday as CalendarIcon
+    CalendarToday as CalendarIcon,
+    FirstPage,
+    KeyboardArrowLeft,
+    KeyboardArrowRight,
+    LastPage
 } from '@mui/icons-material';
 import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { collection, getDocs, query, where, orderBy, doc, deleteDoc } from 'firebase/firestore';
@@ -62,6 +67,8 @@ import EnhancedStatusFilter from '../StatusChip/EnhancedStatusFilter';
 // Import modular components
 import ShipmentFilters from './components/ShipmentFilters';
 import ShipmentsTable from './components/ShipmentsTable';
+import ShipmentsTableSkeleton from './components/ShipmentsTableSkeleton';
+import ShipmentsPagination from './components/ShipmentsPagination';
 import ExportDialog from './components/ExportDialog';
 import PrintDialog from './components/PrintDialog';
 import PdfViewerDialog from './components/PdfViewerDialog';
@@ -85,16 +92,8 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
 
-// Import CreateShipment for the modal
-const CreateShipmentComponent = React.lazy(() => import('../CreateShipment'));
-
-// Transition component for modal
-const Transition = React.forwardRef(function Transition(props, ref) {
-    return <Slide direction="up" ref={ref} {...props} />;
-});
-
-const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null }) => {
-    console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams });
+const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null }) => {
+    console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment });
 
     // Auth and company context
     const { user, loading: authLoading } = useAuth();
@@ -182,9 +181,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [sliding, setSliding] = useState(false);
     const [slideDirection, setSlideDirection] = useState('forward'); // 'forward' or 'backward'
     const [mountedViews, setMountedViews] = useState(['table']);
-
-    // Add new state for Create Shipment modal
-    const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
 
     // Initialize state from URL parameters
     useEffect(() => {
@@ -379,8 +375,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     // Highlight search term helper
     const highlightSearchTerm = useCallback((text, searchTerm) => {
         if (!searchTerm || !text) return text;
+
         const regex = new RegExp(`(${searchTerm})`, 'gi');
-        return text.replace(regex, '<mark>$1</mark>');
+        const parts = text.split(regex);
+
+        return parts.map((part, index) => {
+            if (part.toLowerCase() === searchTerm.toLowerCase()) {
+                return <mark key={index} style={{ backgroundColor: '#fef08a', padding: '0 2px' }}>{part}</mark>;
+            }
+            return part;
+        });
     }, []);
 
     // Add function to check document availability
@@ -800,7 +804,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             }, 300); // Debounce for 300ms
             return () => clearTimeout(timeoutId);
         }
-    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress, navigationStack]);
+    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress]);
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -922,106 +926,36 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 return (
                     <Box sx={{
                         width: '100%',
-                        maxWidth: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
                         overflow: 'hidden',
-                        position: 'relative',
-                        '& .shipments-container': {
-                            maxWidth: 'none !important',
-                            width: '100% !important',
-                            padding: '0 !important'
-                        }
                     }}>
+                        {/* Scrollable Content Area */}
                         <Box sx={{
-                            width: '100%',
-                            maxWidth: '100%',
-                            overflow: 'hidden',
-                            '& .MuiTableContainer-root': {
-                                width: '100% !important',
-                                maxWidth: '100% !important'
-                            }
+                            flex: 1,
+                            overflow: 'auto',
+                            minHeight: 0,
+                            maxHeight: '80vh', // Ensure the table area is scrollable and not the whole modal
+                            position: 'relative'
                         }}>
-                            {/* Header Section */}
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                mb: 3,
-                                px: 2,
-                                pt: 2
-                            }}>
-
-                                <Box sx={{ display: 'flex', gap: 2 }}>
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<FilterIcon />}
-                                        onClick={() => setFiltersOpen(!filtersOpen)}
-                                        sx={{
-                                            color: '#64748b',
-                                            borderColor: '#e2e8f0',
-                                            bgcolor: filtersOpen ? '#f8fafc' : 'transparent',
-                                        }}
-                                    >
-                                        {filtersOpen ? 'Hide Filters' : 'Show Filters'}
-                                    </Button>
-                                    {selected.length > 0 && (
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={isUpdating ? <CircularProgress size={16} /> : <RefreshIcon />}
-                                            onClick={handleBatchRefreshStatus}
-                                            disabled={isUpdating}
-                                            sx={{
-                                                color: '#059669',
-                                                borderColor: '#10b981',
-                                                '&:hover': { borderColor: '#059669', bgcolor: '#f0fdf4' }
-                                            }}
-                                        >
-                                            Update Status ({selected.length})
-                                        </Button>
-                                    )}
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<ExportIcon />}
-                                        onClick={() => setIsExportDialogOpen(true)}
-                                        sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
-                                    >
-                                        Export
-                                    </Button>
-                                    {hasEnabledCarriers(companyData) ? (
-                                        <Button
-                                            variant="contained"
-                                            startIcon={<AddIcon />}
-                                            component={Link}
-                                            to="/create-shipment"
-                                            sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
-                                        >
-                                            New
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<AddIcon />}
-                                            disabled
-                                            sx={{
-                                                color: '#9ca3af',
-                                                borderColor: '#e5e7eb',
-                                                '&.Mui-disabled': {
-                                                    color: '#9ca3af',
-                                                    borderColor: '#e5e7eb'
-                                                }
-                                            }}
-                                            title="No carriers enabled for your company. Please configure carriers first."
-                                        >
-                                            Create shipment
-                                        </Button>
-                                    )}
-                                </Box>
-                            </Box>
-
                             {/* Main Content */}
                             <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none', mx: 2 }}>
                                 <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Tabs value={selectedTab} onChange={handleTabChange}>
-                                        <Tab label={`All (${stats.total})`} value="all" />
+                                    <Tabs
+                                        value={selectedTab}
+                                        onChange={handleTabChange}
+                                        sx={{
+                                            '& .MuiTab-root': {
+                                                fontSize: '11px',
+                                                minHeight: '36px',
+                                                textTransform: 'none',
+                                                fontWeight: 500,
+                                                padding: '6px 12px'
+                                            }
+                                        }}
+                                    >
+                                        <Tab label={`All (${stats.total - stats.drafts})`} value="all" />
                                         <Tab label={`Ready To Ship (${stats.awaitingShipment})`} value="Awaiting Shipment" />
                                         <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
                                         <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
@@ -1029,6 +963,30 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
                                         <Tab label={`Drafts (${stats.drafts})`} value="draft" />
                                     </Tabs>
+
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                        <Button variant="outlined" startIcon={<FilterIcon />} onClick={() => setFiltersOpen(!filtersOpen)} size="small" sx={{ fontSize: '11px', textTransform: 'none' }}>
+                                            {filtersOpen ? 'Hide' : 'Show'}
+                                        </Button>
+                                        <Button variant="outlined" startIcon={<ExportIcon />} onClick={() => setIsExportDialogOpen(true)} size="small" sx={{ fontSize: '11px', textTransform: 'none' }}>Export</Button>
+                                        {hasEnabledCarriers(companyData) && (
+                                            <Button
+                                                onClick={() => {
+                                                    if (onOpenCreateShipment) {
+                                                        onOpenCreateShipment();
+                                                    } else {
+                                                        showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
+                                                    }
+                                                }}
+                                                variant="contained"
+                                                startIcon={<AddIcon />}
+                                                size="small"
+                                                sx={{ fontSize: '11px', textTransform: 'none' }}
+                                            >
+                                                New
+                                            </Button>
+                                        )}
+                                    </Box>
                                 </Toolbar>
 
                                 {/* Search and Filter Section */}
@@ -1384,11 +1342,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             )}
                                     </Box>
                                 </Collapse>
+                            </Paper>
 
-                                {/* Shipments Table */}
+                            {/* Shipments Table */}
+                            {loading ? (
+                                <ShipmentsTableSkeleton rows={rowsPerPage === -1 ? 10 : Math.min(rowsPerPage, 10)} />
+                            ) : (
                                 <ShipmentsTable
                                     shipments={shipments}
-                                    loading={loading}
+                                    loading={false}
                                     selected={selected}
                                     onSelectAll={handleSelectAll}
                                     onSelect={handleSelect}
@@ -1401,21 +1363,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     showSnackbar={showSnackbar}
                                     onOpenTrackingDrawer={handleOpenTrackingDrawer}
                                 />
-
-                                {/* Pagination */}
-                                <TablePagination
-                                    component="div"
-                                    count={totalCount}
-                                    page={page}
-                                    onPageChange={(event, newPage) => setPage(newPage)}
-                                    rowsPerPage={rowsPerPage}
-                                    onRowsPerPageChange={(event) => {
-                                        setRowsPerPage(parseInt(event.target.value, 10));
-                                        setPage(0);
-                                    }}
-                                    rowsPerPageOptions={[10, 25, 50, 100, { label: 'All', value: -1 }]}
-                                />
-                            </Paper>
+                            )}
                         </Box>
                     </Box>
                 );
@@ -1542,7 +1490,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     return (
         <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
-            <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+            <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
                 {/* Modal Header */}
                 {isModal && (
                     <ModalHeader
@@ -1581,9 +1529,23 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                             return null;
                         }
                         return (
-                            <div key={key} style={{ width: '50%', flexShrink: 0, overflow: 'hidden' }}>
-                                <Box sx={{ width: '100%', height: '100%', overflow: 'auto' }}>
+                            <div key={key} style={{ width: '50%', flexShrink: 0, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                {/* Main Content Area (scrollable) */}
+                                <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                                     {renderView(view)}
+                                </Box>
+                                {/* Pagination Footer */}
+                                <Box sx={{ flexShrink: 0, borderTop: '1px solid #e2e8f0', bgcolor: '#fafafa', p: 1 }}>
+                                    <ShipmentsPagination
+                                        totalCount={totalCount}
+                                        page={page}
+                                        rowsPerPage={rowsPerPage}
+                                        onPageChange={(event, newPage) => setPage(newPage)}
+                                        onRowsPerPageChange={(event) => {
+                                            setRowsPerPage(parseInt(event.target.value, 10));
+                                            setPage(0);
+                                        }}
+                                    />
                                 </Box>
                             </div>
                         );
@@ -1841,49 +1803,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     </Suspense>
                 </Box>
             </Drawer>
-
-            {/* Create Shipment Fullscreen Modal */}
-            <Dialog
-                open={isCreateShipmentModalOpen}
-                onClose={() => setIsCreateShipmentModalOpen(false)}
-                TransitionComponent={Transition}
-                fullWidth
-                maxWidth="xl"
-                sx={{
-                    '& .MuiDialog-container': {
-                        alignItems: 'flex-end',
-                    },
-                }}
-                PaperProps={{
-                    sx: {
-                        height: { xs: '100%', md: '95vh' },
-                        margin: 0,
-                        bgcolor: 'white',
-                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
-                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
-                        overflow: 'hidden',
-                    }
-                }}
-                BackdropProps={{
-                    sx: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
-                    }
-                }}
-            >
-                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
-                    <Suspense fallback={
-                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <CircularProgress />
-                        </Box>
-                    }>
-                        <CreateShipmentComponent
-                            isModal={true}
-                            onClose={() => setIsCreateShipmentModalOpen(false)}
-                        />
-                    </Suspense>
-                </Box>
-            </Dialog>
-        </div >
+        </div>
     );
 };
 

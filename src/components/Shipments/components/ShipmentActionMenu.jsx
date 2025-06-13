@@ -90,7 +90,7 @@ const ShipmentActionMenu = ({
                     <ListItemIcon>
                         <CircularProgress size={14} />
                     </ListItemIcon>
-                    Checking documents...
+                    Fetching
                 </MenuItem>
             )}
 

@@ -127,7 +127,7 @@ const StatusChip = React.memo(({
                 bgcolor: bgcolor,
                 borderRadius: '16px',
                 fontWeight: 500,
-                fontSize: size === 'small' ? '0.75rem' : '0.875rem',
+                fontSize: size === 'small' ? '11px' : '0.875rem',
                 height: size === 'small' ? '24px' : '32px',
                 transition: 'all 0.2s ease-in-out',
                 cursor: 'default',

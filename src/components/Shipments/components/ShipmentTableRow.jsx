@@ -97,21 +97,15 @@ const ShipmentTableRow = ({
     const trackingNumber = getTrackingNumber();
     const carrierDisplay = getCarrierDisplay();
 
-    // Default column config if not provided
-    const defaultColumnConfig = {
-        checkbox: { width: 48 },
-        id: { width: 160 },
-        date: { width: 80 },
-        customer: { width: 160 },
-        route: { width: 150 },
-        carrier: { width: 220 },
-        type: { width: 70 },
-        status: { width: 90 },
-        actions: { width: 60 }
+    // Helper function to get column width from config
+    const getColumnWidth = (columnKey) => {
+        const config = columnConfig[columnKey];
+        return config ? {
+            width: config.width,
+            minWidth: config.width,
+            maxWidth: config.width
+        } : {};
     };
-
-    const config = { ...defaultColumnConfig, ...columnConfig };
-    const columns = { checkbox: true, id: true, date: true, customer: true, route: true, carrier: true, type: true, status: true, actions: true, ...visibleColumns };
 
     return (
         <TableRow
@@ -119,13 +113,11 @@ const ShipmentTableRow = ({
             selected={isSelected}
         >
             {/* Checkbox */}
-            {columns.checkbox && (
+            {visibleColumns.checkbox !== false && (
                 <TableCell padding="checkbox" sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.checkbox.width,
-                    minWidth: config.checkbox.width,
-                    maxWidth: config.checkbox.width,
+                    ...getColumnWidth('checkbox'),
                     p: '8px 4px'
                 }}>
                     <Checkbox
@@ -138,100 +130,61 @@ const ShipmentTableRow = ({
             )}
 
             {/* Shipment ID */}
-            {columns.id && (
+            {visibleColumns.id !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
                     fontSize: '11px',
-                    width: 160,
-                    minWidth: 160,
-                    maxWidth: 160,
+                    ...getColumnWidth('id'),
                     padding: '8px 12px',
                     wordBreak: 'break-word',
                     lineHeight: 1.3
                 }}>
-                    {shipment.status === 'draft' ? (
-                        <Link
-                            to={`/create-shipment/shipment-info/${shipment.id}`}
-                            className="shipment-link"
-                            style={{ 
-                                fontSize: '11px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                textDecoration: 'none'
-                            }}
-                        >
-                            <span>{highlightSearchTerm(
-                                shipment.shipmentID || shipment.id,
-                                searchFields.shipmentId
-                            )}</span>
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
-                                    showSnackbar('Shipment ID copied!', 'success');
-                                }}
-                                sx={{ 
-                                    padding: '1px',
-                                    minWidth: 'auto',
-                                    width: '14px',
-                                    height: '14px'
-                                }}
-                                title="Copy shipment ID"
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {shipment.status === 'draft' ? (
+                            <Link
+                                to={`/create-shipment/shipment-info/${shipment.id}`}
+                                className="shipment-link"
+                                style={{ fontSize: '11px' }}
                             >
-                                <ContentCopyIcon sx={{ fontSize: '10px', color: '#64748b' }} />
-                            </IconButton>
-                        </Link>
-                    ) : (
-                        <span
-                            onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
-                            className="shipment-link"
-                            style={{ 
-                                cursor: 'pointer', 
-                                fontSize: '11px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                            }}
-                        >
-                            <span>{highlightSearchTerm(
-                                shipment.shipmentID || shipment.id,
-                                searchFields.shipmentId
-                            )}</span>
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
-                                    showSnackbar('Shipment ID copied!', 'success');
-                                }}
-                                sx={{ 
-                                    padding: '1px',
-                                    minWidth: 'auto',
-                                    width: '14px',
-                                    height: '14px'
-                                }}
-                                title="Copy shipment ID"
+                                <span>{highlightSearchTerm(
+                                    shipment.shipmentID || shipment.id,
+                                    searchFields.shipmentId
+                                )}</span>
+                            </Link>
+                        ) : (
+                            <span
+                                onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
+                                className="shipment-link"
+                                style={{ cursor: 'pointer', fontSize: '11px' }}
                             >
-                                <ContentCopyIcon sx={{ fontSize: '10px', color: '#64748b' }} />
-                            </IconButton>
-                        </span>
-                    )}
+                                <span>{highlightSearchTerm(
+                                    shipment.shipmentID || shipment.id,
+                                    searchFields.shipmentId
+                                )}</span>
+                            </span>
+                        )}
+                        <IconButton
+                            size="small"
+                            onClick={() => {
+                                navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
+                                showSnackbar('Shipment ID copied!', 'success');
+                            }}
+                            sx={{ padding: '2px' }}
+                            title="Copy shipment ID"
+                        >
+                            <ContentCopyIcon sx={{ fontSize: '0.75rem', color: '#64748b' }} />
+                        </IconButton>
+                    </Box>
                 </TableCell>
             )}
 
             {/* Date */}
-            {columns.date && (
+            {visibleColumns.date !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.date.width,
-                    minWidth: config.date.width,
-                    maxWidth: config.date.width,
+                    ...getColumnWidth('date'),
                     padding: '8px 12px'
                 }}>
                     {(() => {
@@ -258,13 +211,11 @@ const ShipmentTableRow = ({
             )}
 
             {/* Customer */}
-            {columns.customer && (
+            {visibleColumns.customer !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.customer.width,
-                    minWidth: config.customer.width,
-                    maxWidth: config.customer.width,
+                    ...getColumnWidth('customer'),
                     padding: '8px 12px',
                     wordBreak: 'break-word',
                     lineHeight: 1.3
@@ -276,13 +227,11 @@ const ShipmentTableRow = ({
             )}
 
             {/* Route - Vertical Layout */}
-            {columns.route && (
+            {visibleColumns.route !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.route.width,
-                    minWidth: config.route.width,
-                    maxWidth: config.route.width,
+                    ...getColumnWidth('route'),
                     padding: '8px 12px'
                 }}>
                     {(() => {
@@ -327,13 +276,11 @@ const ShipmentTableRow = ({
             )}
 
             {/* Carrier */}
-            {columns.carrier && (
+            {visibleColumns.carrier !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.carrier.width,
-                    minWidth: config.carrier.width,
-                    maxWidth: config.carrier.width,
+                    ...getColumnWidth('carrier'),
                     padding: '8px 12px'
                 }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
@@ -408,13 +355,11 @@ const ShipmentTableRow = ({
             )}
 
             {/* Type - Narrower column */}
-            {columns.type && (
+            {visibleColumns.type !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.type.width,
-                    minWidth: config.type.width,
-                    maxWidth: config.type.width,
+                    ...getColumnWidth('type'),
                     padding: '8px 12px',
                     wordBreak: 'break-word',
                     lineHeight: 1.3,
@@ -425,13 +370,11 @@ const ShipmentTableRow = ({
             )}
 
             {/* Status - Narrower column */}
-            {columns.status && (
+            {visibleColumns.status !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'left',
-                    width: config.status.width,
-                    minWidth: config.status.width,
-                    maxWidth: config.status.width,
+                    ...getColumnWidth('status'),
                     padding: '8px 12px'
                 }}>
                     <StatusChip status={shipment.status} size="small" />
@@ -439,13 +382,11 @@ const ShipmentTableRow = ({
             )}
 
             {/* Actions */}
-            {columns.actions && (
+            {visibleColumns.actions !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
                     textAlign: 'right',
-                    width: config.actions.width,
-                    minWidth: config.actions.width,
-                    maxWidth: config.actions.width,
+                    ...getColumnWidth('actions'),
                     padding: '8px 12px'
                 }} align="right">
                     <IconButton
