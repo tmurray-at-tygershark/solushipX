@@ -101,7 +101,7 @@ const ShipmentTableRow = ({
     const defaultColumnConfig = {
         checkbox: { width: 48 },
         id: { width: 160 },
-        date: { width: 80 },
+        date: { width: 100 },
         customer: { width: 160 },
         route: { width: 150 },
         carrier: { width: 220 },
@@ -150,77 +150,42 @@ const ShipmentTableRow = ({
                     wordBreak: 'break-word',
                     lineHeight: 1.3
                 }}>
-                    {shipment.status === 'draft' ? (
-                        <Link
-                            to={`/create-shipment/shipment-info/${shipment.id}`}
-                            className="shipment-link"
-                            style={{ 
-                                fontSize: '11px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                textDecoration: 'none'
-                            }}
-                        >
-                            <span>{highlightSearchTerm(
-                                shipment.shipmentID || shipment.id,
-                                searchFields.shipmentId
-                            )}</span>
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
-                                    showSnackbar('Shipment ID copied!', 'success');
-                                }}
-                                sx={{ 
-                                    padding: '1px',
-                                    minWidth: 'auto',
-                                    width: '14px',
-                                    height: '14px'
-                                }}
-                                title="Copy shipment ID"
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {shipment.status === 'draft' ? (
+                            <Link
+                                to={`/create-shipment/shipment-info/${shipment.id}`}
+                                className="shipment-link"
+                                style={{ fontSize: '11px' }}
                             >
-                                <ContentCopyIcon sx={{ fontSize: '10px', color: '#64748b' }} />
-                            </IconButton>
-                        </Link>
-                    ) : (
-                        <span
-                            onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
-                            className="shipment-link"
-                            style={{ 
-                                cursor: 'pointer', 
-                                fontSize: '11px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                            }}
-                        >
-                            <span>{highlightSearchTerm(
-                                shipment.shipmentID || shipment.id,
-                                searchFields.shipmentId
-                            )}</span>
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
-                                    showSnackbar('Shipment ID copied!', 'success');
-                                }}
-                                sx={{ 
-                                    padding: '1px',
-                                    minWidth: 'auto',
-                                    width: '14px',
-                                    height: '14px'
-                                }}
-                                title="Copy shipment ID"
+                                <span>{highlightSearchTerm(
+                                    shipment.shipmentID || shipment.id,
+                                    searchFields.shipmentId
+                                )}</span>
+                            </Link>
+                        ) : (
+                            <span
+                                onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
+                                className="shipment-link"
+                                style={{ cursor: 'pointer', fontSize: '11px' }}
                             >
-                                <ContentCopyIcon sx={{ fontSize: '10px', color: '#64748b' }} />
-                            </IconButton>
-                        </span>
-                    )}
+                                <span>{highlightSearchTerm(
+                                    shipment.shipmentID || shipment.id,
+                                    searchFields.shipmentId
+                                )}</span>
+                            </span>
+                        )}
+                        <IconButton
+                            size="small"
+                            onClick={() => {
+                                navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
+                                showSnackbar('Shipment ID copied!', 'success');
+                            }}
+                            sx={{ padding: '2px' }}
+                            title="Copy shipment ID"
+                        >
+                            <ContentCopyIcon sx={{ fontSize: '0.75rem', color: '#64748b' }} />
+                        </IconButton>
+                    </Box>
                 </TableCell>
             )}
 

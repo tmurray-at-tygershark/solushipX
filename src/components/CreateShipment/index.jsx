@@ -58,6 +58,9 @@ import {
 } from '@mui/icons-material';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 
+// Import common components
+import ModalHeader from '../common/ModalHeader';
+
 // API key should be loaded from environment variables with a fallback
 // Ensure the API key is properly formatted and has no whitespace
 const RAW_API_KEY = process.env.REACT_APP_SOLUSHIPX_API_KEY || 'e61c3e150511db70aa0f2d2476ab8511';
@@ -116,7 +119,7 @@ const emptyAddress = () => ({
 });
 
 // Component that uses the context
-const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null }) => {
+const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false }) => {
     const { step: stepSlug, draftId: urlDraftId } = useParams();
     const navigate = useNavigate();
     const { currentUser, loading: authLoading } = useAuth();
@@ -1062,38 +1065,13 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
 
     return (
         <div className="container-fluid" style={{ position: 'relative' }}>
-            {/* Modal Header with Back Arrow */}
-            {isModal && onClose && (
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    mb: 3,
-                    pt: 2
-                }}>
-                    <Button
-                        onClick={onClose}
-                        sx={{
-                            minWidth: 0,
-                            p: 0.5,
-                            mr: 1,
-                            color: '#6e6e73',
-                            background: 'none',
-                            borderRadius: '50%',
-                            '&:hover': {
-                                background: '#f2f2f7',
-                                color: '#111',
-                            },
-                            boxShadow: 'none',
-                        }}
-                        aria-label="Close Create Shipment"
-                    >
-                        <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
-                    </Button>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                        Create New Shipment
-                    </Typography>
-                </Box>
+            {/* Modal Header */}
+            {isModal && (
+                <ModalHeader
+                    title="Create New Shipment"
+                    onClose={showCloseButton ? onClose : null}
+                    showCloseButton={showCloseButton}
+                />
             )}
 
             <div className="row">
@@ -1147,10 +1125,10 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
     );
 };
 
-const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null }) => {
+const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false }) => {
     return (
         <ShipmentFormProvider>
-            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} />
+            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} showCloseButton={showCloseButton} />
         </ShipmentFormProvider>
     );
 };

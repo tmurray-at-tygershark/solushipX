@@ -42,7 +42,7 @@ const ShipmentsTable = ({
         }}>
             <Table sx={{
                 width: '100%',
-                minWidth: 1130,
+                minWidth: 1150,
                 tableLayout: 'fixed',
                 '& .MuiTableCell-root': {
                     fontSize: '12px',
@@ -84,7 +84,7 @@ const ShipmentsTable = ({
                             ID
                         </TableCell>
                         <TableCell sx={{
-                            width: 80,
+                            width: 100,
                             minWidth: 100,
                             maxWidth: 100,
                             fontWeight: 600,

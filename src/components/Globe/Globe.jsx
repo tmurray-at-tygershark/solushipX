@@ -1434,7 +1434,7 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                     <Typography>Loading Globe...</Typography>
                 </Box>
             )}
-            {showOverlays && !loading && (
+            {showOverlays && (
                 <Box sx={{
                     position: 'absolute',
                     top: { xs: '64px', sm: '72px' }, // Push down to avoid new header

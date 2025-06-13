@@ -2896,28 +2896,7 @@ const ShipmentDetail = ({ shipmentId: propShipmentId }) => {
                                     </Box>
                                 </Box>
 
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <HomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
-                                    <Typography
-                                        component={Link}
-                                        to="/dashboard"
-                                        sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
-                                    >
-                                        Dashboard
-                                    </Typography>
-                                    <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                                    <Typography
-                                        component={Link}
-                                        to="/shipments"
-                                        sx={{ textDecoration: 'none', color: 'inherit', fontWeight: 500, mr: 1 }}
-                                    >
-                                        Shipments
-                                    </Typography>
-                                    <NavigateNextIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                                    <Typography color="text.primary" sx={{ fontWeight: 600 }}>
-                                        {shipment?.shipmentID || 'Shipment'}
-                                    </Typography>
-                                </Box>
+
                             </Box>
                             {/* Add id to the main content container */}
                             <Box id="shipment-detail-content">

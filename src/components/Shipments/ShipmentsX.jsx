@@ -1,35 +1,63 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useContext, useRef, Suspense, lazy } from 'react';
 import {
     Box,
     Paper,
     Typography,
     Button,
-    CircularProgress,
-    Snackbar,
     Alert,
+    CircularProgress,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
     Tabs,
     Tab,
     Toolbar,
     TablePagination,
-    Drawer,
     IconButton,
-    Dialog,
-    Slide
+    Slide,
+    Grid,
+    TextField,
+    InputAdornment,
+    Collapse,
+    Chip,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Snackbar,
+    Drawer,
+    ListSubheader,
+    Autocomplete
 } from '@mui/material';
 import {
     Add as AddIcon,
     FilterList as FilterIcon,
     GetApp as ExportIcon,
     Refresh as RefreshIcon,
-    ArrowBackIosNew as ArrowBackIosNewIcon
+    ArrowBackIosNew as ArrowBackIosNewIcon,
+    Close as CloseIcon,
+    Search as SearchIcon,
+    Clear as ClearIcon,
+    Description as DescriptionIcon,
+    QrCode as QrCodeIcon,
+    FilterAlt as FilterAltIcon,
+    CalendarToday as CalendarIcon
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { collection, getDocs, query, where, orderBy, doc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
 import './Shipments.css';
+
+// Import common components
+import ModalHeader from '../common/ModalHeader';
+import EnhancedStatusFilter from '../StatusChip/EnhancedStatusFilter';
 
 // Import modular components
 import ShipmentFilters from './components/ShipmentFilters';
@@ -52,6 +80,7 @@ import { carrierOptions } from './utils/carrierOptions';
 
 // Import hooks
 import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
+import useModalNavigation from '../../hooks/useModalNavigation';
 
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
@@ -64,13 +93,25 @@ const Transition = React.forwardRef(function Transition(props, ref) {
     return <Slide direction="up" ref={ref} {...props} />;
 });
 
-const ShipmentsX = ({ isModal = false, onClose = null }) => {
+const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null }) => {
+    console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams });
 
     // Auth and company context
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading, companyData } = useCompany();
 
-    // Main data states
+    // URL parameter handling for deep linking
+    const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
+
+    // Modal navigation system
+    const modalNavigation = useModalNavigation({
+        title: 'Shipments',
+        shortTitle: 'Shipments',
+        component: 'shipments'
+    });
+
+    // Main data states (moved before useEffects that reference them)
     const [shipments, setShipments] = useState([]);
     const [allShipments, setAllShipments] = useState([]);
     const [customers, setCustomers] = useState({});
@@ -89,7 +130,8 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
         status: 'all',
         carrier: 'all',
         dateRange: [null, null],
-        shipmentType: 'all'
+        shipmentType: 'all',
+        enhancedStatus: ''
     });
     const [searchFields, setSearchFields] = useState({
         shipmentId: '',
@@ -128,47 +170,170 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
     const [currentTrackingNumber, setCurrentTrackingNumber] = useState('');
 
-    // Add sliding view state for shipment detail
-    const [currentView, setCurrentView] = useState('table'); // 'table' or 'detail'
-    const [selectedShipmentId, setSelectedShipmentId] = useState(null);
-    const [isSliding, setIsSliding] = useState(false);
+    // Add status update states
+    const [isUpdating, setIsUpdating] = useState(false);
+    const [statusUpdateProgress, setStatusUpdateProgress] = useState({});
+    const [statusUpdateResults, setStatusUpdateResults] = useState([]);
 
-    // Add CreateShipment modal state
+    // Add new states for modular sliding navigation
+    const [navigationStack, setNavigationStack] = useState([
+        { key: 'table', component: 'table', props: {} }
+    ]);
+    const [sliding, setSliding] = useState(false);
+    const [slideDirection, setSlideDirection] = useState('forward'); // 'forward' or 'backward'
+    const [mountedViews, setMountedViews] = useState(['table']);
+
+    // Add new state for Create Shipment modal
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
+
+    // Initialize state from URL parameters
+    useEffect(() => {
+        const urlCustomerId = searchParams.get('customerId');
+        const urlShipmentId = searchParams.get('shipmentId');
+        const urlTrackingNumber = searchParams.get('trackingNumber');
+        const urlStatus = searchParams.get('status');
+        const urlCarrier = searchParams.get('carrier');
+        const urlTab = searchParams.get('tab');
+
+        // Handle deep link parameters from modal navigation
+        if (deepLinkParams) {
+            console.log('Applying deep link parameters:', deepLinkParams);
+            if (deepLinkParams.customerId) {
+                setSelectedCustomer(deepLinkParams.customerId);
+                setFiltersOpen(true); // Open filters when deep linking
+            }
+            if (deepLinkParams.shipmentId) {
+                setSearchFields(prev => ({ ...prev, shipmentId: deepLinkParams.shipmentId }));
+                setFiltersOpen(true);
+            }
+            if (deepLinkParams.trackingNumber) {
+                setSearchFields(prev => ({ ...prev, trackingNumber: deepLinkParams.trackingNumber }));
+                setFiltersOpen(true);
+            }
+            if (deepLinkParams.status && deepLinkParams.status !== 'all') {
+                setFilters(prev => ({ ...prev, status: deepLinkParams.status }));
+                setFiltersOpen(true);
+            }
+            if (deepLinkParams.carrier && deepLinkParams.carrier !== 'all') {
+                setFilters(prev => ({ ...prev, carrier: deepLinkParams.carrier }));
+                setFiltersOpen(true);
+            }
+            if (deepLinkParams.tab) {
+                setSelectedTab(deepLinkParams.tab);
+            }
+        } else {
+            // Set filters from URL parameters (existing functionality)
+            if (urlCustomerId) {
+                setSelectedCustomer(urlCustomerId);
+                setFiltersOpen(true); // Open filters when URL has parameters
+                // Note: customerName will be resolved after customers are loaded
+            }
+            if (urlShipmentId) {
+                setSearchFields(prev => ({ ...prev, shipmentId: urlShipmentId }));
+                setFiltersOpen(true);
+            }
+            if (urlTrackingNumber) {
+                setSearchFields(prev => ({ ...prev, trackingNumber: urlTrackingNumber }));
+                setFiltersOpen(true);
+            }
+            if (urlStatus && urlStatus !== 'all') {
+                setFilters(prev => ({ ...prev, status: urlStatus }));
+                setFiltersOpen(true);
+            }
+            if (urlCarrier && urlCarrier !== 'all') {
+                setFilters(prev => ({ ...prev, carrier: urlCarrier }));
+                setFiltersOpen(true);
+            }
+            if (urlTab) {
+                setSelectedTab(urlTab);
+            }
+        }
+    }, [searchParams, deepLinkParams]);
+
+    // Resolve customer name from customer ID after customers are loaded
+    useEffect(() => {
+        // Handle URL parameters
+        const urlCustomerId = searchParams.get('customerId');
+        if (urlCustomerId && Object.keys(customers).length > 0) {
+            const customerName = customers[urlCustomerId];
+            if (customerName) {
+                setSearchFields(prev => ({ ...prev, customerName: customerName }));
+                console.log('Resolved customer ID to name:', { urlCustomerId, customerName });
+            } else {
+                console.log('Could not resolve customer ID:', { urlCustomerId, availableCustomers: Object.keys(customers) });
+                // If we can't find the customer name, keep the ID in selectedCustomer for direct matching
+                // This ensures we can still filter by customer ID even if the name mapping fails
+            }
+        }
+
+        // Handle deep link parameters
+        if (deepLinkParams && deepLinkParams.customerId && Object.keys(customers).length > 0) {
+            const customerName = customers[deepLinkParams.customerId];
+            if (customerName) {
+                setSearchFields(prev => ({ ...prev, customerName: customerName }));
+                console.log('Resolved deep link customer ID to name:', { customerId: deepLinkParams.customerId, customerName });
+            } else {
+                console.log('Could not resolve deep link customer ID:', { customerId: deepLinkParams.customerId, availableCustomers: Object.keys(customers) });
+            }
+        }
+    }, [customers, searchParams, deepLinkParams]);
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
-        setSnackbar({ open: true, message, severity });
+        setSnackbar({
+            open: true,
+            message,
+            severity
+        });
     }, []);
 
-    // Calculate stats
-    const stats = useMemo(() => {
-        const groupCounts = {
-            PRE_SHIPMENT: 0,
-            BOOKING: 0,
-            TRANSIT: 0,
-            DELIVERY: 0,
-            COMPLETED: 0,
-            CANCELLED: 0,
-            DRAFTS: 0
-        };
+    // Function to update URL parameters when filters change
+    const updateURLParams = useCallback((newParams) => {
+        const currentParams = new URLSearchParams(searchParams);
 
-        allShipments.forEach(shipment => {
-            const group = getShipmentStatusGroup(shipment);
-            if (group === 'DRAFTS') {
-                groupCounts.DRAFTS++;
+        // Update or remove parameters
+        Object.entries(newParams).forEach(([key, value]) => {
+            if (value && value !== 'all' && value !== '') {
+                currentParams.set(key, value);
             } else {
-                groupCounts[group] = (groupCounts[group] || 0) + 1;
+                currentParams.delete(key);
             }
         });
 
+        // Update URL without causing navigation
+        setSearchParams(currentParams, { replace: true });
+    }, [searchParams, setSearchParams]);
+
+    // Calculate stats
+    const stats = useMemo(() => {
+        const total = allShipments.length;
+        const awaitingShipment = allShipments.filter(s =>
+            ['booked', 'scheduled', 'pending'].includes(s.status?.toLowerCase())
+        ).length;
+        const inTransit = allShipments.filter(s =>
+            s.status?.toLowerCase() === 'in_transit'
+        ).length;
+        const delivered = allShipments.filter(s =>
+            s.status?.toLowerCase() === 'delivered'
+        ).length;
+        const delayed = allShipments.filter(s =>
+            ['delayed'].includes(s.status?.toLowerCase())
+        ).length;
+        const cancelled = allShipments.filter(s =>
+            ['cancelled', 'void'].includes(s.status?.toLowerCase())
+        ).length;
+        const drafts = allShipments.filter(s =>
+            s.status?.toLowerCase() === 'draft'
+        ).length;
+
         return {
-            total: allShipments.length - groupCounts.DRAFTS,
-            awaitingShipment: groupCounts.PRE_SHIPMENT + groupCounts.BOOKING,
-            inTransit: groupCounts.TRANSIT + groupCounts.DELIVERY,
-            delivered: groupCounts.COMPLETED,
-            cancelled: groupCounts.CANCELLED,
-            drafts: groupCounts.DRAFTS
+            total,
+            awaitingShipment,
+            inTransit,
+            delivered,
+            delayed,
+            cancelled,
+            drafts
         };
     }, [allShipments]);
 
@@ -176,6 +341,9 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     const handleTabChange = (event, newValue) => {
         setSelectedTab(newValue);
         setPage(0); // Reset to first page when tab changes
+
+        // Update URL parameter for tab
+        updateURLParams({ tab: newValue });
     };
 
     // Selection handlers
@@ -211,21 +379,8 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     // Highlight search term helper
     const highlightSearchTerm = useCallback((text, searchTerm) => {
         if (!searchTerm || !text) return text;
-
-        const parts = text.split(new RegExp(`(${searchTerm})`, 'gi'));
-        return (
-            <span>
-                {parts.map((part, i) =>
-                    part.toLowerCase() === searchTerm.toLowerCase() ? (
-                        <span key={i} style={{ backgroundColor: '#fff8c5' }}>
-                            {part}
-                        </span>
-                    ) : (
-                        part
-                    )
-                )}
-            </span>
-        );
+        const regex = new RegExp(`(${searchTerm})`, 'gi');
+        return text.replace(regex, '<mark>$1</mark>');
     }, []);
 
     // Add function to check document availability
@@ -452,6 +607,12 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                     const group = getShipmentStatusGroup(s);
                     return (group === 'CANCELLED' || s.status === 'void') && group !== 'DRAFTS';
                 });
+            } else if (selectedTab === 'Delayed') {
+                // Include only delayed shipments, exclude drafts
+                shipmentsData = shipmentsData.filter(s => {
+                    const status = s.status?.toLowerCase();
+                    return status === 'delayed' && status !== 'draft';
+                });
             }
 
             // Apply search filters
@@ -505,14 +666,39 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
             // Customer search
             if (selectedCustomer || searchFields.customerName) {
                 const searchTerm = (selectedCustomer || searchFields.customerName).toLowerCase();
+                console.log('Filtering by customer:', { selectedCustomer, searchTerm, availableCustomers: Object.keys(customers) });
+
                 filteredData = filteredData.filter(shipment => {
-                    const customerName = (
-                        customers[shipment.shipTo?.customerID] ||
-                        shipment.shipTo?.company ||
-                        ''
-                    ).toLowerCase();
-                    return customerName.includes(searchTerm);
+                    // Check multiple possible customer identification methods
+                    const shipToCustomerId = shipment.shipTo?.customerID;
+                    const shipToCompany = shipment.shipTo?.company;
+                    const customerNameFromMap = customers[shipToCustomerId];
+
+                    // Debug logging for first few shipments
+                    if (filteredData.indexOf(shipment) < 3) {
+                        console.log('Checking shipment:', {
+                            shipmentId: shipment.id,
+                            shipToCustomerId,
+                            shipToCompany,
+                            customerNameFromMap,
+                            searchTerm
+                        });
+                    }
+
+                    // Try multiple matching strategies
+                    const matches = [
+                        // Direct customer ID match
+                        shipToCustomerId && shipToCustomerId.toLowerCase().includes(searchTerm),
+                        // Customer name from customers map
+                        customerNameFromMap && customerNameFromMap.toLowerCase().includes(searchTerm),
+                        // Direct company name match
+                        shipToCompany && shipToCompany.toLowerCase().includes(searchTerm)
+                    ].some(Boolean);
+
+                    return matches;
                 });
+
+                console.log('Filtered data after customer filter:', filteredData.length, 'shipments');
             }
 
             // Origin/Destination search
@@ -604,7 +790,7 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     // Reload when filters change
     useEffect(() => {
         // Don't reload shipments when in detail view to prevent race conditions
-        if (currentView === 'detail') {
+        if (navigationStack.length > 1 && navigationStack[navigationStack.length - 1].component === 'shipment-detail') {
             return;
         }
 
@@ -614,7 +800,7 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
             }, 300); // Debounce for 300ms
             return () => clearTimeout(timeoutId);
         }
-    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress, currentView]);
+    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress, navigationStack]);
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -622,54 +808,705 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
         setIsTrackingDrawerOpen(true);
     };
 
-    // Add handlers for sliding between views
+    // Helper to get the current and previous views
+    const getCurrentAndPrevViews = () => {
+        const len = navigationStack.length;
+        return {
+            current: navigationStack[len - 1],
+            prev: navigationStack[len - 2] || null
+        };
+    };
+
+    // Generic navigation push
+    const pushView = (view) => {
+        console.log('➡️ pushView called with:', view.key);
+
+        setSlideDirection('forward');
+        setSliding(true);
+
+        // Add the new view to mounted views immediately
+        setMountedViews((prev) => {
+            const newMounted = Array.from(new Set([...prev, view.key]));
+            console.log('🏠 Updated mounted views:', newMounted);
+            return newMounted;
+        });
+
+        console.log('🎬 Starting forward slide animation');
+
+        // Update navigation stack after a brief delay to allow state to settle
+        setTimeout(() => {
+            setNavigationStack((prev) => {
+                const newStack = [...prev, view];
+                console.log('📚 Updated navigation stack:', newStack.map(v => v.key));
+                return newStack;
+            });
+
+            // End sliding animation
+            setTimeout(() => {
+                setSliding(false);
+                console.log('✅ pushView complete');
+            }, 300); // Match CSS transition duration
+        }, 10);
+    };
+
+    // Generic navigation pop
+    const popView = () => {
+        console.log('🔙 popView called, current stack:', navigationStack.length);
+
+        if (navigationStack.length <= 1) {
+            console.log('⚠️ Cannot pop - only one view in stack');
+            return;
+        }
+
+        // Set sliding state and direction
+        setSlideDirection('backward');
+        setSliding(true);
+
+        console.log('🎬 Starting backward slide animation');
+
+        // After animation completes, update the navigation stack and mounted views
+        setTimeout(() => {
+            console.log('🔄 Animation complete, updating navigation stack');
+
+            setNavigationStack((prevStack) => {
+                const newStack = prevStack.slice(0, -1);
+                console.log('📚 New navigation stack:', newStack.map(v => v.key));
+                return newStack;
+            });
+
+            setMountedViews((prevMounted) => {
+                const newMounted = prevMounted.slice(0, -1);
+                console.log('🏠 New mounted views:', newMounted);
+                return newMounted;
+            });
+
+            setSliding(false);
+            console.log('✅ popView complete');
+        }, 300); // Match CSS transition duration
+    };
+
+    // Add handler for viewing shipment detail
     const handleViewShipmentDetail = (shipmentId) => {
-        setSelectedShipmentId(shipmentId);
-        setIsSliding(true);
+        // Find the shipment to get its details for the title
+        const shipment = shipments.find(s => s.id === shipmentId) || { shipmentID: shipmentId };
 
-        // Small delay to allow state to update before animation
-        setTimeout(() => {
-            setCurrentView('detail');
-            setTimeout(() => {
-                setIsSliding(false);
-            }, 300); // Match CSS transition duration
-        }, 50);
+        // Create the shipment detail view and push it to navigation stack
+        pushView({
+            key: `shipment-detail-${shipmentId}`,
+            component: 'shipment-detail',
+            props: { shipmentId }
+        });
+
+        // Update modal navigation for proper back button handling
+        modalNavigation.navigateTo({
+            title: `Shipment ${shipment.shipmentID || shipmentId}`,
+            shortTitle: shipment.shipmentID || shipmentId,
+            component: 'shipment-detail',
+            data: { shipmentId }
+        });
     };
 
-    const handleBackToTable = () => {
-        setIsSliding(true);
+    // Render view based on component type
+    const renderView = (view) => {
+        console.log('🎨 renderView called with:', view);
 
-        setTimeout(() => {
-            setCurrentView('table');
-            setTimeout(() => {
-                setIsSliding(false);
-                setSelectedShipmentId(null);
-            }, 300); // Match CSS transition duration
-        }, 50);
+        // Safety check for undefined view
+        if (!view || !view.component) {
+            console.error('❌ renderView called with invalid view:', view);
+            return <div>Error: Invalid view</div>;
+        }
+
+        switch (view.component) {
+            case 'table':
+                console.log('📊 Rendering table view');
+                return (
+                    <Box sx={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        '& .shipments-container': {
+                            maxWidth: 'none !important',
+                            width: '100% !important',
+                            padding: '0 !important'
+                        }
+                    }}>
+                        <Box sx={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            '& .MuiTableContainer-root': {
+                                width: '100% !important',
+                                maxWidth: '100% !important'
+                            }
+                        }}>
+                            {/* Header Section */}
+                            <Box sx={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                mb: 3,
+                                px: 2,
+                                pt: 2
+                            }}>
+
+                                <Box sx={{ display: 'flex', gap: 2 }}>
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<FilterIcon />}
+                                        onClick={() => setFiltersOpen(!filtersOpen)}
+                                        sx={{
+                                            color: '#64748b',
+                                            borderColor: '#e2e8f0',
+                                            bgcolor: filtersOpen ? '#f8fafc' : 'transparent',
+                                        }}
+                                    >
+                                        {filtersOpen ? 'Hide Filters' : 'Show Filters'}
+                                    </Button>
+                                    {selected.length > 0 && (
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={isUpdating ? <CircularProgress size={16} /> : <RefreshIcon />}
+                                            onClick={handleBatchRefreshStatus}
+                                            disabled={isUpdating}
+                                            sx={{
+                                                color: '#059669',
+                                                borderColor: '#10b981',
+                                                '&:hover': { borderColor: '#059669', bgcolor: '#f0fdf4' }
+                                            }}
+                                        >
+                                            Update Status ({selected.length})
+                                        </Button>
+                                    )}
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<ExportIcon />}
+                                        onClick={() => setIsExportDialogOpen(true)}
+                                        sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
+                                    >
+                                        Export
+                                    </Button>
+                                    {hasEnabledCarriers(companyData) ? (
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<AddIcon />}
+                                            component={Link}
+                                            to="/create-shipment"
+                                            sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
+                                        >
+                                            New
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<AddIcon />}
+                                            disabled
+                                            sx={{
+                                                color: '#9ca3af',
+                                                borderColor: '#e5e7eb',
+                                                '&.Mui-disabled': {
+                                                    color: '#9ca3af',
+                                                    borderColor: '#e5e7eb'
+                                                }
+                                            }}
+                                            title="No carriers enabled for your company. Please configure carriers first."
+                                        >
+                                            Create shipment
+                                        </Button>
+                                    )}
+                                </Box>
+                            </Box>
+
+                            {/* Main Content */}
+                            <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none', mx: 2 }}>
+                                <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Tabs value={selectedTab} onChange={handleTabChange}>
+                                        <Tab label={`All (${stats.total})`} value="all" />
+                                        <Tab label={`Ready To Ship (${stats.awaitingShipment})`} value="Awaiting Shipment" />
+                                        <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
+                                        <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
+                                        <Tab label={`Delayed (${stats.delayed})`} value="Delayed" />
+                                        <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
+                                        <Tab label={`Drafts (${stats.drafts})`} value="draft" />
+                                    </Tabs>
+                                </Toolbar>
+
+                                {/* Search and Filter Section */}
+                                <Collapse in={filtersOpen}>
+                                    <Box sx={{ p: 3, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                        <Grid container spacing={2} alignItems="center">
+                                            {/* Shipment ID Search */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Shipment ID"
+                                                    placeholder="Search by Shipment ID (e.g. SH-12345)"
+                                                    value={searchFields.shipmentId}
+                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }))}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                    InputProps={{
+                                                        startAdornment: (
+                                                            <InputAdornment position="start">
+                                                                <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                            </InputAdornment>
+                                                        ),
+                                                        endAdornment: searchFields.shipmentId && (
+                                                            <InputAdornment position="end">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => setSearchFields(prev => ({ ...prev, shipmentId: '' }))}
+                                                                >
+                                                                    <ClearIcon />
+                                                                </IconButton>
+                                                            </InputAdornment>
+                                                        )
+                                                    }}
+                                                />
+                                            </Grid>
+
+                                            {/* Reference Number */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Reference Number"
+                                                    placeholder="Search by reference number"
+                                                    value={searchFields.referenceNumber}
+                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                    InputProps={{
+                                                        startAdornment: (
+                                                            <InputAdornment position="start">
+                                                                <DescriptionIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                            </InputAdornment>
+                                                        ),
+                                                        endAdornment: searchFields.referenceNumber && (
+                                                            <InputAdornment position="end">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => setSearchFields(prev => ({ ...prev, referenceNumber: '' }))}
+                                                                >
+                                                                    <ClearIcon />
+                                                                </IconButton>
+                                                            </InputAdornment>
+                                                        )
+                                                    }}
+                                                />
+                                            </Grid>
+
+                                            {/* Tracking Number */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Tracking / PRO Number"
+                                                    placeholder="Search by tracking number"
+                                                    value={searchFields.trackingNumber}
+                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }))}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                    InputProps={{
+                                                        startAdornment: (
+                                                            <InputAdornment position="start">
+                                                                <QrCodeIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                            </InputAdornment>
+                                                        ),
+                                                        endAdornment: searchFields.trackingNumber && (
+                                                            <InputAdornment position="end">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => setSearchFields(prev => ({ ...prev, trackingNumber: '' }))}
+                                                                >
+                                                                    <ClearIcon />
+                                                                </IconButton>
+                                                            </InputAdornment>
+                                                        )
+                                                    }}
+                                                />
+                                            </Grid>
+
+                                            {/* Date Range Picker */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                                    <DateRangePicker
+                                                        value={dateRange}
+                                                        onChange={(newValue) => setDateRange(newValue)}
+                                                        label="Date Range"
+                                                        slotProps={{
+                                                            textField: {
+                                                                size: "small",
+                                                                fullWidth: true,
+                                                                variant: "outlined",
+                                                                placeholder: "",
+                                                                sx: {
+                                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                },
+                                                                InputProps: {
+                                                                    startAdornment: (
+                                                                        <InputAdornment position="start">
+                                                                            <CalendarIcon sx={{ color: '#64748b' }} />
+                                                                        </InputAdornment>
+                                                                    )
+                                                                }
+                                                            },
+                                                            actionBar: {
+                                                                actions: ['clear', 'today', 'accept']
+                                                            },
+                                                            separator: {
+                                                                children: ''
+                                                            }
+                                                        }}
+                                                        calendars={2}
+                                                        sx={{ width: '100%' }}
+                                                    />
+                                                </LocalizationProvider>
+                                            </Grid>
+                                        </Grid>
+
+                                        {/* Second Row */}
+                                        <Grid container spacing={2} alignItems="center" sx={{ mt: 2 }}>
+                                            {/* Customer Search with Autocomplete */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <Autocomplete
+                                                    fullWidth
+                                                    options={Object.entries(customers).map(([id, name]) => ({ id, name }))}
+                                                    getOptionLabel={(option) => option.name}
+                                                    value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
+                                                    onChange={(event, newValue) => setSelectedCustomer(newValue?.id || '')}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Search Customers"
+                                                            placeholder="Search customers"
+                                                            size="small"
+                                                            variant="outlined"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                                '& .MuiInputLabel-root': {
+                                                                    fontSize: '12px',
+                                                                    '&.MuiInputLabel-shrink': {
+                                                                        fontSize: '12px'
+                                                                    }
+                                                                },
+                                                                '& .MuiOutlinedInput-root': { minHeight: '40px' }
+                                                            }}
+                                                        />
+                                                    )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                        '& .MuiInputLabel-root': {
+                                                            fontSize: '12px',
+                                                            '&.MuiInputLabel-shrink': {
+                                                                fontSize: '12px'
+                                                            }
+                                                        },
+                                                        '& .MuiOutlinedInput-root': { minHeight: '40px' },
+                                                        fontSize: '12px',
+                                                        minHeight: '40px',
+                                                        display: 'flex',
+                                                        alignItems: 'center'
+                                                    }}
+                                                    ListboxProps={{
+                                                        sx: { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+
+                                            {/* Carrier Selection with Sub-carriers */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
+                                                    <Select
+                                                        value={filters.carrier}
+                                                        onChange={(e) => setFilters(prev => ({
+                                                            ...prev,
+                                                            carrier: e.target.value
+                                                        }))}
+                                                        label="Carrier"
+                                                        sx={{ fontSize: '12px' }}
+                                                        MenuProps={{
+                                                            PaperProps: {
+                                                                sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                            }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
+                                                        {carrierOptions.map((group) => [
+                                                            <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
+                                                            ...group.carriers.map((carrier) => (
+                                                                <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
+                                                                    {carrier.name}
+                                                                </MenuItem>
+                                                            ))
+                                                        ])}
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+                                            {/* Shipment Type */}
+                                            <Grid item xs={12} sm={6} md={2}>
+                                                <FormControl fullWidth>
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
+                                                    <Select
+                                                        value={filters.shipmentType}
+                                                        onChange={(e) => setFilters(prev => ({
+                                                            ...prev,
+                                                            shipmentType: e.target.value
+                                                        }))}
+                                                        label="Type"
+                                                        sx={{ fontSize: '12px' }}
+                                                        MenuProps={{
+                                                            PaperProps: {
+                                                                sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                            }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
+                                                        <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                        <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+                                            {/* Enhanced Status Filter */}
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <EnhancedStatusFilter
+                                                    value={filters.enhancedStatus || ''}
+                                                    onChange={(value) => setFilters(prev => ({
+                                                        ...prev,
+                                                        enhancedStatus: value,
+                                                        // Keep legacy status for backward compatibility
+                                                        status: value ? enhancedToLegacy(value) : 'all'
+                                                    }))}
+                                                    label="Shipment Status"
+                                                    showGroups={true}
+                                                    showSearch={true}
+                                                    fullWidth={true}
+                                                    sx={{
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiSelect-select': { fontSize: '12px' },
+                                                        '& .MuiMenuItem-root': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+
+                                            {/* Clear Filters Button */}
+                                            {(Object.values(searchFields).some(val => val !== '') ||
+                                                filters.carrier !== 'all' ||
+                                                filters.shipmentType !== 'all' ||
+                                                filters.status !== 'all' ||
+                                                dateRange[0] || dateRange[1]) && (
+                                                    <Grid item xs={12} sm={6} md={1}>
+                                                        <Button
+                                                            fullWidth
+                                                            variant="outlined"
+                                                            onClick={handleClearFilters}
+                                                            startIcon={<ClearIcon />}
+                                                            sx={{
+                                                                borderColor: '#e2e8f0',
+                                                                color: '#64748b',
+                                                                '&:hover': {
+                                                                    borderColor: '#cbd5e1',
+                                                                    bgcolor: '#f8fafc'
+                                                                }
+                                                            }}
+                                                        >
+                                                            Clear
+                                                        </Button>
+                                                    </Grid>
+                                                )}
+                                        </Grid>
+
+                                        {/* Active Filters Display */}
+                                        {(Object.values(searchFields).some(val => val !== '') ||
+                                            filters.carrier !== 'all' ||
+                                            filters.shipmentType !== 'all' ||
+                                            filters.status !== 'all' ||
+                                            dateRange[0] || dateRange[1]) && (
+                                                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                    <Typography variant="body2" sx={{ color: '#64748b', mr: 1, display: 'flex', alignItems: 'center' }}>
+                                                        <FilterAltIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                                                        Active Filters:
+                                                    </Typography>
+                                                    {Object.entries(searchFields).map(([key, value]) => value && (
+                                                        <Chip
+                                                            key={key}
+                                                            label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`}
+                                                            onDelete={() => setSearchFields(prev => ({ ...prev, [key]: '' }))}
+                                                            size="small"
+                                                            sx={{ bgcolor: '#f1f5f9' }}
+                                                        />
+                                                    ))}
+                                                    {filters.carrier !== 'all' && (
+                                                        <Chip
+                                                            label={`Carrier: ${carrierOptions.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || filters.carrier}`}
+                                                            onDelete={() => setFilters(prev => ({ ...prev, carrier: 'all' }))}
+                                                            size="small"
+                                                            sx={{ bgcolor: '#f1f5f9' }}
+                                                        />
+                                                    )}
+                                                    {filters.shipmentType !== 'all' && (
+                                                        <Chip
+                                                            label={`Type: ${filters.shipmentType}`}
+                                                            onDelete={() => setFilters(prev => ({ ...prev, shipmentType: 'all' }))}
+                                                            size="small"
+                                                            sx={{ bgcolor: '#f1f5f9' }}
+                                                        />
+                                                    )}
+                                                    {filters.status !== 'all' && (
+                                                        <Chip
+                                                            label={`Status: ${filters.status}`}
+                                                            onDelete={() => setFilters(prev => ({ ...prev, status: 'all' }))}
+                                                            size="small"
+                                                            sx={{ bgcolor: '#f1f5f9' }}
+                                                        />
+                                                    )}
+                                                    {(dateRange[0] || dateRange[1]) && (
+                                                        <Chip
+                                                            label={`Date: ${dateRange[0]?.format('MMM D, YYYY')} - ${dateRange[1]?.format('MMM D, YYYY')}`}
+                                                            onDelete={() => setDateRange([null, null])}
+                                                            size="small"
+                                                            sx={{ bgcolor: '#f1f5f9' }}
+                                                        />
+                                                    )}
+                                                </Box>
+                                            )}
+                                    </Box>
+                                </Collapse>
+
+                                {/* Shipments Table */}
+                                <ShipmentsTable
+                                    shipments={shipments}
+                                    loading={loading}
+                                    selected={selected}
+                                    onSelectAll={handleSelectAll}
+                                    onSelect={handleSelect}
+                                    onViewShipmentDetail={handleViewShipmentDetail}
+                                    onActionMenuOpen={handleActionMenuOpen}
+                                    customers={customers}
+                                    carrierData={carrierData}
+                                    searchFields={searchFields}
+                                    highlightSearchTerm={highlightSearchTerm}
+                                    showSnackbar={showSnackbar}
+                                    onOpenTrackingDrawer={handleOpenTrackingDrawer}
+                                />
+
+                                {/* Pagination */}
+                                <TablePagination
+                                    component="div"
+                                    count={totalCount}
+                                    page={page}
+                                    onPageChange={(event, newPage) => setPage(newPage)}
+                                    rowsPerPage={rowsPerPage}
+                                    onRowsPerPageChange={(event) => {
+                                        setRowsPerPage(parseInt(event.target.value, 10));
+                                        setPage(0);
+                                    }}
+                                    rowsPerPageOptions={[10, 25, 50, 100, { label: 'All', value: -1 }]}
+                                />
+                            </Paper>
+                        </Box>
+                    </Box>
+                );
+            case 'shipment-detail':
+                console.log('📋 Rendering shipment detail view with shipmentId:', view.props?.shipmentId);
+                return (
+                    <Suspense fallback={<CircularProgress />}>
+                        <ShipmentDetailX {...view.props} onBackToTable={popView} />
+                    </Suspense>
+                );
+            default:
+                console.log('❌ Unknown view component:', view.component);
+                return <div>Unknown view: {view.component}</div>;
+        }
     };
 
-    // Handler for opening CreateShipment modal
-    const handleOpenCreateShipmentModal = () => {
-        setIsCreateShipmentModalOpen(true);
-    };
-
-    // Handler for return to shipments from CreateShipment modal (just close the modal since we're already in shipments)
-    const handleReturnToShipmentsFromCreateShipment = () => {
-        console.log('handleReturnToShipmentsFromCreateShipment called in ShipmentsX');
-        setIsCreateShipmentModalOpen(false);
-    };
-
-
-
-    const navigate = useNavigate();
-
-    // Handle back button click
+    // Handle back button click from modal header
     const handleBackClick = () => {
-        if (isModal && onClose) {
+        console.log('🔙 handleBackClick called');
+        console.log('📚 Current navigation stack:', navigationStack.map(v => v.key));
+        console.log('🎯 Navigation stack length:', navigationStack.length);
+
+        if (navigationStack.length > 1) {
+            console.log('✅ Calling popView()');
+            popView();
+        } else if (onModalBack) {
+            console.log('✅ Calling onModalBack()');
+            onModalBack();
+        } else if (onClose) {
+            console.log('✅ Calling onClose()');
             onClose();
         } else {
+            console.log('✅ Navigating to dashboard');
             navigate('/dashboard');
         }
+    };
+
+    // Add missing handler functions
+    const handleClearFilters = useCallback(() => {
+        setSearchFields({
+            shipmentId: '',
+            referenceNumber: '',
+            trackingNumber: '',
+            customerName: '',
+            origin: '',
+            destination: ''
+        });
+        setFilters({
+            status: 'all',
+            carrier: 'all',
+            dateRange: [null, null],
+            shipmentType: 'all',
+            enhancedStatus: ''
+        });
+        setDateRange([null, null]);
+        setSelectedCustomer('');
+    }, []);
+
+    const handleBatchRefreshStatus = useCallback(async () => {
+        if (selected.length === 0) return;
+
+        setIsUpdating(true);
+        try {
+            // Implement batch status update logic here
+            console.log('Batch updating status for shipments:', selected);
+            // This would call the actual status update function
+        } catch (error) {
+            console.error('Error updating batch status:', error);
+        } finally {
+            setIsUpdating(false);
+        }
+    }, [selected]);
+
+    // Create dynamic navigation object based on current state
+    const getNavigationObject = () => {
+        const currentView = navigationStack[navigationStack.length - 1];
+        return {
+            title: currentView?.component === 'shipment-detail'
+                ? '' // Remove title for shipment detail view
+                : 'Shipments',
+            canGoBack: navigationStack.length > 1,
+            onBack: navigationStack.length > 1 ? popView : (onModalBack || onClose),
+            backText: navigationStack.length > 1 ? 'Shipments' : 'Back'
+        };
+    };
+
+    // Helper function to map enhanced status to legacy status for backward compatibility
+    const enhancedToLegacy = (enhancedStatus) => {
+        // This would map enhanced status IDs to legacy status names
+        // For now, return 'all' to maintain compatibility
+        return 'all';
     };
 
     // Show loading state
@@ -704,263 +1541,53 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     }
 
     return (
-        <div className="shipments-container" style={{ backgroundColor: 'transparent' }}>
+        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
             <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                {/* Modal Header */}
+                {isModal && (
+                    <ModalHeader
+                        navigation={getNavigationObject()}
+                        onBack={handleBackClick}
+                        showBackButton={true}
+                        onClose={showCloseButton ? onClose : null}
+                        showCloseButton={showCloseButton}
+                    />
+                )}
+
                 {/* Sliding Container */}
                 <Box
                     sx={{
                         display: 'flex',
                         width: '200%',
                         height: '100%',
-                        transform: currentView === 'table' ? 'translateX(0%)' : 'translateX(-50%)',
+                        position: 'relative',
+                        transform:
+                            sliding && slideDirection === 'forward'
+                                ? 'translateX(-50%)'
+                                : sliding && slideDirection === 'backward'
+                                    ? 'translateX(0%)'
+                                    : navigationStack.length > 1
+                                        ? 'translateX(-50%)'
+                                        : 'translateX(0%)',
                         transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        willChange: 'transform'
+                        willChange: 'transform',
                     }}
                 >
-                    {/* Shipments Table View */}
-                    <Box sx={{ width: '50%', minHeight: '100%', pr: 2 }}>
-                        {/* Header Section */}
-                        <Box sx={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            mb: 2,
-                            flexWrap: 'wrap',
-                            gap: 1
-                        }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Button
-                                    onClick={handleBackClick}
-                                    sx={{
-                                        minWidth: 0,
-                                        p: 0.5,
-                                        mr: 1,
-                                        color: '#6e6e73',
-                                        background: 'none',
-                                        borderRadius: '50%',
-                                        '&:hover': {
-                                            background: '#f2f2f7',
-                                            color: '#111',
-                                        },
-                                        boxShadow: 'none',
-                                    }}
-                                    aria-label="Back to Dashboard"
-                                >
-                                    <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
-                                </Button>
-                                <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                                    Shipments
-                                </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    startIcon={<FilterIcon sx={{ fontSize: 16 }} />}
-                                    onClick={() => setFiltersOpen(!filtersOpen)}
-                                    sx={{
-                                        color: '#64748b',
-                                        borderColor: '#e2e8f0',
-                                        bgcolor: filtersOpen ? '#f8fafc' : 'transparent',
-                                        fontSize: '0.875rem',
-                                        py: 0.5
-                                    }}
-                                >
-                                    {filtersOpen ? 'Hide Filters' : 'Show Filters'}
-                                </Button>
-                                {selected.length > 0 && (
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        startIcon={<RefreshIcon sx={{ fontSize: 16 }} />}
-                                        onClick={() => showSnackbar('Batch status update coming soon', 'info')}
-                                        sx={{
-                                            color: '#059669',
-                                            borderColor: '#10b981',
-                                            '&:hover': { borderColor: '#059669', bgcolor: '#f0fdf4' },
-                                            fontSize: '0.875rem',
-                                            py: 0.5
-                                        }}
-                                    >
-                                        Update Status ({selected.length})
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    startIcon={<ExportIcon sx={{ fontSize: 16 }} />}
-                                    onClick={() => setIsExportDialogOpen(true)}
-                                    sx={{
-                                        color: '#64748b',
-                                        borderColor: '#e2e8f0',
-                                        fontSize: '0.875rem',
-                                        py: 0.5
-                                    }}
-                                >
-                                    Export
-                                </Button>
-                                {hasEnabledCarriers(companyData) ? (
-                                    <Button
-                                        variant="contained"
-                                        size="small"
-                                        startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-                                        onClick={handleOpenCreateShipmentModal}
-                                        sx={{
-                                            bgcolor: '#0f172a',
-                                            '&:hover': { bgcolor: '#1e293b' },
-                                            fontSize: '0.875rem',
-                                            py: 0.5
-                                        }}
-                                    >
-                                        Create shipment
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-                                        disabled
-                                        sx={{
-                                            color: '#9ca3af',
-                                            borderColor: '#e5e7eb',
-                                            '&.Mui-disabled': {
-                                                color: '#9ca3af',
-                                                borderColor: '#e5e7eb'
-                                            },
-                                            fontSize: '0.875rem',
-                                            py: 0.5
-                                        }}
-                                        title="No carriers enabled for your company. Please configure carriers first."
-                                    >
-                                        Create shipment
-                                    </Button>
-                                )}
-                            </Box>
-                        </Box>
-
-                        {/* Main Content */}
-                        <Box sx={{ bgcolor: 'transparent' }}>
-                            <Toolbar sx={{
-                                borderBottom: 1,
-                                borderColor: '#e2e8f0',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                minHeight: 48,
-                                px: 1
-                            }}>
-                                <Tabs
-                                    value={selectedTab}
-                                    onChange={handleTabChange}
-                                    sx={{
-                                        '& .MuiTab-root': {
-                                            minHeight: 40,
-                                            fontSize: '0.875rem',
-                                            px: 2,
-                                            py: 1
-                                        }
-                                    }}
-                                >
-                                    <Tab label={`All (${stats.total})`} value="all" />
-                                    <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
-                                    <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
-                                    <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
-                                    <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
-                                    <Tab label={`Drafts (${stats.drafts})`} value="draft" />
-                                </Tabs>
-                            </Toolbar>
-
-                            {/* Filters Section */}
-                            <ShipmentFilters
-                                searchFields={searchFields}
-                                setSearchFields={setSearchFields}
-                                filters={filters}
-                                setFilters={setFilters}
-                                dateRange={dateRange}
-                                setDateRange={setDateRange}
-                                selectedCustomer={selectedCustomer}
-                                setSelectedCustomer={setSelectedCustomer}
-                                customers={customers}
-                                handleClearFilters={() => {
-                                    setSearchFields({
-                                        shipmentId: '',
-                                        referenceNumber: '',
-                                        trackingNumber: '',
-                                        customerName: '',
-                                        origin: '',
-                                        destination: ''
-                                    });
-                                    setFilters({
-                                        status: 'all',
-                                        carrier: 'all',
-                                        shipmentType: 'all'
-                                    });
-                                    setDateRange([null, null]);
-                                    setSelectedCustomer('');
-                                }}
-                                filtersOpen={filtersOpen}
-                            />
-
-                            {/* Shipments Table */}
-                            <ShipmentsTable
-                                loading={loading}
-                                shipments={shipments}
-                                selected={selected}
-                                onSelectAll={handleSelectAll}
-                                onSelect={handleSelect}
-                                onActionMenuOpen={handleActionMenuOpen}
-                                onRefreshStatus={handleRefreshShipmentStatus}
-                                refreshingStatus={refreshingStatus}
-                                customers={customers}
-                                carrierData={carrierData}
-                                searchFields={searchFields}
-                                highlightSearchTerm={highlightSearchTerm}
-                                showSnackbar={showSnackbar}
-                                onOpenTrackingDrawer={handleOpenTrackingDrawer}
-                                onViewShipmentDetail={handleViewShipmentDetail}
-                            />
-
-                            {/* Pagination */}
-                            <TablePagination
-                                component="div"
-                                count={totalCount}
-                                page={page}
-                                onPageChange={(event, newPage) => setPage(newPage)}
-                                rowsPerPage={rowsPerPage}
-                                onRowsPerPageChange={(event) => {
-                                    setRowsPerPage(parseInt(event.target.value, 10));
-                                    setPage(0);
-                                }}
-                                rowsPerPageOptions={[10, 25, 50, 100, { label: 'All', value: -1 }]}
-                            />
-                        </Box>
-                    </Box>
-
-                    {/* Shipment Detail View */}
-                    <Box sx={{ width: '50%', minHeight: '100%', pl: 2, position: 'relative' }}>
-                        {currentView === 'detail' && selectedShipmentId && (
-                            <Box sx={{ position: 'relative', height: '100%' }}>
-
-                                {/* Shipment Detail Content */}
-                                <Suspense fallback={
-                                    <Box sx={{
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        height: '100%',
-                                        pt: 8
-                                    }}>
-                                        <CircularProgress />
-                                    </Box>
-                                }>
-                                    <ShipmentDetailX
-                                        key={selectedShipmentId}
-                                        shipmentId={selectedShipmentId}
-                                        onBackToTable={handleBackToTable}
-                                    />
-                                </Suspense>
-                            </Box>
-                        )}
-                    </Box>
+                    {/* Render previous and current views if sliding, else just current */}
+                    {mountedViews.map((key, idx) => {
+                        const view = navigationStack.find((v) => v.key === key);
+                        if (!view) {
+                            console.warn('⚠️ View not found in navigation stack:', key);
+                            return null;
+                        }
+                        return (
+                            <div key={key} style={{ width: '50%', flexShrink: 0, overflow: 'hidden' }}>
+                                <Box sx={{ width: '100%', height: '100%', overflow: 'auto' }}>
+                                    {renderView(view)}
+                                </Box>
+                            </div>
+                        );
+                    })}
                 </Box>
             </Box>
 
@@ -1252,7 +1879,6 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
                         <CreateShipmentComponent
                             isModal={true}
                             onClose={() => setIsCreateShipmentModalOpen(false)}
-                            onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
                         />
                     </Suspense>
                 </Box>
@@ -1261,4 +1887,4 @@ const ShipmentsX = ({ isModal = false, onClose = null }) => {
     );
 };
 
-export default ShipmentsX; 
+export default ShipmentsX;

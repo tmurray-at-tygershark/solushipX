@@ -24,7 +24,8 @@ import {
     RadioGroup,
     FormControlLabel,
     Radio,
-    Divider
+    Divider,
+    IconButton
 } from '@mui/material';
 import {
     Home as HomeIcon,
@@ -36,14 +37,18 @@ import {
     CloudDone as CloudDoneIcon,
     VpnKey as VpnKeyIcon,
     Save as SaveIcon,
-    ArrowBackIosNew as ArrowBackIosNewIcon
+    ArrowBackIosNew as ArrowBackIosNewIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { collection, getDocs, doc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import './Carriers.css';
 
-const Carriers = ({ isModal = false, onClose = null }) => {
+// Import common components
+import ModalHeader from '../common/ModalHeader';
+
+const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
     const [carrierList, setCarrierList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -245,265 +250,251 @@ const Carriers = ({ isModal = false, onClose = null }) => {
     }
 
     return (
-        <Box sx={{ p: 3 }}>
-            {/* Modal Header with Back Arrow */}
-            {isModal && onClose && (
+        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
+            <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                {/* Modal Header */}
+                {isModal && (
+                    <ModalHeader
+                        title="Connected Carriers"
+                        onClose={showCloseButton ? onClose : null}
+                        showCloseButton={showCloseButton}
+                    />
+                )}
+
                 <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    mb: 3
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    position: 'relative',
+                    p: 3
                 }}>
-                    <Button
-                        onClick={onClose}
-                        sx={{
-                            minWidth: 0,
-                            p: 0.5,
-                            mr: 1,
-                            color: '#6e6e73',
-                            background: 'none',
-                            borderRadius: '50%',
-                            '&:hover': {
-                                background: '#f2f2f7',
-                                color: '#111',
-                            },
-                            boxShadow: 'none',
-                        }}
-                        aria-label="Close Carriers"
-                    >
-                        <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
-                    </Button>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                        Connected Carriers
-                    </Typography>
-                </Box>
-            )}
+                    {/* Breadcrumb - only show when not in modal */}
+                    {!isModal && (
+                        <div className="breadcrumb-container">
+                            <Link to="/" className="breadcrumb-link">
+                                <HomeIcon />
+                                <Typography variant="body2">Home</Typography>
+                            </Link>
+                            <NavigateNextIcon />
+                            <Typography variant="body2">Carriers</Typography>
+                        </div>
+                    )}
 
-            {/* Breadcrumb - only show when not in modal */}
-            {!isModal && (
-                <div className="breadcrumb-container">
-                    <Link to="/" className="breadcrumb-link">
-                        <HomeIcon />
-                        <Typography variant="body2">Home</Typography>
-                    </Link>
-                    <NavigateNextIcon />
-                    <Typography variant="body2">Carriers</Typography>
-                </div>
-            )}
+                    {!isModal && (
+                        <Box sx={{ mb: 4 }}>
+                            <Typography variant="h5" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
+                                Connected Carriers
+                            </Typography>
+                        </Box>
+                    )}
 
-            {!isModal && (
-                <Box sx={{ mb: 4 }}>
-                    <Typography variant="h5" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
-                        Connected Carriers
-                    </Typography>
-                </Box>
-            )}
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {error}
+                        </Alert>
+                    )}
 
-            {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
-                </Alert>
-            )}
-
-            {carrierList.length === 0 ? (
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography variant="h6" color="text.secondary" gutterBottom>
-                        No Carriers Connected
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                        Please contact your administrator to connect carriers to your account.
-                    </Typography>
-                </Paper>
-            ) : (
-                <Grid container spacing={3}>
-                    {carrierList.map((carrier) => (
-                        <Grid item xs={12} sm={6} md={4} key={carrier.id}>
-                            <Card>
-                                <CardMedia
-                                    component="img"
-                                    image={carrier.logoURL || '/images/carrier-badges/default.png'}
-                                    alt={carrier.name}
-                                    sx={{
-                                        width: '100%',
-                                        height: 'auto',
-                                        aspectRatio: '16/9',
-                                        objectFit: 'contain',
-                                        p: 2,
-                                        bgcolor: 'grey.100'
-                                    }}
-                                />
-                                <CardContent>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                        <Typography variant="h6" component="div">
-                                            {carrier.name}
-                                        </Typography>
-                                        <Switch
-                                            checked={carrier.enabled}
-                                            onChange={() => handleToggleCarrier(carrier.id)}
-                                            color="primary"
+                    {carrierList.length === 0 ? (
+                        <Paper sx={{ p: 3, textAlign: 'center' }}>
+                            <Typography variant="h6" color="text.secondary" gutterBottom>
+                                No Carriers Connected
+                            </Typography>
+                            <Typography variant="body1" color="text.secondary">
+                                Please contact your administrator to connect carriers to your account.
+                            </Typography>
+                        </Paper>
+                    ) : (
+                        <Grid container spacing={3}>
+                            {carrierList.map((carrier) => (
+                                <Grid item xs={12} sm={6} md={4} key={carrier.id}>
+                                    <Card>
+                                        <CardMedia
+                                            component="img"
+                                            image={carrier.logoURL || '/images/carrier-badges/default.png'}
+                                            alt={carrier.name}
+                                            sx={{
+                                                width: '100%',
+                                                height: 'auto',
+                                                aspectRatio: '16/9',
+                                                objectFit: 'contain',
+                                                p: 2,
+                                                bgcolor: 'grey.100'
+                                            }}
                                         />
-                                    </Box>
+                                        <CardContent>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                <Typography variant="h6" component="div">
+                                                    {carrier.name}
+                                                </Typography>
+                                                <Switch
+                                                    checked={carrier.enabled}
+                                                    onChange={() => handleToggleCarrier(carrier.id)}
+                                                    color="primary"
+                                                />
+                                            </Box>
 
-                                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                                        {carrier.description}
-                                    </Typography>
+                                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                {carrier.description}
+                                            </Typography>
 
-                                    <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                        <Chip
-                                            label={carrier.enabled ? 'Enabled' : 'Disabled'}
-                                            color={carrier.enabled ? 'success' : 'default'}
-                                            size="small"
-                                        />
-                                        <Chip
-                                            label={carrier.connected ? 'Connected' : 'Not Connected'}
-                                            color={carrier.connected ? 'primary' : 'default'}
-                                            size="small"
-                                        />
-                                        {carrier.credentialType !== 'none' && (
-                                            <Chip
-                                                label={carrier.credentialType === 'soluship' ? 'Soluship Connect' : 'Custom'}
-                                                color={carrier.credentialType === 'soluship' ? 'info' : 'secondary'}
-                                                size="small"
-                                            />
-                                        )}
-                                    </Box>
-
-                                    {/* Configuration Buttons */}
-                                    <Box sx={{ mt: 2, display: 'flex', gap: 1, flexDirection: 'column' }}>
-                                        {!carrier.connected ? (
-                                            <>
-                                                <Button
-                                                    variant="contained"
+                                            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                                <Chip
+                                                    label={carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                    color={carrier.enabled ? 'success' : 'default'}
                                                     size="small"
-                                                    startIcon={<CloudDoneIcon />}
-                                                    onClick={() => {
-                                                        setCredentials(prev => ({ ...prev, type: 'soluship' }));
-                                                        handleConfigureCarrier(carrier);
-                                                    }}
-                                                    sx={{ mb: 1 }}
-                                                >
-                                                    Use Soluship Connect
-                                                </Button>
-                                                <Button
-                                                    variant="outlined"
+                                                />
+                                                <Chip
+                                                    label={carrier.connected ? 'Connected' : 'Not Connected'}
+                                                    color={carrier.connected ? 'primary' : 'default'}
                                                     size="small"
-                                                    startIcon={<VpnKeyIcon />}
-                                                    onClick={() => {
-                                                        setCredentials(prev => ({ ...prev, type: 'custom' }));
-                                                        handleConfigureCarrier(carrier);
-                                                    }}
-                                                >
-                                                    Use My Credentials
-                                                </Button>
-                                            </>
-                                        ) : (
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                startIcon={<SettingsIcon />}
-                                                onClick={() => handleConfigureCarrier(carrier)}
-                                            >
-                                                Configure
-                                            </Button>
-                                        )}
-                                    </Box>
-                                </CardContent>
-                            </Card>
+                                                />
+                                                {carrier.credentialType !== 'none' && (
+                                                    <Chip
+                                                        label={carrier.credentialType === 'soluship' ? 'Soluship Connect' : 'Custom'}
+                                                        color={carrier.credentialType === 'soluship' ? 'info' : 'secondary'}
+                                                        size="small"
+                                                    />
+                                                )}
+                                            </Box>
+
+                                            {/* Configuration Buttons */}
+                                            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexDirection: 'column' }}>
+                                                {!carrier.connected ? (
+                                                    <>
+                                                        <Button
+                                                            variant="contained"
+                                                            size="small"
+                                                            startIcon={<CloudDoneIcon />}
+                                                            onClick={() => {
+                                                                setCredentials(prev => ({ ...prev, type: 'soluship' }));
+                                                                handleConfigureCarrier(carrier);
+                                                            }}
+                                                            sx={{ mb: 1 }}
+                                                        >
+                                                            Use Soluship Connect
+                                                        </Button>
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<VpnKeyIcon />}
+                                                            onClick={() => {
+                                                                setCredentials(prev => ({ ...prev, type: 'custom' }));
+                                                                handleConfigureCarrier(carrier);
+                                                            }}
+                                                        >
+                                                            Use My Credentials
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        startIcon={<SettingsIcon />}
+                                                        onClick={() => handleConfigureCarrier(carrier)}
+                                                    >
+                                                        Configure
+                                                    </Button>
+                                                )}
+                                            </Box>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
                         </Grid>
-                    ))}
-                </Grid>
-            )}
-
-            {/* Configuration Dialog */}
-            <Dialog
-                open={configDialogOpen}
-                onClose={handleCloseDialog}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle>
-                    Configure {selectedCarrier?.name}
-                </DialogTitle>
-                <DialogContent dividers>
-                    <FormControl component="fieldset" sx={{ mb: 3 }}>
-                        <FormLabel component="legend">Connection Type</FormLabel>
-                        <RadioGroup
-                            value={credentials.type}
-                            onChange={(e) => setCredentials(prev => ({ ...prev, type: e.target.value }))}
-                        >
-                            <FormControlLabel
-                                value="soluship"
-                                control={<Radio />}
-                                label={
-                                    <Box>
-                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                            Soluship Connect (Recommended)
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Use SolushipX default credentials. Quick setup with no configuration required.
-                                        </Typography>
-                                    </Box>
-                                }
-                            />
-                            <FormControlLabel
-                                value="custom"
-                                control={<Radio />}
-                                disabled={true}
-                                label={
-                                    <Box>
-                                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.disabled' }}>
-                                            My Own Credentials (Coming Soon)
-                                        </Typography>
-                                        <Typography variant="caption" color="text.disabled">
-                                            Custom credential configuration will be available in a future update.
-                                        </Typography>
-                                    </Box>
-                                }
-                            />
-                        </RadioGroup>
-                    </FormControl>
-
-                    {credentials.type === 'soluship' && (
-                        <Alert severity="info" sx={{ mb: 2 }}>
-                            <Typography variant="body2">
-                                <strong>Soluship Connect</strong> uses SolushipX managed credentials.
-                                Shipments will be processed through your SolushipX account with competitive rates.
-                                No additional configuration required.
-                            </Typography>
-                        </Alert>
                     )}
 
-                    {credentials.type === 'custom' && (
-                        <Alert severity="warning" sx={{ mb: 2 }}>
-                            <Typography variant="body2">
-                                Custom credential configuration is temporarily unavailable.
-                                Please use Soluship Connect for now.
-                            </Typography>
-                        </Alert>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleCloseDialog}>
-                        Cancel
-                    </Button>
-                    <Button
-                        variant="contained"
-                        onClick={handleSaveCredentials}
-                        disabled={saving || credentials.type === 'custom'}
-                        startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
+                    {/* Configuration Dialog */}
+                    <Dialog
+                        open={configDialogOpen}
+                        onClose={handleCloseDialog}
+                        maxWidth="md"
+                        fullWidth
                     >
-                        {saving ? 'Processing...' : 'Confirm Soluship Connect'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                        <DialogTitle>
+                            Configure {selectedCarrier?.name}
+                        </DialogTitle>
+                        <DialogContent dividers>
+                            <FormControl component="fieldset" sx={{ mb: 3 }}>
+                                <FormLabel component="legend">Connection Type</FormLabel>
+                                <RadioGroup
+                                    value={credentials.type}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, type: e.target.value }))}
+                                >
+                                    <FormControlLabel
+                                        value="soluship"
+                                        control={<Radio />}
+                                        label={
+                                            <Box>
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                    Soluship Connect (Recommended)
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Use SolushipX default credentials. Quick setup with no configuration required.
+                                                </Typography>
+                                            </Box>
+                                        }
+                                    />
+                                    <FormControlLabel
+                                        value="custom"
+                                        control={<Radio />}
+                                        disabled={true}
+                                        label={
+                                            <Box>
+                                                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.disabled' }}>
+                                                    My Own Credentials (Coming Soon)
+                                                </Typography>
+                                                <Typography variant="caption" color="text.disabled">
+                                                    Custom credential configuration will be available in a future update.
+                                                </Typography>
+                                            </Box>
+                                        }
+                                    />
+                                </RadioGroup>
+                            </FormControl>
 
-            <Snackbar
-                open={!!successMessage}
-                autoHideDuration={6000}
-                onClose={handleCloseSnackbar}
-                message={successMessage}
-            />
-        </Box>
+                            {credentials.type === 'soluship' && (
+                                <Alert severity="info" sx={{ mb: 2 }}>
+                                    <Typography variant="body2">
+                                        <strong>Soluship Connect</strong> uses SolushipX managed credentials.
+                                        Shipments will be processed through your SolushipX account with competitive rates.
+                                        No additional configuration required.
+                                    </Typography>
+                                </Alert>
+                            )}
+
+                            {credentials.type === 'custom' && (
+                                <Alert severity="warning" sx={{ mb: 2 }}>
+                                    <Typography variant="body2">
+                                        Custom credential configuration is temporarily unavailable.
+                                        Please use Soluship Connect for now.
+                                    </Typography>
+                                </Alert>
+                            )}
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={handleCloseDialog}>
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="contained"
+                                onClick={handleSaveCredentials}
+                                disabled={saving || credentials.type === 'custom'}
+                                startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
+                            >
+                                {saving ? 'Processing...' : 'Confirm Soluship Connect'}
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
+
+                    <Snackbar
+                        open={!!successMessage}
+                        autoHideDuration={6000}
+                        onClose={handleCloseSnackbar}
+                        message={successMessage}
+                    />
+                </Box>
+            </Box>
+        </div>
     );
 };
 

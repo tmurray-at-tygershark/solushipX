@@ -480,6 +480,71 @@ exports.sendTestNotification = onCall(async (request) => {
 });
 
 /**
+ * Cloud Function to send customer note notifications
+ */
+exports.sendCustomerNoteNotification = onCall(async (request) => {
+    const { noteId, customerID, customerName, companyID, content, createdBy, createdByName, createdAt, attachments, noteUrl } = request.data;
+
+    if (!noteId || !customerID || !companyID || !content) {
+        throw new Error('Missing required parameters');
+    }
+
+    try {
+        logger.info(`Processing customer note notification`, {
+            noteId,
+            customerID,
+            customerName,
+            companyID,
+            createdBy
+        });
+
+        // Prepare comprehensive email data
+        const emailData = {
+            noteId: noteId,
+            customerID: customerID,
+            customerName: customerName || 'Unknown Customer',
+            companyID: companyID,
+            content: content,
+            createdBy: createdBy,
+            createdByName: createdByName || createdBy,
+            createdAt: createdAt || new Date(),
+            attachments: attachments || [],
+            noteUrl: noteUrl || `https://solushipx.web.app/customers/${customerID}`
+        };
+
+        // Send notification email using new subscription system
+        const result = await sendNotificationEmail(
+            'customer_note_added',
+            companyID,
+            emailData,
+            `customer_note_${noteId}_${Date.now()}`
+        );
+
+        logger.info(`Customer note notification sent successfully`, {
+            noteId: noteId,
+            recipientCount: result.count,
+            companyID: companyID,
+            customerID: customerID
+        });
+
+        return { 
+            success: true, 
+            message: `Customer note notification sent to ${result.count} recipients`,
+            recipientCount: result.count
+        };
+
+    } catch (error) {
+        logger.error(`Failed to send customer note notification`, { 
+            error: error.message, 
+            noteId, 
+            customerID, 
+            companyID 
+        });
+        throw new Error(`Failed to send customer note notification: ${error.message}`);
+    }
+});
+
+/**
  * Callable function to update user notification preferences
  */
 exports.updateNotificationPreferences = onCall(async (request) => {
@@ -629,6 +694,7 @@ module.exports = {
     onShipmentCreated: exports.onShipmentCreated,
     onShipmentStatusChanged: exports.onShipmentStatusChanged,
     sendTestNotification: exports.sendTestNotification,
+    sendCustomerNoteNotification: exports.sendCustomerNoteNotification,
     updateNotificationPreferences: exports.updateNotificationPreferences,
     getNotificationPreferences: exports.getNotificationPreferences,
     migrateToCollectionSystem: exports.migrateToCollectionSystem

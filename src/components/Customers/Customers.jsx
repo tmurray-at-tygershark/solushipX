@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import {
     Box,
     Paper,
@@ -35,6 +35,7 @@ import {
     Search as SearchIcon,
     MoreVert as MoreVertIcon,
     Visibility as VisibilityIcon,
+    GetApp,
     GetApp as ExportIcon,
     FilterList as FilterIcon,
     Sort as SortIcon,
@@ -45,7 +46,8 @@ import {
     Home as HomeIcon,
     NavigateNext as NavigateNextIcon,
     Add as AddIcon,
-    ArrowBackIosNew as ArrowBackIosNewIcon
+    ArrowBackIosNew as ArrowBackIosNewIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
@@ -54,9 +56,26 @@ import { db } from '../../firebase';
 import './Customers.css';
 import { useCompany } from '../../contexts/CompanyContext';
 
-const Customers = ({ isModal = false, onClose = null }) => {
+// Import common components
+import ModalHeader from '../common/ModalHeader';
+
+// Import hooks
+import useModalNavigation from '../../hooks/useModalNavigation';
+
+// Lazy load the CustomerDetail component for the slide-over view
+const CustomerDetail = React.lazy(() => import('./CustomerDetail'));
+
+const Customers = ({ isModal = false, onClose = null, showCloseButton = false, onNavigateToShipments = null }) => {
     const navigate = useNavigate();
     const { companyIdForAddress } = useCompany();
+
+    // Modal navigation system
+    const modalNavigation = useModalNavigation({
+        title: 'Customers',
+        shortTitle: 'Customers',
+        component: 'customers'
+    });
+
     const [customers, setCustomers] = useState([]);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(50);
@@ -76,6 +95,11 @@ const Customers = ({ isModal = false, onClose = null }) => {
     });
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
+
+    // Add sliding view state for customer detail
+    const [currentView, setCurrentView] = useState('table'); // 'table' or 'detail'
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+    const [isSliding, setIsSliding] = useState(false);
 
     useEffect(() => {
         fetchCustomers();
@@ -229,7 +253,63 @@ const Customers = ({ isModal = false, onClose = null }) => {
     };
 
     const handleRowClick = (customerId) => {
-        navigate(`/customers/${customerId}`);
+        // Use slide-over functionality instead of navigation
+        handleViewCustomerDetail(customerId);
+    };
+
+    // Add handlers for sliding between views (similar to ShipmentsX)
+    const handleViewCustomerDetail = (customerId) => {
+        // Find the customer to get its details for the title
+        const customer = customers.find(c => c.id === customerId) || { name: 'Customer' };
+
+        // Add customer detail page to navigation stack
+        modalNavigation.navigateTo({
+            title: customer.name || 'Customer Details',
+            shortTitle: customer.name || 'Customer',
+            component: 'customer-detail',
+            data: { customerId }
+        });
+
+        setSelectedCustomerId(customerId);
+        setIsSliding(true);
+
+        // Small delay to allow state to update before animation
+        setTimeout(() => {
+            setCurrentView('detail');
+            setTimeout(() => {
+                setIsSliding(false);
+            }, 300); // Match CSS transition duration
+        }, 50);
+    };
+
+    const handleBackToTable = () => {
+        // Go back in navigation stack
+        modalNavigation.goBack();
+
+        setIsSliding(true);
+
+        setTimeout(() => {
+            setCurrentView('table');
+            setTimeout(() => {
+                setIsSliding(false);
+                setSelectedCustomerId(null);
+            }, 300); // Match CSS transition duration
+        }, 50);
+    };
+
+    // Add navigation object function for ModalHeader (similar to ShipmentsX)
+    const getNavigationObject = () => {
+        const currentPage = modalNavigation.getCurrentPage();
+        const canGoBackNow = currentPage?.component === 'customer-detail' || modalNavigation.canGoBack;
+
+        return {
+            title: currentPage?.title || 'Customers',
+            canGoBack: canGoBackNow,
+            onBack: canGoBackNow ? handleBackToTable : null,
+            backText: canGoBackNow && modalNavigation.navigationStack[modalNavigation.currentIndex - 1]
+                ? modalNavigation.navigationStack[modalNavigation.currentIndex - 1].shortTitle || 'Back'
+                : 'Back'
+        };
     };
 
     const filteredCustomers = customers.filter(customer => {
@@ -251,217 +331,268 @@ const Customers = ({ isModal = false, onClose = null }) => {
     });
 
     return (
-        <Box sx={{ p: 3 }}>
-            {/* Modal Header with Back Arrow */}
-            {isModal && onClose && (
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    mb: 3
-                }}>
-                    <Button
-                        onClick={onClose}
-                        sx={{
-                            minWidth: 0,
-                            p: 0.5,
-                            mr: 1,
-                            color: '#6e6e73',
-                            background: 'none',
-                            borderRadius: '50%',
-                            '&:hover': {
-                                background: '#f2f2f7',
-                                color: '#111',
-                            },
-                            boxShadow: 'none',
-                        }}
-                        aria-label="Close Customers"
-                    >
-                        <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
-                    </Button>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                        Customers
-                    </Typography>
-                </Box>
-            )}
-
-            {/* Breadcrumb - only show when not in modal */}
-            {!isModal && (
-                <div className="breadcrumb-container">
-                    <Link to="/dashboard" className="breadcrumb-link">
-                        <HomeIcon />
-                        <Typography variant="body2">Dashboard</Typography>
-                    </Link>
-                    <div className="breadcrumb-separator">
-                        <NavigateNextIcon />
-                    </div>
-                    <Typography variant="body2" className="breadcrumb-current">
-                        Customers
-                    </Typography>
-                </div>
-            )}
-
-            <Box className="customers-header" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                {!isModal && (
-                    <Typography variant="h4" component="h1">
-                        Customers
-                    </Typography>
-                )}
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => navigate('/customers/new')}
-                >
-                    Add Customer
-                </Button>
-            </Box>
-
-            <Box className="customers-toolbar">
-                <Tabs
-                    value={selectedTab}
-                    onChange={handleTabChange}
-                    sx={{ borderBottom: 1, borderColor: 'divider' }}
-                >
-                    <Tab label="All" value="all" />
-                    <Tab label="Active" value="active" />
-                    <Tab label="Inactive" value="inactive" />
-                    <Tab label="Pending" value="pending" />
-                </Tabs>
-
-                <Box className="customers-actions">
-                    <TextField
-                        placeholder="Search customers..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <SearchIcon />
-                                </InputAdornment>
-                            ),
-                            endAdornment: searchQuery && (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => setSearchQuery('')}
-                                    >
-                                        <ClearIcon />
-                                    </IconButton>
-                                </InputAdornment>
-                            )
-                        }}
-                        size="small"
-                        sx={{ width: 300 }}
+        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
+            <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                {/* Modal Header */}
+                {isModal && (
+                    <ModalHeader
+                        navigation={getNavigationObject()}
+                        onClose={showCloseButton ? onClose : null}
+                        showCloseButton={showCloseButton}
                     />
+                )}
 
-                    <IconButton onClick={handleFilterClick}>
-                        <FilterIcon />
-                    </IconButton>
+                {/* Sliding Container */}
+                <Box
+                    sx={{
+                        display: 'flex',
+                        width: '200%',
+                        height: '100%',
+                        transform: currentView === 'table' ? 'translateX(0%)' : 'translateX(-50%)',
+                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        willChange: 'transform'
+                    }}
+                >
+                    {/* Main Table View */}
+                    <Box sx={{
+                        width: '50%',
+                        minHeight: '100%',
+                        '& .customers-container': {
+                            maxWidth: 'none !important',
+                            width: '100% !important',
+                            padding: '0 !important'
+                        }
+                    }}>
+                        <Box sx={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            position: 'relative'
+                        }}>
+                            {/* Breadcrumb - only show when not in modal */}
+                            {!isModal && (
+                                <Box sx={{ px: 2, pt: 2 }}>
+                                    <div className="breadcrumb-container">
+                                        <Link to="/dashboard" className="breadcrumb-link">
+                                            <HomeIcon />
+                                            <Typography variant="body2">Dashboard</Typography>
+                                        </Link>
+                                        <div className="breadcrumb-separator">
+                                            <NavigateNextIcon />
+                                        </div>
+                                        <Typography variant="body2" className="breadcrumb-current">
+                                            Customers
+                                        </Typography>
+                                    </div>
+                                </Box>
+                            )}
 
-                    <IconButton onClick={handleSortClick}>
-                        <SortIcon />
-                    </IconButton>
+                            {/* Header Section */}
+                            <Box sx={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                mb: 3,
+                                px: 2,
+                                pt: isModal ? 2 : 0
+                            }}>
+                                {!isModal && (
+                                    <Typography variant="h4" component="h1">
+                                        Customers
+                                    </Typography>
+                                )}
+                                <Box sx={{ display: 'flex', gap: 2 }}>
+                                    <Button
+                                        variant="outlined"
+                                        color="primary"
+                                        startIcon={<GetApp />}
+                                        disabled
+                                        sx={{
+                                            opacity: 0.5,
+                                            cursor: 'not-allowed'
+                                        }}
+                                    >
+                                        Import Customers
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => navigate('/customers/new')}
+                                    >
+                                        Add Customer
+                                    </Button>
+                                </Box>
+                            </Box>
+
+                            {/* Main Content */}
+                            <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none', mx: 2 }}>
+                                <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Tabs
+                                        value={selectedTab}
+                                        onChange={handleTabChange}
+                                        sx={{ borderBottom: 1, borderColor: 'divider' }}
+                                    >
+                                        <Tab label="All" value="all" />
+                                        <Tab label="Active" value="active" />
+                                        <Tab label="Inactive" value="inactive" />
+                                        <Tab label="Pending" value="pending" />
+                                    </Tabs>
+
+                                    <Box className="customers-actions">
+                                        <TextField
+                                            placeholder="Search customers..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            InputProps={{
+                                                startAdornment: (
+                                                    <InputAdornment position="start">
+                                                        <SearchIcon />
+                                                    </InputAdornment>
+                                                ),
+                                                endAdornment: searchQuery && (
+                                                    <InputAdornment position="end">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => setSearchQuery('')}
+                                                        >
+                                                            <ClearIcon />
+                                                        </IconButton>
+                                                    </InputAdornment>
+                                                )
+                                            }}
+                                            size="small"
+                                            sx={{ width: 300 }}
+                                        />
+
+                                        <IconButton onClick={handleFilterClick}>
+                                            <FilterIcon />
+                                        </IconButton>
+
+                                        <IconButton onClick={handleSortClick}>
+                                            <SortIcon />
+                                        </IconButton>
+                                    </Box>
+                                </Toolbar>
+
+                                {loading ? (
+                                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                                        <CircularProgress />
+                                    </Box>
+                                ) : filteredCustomers.length === 0 ? (
+                                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                                        <Stack spacing={2} alignItems="center">
+                                            <SearchOffIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+                                            <Typography variant="h6" color="text.secondary">
+                                                No customers found
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Try adjusting your search or filters
+                                            </Typography>
+                                        </Stack>
+                                    </Box>
+                                ) : (
+                                    <TableContainer sx={{
+                                        width: '100%',
+                                        maxWidth: '100%',
+                                        overflow: 'auto'
+                                    }}>
+                                        <Table sx={{
+                                            width: '100%',
+                                            tableLayout: 'fixed',
+                                            '& .MuiTableCell-root': {
+                                                fontSize: '12px',
+                                                padding: '8px 12px',
+                                                borderBottom: '1px solid #e2e8f0'
+                                            }
+                                        }}>
+                                            <TableHead>
+                                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                                    <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Customer ID</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Name / Company</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Contact Person</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Contact Email</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Status</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Created At</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {filteredCustomers.map((customer) => (
+                                                    <TableRow
+                                                        key={customer.id}
+                                                        hover
+                                                        onClick={() => handleRowClick(customer.id)}
+                                                        sx={{
+                                                            cursor: 'pointer',
+                                                            '&:hover': {
+                                                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                                            },
+                                                        }}
+                                                    >
+                                                        <TableCell>{customer.customerID}</TableCell>
+                                                        <TableCell>{customer.name || 'N/A'}</TableCell>
+                                                        <TableCell>{customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A')}</TableCell>
+                                                        <TableCell>{customer.contact?.email || 'N/A'}</TableCell>
+                                                        <TableCell>
+                                                            <Chip
+                                                                label={customer.status || 'Unknown'}
+                                                                color={getStatusColor(customer.status)}
+                                                                size="small"
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {customer.createdAt?.toDate ?
+                                                                customer.createdAt.toDate().toLocaleDateString() :
+                                                                (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'N/A')}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                )}
+
+                                <TablePagination
+                                    component="div"
+                                    count={filteredCustomers.length}
+                                    page={page}
+                                    onPageChange={handleChangePage}
+                                    rowsPerPage={rowsPerPage}
+                                    onRowsPerPageChange={handleChangeRowsPerPage}
+                                    rowsPerPageOptions={[10, 25, 50]}
+                                />
+                            </Paper>
+                        </Box>
+                    </Box>
+
+                    {/* Customer Detail View */}
+                    <Box sx={{ width: '50%', minHeight: '100%', position: 'relative' }}>
+                        {currentView === 'detail' && selectedCustomerId && (
+                            <Box sx={{ position: 'relative', height: '100%' }}>
+                                {/* Customer Detail Content */}
+                                <Suspense fallback={
+                                    <Box sx={{
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        height: '100%',
+                                        pt: 8
+                                    }}>
+                                        <CircularProgress />
+                                    </Box>
+                                }>
+                                    <CustomerDetail
+                                        key={selectedCustomerId}
+                                        customerId={selectedCustomerId}
+                                        onBackToTable={handleBackToTable}
+                                        onNavigateToShipments={onNavigateToShipments}
+                                    />
+                                </Suspense>
+                            </Box>
+                        )}
+                    </Box>
                 </Box>
             </Box>
-
-            {loading ? (
-                <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-                    <CircularProgress />
-                </Box>
-            ) : filteredCustomers.length === 0 ? (
-                <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-                    <Stack spacing={2} alignItems="center">
-                        <SearchOffIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
-                        <Typography variant="h6" color="text.secondary">
-                            No customers found
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Try adjusting your search or filters
-                        </Typography>
-                    </Stack>
-                </Box>
-            ) : (
-                <TableContainer>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Customer ID</TableCell>
-                                <TableCell>Name / Company</TableCell>
-                                <TableCell>Contact Person</TableCell>
-                                <TableCell>Contact Email</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Created At</TableCell>
-                                <TableCell align="right">Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {filteredCustomers.map((customer) => (
-                                <TableRow
-                                    key={customer.id}
-                                    hover
-                                    onClick={() => handleRowClick(customer.id)}
-                                    sx={{
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                        },
-                                    }}
-                                >
-                                    <TableCell>{customer.customerID}</TableCell>
-                                    <TableCell>{customer.name || 'N/A'}</TableCell>
-                                    <TableCell>{customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A')}</TableCell>
-                                    <TableCell>{customer.contact?.email || 'N/A'}</TableCell>
-                                    <TableCell>
-                                        <Chip
-                                            label={customer.status || 'Unknown'}
-                                            color={getStatusColor(customer.status)}
-                                            size="small"
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        {customer.createdAt?.toDate ?
-                                            customer.createdAt.toDate().toLocaleDateString() :
-                                            (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'N/A')}
-                                    </TableCell>
-                                    <TableCell align="right">
-                                        <IconButton
-                                            size="small"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                navigate(`/customers/${customer.id}`);
-                                            }}
-                                            title="View Details"
-                                        >
-                                            <VisibilityIcon />
-                                        </IconButton>
-                                        <IconButton
-                                            size="small"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                navigate(`/customers/${customer.id}/edit`);
-                                            }}
-                                            title="Edit Customer"
-                                        >
-                                            <EditIcon />
-                                        </IconButton>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            )}
-
-            <TablePagination
-                component="div"
-                count={filteredCustomers.length}
-                page={page}
-                onPageChange={handleChangePage}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={handleChangeRowsPerPage}
-                rowsPerPageOptions={[10, 25, 50]}
-            />
 
             {/* Filter Menu */}
             <Menu
@@ -527,8 +658,8 @@ const Customers = ({ isModal = false, onClose = null }) => {
                     </Button>
                 </DialogActions>
             </Dialog>
-        </Box>
+        </div>
     );
 };
 
-export default Customers; 
+export default Customers;

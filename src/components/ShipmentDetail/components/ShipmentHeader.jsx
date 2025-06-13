@@ -53,28 +53,7 @@ const ShipmentHeader = ({
                 gap: 1
             }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Button
-                        onClick={handleBackClick}
-                        sx={{
-                            minWidth: 0,
-                            p: 0.5,
-                            mr: 1,
-                            color: '#6e6e73',
-                            background: 'none',
-                            borderRadius: '50%',
-                            '&:hover': {
-                                background: '#f2f2f7',
-                                color: '#111',
-                            },
-                            boxShadow: 'none',
-                        }}
-                        aria-label="Back to Shipments"
-                    >
-                        <ArrowBackIosNewIcon sx={{ fontSize: 20 }} />
-                    </Button>
-                    <Typography variant="h6" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                        Shipment Detail
-                    </Typography>
+                    {/* Title removed - handled by modal header */}
                 </Box>
 
                 {/* Enhanced Action Buttons */}

@@ -22,7 +22,7 @@ import AppLayout from './components/AppLayout';
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
 const CreateShipment = lazy(() => import('./components/CreateShipment'));
 const ShipmentDetail = lazy(() => import('./components/ShipmentDetail/ShipmentDetailX'));
-const Shipments = lazy(() => import('./components/Shipments/Shipments'));
+const Shipments = lazy(() => import('./components/Shipments/ShipmentsX'));
 const Tracking = lazy(() => import('./components/Tracking/Tracking'));
 const Customers = lazy(() => import('./components/Customers/Customers'));
 const CustomerDetail = lazy(() => import('./components/Customers/CustomerDetail'));

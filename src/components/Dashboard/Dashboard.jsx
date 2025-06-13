@@ -65,6 +65,9 @@ const CarriersComponent = lazy(() => import('../Carriers/Carriers'));
 // Lazy load the Reports component for the modal
 const ReportsComponent = lazy(() => import('../Reports/Reports'));
 
+// Lazy load the NotificationPreferences component for the modal
+const NotificationPreferencesComponent = lazy(() => import('../NotificationPreferences/NotificationPreferences'));
+
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
 
@@ -89,7 +92,7 @@ const GlobeLoadingScreen = ({ phase = 'initializing' }) => {
     useEffect(() => {
         const timer = setInterval(() => {
             setProgress((prevProgress) => {
-                const newProgress = prevProgress + Math.random() * 15;
+                const newProgress = prevProgress + Math.random() * 20 + 5; // Faster progress
 
                 // Update phase based on progress
                 const newPhase = Math.floor((newProgress / 100) * loadingPhases.length);
@@ -97,7 +100,7 @@ const GlobeLoadingScreen = ({ phase = 'initializing' }) => {
 
                 return newProgress >= 100 ? 100 : newProgress;
             });
-        }, 400);
+        }, 200); // Faster interval
 
         return () => clearInterval(timer);
     }, [loadingPhases.length]);
@@ -274,6 +277,38 @@ const formatAddress = (addressObj) => {
     return parts.join(', ');
 };
 
+// Add error boundary wrapper for lazy components to handle chunk loading errors
+const LazyComponentWrapper = ({ children, fallback = <CircularProgress /> }) => {
+    const [hasError, setHasError] = useState(false);
+
+    useEffect(() => {
+        const handleChunkError = (event) => {
+            if (event.target.tagName === 'SCRIPT' && event.target.src.includes('chunk')) {
+                console.warn('Chunk loading failed, reloading page...');
+                window.location.reload();
+            }
+        };
+
+        window.addEventListener('error', handleChunkError);
+        return () => window.removeEventListener('error', handleChunkError);
+    }, []);
+
+    if (hasError) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 2 }}>
+                <CircularProgress />
+                <Typography>Loading component...</Typography>
+            </Box>
+        );
+    }
+
+    return (
+        <Suspense fallback={fallback}>
+            {children}
+        </Suspense>
+    );
+};
+
 const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -291,18 +326,23 @@ const Dashboard = () => {
     const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false);
     const [isCarriersModalOpen, setIsCarriersModalOpen] = useState(false);
     const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
+    const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
+
+    // Modal navigation stack for chaining modals (e.g., Customers -> Shipments)
+    const [modalStack, setModalStack] = useState([]);
+    const [shipmentsDeepLinkParams, setShipmentsDeepLinkParams] = useState(null);
 
     const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
 
     const globeRef = useRef(null); // Ref to access Globe's methods
 
     useEffect(() => {
-        // Ensure the loading screen is visible for at least 5.5 seconds
-        // to allow the animation to complete.
+        // Ensure the loading screen is visible for at least 3 seconds
+        // to allow the animation to complete while feeling fast and zippy.
         const timer = setTimeout(() => {
             setIsMinLoadingTimePassed(true);
-        }, 5500);
+        }, 3000);
         return () => clearTimeout(timer);
     }, []);
 
@@ -500,6 +540,50 @@ const Dashboard = () => {
         }
     };
 
+    // Handler for navigating from Customers to Shipments with deep linking
+    const handleNavigateToShipments = useCallback((deepLinkParams = {}) => {
+        console.log('Navigating to Shipments with params:', deepLinkParams);
+
+        // Add current modal to stack
+        setModalStack(prev => [...prev, 'customers']);
+
+        // Set deep link parameters
+        setShipmentsDeepLinkParams(deepLinkParams);
+
+        // Close customers modal and open shipments modal
+        setIsCustomersModalOpen(false);
+        setTimeout(() => {
+            setIsShipmentsModalOpen(true);
+        }, 300); // Delay to allow slide transition
+    }, []);
+
+    // Handler for modal back navigation
+    const handleModalBack = useCallback(() => {
+        console.log('Modal back navigation, current stack:', modalStack);
+
+        if (modalStack.length > 0) {
+            const previousModal = modalStack[modalStack.length - 1];
+
+            // Remove from stack
+            setModalStack(prev => prev.slice(0, -1));
+
+            // Clear deep link parameters
+            setShipmentsDeepLinkParams(null);
+
+            // Close current modal and open previous
+            setIsShipmentsModalOpen(false);
+            setTimeout(() => {
+                if (previousModal === 'customers') {
+                    setIsCustomersModalOpen(true);
+                } else if (previousModal === 'shipments') {
+                    // If previous modal was shipments, just close the current modal
+                    setIsShipmentsModalOpen(false);
+                }
+                // Add more modal types as needed
+            }, 300); // Delay to allow slide transition
+        }
+    }, [modalStack]);
+
     const menuItems = [
         { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', action: () => navigate('/dashboard') },
         { text: 'Create Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
@@ -507,16 +591,15 @@ const Dashboard = () => {
         { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
         { text: 'Carriers', icon: <BusinessIcon />, action: () => setIsCarriersModalOpen(true) },
         { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
+        { text: 'Notifications', icon: <NotificationsIcon />, action: () => setIsNotificationsModalOpen(true) },
     ];
 
     const profileMenuItems = [
         { text: 'Profile', icon: <AccountCircleIcon />, path: '/profile' },
-        { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
-        { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
     ];
 
     return (
-        <Box sx={{ height: '100vh', width: '100vw', overflow: 'hidden', position: 'relative', bgcolor: '#000' }}>
+        <Box className="dashboard-container" sx={{ height: '100vh', width: '100vw', overflow: 'hidden', position: 'relative', bgcolor: '#000' }}>
             {/* New Embedded Header */}
             <Box sx={{
                 position: 'absolute',
@@ -619,7 +702,7 @@ const Dashboard = () => {
                                         }
                                     }}
                                 >
-                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 40 }}>{item.icon}</ListItemIcon>
+                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7) !important', minWidth: 40 }}>{item.icon}</ListItemIcon>
                                     <ListItemText
                                         primary={item.text}
                                         primaryTypographyProps={{
@@ -644,7 +727,7 @@ const Dashboard = () => {
                                             }
                                         }}
                                     >
-                                        <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 40 }}>{item.icon}</ListItemIcon>
+                                        <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7) !important', minWidth: 40 }}>{item.icon}</ListItemIcon>
                                         <ListItemText
                                             primary={item.text}
                                             primaryTypographyProps={{
@@ -669,7 +752,7 @@ const Dashboard = () => {
                                 justifyContent: 'center'
                             }}
                         >
-                            <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 'auto', mr: 1 }}>
+                            <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7) !important', minWidth: 'auto', mr: 1 }}>
                                 <LogoutIcon />
                             </ListItemIcon>
                             <ListItemText
@@ -722,7 +805,7 @@ const Dashboard = () => {
                 }}
             >
                 <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
-                    <Suspense fallback={<CircularProgress sx={{ m: 4 }} />}>
+                    <LazyComponentWrapper fallback={<CircularProgress sx={{ m: 4 }} />}>
                         {/* Pass trackingNumber to the component so it can auto-fetch */}
                         <TrackingDrawerContent
                             trackingIdentifier={trackingNumber}
@@ -732,7 +815,7 @@ const Dashboard = () => {
                                 setTrackingNumber(''); // Clear the tracking number when closing
                             }}
                         />
-                    </Suspense>
+                    </LazyComponentWrapper>
                 </Box>
             </Drawer>
 
@@ -741,8 +824,7 @@ const Dashboard = () => {
                 open={isShipmentsModalOpen}
                 onClose={() => setIsShipmentsModalOpen(false)}
                 TransitionComponent={Transition}
-                fullWidth
-                maxWidth="xl"
+                fullScreen
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'flex-end',
@@ -750,11 +832,12 @@ const Dashboard = () => {
                 }}
                 PaperProps={{
                     sx: {
-                        height: { xs: '100%', md: '95vh' },
+                        height: '100vh',
+                        width: '100vw',
                         margin: 0,
                         bgcolor: 'white',
-                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
-                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        borderRadius: 0,
+                        boxShadow: 'none',
                         overflow: 'hidden',
                     }
                 }}
@@ -765,7 +848,7 @@ const Dashboard = () => {
                 }}
             >
                 <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
-                    <Suspense fallback={
+                    <LazyComponentWrapper fallback={
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                             <CircularProgress />
                         </Box>
@@ -773,8 +856,11 @@ const Dashboard = () => {
                         <ShipmentsComponent
                             isModal={true}
                             onClose={() => setIsShipmentsModalOpen(false)}
+                            showCloseButton={true}
+                            onModalBack={modalStack.length > 0 ? handleModalBack : null}
+                            deepLinkParams={shipmentsDeepLinkParams}
                         />
-                    </Suspense>
+                    </LazyComponentWrapper>
                 </Box>
             </Dialog>
 
@@ -783,8 +869,7 @@ const Dashboard = () => {
                 open={isCreateShipmentModalOpen}
                 onClose={() => setIsCreateShipmentModalOpen(false)}
                 TransitionComponent={Transition}
-                fullWidth
-                maxWidth="xl"
+                fullScreen
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'flex-end',
@@ -792,11 +877,12 @@ const Dashboard = () => {
                 }}
                 PaperProps={{
                     sx: {
-                        height: { xs: '100%', md: '95vh' },
+                        height: '100vh',
+                        width: '100vw',
                         margin: 0,
                         bgcolor: 'white',
-                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
-                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        borderRadius: 0,
+                        boxShadow: 'none',
                         overflow: 'hidden',
                     }
                 }}
@@ -807,7 +893,7 @@ const Dashboard = () => {
                 }}
             >
                 <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
-                    <Suspense fallback={
+                    <LazyComponentWrapper fallback={
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                             <CircularProgress />
                         </Box>
@@ -816,8 +902,9 @@ const Dashboard = () => {
                             isModal={true}
                             onClose={() => setIsCreateShipmentModalOpen(false)}
                             onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                            showCloseButton={true}
                         />
-                    </Suspense>
+                    </LazyComponentWrapper>
                 </Box>
             </Dialog>
 
@@ -826,8 +913,7 @@ const Dashboard = () => {
                 open={isCustomersModalOpen}
                 onClose={() => setIsCustomersModalOpen(false)}
                 TransitionComponent={Transition}
-                fullWidth
-                maxWidth="xl"
+                fullScreen
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'flex-end',
@@ -835,11 +921,12 @@ const Dashboard = () => {
                 }}
                 PaperProps={{
                     sx: {
-                        height: { xs: '100%', md: '95vh' },
+                        height: '100vh',
+                        width: '100vw',
                         margin: 0,
                         bgcolor: 'white',
-                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
-                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        borderRadius: 0,
+                        boxShadow: 'none',
                         overflow: 'hidden',
                     }
                 }}
@@ -850,7 +937,7 @@ const Dashboard = () => {
                 }}
             >
                 <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
-                    <Suspense fallback={
+                    <LazyComponentWrapper fallback={
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                             <CircularProgress />
                         </Box>
@@ -858,8 +945,10 @@ const Dashboard = () => {
                         <CustomersComponent
                             isModal={true}
                             onClose={() => setIsCustomersModalOpen(false)}
+                            showCloseButton={true}
+                            onNavigateToShipments={handleNavigateToShipments}
                         />
-                    </Suspense>
+                    </LazyComponentWrapper>
                 </Box>
             </Dialog>
 
@@ -868,8 +957,7 @@ const Dashboard = () => {
                 open={isCarriersModalOpen}
                 onClose={() => setIsCarriersModalOpen(false)}
                 TransitionComponent={Transition}
-                fullWidth
-                maxWidth="xl"
+                fullScreen
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'flex-end',
@@ -877,11 +965,12 @@ const Dashboard = () => {
                 }}
                 PaperProps={{
                     sx: {
-                        height: { xs: '100%', md: '95vh' },
+                        height: '100vh',
+                        width: '100vw',
                         margin: 0,
                         bgcolor: 'white',
-                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
-                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        borderRadius: 0,
+                        boxShadow: 'none',
                         overflow: 'hidden',
                     }
                 }}
@@ -892,7 +981,7 @@ const Dashboard = () => {
                 }}
             >
                 <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
-                    <Suspense fallback={
+                    <LazyComponentWrapper fallback={
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                             <CircularProgress />
                         </Box>
@@ -900,8 +989,9 @@ const Dashboard = () => {
                         <CarriersComponent
                             isModal={true}
                             onClose={() => setIsCarriersModalOpen(false)}
+                            showCloseButton={true}
                         />
-                    </Suspense>
+                    </LazyComponentWrapper>
                 </Box>
             </Dialog>
 
@@ -910,8 +1000,7 @@ const Dashboard = () => {
                 open={isReportsModalOpen}
                 onClose={() => setIsReportsModalOpen(false)}
                 TransitionComponent={Transition}
-                fullWidth
-                maxWidth="xl"
+                fullScreen
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'flex-end',
@@ -919,11 +1008,12 @@ const Dashboard = () => {
                 }}
                 PaperProps={{
                     sx: {
-                        height: { xs: '100%', md: '95vh' },
+                        height: '100vh',
+                        width: '100vw',
                         margin: 0,
                         bgcolor: 'white',
-                        borderRadius: { xs: 0, md: '20px 20px 0 0' },
-                        boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+                        borderRadius: 0,
+                        boxShadow: 'none',
                         overflow: 'hidden',
                     }
                 }}
@@ -934,7 +1024,7 @@ const Dashboard = () => {
                 }}
             >
                 <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
-                    <Suspense fallback={
+                    <LazyComponentWrapper fallback={
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                             <CircularProgress />
                         </Box>
@@ -942,14 +1032,58 @@ const Dashboard = () => {
                         <ReportsComponent
                             isModal={true}
                             onClose={() => setIsReportsModalOpen(false)}
+                            showCloseButton={true}
                         />
-                    </Suspense>
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Notifications Fullscreen Modal */}
+            <Dialog
+                open={isNotificationsModalOpen}
+                onClose={() => setIsNotificationsModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <NotificationPreferencesComponent
+                            isModal={true}
+                            onClose={() => setIsNotificationsModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
                 </Box>
             </Dialog>
 
             {/* AI Shipping Agent Overlay */}
             {companyData?.id && (
-                <Suspense fallback={null}>
+                <LazyComponentWrapper fallback={null}>
                     <ShipmentAgent
                         companyId={companyData.id}
                         inModal={false}
@@ -957,7 +1091,7 @@ const Dashboard = () => {
                         setIsPanelOpen={setIsChatOpen}
                         currentShipmentId={null}
                     />
-                </Suspense>
+                </LazyComponentWrapper>
             )}
 
             {/* Globe - always rendered but opacity is controlled */}
@@ -971,7 +1105,7 @@ const Dashboard = () => {
                 transition: 'opacity 1s ease-in-out',
                 zIndex: 1,
             }}>
-                <Suspense fallback={null}>
+                <LazyComponentWrapper fallback={null}>
                     <ShipmentGlobe
                         ref={globeRef}
                         shipments={shipments.slice(0, 50)}
@@ -980,12 +1114,20 @@ const Dashboard = () => {
                         statusCounts={statusCounts}
                         onOpenTrackingDrawer={handleOpenTrackingDrawerFromGlobe}
                     />
-                </Suspense>
+                </LazyComponentWrapper>
             </Box>
 
-            {/* Loading Screen Overlay */}
+            {/* Loading Screen Overlay - Now as background with lower z-index */}
             <Fade in={showLoadingScreen} timeout={{ enter: 0, exit: 1000 }}>
-                <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 20 }}>
+                <Box sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    zIndex: 2, // Lower z-index so UI elements appear above it
+                    pointerEvents: 'none' // Allow interaction with UI elements above
+                }}>
                     <GlobeLoadingScreen />
                 </Box>
             </Fade>

@@ -40,6 +40,10 @@ console.log('LOG-MAIN-INDEX: adminUserManagementFunctions imported.');
 const adminCreateUserFunctions = require('./admin-create-user'); 
 console.log('LOG-MAIN-INDEX: adminCreateUserFunctions imported.');
 
+// Import notification functions
+const notificationFunctions = require('./notifications/emailService');
+console.log('LOG-MAIN-INDEX: notificationFunctions imported.');
+
 // Import carrier API functions
 const eshipPlusFunctions = require('./carrier-api/eshipplus');
 const canparFunctions = require('./carrier-api/canpar');
@@ -178,6 +182,28 @@ if (adminCreateUserFunctions && adminCreateUserFunctions.adminCreateUser) {
     console.log('LOG-MAIN-INDEX: exports.adminCreateUser defined.');
 } else {
     console.warn('LOG-MAIN-INDEX: adminCreateUser not found in adminCreateUserFunctions.');
+}
+
+// Functions from notifications/emailService.js
+if (notificationFunctions && notificationFunctions.sendCustomerNoteNotification) {
+    exports.sendCustomerNoteNotification = notificationFunctions.sendCustomerNoteNotification;
+    console.log('LOG-MAIN-INDEX: exports.sendCustomerNoteNotification defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: sendCustomerNoteNotification not found in notificationFunctions.');
+}
+
+if (notificationFunctions && notificationFunctions.updateNotificationPreferences) {
+    exports.updateNotificationPreferences = notificationFunctions.updateNotificationPreferences;
+    console.log('LOG-MAIN-INDEX: exports.updateNotificationPreferences defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: updateNotificationPreferences not found in notificationFunctions.');
+}
+
+if (notificationFunctions && notificationFunctions.getNotificationPreferences) {
+    exports.getNotificationPreferences = notificationFunctions.getNotificationPreferences;
+    console.log('LOG-MAIN-INDEX: exports.getNotificationPreferences defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: getNotificationPreferences not found in notificationFunctions.');
 }
 
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

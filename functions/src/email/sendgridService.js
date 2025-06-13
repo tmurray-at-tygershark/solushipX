@@ -198,7 +198,7 @@ ${data.rate.freightCharge > 0 ? `Freight: $${data.rate.freightCharge.toFixed(2)}
 
 ${data.shipmentNumber ? `Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}` : ''}
 
-Need help? Contact tyler@tygershark.com
+Need help? Contact us at tyler@tygershark.com
         `
     },
 
@@ -447,6 +447,113 @@ ${data.description ? `What This Means: ${data.description}` : ''}
 Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}
 
 Questions? Contact tyler@tygershark.com
+        `
+    },
+
+    customer_note_added: {
+        subject: (data) => `New Note Added - ${data.customerName}`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">New Customer Note Added</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">A new note has been added to customer ${data.customerName}</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Note Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Note Summary</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Customer:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.customerName}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Customer ID:</strong></td><td style="padding: 8px 0;">${data.customerID}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Added By:</strong></td><td style="padding: 8px 0;">${data.createdByName}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0;">${new Date(data.createdAt).toLocaleDateString()} ${new Date(data.createdAt).toLocaleTimeString()}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Note Content -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Note Content</h2>
+                        <div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #1c277d; font-size: 14px; line-height: 1.6;">
+                            ${data.content.replace(/\n/g, '<br>')}
+                        </div>
+                    </div>
+
+                    <!-- Attachments -->
+                    ${(data.attachments && data.attachments.length > 0) ? `
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Attachments (${data.attachments.length})</h2>
+                        ${data.attachments.map(attachment => {
+                            if (attachment.type === 'link') {
+                                return `
+                                    <div style="border: 1px solid #e9ecef; padding: 12px; margin-bottom: 10px; border-radius: 4px; background: #f8f9fa;">
+                                        <strong>🔗 Link:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.title}</a><br>
+                                        <small style="color: #666;">URL: ${attachment.url}</small>
+                                    </div>
+                                `;
+                            } else if (attachment.type === 'image') {
+                                return `
+                                    <div style="border: 1px solid #e9ecef; padding: 12px; margin-bottom: 10px; border-radius: 4px; background: #f8f9fa;">
+                                        <strong>🖼️ Image:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.name}</a><br>
+                                        <small style="color: #666;">Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}</small>
+                                    </div>
+                                `;
+                            } else {
+                                return `
+                                    <div style="border: 1px solid #e9ecef; padding: 12px; margin-bottom: 10px; border-radius: 4px; background: #f8f9fa;">
+                                        <strong>📎 File:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.name}</a><br>
+                                        <small style="color: #666;">Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}</small>
+                                    </div>
+                                `;
+                            }
+                        }).join('')}
+                    </div>
+                    ` : ''}
+
+                    <!-- View Note Button -->
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">View Customer & Note</h3>
+                        <p style="margin: 0 0 15px 0; color: #666;">Click below to view the full customer details and collaborate on this note</p>
+                        <a href="${data.noteUrl}" 
+                           style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
+                           View Customer Details
+                        </a>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Need help? Contact us at <a href="mailto:tyler@tygershark.com" style="color: #1c277d;">tyler@tygershark.com</a></p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+New Customer Note Added
+
+SUMMARY
+- Customer: ${data.customerName}
+- Customer ID: ${data.customerID}  
+- Added By: ${data.createdByName}
+- Date: ${new Date(data.createdAt).toLocaleDateString()} ${new Date(data.createdAt).toLocaleTimeString()}
+
+NOTE CONTENT
+${data.content}
+
+${(data.attachments && data.attachments.length > 0) ? `ATTACHMENTS (${data.attachments.length})
+${data.attachments.map(attachment => {
+    if (attachment.type === 'link') {
+        return `🔗 Link: ${attachment.title}\n   URL: ${attachment.url}`;
+    } else if (attachment.type === 'image') {
+        return `🖼️ Image: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   Download: ${attachment.url}`;
+    } else {
+        return `📎 File: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   Download: ${attachment.url}`;
+    }
+}).join('\n\n')}` : ''}
+
+View customer details and collaborate: ${data.noteUrl}
+
+Need help? Contact us at tyler@tygershark.com
         `
     }
 };

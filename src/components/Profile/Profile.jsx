@@ -304,9 +304,9 @@ const Profile = () => {
         <Box className="profile-container">
             <Container maxWidth={false} sx={{ maxWidth: '1300px', mx: 'auto' }}>
                 <Box className="breadcrumb-container">
-                    <Link component={RouterLink} to="/" className="breadcrumb-link">
+                    <Link component={RouterLink} to="/dashboard" className="breadcrumb-link">
                         <HomeIcon sx={{ fontSize: 20 }} />
-                        Home
+                        Dashboard
                     </Link>
                     <NavigateNextIcon className="breadcrumb-separator" />
                     <Typography className="breadcrumb-current">Profile</Typography>
