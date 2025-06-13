@@ -26,7 +26,7 @@ const initialCustomerFormData = {
     mainContact_nickname: 'Main Contact',
 };
 
-const AddCustomer = () => {
+const AddCustomer = ({ isModal = false, onBackToTable = null, onCustomerCreated = null }) => {
     const navigate = useNavigate();
     const { enqueueSnackbar } = useSnackbar();
     const { companyIdForAddress } = useCompany();
@@ -181,7 +181,13 @@ const AddCustomer = () => {
                 await addDoc(collection(db, 'addressBook'), destinationAddressData);
                 enqueueSnackbar('Main contact also saved as default destination!', { variant: 'info' });
             }
-            navigate(`/customers/${newCustomerFirestoreId}`);
+
+            // Handle navigation based on modal context
+            if (isModal && onCustomerCreated) {
+                onCustomerCreated(newCustomerFirestoreId);
+            } else {
+                navigate(`/customers/${newCustomerFirestoreId}`);
+            }
         } catch (error) {
             console.error('Error creating customer:', error);
             enqueueSnackbar('Error creating customer: ' + error.message, { variant: 'error' });
@@ -191,34 +197,43 @@ const AddCustomer = () => {
     };
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 2, mb: 4 }}>
+        <Container maxWidth="lg" sx={{ mt: isModal ? 0 : 2, mb: 4 }}>
             <Box className="add-customer-container" sx={{ p: 0 }}>
-                <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 2 }}>
-                    <MuiLink
-                        component={RouterLink}
-                        to="/"
-                        sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
-                    >
-                        <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
-                        Home
-                    </MuiLink>
-                    <MuiLink
-                        component={RouterLink}
-                        to="/customers"
-                        sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
-                    >
-                        Customers
-                    </MuiLink>
-                    <Typography color="text.primary">Add New Customer</Typography>
-                </Breadcrumbs>
+                {/* Breadcrumbs - only show when not in modal */}
+                {!isModal && (
+                    <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 2 }}>
+                        <MuiLink
+                            component={RouterLink}
+                            to="/"
+                            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+                        >
+                            <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+                            Home
+                        </MuiLink>
+                        <MuiLink
+                            component={RouterLink}
+                            to="/customers"
+                            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+                        >
+                            Customers
+                        </MuiLink>
+                        <Typography color="text.primary">Add New Customer</Typography>
+                    </Breadcrumbs>
+                )}
 
-                <Paper elevation={3} sx={{ p: { xs: 2, sm: 3, md: 4 }, mb: 4 }}>
+                <Paper elevation={isModal ? 0 : 3} sx={{ p: { xs: 2, sm: 3, md: 4 }, mb: 4, boxShadow: isModal ? 'none' : undefined }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap' }}>
                         <Typography variant="h4" component="h1" sx={{ mb: { xs: 2, sm: 0 } }}>
                             Create New Customer
                         </Typography>
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-                            <Button variant="outlined" onClick={() => navigate('/customers')} disabled={saving} startIcon={<ArrowBackIcon />} sx={{ width: '100%' }}>
+                            <Button
+                                variant="outlined"
+                                onClick={isModal && onBackToTable ? onBackToTable : () => navigate('/customers')}
+                                disabled={saving}
+                                startIcon={<ArrowBackIcon />}
+                                sx={{ width: '100%' }}
+                            >
                                 Back to List
                             </Button>
                             <Button variant="contained" color="primary" onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />} sx={{ width: '100%' }}>
