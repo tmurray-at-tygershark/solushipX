@@ -36,13 +36,13 @@ const StepperComponent = ({ currentStep, dataCompleteness = {}, onStepClick }) =
 
         switch (status) {
             case 'complete':
-                return <CheckCircle style={{ color: '#4caf50', fontSize: '20px' }} />;
+                return <CheckCircle style={{ color: '#4caf50', fontSize: '16px' }} />;
             case 'incomplete':
-                return <Error style={{ color: '#ff9800', fontSize: '20px' }} />;
+                return <Error style={{ color: '#ff9800', fontSize: '16px' }} />;
             case 'current':
-                return <span style={{ color: '#2196f3', fontWeight: 'bold' }}>{step.number}</span>;
+                return <span style={{ color: '#2196f3', fontWeight: 'bold', fontSize: '14px' }}>{step.number}</span>;
             default:
-                return <RadioButtonUnchecked style={{ color: '#ccc', fontSize: '20px' }} />;
+                return <RadioButtonUnchecked style={{ color: '#ccc', fontSize: '16px' }} />;
         }
     };
 

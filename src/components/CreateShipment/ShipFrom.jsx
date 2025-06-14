@@ -699,7 +699,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 </button>
                 <button
                     type="button"
-                    className="btn btn-primary"
+                    className="btn btn-primary btn-next-green"
                     onClick={handleSubmit}
                     disabled={!selectedAddressId && !formData.shipFrom?.street}
                 >

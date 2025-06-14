@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel, FormHelperText } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon, ArrowForward as ArrowForwardIcon } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 
 // Comprehensive Freight Class Data
@@ -703,7 +703,16 @@ const Packages = ({ onNext, onPrevious }) => {
                     <Button
                         variant="contained"
                         onClick={handleSubmit}
-                        sx={{ px: 4 }}
+                        sx={{
+                            px: 6,
+                            py: 1.5,
+                            backgroundColor: '#10B981',
+                            minWidth: '160px',
+                            '&:hover': {
+                                backgroundColor: '#059669'
+                            }
+                        }}
+                        endIcon={<ArrowForwardIcon />}
                     >
                         Next
                     </Button>

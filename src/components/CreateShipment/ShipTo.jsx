@@ -1015,7 +1015,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 </button>
                 <button
                     type="button"
-                    className="btn btn-primary btn-navigation"
+                    className="btn btn-primary btn-navigation btn-next-green"
                     onClick={handleSubmit}
                     disabled={!selectedCustomerState || (!currentShipToData.selectedAddressId && !currentShipToData.street) || loadingDestinations}
                 >

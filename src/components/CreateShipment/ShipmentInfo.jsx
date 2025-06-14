@@ -19,13 +19,22 @@ import {
     MenuItem,
     InputLabel,
     Paper,
-    Container
+    Container,
+    Card,
+    CardContent,
+    Chip,
+    Collapse
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningIcon from '@mui/icons-material/Warning';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import EmailIcon from '@mui/icons-material/Email';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import './ShipmentInfo.css';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -44,18 +53,14 @@ const formatDateForInput = (date) => {
 // Helper to determine available shipment types based on connected carriers and their Firestore data
 const getAvailableShipmentTypes = (connectedCarriers, carrierData) => {
     if (!connectedCarriers || connectedCarriers.length === 0) {
-        // No carriers configured at all
         return { courier: false, freight: false };
     }
 
-    // Check if any carriers are enabled
     const enabledCarriers = connectedCarriers.filter(cc => cc.enabled === true);
     if (enabledCarriers.length === 0) {
-        // No carriers are enabled
         return { courier: false, freight: false };
     }
 
-    // Build a lookup map for carrier types from Firestore data
     const carrierTypeMap = {};
     if (carrierData && Array.isArray(carrierData)) {
         carrierData.forEach(carrier => {
@@ -88,6 +93,8 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     const [errorMessage, setErrorMessage] = useState('');
     const [loading, setLoading] = useState(true);
     const [carrierData, setCarrierData] = useState([]);
+    const [userHasChanged, setUserHasChanged] = useState(false);
+    const [serviceOptionsExpanded, setServiceOptionsExpanded] = useState(false);
     const navigate = useNavigate();
 
     // Fetch carrier data from Firestore based on connected carriers
@@ -104,10 +111,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                 setLoading(true);
                 console.log('Fetching carrier data for:', companyData.connectedCarriers);
 
-                // Get carrier IDs from connected carriers
                 const carrierIds = companyData.connectedCarriers.map(cc => cc.carrierID);
-
-                // Fetch carrier documents from Firestore
                 const carriersRef = collection(db, 'carriers');
                 const carriersQuery = query(carriersRef, where('carrierID', 'in', carrierIds));
                 const snapshot = await getDocs(carriersQuery);
@@ -138,37 +142,35 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
 
     // Auto-select shipment type based on available carriers
     useEffect(() => {
-        if (!loading && !formData.shipmentInfo?.shipmentType) {
+        if (!loading && !formData.shipmentInfo?.shipmentType && !userHasChanged) {
             const types = availableShipmentTypes;
 
-            // Priority logic: Freight first, then courier
             if (types.freight) {
                 handleShipmentTypeChange('freight');
             } else if (types.courier) {
                 handleShipmentTypeChange('courier');
             }
-            // If neither available, don't auto-select anything
         }
-    }, [availableShipmentTypes, loading, formData.shipmentInfo?.shipmentType]);
+    }, [availableShipmentTypes, loading, formData.shipmentInfo?.shipmentType, userHasChanged]);
 
     // Check if no carriers are enabled
     const noCarriersEnabled = !loading && !availableShipmentTypes.courier && !availableShipmentTypes.freight;
 
-    // Local state to ensure immediate courier selection and track user changes
-    const [localShipmentType, setLocalShipmentType] = useState('courier');
-    const [userHasChanged, setUserHasChanged] = useState(false);
-
+    // Initialize form with default values
     useEffect(() => {
-        // Only set courier as default if there's NO existing shipmentType data
         const currentData = formData.shipmentInfo || {};
-        if (!userHasChanged && !currentData.shipmentType && !loading && availableShipmentTypes.courier) {
+        if (!currentData.shipmentDate) {
             updateFormSection('shipmentInfo', {
                 ...currentData,
-                shipmentType: 'courier',
-                shipmentDate: currentData.shipmentDate || formatDateForInput(new Date())
+                shipmentDate: formatDateForInput(new Date()),
+                earliestPickup: currentData.earliestPickup || '09:00',
+                latestPickup: currentData.latestPickup || '17:00',
+                earliestDelivery: currentData.earliestDelivery || '09:00',
+                latestDelivery: currentData.latestDelivery || '17:00',
+                billType: currentData.billType || 'prepaid'
             });
         }
-    }, [loading, availableShipmentTypes, userHasChanged, formData.shipmentInfo, updateFormSection]);
+    }, [formData.shipmentInfo, updateFormSection]);
 
     const handleInputChange = (e) => {
         const { id, value, type } = e.target;
@@ -181,7 +183,6 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
 
     const handleShipmentTypeChange = (type) => {
         setUserHasChanged(true);
-        setLocalShipmentType(type);
         updateFormSection('shipmentInfo', { shipmentType: type });
         if (errors.shipmentType) {
             setErrors(prev => ({ ...prev, shipmentType: null }));
@@ -201,449 +202,482 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
             hasEmptyRequiredFields
         });
 
-        if (hasEmptyRequiredFields) {
-            setErrorMessage('Please fill in all required fields');
-            setShowErrorSnackbar(true);
-            if (!currentData.shipmentType) newErrors.shipmentType = 'Please select a shipment type';
-            if (!currentData.shipmentDate) newErrors.shipmentDate = 'Please select a shipment date';
-        } else {
-            if (!currentData.shipmentType) {
-                newErrors.shipmentType = 'Please select a shipment type';
-            }
-            if (!currentData.shipmentDate) {
-                newErrors.shipmentDate = 'Please select a shipment date';
-            } else {
-                const todayDate = new Date();
-                const todayAtMidnightUTC = new Date(Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate()));
-                const parts = currentData.shipmentDate.split('-');
-                const selectedDateAtMidnightUTC = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
-                if (selectedDateAtMidnightUTC < todayAtMidnightUTC) {
-                    newErrors.shipmentDate = 'Shipment date cannot be in the past';
-                }
-            }
+        if (!currentData.shipmentType) {
+            newErrors.shipmentType = 'Please select a shipment type';
         }
-        const earliestPickup = new Date(`2000-01-01T${currentData.earliestPickupTime || '00:00'}`);
-        const latestPickup = new Date(`2000-01-01T${currentData.latestPickupTime || '00:00'}`);
-        if (earliestPickup >= latestPickup) {
-            newErrors.pickupTime = 'Latest pickup time must be after earliest pickup time';
-        }
-        const earliestDelivery = new Date(`2000-01-01T${currentData.earliestDeliveryTime || '00:00'}`);
-        const latestDelivery = new Date(`2000-01-01T${currentData.latestDeliveryTime || '00:00'}`);
-        if (earliestDelivery >= latestDelivery) {
-            newErrors.deliveryTime = 'Latest delivery time must be after earliest delivery time';
-        }
-        setErrors(newErrors);
-        const isValid = Object.keys(newErrors).length === 0;
-        console.log('🔍 validateForm - Final result:', {
-            newErrors,
-            isValid,
-            errorCount: Object.keys(newErrors).length
-        });
 
-        if (!isValid && !hasEmptyRequiredFields) {
-            setErrorMessage('Please correct the errors highlighted below.');
-            setShowErrorSnackbar(true);
+        if (!currentData.shipmentDate) {
+            newErrors.shipmentDate = 'Please select a shipment date';
+        } else {
+            const selectedDate = new Date(currentData.shipmentDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selectedDate < today) {
+                newErrors.shipmentDate = 'Shipment date cannot be in the past';
+            }
         }
-        return isValid;
+
+        console.log('🔍 validateForm - Validation errors:', newErrors);
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
     };
 
     const handleSubmit = (e) => {
-        try {
-            console.log('🚀 handleSubmit called!');
+        e.preventDefault();
+        console.log('🚀 handleSubmit - Form submission started');
 
-            const currentShipmentInfo = formData.shipmentInfo || {};
-            console.log('🔍 ShipmentInfo handleSubmit - Form Data:', {
-                currentShipmentInfo,
-                formDataShipmentInfo: formData.shipmentInfo,
-                availableShipmentTypes,
-                loading
-            });
+        if (noCarriersEnabled) {
+            setErrorMessage('No carriers are configured for your company. Please contact your administrator to set up carrier connections.');
+            setShowErrorSnackbar(true);
+            return;
+        }
 
-            const isValid = validateForm();
-            console.log('🔍 ShipmentInfo handleSubmit - Validation Result:', isValid);
-
-            if (!isValid) {
-                console.log('❌ ShipmentInfo handleSubmit - Validation failed, errors:', errors);
-                const firstErrorField = Object.keys(errors)[0];
-                if (firstErrorField) {
-                    const element = document.getElementById(firstErrorField);
-                    if (element) {
-                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    } else {
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }
-                }
-                return;
-            }
-
-            console.log('✅ ShipmentInfo handleSubmit - Calling onNext with:', currentShipmentInfo);
-            onNext(currentShipmentInfo);
-        } catch (error) {
-            console.error('💥 ERROR in handleSubmit:', error);
+        if (validateForm()) {
+            console.log('✅ handleSubmit - Validation passed, proceeding to next step');
+            onNext(formData.shipmentInfo);
+        } else {
+            console.log('❌ handleSubmit - Validation failed');
+            setErrorMessage('Please fix the errors above before continuing.');
+            setShowErrorSnackbar(true);
         }
     };
 
     const handleCloseSnackbar = () => {
         setShowErrorSnackbar(false);
+        setErrorMessage('');
     };
-
-    // Read values directly from context for rendering
-    const currentData = formData.shipmentInfo || {};
-
-    // Smart default logic
-    let shipmentType;
-    if (userHasChanged) {
-        shipmentType = currentData.shipmentType || localShipmentType;
-    } else if (currentData.shipmentType) {
-        shipmentType = currentData.shipmentType;
-    } else if (availableShipmentTypes.courier && !availableShipmentTypes.freight) {
-        shipmentType = 'courier';
-    } else if (availableShipmentTypes.freight && !availableShipmentTypes.courier) {
-        shipmentType = 'freight';
-    } else {
-        shipmentType = 'courier';
-    }
-
-    // Ensure the calculated shipment type is saved to form context
-    useEffect(() => {
-        console.log('🔍 useEffect - Shipment type save check:', {
-            shipmentType,
-            currentDataShipmentType: currentData.shipmentType,
-            loading,
-            shouldSave: shipmentType && !currentData.shipmentType && !loading
-        });
-
-        if (shipmentType && !currentData.shipmentType && !loading) {
-            console.log('💾 useEffect - Saving shipment type to form context:', shipmentType);
-            updateFormSection('shipmentInfo', { shipmentType });
-        }
-    }, [shipmentType, currentData.shipmentType, loading, updateFormSection]);
 
     if (loading) {
         return (
-            <div className="form-section">
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                    <Skeleton variant="text" width={200} height={40} />
+            <Container maxWidth="lg" sx={{ py: 4 }}>
+                <Box sx={{ mb: 4 }}>
+                    <Skeleton variant="text" width={300} height={40} />
+                    <Skeleton variant="text" width={500} height={24} sx={{ mt: 1 }} />
                 </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                    <div>Loading carrier configuration...</div>
-                </Box>
-            </div>
+                <Grid container spacing={3}>
+                    {[1, 2, 3].map((item) => (
+                        <Grid item xs={12} md={4} key={item}>
+                            <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
+                        </Grid>
+                    ))}
+                </Grid>
+            </Container>
         );
     }
 
     return (
-        <div className="form-section">
-            <form className="form">
-                {/* Warning when no carriers are available */}
-                {noCarriersEnabled && (
-                    <Alert
-                        severity="warning"
-                        sx={{ mb: 3 }}
-                        action={
-                            <Button
-                                color="inherit"
-                                size="small"
-                                onClick={() => navigate('/carriers')}
-                            >
-                                Configure Carriers
-                            </Button>
-                        }
-                    >
-                        <Typography variant="body2">
-                            No carriers are currently enabled for your company.
-                            You'll need to configure and enable carriers before you can create shipments.
-                        </Typography>
-                    </Alert>
-                )}
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+            {noCarriersEnabled && (
+                <Alert
+                    severity="error"
+                    sx={{ mb: 3 }}
+                    action={
+                        <Button
+                            color="inherit"
+                            size="small"
+                            onClick={() => navigate('/carriers')}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Configure Carriers
+                        </Button>
+                    }
+                >
+                    <Typography sx={{ fontSize: '12px' }}>
+                        No carriers are configured for your company. Please set up carrier connections to create shipments.
+                    </Typography>
+                </Alert>
+            )}
 
-                <Grid container spacing={3}>
-                    {/* Shipment Type Selection */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" gutterBottom>
+            <form onSubmit={handleSubmit}>
+                {/* Shipment Type Selection */}
+                <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
                             Shipment Type
-                            <Tooltip title="Choose the type of shipment based on size and service requirements">
-                                <IconButton size="small">
-                                    <InfoIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
                         </Typography>
-                        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                            <Tooltip
-                                title={!availableShipmentTypes.courier ? "No courier carriers available" : "Small packages, fast delivery"}
-                                placement="top"
+                    </Box>
+
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
+                            <Card
+                                sx={{
+                                    cursor: availableShipmentTypes.courier ? 'pointer' : 'not-allowed',
+                                    border: formData.shipmentInfo?.shipmentType === 'courier' ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                                    opacity: availableShipmentTypes.courier ? 1 : 0.5,
+                                    '&:hover': availableShipmentTypes.courier ? { boxShadow: 3 } : {}
+                                }}
+                                onClick={() => availableShipmentTypes.courier && handleShipmentTypeChange('courier')}
                             >
-                                <span style={{ flex: 1 }}>
-                                    <Button
-                                        variant={shipmentType === 'courier' ? 'contained' : 'outlined'}
-                                        startIcon={<LocalShippingIcon />}
-                                        onClick={() => handleShipmentTypeChange('courier')}
-                                        disabled={!availableShipmentTypes.courier}
-                                        fullWidth
-                                        sx={{
-                                            py: 2,
-                                            '&.MuiButton-contained': {
-                                                backgroundColor: '#1976d2',
-                                                '&:hover': {
-                                                    backgroundColor: '#1565c0'
-                                                }
-                                            },
-                                            '&.Mui-disabled': {
-                                                opacity: 0.6
-                                            }
-                                        }}
-                                    >
-                                        <Box sx={{ textAlign: 'left' }}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                                Courier
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                                                Small packages, fast delivery
-                                            </Typography>
-                                        </Box>
-                                    </Button>
-                                </span>
-                            </Tooltip>
-                            <Tooltip
-                                title={!availableShipmentTypes.freight ? "No freight carriers available" : "Large shipments, LTL service"}
-                                placement="top"
+                                <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                                    <EmailIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                                    <Typography variant="h6" gutterBottom>
+                                        Courier Service
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                        Fast delivery for packages and documents
+                                    </Typography>
+                                    {!availableShipmentTypes.courier && (
+                                        <Chip
+                                            label="Not Available"
+                                            color="error"
+                                            size="small"
+                                            sx={{ mt: 1, fontSize: '10px' }}
+                                        />
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <Card
+                                sx={{
+                                    cursor: availableShipmentTypes.freight ? 'pointer' : 'not-allowed',
+                                    border: formData.shipmentInfo?.shipmentType === 'freight' ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                                    opacity: availableShipmentTypes.freight ? 1 : 0.5,
+                                    '&:hover': availableShipmentTypes.freight ? { boxShadow: 3 } : {}
+                                }}
+                                onClick={() => availableShipmentTypes.freight && handleShipmentTypeChange('freight')}
                             >
-                                <span style={{ flex: 1 }}>
-                                    <Button
-                                        variant={shipmentType === 'freight' ? 'contained' : 'outlined'}
-                                        startIcon={<InventoryIcon />}
-                                        onClick={() => handleShipmentTypeChange('freight')}
-                                        disabled={!availableShipmentTypes.freight}
-                                        fullWidth
-                                        sx={{
-                                            py: 2,
-                                            '&.MuiButton-contained': {
-                                                backgroundColor: '#1976d2',
-                                                '&:hover': {
-                                                    backgroundColor: '#1565c0'
-                                                }
-                                            },
-                                            '&.Mui-disabled': {
-                                                opacity: 0.6
-                                            }
-                                        }}
-                                    >
-                                        <Box sx={{ textAlign: 'left' }}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                                Freight
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                                                Large shipments, LTL service
-                                            </Typography>
-                                        </Box>
-                                    </Button>
-                                </span>
-                            </Tooltip>
-                        </Box>
-                        {errors.shipmentType && (
-                            <FormHelperText error>
-                                {errors.shipmentType}
-                            </FormHelperText>
-                        )}
-                    </Grid>
-
-                    {/* Basic Shipment Details */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            id="shipmentDate"
-                            label="Shipment Date"
-                            type="date"
-                            value={currentData.shipmentDate || formatDateForInput(new Date())}
-                            onChange={handleInputChange}
-                            error={!!errors.shipmentDate}
-                            helperText={errors.shipmentDate}
-                            InputLabelProps={{
-                                shrink: true,
-                            }}
-                            required
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            id="shipperReferenceNumber"
-                            label="Reference Number"
-                            value={currentData.shipperReferenceNumber || ''}
-                            onChange={handleInputChange}
-                            error={!!errors.shipperReferenceNumber}
-                            helperText={errors.shipperReferenceNumber || "Your internal reference number"}
-                            placeholder="Optional reference number"
-                        />
-                    </Grid>
-
-                    {/* Pickup Time Windows */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            id="earliestPickupTime"
-                            label="Earliest Pickup Time"
-                            type="time"
-                            value={currentData.earliestPickupTime || '09:00'}
-                            onChange={handleInputChange}
-                            error={!!errors.pickupTime}
-                            InputLabelProps={{
-                                shrink: true,
-                            }}
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            id="latestPickupTime"
-                            label="Latest Pickup Time"
-                            type="time"
-                            value={currentData.latestPickupTime || '17:00'}
-                            onChange={handleInputChange}
-                            error={!!errors.pickupTime}
-                            helperText={errors.pickupTime}
-                            InputLabelProps={{
-                                shrink: true,
-                            }}
-                        />
-                    </Grid>
-
-                    {/* Delivery Time Windows */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            id="earliestDeliveryTime"
-                            label="Earliest Delivery Time"
-                            type="time"
-                            value={currentData.earliestDeliveryTime || '09:00'}
-                            onChange={handleInputChange}
-                            error={!!errors.deliveryTime}
-                            InputLabelProps={{
-                                shrink: true,
-                            }}
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            id="latestDeliveryTime"
-                            label="Latest Delivery Time"
-                            type="time"
-                            value={currentData.latestDeliveryTime || '17:00'}
-                            onChange={handleInputChange}
-                            error={!!errors.deliveryTime}
-                            helperText={errors.deliveryTime}
-                            InputLabelProps={{
-                                shrink: true,
-                            }}
-                        />
-                    </Grid>
-
-                    {/* Special Services */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                            Special Services
-                        </Typography>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} sm={6}>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            id="signatureRequired"
-                                            checked={currentData.signatureRequired || false}
-                                            onChange={handleInputChange}
+                                <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                                    <LocalShippingIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                                    <Typography variant="h6" gutterBottom>
+                                        Freight Service
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                        Heavy cargo and large shipments
+                                    </Typography>
+                                    {!availableShipmentTypes.freight && (
+                                        <Chip
+                                            label="Not Available"
+                                            color="error"
+                                            size="small"
+                                            sx={{ mt: 1, fontSize: '10px' }}
                                         />
-                                    }
-                                    label="Signature Required"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            id="residentialDelivery"
-                                            checked={currentData.residentialDelivery || false}
-                                            onChange={handleInputChange}
-                                        />
-                                    }
-                                    label="Residential Delivery"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            id="insideDelivery"
-                                            checked={currentData.insideDelivery || false}
-                                            onChange={handleInputChange}
-                                        />
-                                    }
-                                    label="Inside Delivery"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            id="liftgateRequired"
-                                            checked={currentData.liftgateRequired || false}
-                                            onChange={handleInputChange}
-                                        />
-                                    }
-                                    label="Liftgate Required"
-                                />
-                            </Grid>
+                                    )}
+                                </CardContent>
+                            </Card>
                         </Grid>
                     </Grid>
 
-                    {/* Special Instructions */}
-                    <Grid item xs={12}>
-                        <TextField
-                            fullWidth
-                            id="specialInstructions"
-                            label="Special Instructions"
-                            multiline
-                            rows={3}
-                            value={currentData.specialInstructions || ''}
-                            onChange={handleInputChange}
-                            placeholder="Any special handling or delivery instructions..."
-                        />
+                    {errors.shipmentType && (
+                        <Typography color="error" sx={{ mt: 1, fontSize: '12px' }}>
+                            {errors.shipmentType}
+                        </Typography>
+                    )}
+                </Paper>
+
+                {/* Shipment Info */}
+                <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                            Shipment Info
+                        </Typography>
+                    </Box>
+
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                id="shipmentDate"
+                                label="Shipment Date"
+                                type="date"
+                                value={formData.shipmentInfo?.shipmentDate || ''}
+                                onChange={handleInputChange}
+                                error={!!errors.shipmentDate}
+                                helperText={errors.shipmentDate}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{
+                                    min: formatDateForInput(new Date()),
+                                    style: { fontSize: '12px' }
+                                }}
+                                required
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                id="shipperReferenceNumber"
+                                label="Reference Number"
+                                value={formData.shipmentInfo?.shipperReferenceNumber || ''}
+                                onChange={handleInputChange}
+                                placeholder="PO Number, Invoice, etc."
+                                InputLabelProps={{
+                                    shrink: true,
+                                    sx: { fontSize: '14px' }
+                                }}
+                                inputProps={{
+                                    style: { fontSize: '12px' }
+                                }}
+                                InputProps={{
+                                    sx: {
+                                        fontSize: '12px',
+                                        '& input': {
+                                            fontSize: '12px !important'
+                                        },
+                                        '& input::placeholder': {
+                                            fontSize: '12px !important',
+                                            opacity: 0.6
+                                        }
+                                    }
+                                }}
+                                helperText="Optional reference for tracking"
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth>
+                                <InputLabel>Bill Type</InputLabel>
+                                <Select
+                                    id="billType"
+                                    value={formData.shipmentInfo?.billType || 'prepaid'}
+                                    onChange={handleInputChange}
+                                    label="Bill Type"
+                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                >
+                                    <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
+                                    <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
+                                    <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
                     </Grid>
-                </Grid>
+                </Paper>
+
+                {/* Pickup & Delivery Times */}
+                <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 3 }}>
+                        Pickup & Delivery Windows
+                    </Typography>
+
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={3}>
+                            <TextField
+                                fullWidth
+                                id="earliestPickup"
+                                label="Earliest Pickup"
+                                type="time"
+                                value={formData.shipmentInfo?.earliestPickup || '09:00'}
+                                onChange={handleInputChange}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ style: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={3}>
+                            <TextField
+                                fullWidth
+                                id="latestPickup"
+                                label="Latest Pickup"
+                                type="time"
+                                value={formData.shipmentInfo?.latestPickup || '17:00'}
+                                onChange={handleInputChange}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ style: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={3}>
+                            <TextField
+                                fullWidth
+                                id="earliestDelivery"
+                                label="Earliest Delivery"
+                                type="time"
+                                value={formData.shipmentInfo?.earliestDelivery || '09:00'}
+                                onChange={handleInputChange}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ style: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={3}>
+                            <TextField
+                                fullWidth
+                                id="latestDelivery"
+                                label="Latest Delivery"
+                                type="time"
+                                value={formData.shipmentInfo?.latestDelivery || '17:00'}
+                                onChange={handleInputChange}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ style: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                    </Grid>
+                </Paper>
+
+                {/* Service Options */}
+                <Paper sx={{ p: 3, mb: 4, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                            mb: serviceOptionsExpanded ? 3 : 0
+                        }}
+                        onClick={() => setServiceOptionsExpanded(!serviceOptionsExpanded)}
+                    >
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, flex: 1 }}>
+                            Additional Options
+                        </Typography>
+                        {serviceOptionsExpanded ? (
+                            <ExpandLessIcon sx={{ color: '#666' }} />
+                        ) : (
+                            <ExpandMoreIcon sx={{ color: '#666' }} />
+                        )}
+                    </Box>
+
+                    <Collapse in={serviceOptionsExpanded}>
+                        <Grid container spacing={3}>
+                            {/* Delivery & Pickup Options */}
+                            <Grid item xs={12} md={6}>
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                        Delivery & Pickup Options
+                                    </Typography>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
+                                        <Select
+                                            id="deliveryPickupOption"
+                                            value={formData.shipmentInfo?.deliveryPickupOption || ''}
+                                            onChange={handleInputChange}
+                                            label="Delivery Options"
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                Standard Delivery
+                                            </MenuItem>
+                                            <MenuItem value="residential" sx={{ fontSize: '12px' }}>
+                                                Residential Delivery
+                                            </MenuItem>
+                                            <MenuItem value="holdForPickup" sx={{ fontSize: '12px' }}>
+                                                Hold for Pickup
+                                            </MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Box>
+                            </Grid>
+
+                            {/* Hazardous Goods */}
+                            <Grid item xs={12} md={6}>
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                        Hazardous Materials
+                                    </Typography>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
+                                        <Select
+                                            id="hazardousGoods"
+                                            value={formData.shipmentInfo?.hazardousGoods || ''}
+                                            onChange={handleInputChange}
+                                            label="Hazardous Goods"
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                                            <MenuItem value="limited_quantity" sx={{ fontSize: '12px' }}>Limited Quantity</MenuItem>
+                                            <MenuItem value="500kg_exemption" sx={{ fontSize: '12px' }}>500kg Exemption</MenuItem>
+                                            <MenuItem value="fully_regulated" sx={{ fontSize: '12px' }}>Fully Regulated</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Box>
+                            </Grid>
+
+                            {/* Priority Delivery */}
+                            <Grid item xs={12} md={6}>
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                        Priority Delivery
+                                    </Typography>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
+                                        <Select
+                                            id="priorityDelivery"
+                                            value={formData.shipmentInfo?.priorityDelivery || ''}
+                                            onChange={handleInputChange}
+                                            label="Priority Options"
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
+                                            <MenuItem value="10am" sx={{ fontSize: '12px' }}>10AM Delivery</MenuItem>
+                                            <MenuItem value="noon" sx={{ fontSize: '12px' }}>Noon Delivery</MenuItem>
+                                            <MenuItem value="saturday" sx={{ fontSize: '12px' }}>Saturday Delivery</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Box>
+                            </Grid>
+
+                            {/* Signature Options */}
+                            <Grid item xs={12} md={6}>
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                        Signature Requirements
+                                    </Typography>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
+                                        <Select
+                                            id="signatureOptions"
+                                            value={formData.shipmentInfo?.signatureOptions || ''}
+                                            onChange={handleInputChange}
+                                            label="Signature Options"
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
+                                            <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>
+                                            <MenuItem value="adult" sx={{ fontSize: '12px' }}>Adult Signature Required</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Box>
+                            </Grid>
+                        </Grid>
+                    </Collapse>
+                </Paper>
 
                 {/* Navigation Buttons */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
                     <Button
                         variant="outlined"
                         onClick={onPrevious}
-                        type="button"
+                        disabled={!onPrevious}
+                        sx={{ px: 4, fontSize: '12px' }}
                     >
                         Previous
                     </Button>
                     <Button
+                        type="submit"
                         variant="contained"
-                        disabled={loading}
-                        onClick={(e) => {
-                            console.log('🔘 Next button clicked!');
-                            handleSubmit(e);
+                        disabled={noCarriersEnabled}
+                        sx={{
+                            px: 6,
+                            py: 1.5,
+                            fontSize: '12px',
+                            backgroundColor: '#10B981',
+                            minWidth: '160px',
+                            '&:hover': {
+                                backgroundColor: '#059669'
+                            },
+                            '&:disabled': {
+                                backgroundColor: '#cccccc'
+                            }
                         }}
+                        endIcon={<ArrowForwardIcon />}
                     >
                         Next
                     </Button>
                 </Box>
             </form>
 
-            {/* Error Snackbar */}
             <Snackbar
                 open={showErrorSnackbar}
                 autoHideDuration={6000}
                 onClose={handleCloseSnackbar}
-                message={errorMessage}
-            />
-        </div>
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+            >
+                <Alert onClose={handleCloseSnackbar} severity="error" sx={{ width: '100%' }}>
+                    <Typography sx={{ fontSize: '12px' }}>{errorMessage}</Typography>
+                </Alert>
+            </Snackbar>
+        </Container>
     );
 };
 

@@ -36,6 +36,16 @@ import {
     Toolbar,
     LinearProgress,
     Fade,
+    Container,
+    Alert,
+    Snackbar,
+    Backdrop,
+    Stepper,
+    Step,
+    StepLabel,
+    StepContent,
+    useTheme,
+    useMediaQuery
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -122,6 +132,9 @@ const emptyAddress = () => ({
 const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false }) => {
     const { step: stepSlug, draftId: urlDraftId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { currentUser, loading: authLoading } = useAuth();
     const { companyData, companyIdForAddress, loading: companyLoading, error: companyError } = useCompany();
     const { formData, updateFormSection, setFormData, setDraftShipmentIdentifiers, clearFormData } = useShipmentForm();

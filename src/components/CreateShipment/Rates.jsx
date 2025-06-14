@@ -7,6 +7,7 @@ import { Card, CardHeader, CardContent, Box, Typography, Collapse, IconButton, L
 import { Divider } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, updateDoc, serverTimestamp, collection, addDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -1470,6 +1471,19 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                         onClick={handleSubmit}
                         disabled={!selectedRate}
                         type="button"
+                        sx={{
+                            px: 6,
+                            py: 1.5,
+                            backgroundColor: '#10B981',
+                            minWidth: '160px',
+                            '&:hover': {
+                                backgroundColor: '#059669'
+                            },
+                            '&:disabled': {
+                                backgroundColor: '#cccccc'
+                            }
+                        }}
+                        endIcon={<ArrowForwardIcon />}
                     >
                         Next
                     </Button>
