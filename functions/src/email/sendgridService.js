@@ -469,6 +469,9 @@ Questions? Contact tyler@tygershark.com
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Customer ID:</strong></td><td style="padding: 8px 0;">${data.customerID}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Added By:</strong></td><td style="padding: 8px 0;">${data.createdByName}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0;">${new Date(data.createdAt).toLocaleDateString()} ${new Date(data.createdAt).toLocaleTimeString()}</td></tr>
+                            ${data.type ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Note Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.type}</td></tr>` : ''}
+                            ${data.priority ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Priority:</strong></td><td style="padding: 8px 0; text-transform: capitalize; color: ${data.priority === 'critical' || data.priority === 'urgent' ? '#dc2626' : data.priority === 'high' ? '#ea580c' : data.priority === 'medium' ? '#0891b2' : '#16a34a'}; font-weight: bold;">${data.priority}</td></tr>` : ''}
+                            ${data.status ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.status}</td></tr>` : ''}
                         </table>
                     </div>
 
@@ -488,22 +491,24 @@ Questions? Contact tyler@tygershark.com
                             if (attachment.type === 'link') {
                                 return `
                                     <div style="border: 1px solid #e9ecef; padding: 12px; margin-bottom: 10px; border-radius: 4px; background: #f8f9fa;">
-                                        <strong>🔗 Link:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.title}</a><br>
+                                        <strong>🔗 Link:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.title || attachment.url}</a><br>
                                         <small style="color: #666;">URL: ${attachment.url}</small>
                                     </div>
                                 `;
                             } else if (attachment.type === 'image') {
                                 return `
                                     <div style="border: 1px solid #e9ecef; padding: 12px; margin-bottom: 10px; border-radius: 4px; background: #f8f9fa;">
-                                        <strong>🖼️ Image:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.name}</a><br>
-                                        <small style="color: #666;">Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}</small>
+                                        <strong>🖼️ Image:</strong> ${attachment.name}<br>
+                                        <small style="color: #666;">Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}</small><br>
+                                        <small style="color: #999; font-style: italic;">View this attachment by opening the note in SolushipX</small>
                                     </div>
                                 `;
                             } else {
                                 return `
                                     <div style="border: 1px solid #e9ecef; padding: 12px; margin-bottom: 10px; border-radius: 4px; background: #f8f9fa;">
-                                        <strong>📎 File:</strong> <a href="${attachment.url}" target="_blank" style="color: #1c277d; text-decoration: none;">${attachment.name}</a><br>
-                                        <small style="color: #666;">Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}</small>
+                                        <strong>📎 File:</strong> ${attachment.name}<br>
+                                        <small style="color: #666;">Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}</small><br>
+                                        <small style="color: #999; font-style: italic;">Download this file by opening the note in SolushipX</small>
                                     </div>
                                 `;
                             }
@@ -516,9 +521,13 @@ Questions? Contact tyler@tygershark.com
                         <h3 style="color: #1c277d; margin: 0 0 10px 0;">View Customer & Note</h3>
                         <p style="margin: 0 0 15px 0; color: #666;">Click below to view the full customer details and collaborate on this note</p>
                         <a href="${data.noteUrl}" 
-                           style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
-                           View Customer Details
+                           style="background: #1c277d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; border: 2px solid #1c277d; font-weight: 600;">
+                           📝 View Customer & Note
                         </a>
+                        <br><br>
+                        <p style="margin: 0; color: #666; font-size: 12px;">
+                            Direct link: <a href="${data.noteUrl}" style="color: #1c277d; word-break: break-all;">${data.noteUrl}</a>
+                        </p>
                     </div>
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
@@ -536,6 +545,9 @@ SUMMARY
 - Customer ID: ${data.customerID}  
 - Added By: ${data.createdByName}
 - Date: ${new Date(data.createdAt).toLocaleDateString()} ${new Date(data.createdAt).toLocaleTimeString()}
+${data.type ? `- Note Type: ${data.type}` : ''}
+${data.priority ? `- Priority: ${data.priority.toUpperCase()}` : ''}
+${data.status ? `- Status: ${data.status}` : ''}
 
 NOTE CONTENT
 ${data.content}
@@ -543,11 +555,11 @@ ${data.content}
 ${(data.attachments && data.attachments.length > 0) ? `ATTACHMENTS (${data.attachments.length})
 ${data.attachments.map(attachment => {
     if (attachment.type === 'link') {
-        return `🔗 Link: ${attachment.title}\n   URL: ${attachment.url}`;
+        return `🔗 Link: ${attachment.title || attachment.url}\n   URL: ${attachment.url}`;
     } else if (attachment.type === 'image') {
-        return `🖼️ Image: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   Download: ${attachment.url}`;
+        return `🖼️ Image: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   (View by opening the note in SolushipX)`;
     } else {
-        return `📎 File: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   Download: ${attachment.url}`;
+        return `📎 File: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   (Download by opening the note in SolushipX)`;
     }
 }).join('\n\n')}` : ''}
 
@@ -743,7 +755,8 @@ async function updateUserNotificationSubscriptionsV2(userId, companyId, notifica
             'shipment_created',
             'shipment_delivered', 
             'shipment_delayed',
-            'status_changed'
+            'status_changed',
+            'customer_note_added'
         ];
 
         const batch = db.batch();
@@ -829,6 +842,7 @@ async function getUserCompanyNotificationStatusV2(userId, companyId) {
             shipment_delivered: false,
             shipment_delayed: false,
             status_changed: false,
+            customer_note_added: false,
             hawkeye_mode: false
         };
 
@@ -844,7 +858,7 @@ async function getUserCompanyNotificationStatusV2(userId, companyId) {
         });
 
         // Check if this is hawkeye mode (all notifications enabled)
-        const notificationTypes = ['shipment_created', 'shipment_delivered', 'shipment_delayed', 'status_changed'];
+        const notificationTypes = ['shipment_created', 'shipment_delivered', 'shipment_delayed', 'status_changed', 'customer_note_added'];
         const allTypesEnabled = notificationTypes.every(type => preferences[type] === true);
         preferences.hawkeye_mode = allTypesEnabled;
 
@@ -975,6 +989,7 @@ function getDefaultPreferences() {
         shipment_delivered: true,
         shipment_delayed: true,
         status_changed: true,
+        customer_note_added: true,
         hawkeye_mode: false
     };
 }

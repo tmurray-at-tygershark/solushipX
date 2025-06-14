@@ -481,8 +481,12 @@ exports.sendTestNotification = onCall(async (request) => {
 
 /**
  * Cloud Function to send customer note notifications
+ * Updated: 2025-01-04
  */
-exports.sendCustomerNoteNotification = onCall(async (request) => {
+exports.sendCustomerNoteNotification = onCall({
+    cors: true,
+    region: 'us-central1'
+}, async (request) => {
     const { noteId, customerID, customerName, companyID, content, createdBy, createdByName, createdAt, attachments, noteUrl } = request.data;
 
     if (!noteId || !customerID || !companyID || !content) {
@@ -547,7 +551,10 @@ exports.sendCustomerNoteNotification = onCall(async (request) => {
 /**
  * Callable function to update user notification preferences
  */
-exports.updateNotificationPreferences = onCall(async (request) => {
+exports.updateNotificationPreferences = onCall({
+    cors: true,
+    region: 'us-central1'
+}, async (request) => {
     const { userId, companyId, preferences } = request.data;
 
     if (!userId || !companyId || !preferences) {
@@ -600,7 +607,10 @@ exports.updateNotificationPreferences = onCall(async (request) => {
 /**
  * Callable function to get user notification preferences
  */
-exports.getNotificationPreferences = onCall(async (request) => {
+exports.getNotificationPreferences = onCall({
+    cors: true,
+    region: 'us-central1'
+}, async (request) => {
     const { userId, companyId } = request.data;
 
     if (!userId || !companyId) {
@@ -638,7 +648,10 @@ exports.getNotificationPreferences = onCall(async (request) => {
  * Migration function to convert from company record subscriptions to separate collection
  * This should be run once to migrate from the old system to the new collection-based system
  */
-exports.migrateToCollectionSystem = onCall(async (request) => {
+exports.migrateToCollectionSystem = onCall({
+    cors: true,
+    region: 'us-central1'
+}, async (request) => {
     const { companyId } = request.data;
 
     if (!companyId) {

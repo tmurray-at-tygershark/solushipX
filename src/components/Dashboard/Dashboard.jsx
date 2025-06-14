@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, lazy, Suspense, useRef, forwardRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Box,
     CircularProgress,
@@ -315,6 +315,7 @@ const Dashboard = () => {
     const [customers, setCustomers] = useState({});
     const { companyIdForAddress, companyData, loading: companyLoading } = useCompany();
     const navigate = useNavigate();
+    const location = useLocation();
     const { logout } = useAuth();
 
     // State for new UI elements
@@ -332,6 +333,7 @@ const Dashboard = () => {
     // Modal navigation stack for chaining modals (e.g., Customers -> Shipments)
     const [modalStack, setModalStack] = useState([]);
     const [shipmentsDeepLinkParams, setShipmentsDeepLinkParams] = useState(null);
+    const [customersDeepLinkParams, setCustomersDeepLinkParams] = useState(null);
 
     const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
 
@@ -460,6 +462,37 @@ const Dashboard = () => {
 
         return () => unsubscribe();
     }, [companyIdForAddress, companyLoading, customers, thirtyDaysAgo]);
+
+    // Handle deep link navigation from email notifications
+    useEffect(() => {
+        const urlParams = new URLSearchParams(location.search);
+        const modal = urlParams.get('modal');
+        const customerId = urlParams.get('customerId');
+        const noteId = urlParams.get('note');
+
+        // Only process deep links if we have the required data and aren't loading
+        if (modal && !loading && !companyLoading) {
+            console.log('Processing deep link:', { modal, customerId, noteId });
+
+            if (modal === 'customers' && customerId) {
+                // Set deep link parameters for the customers component
+                setCustomersDeepLinkParams({
+                    customerId: customerId,
+                    noteId: noteId
+                });
+
+                // Open customers modal with specific customer and note
+                setIsCustomersModalOpen(true);
+
+                // Clear URL parameters after processing to avoid re-triggering
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, '', newUrl);
+
+                console.log('Opened customers modal via deep link for customer:', customerId, 'note:', noteId);
+            }
+            // Add more modal types as needed (shipments, carriers, etc.)
+        }
+    }, [location.search, loading, companyLoading]);
 
     // Calculate status counts for the Globe
     const statusCounts = useMemo(() => {
@@ -945,9 +978,13 @@ const Dashboard = () => {
                     }>
                         <CustomersComponent
                             isModal={true}
-                            onClose={() => setIsCustomersModalOpen(false)}
+                            onClose={() => {
+                                setIsCustomersModalOpen(false);
+                                setCustomersDeepLinkParams(null); // Clear deep link params when modal closes
+                            }}
                             showCloseButton={true}
                             onNavigateToShipments={handleNavigateToShipments}
+                            deepLinkParams={customersDeepLinkParams}
                         />
                     </LazyComponentWrapper>
                 </Box>

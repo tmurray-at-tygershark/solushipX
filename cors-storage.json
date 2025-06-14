@@ -3,7 +3,8 @@
         "origin": [
             "https://solushipx.web.app",
             "http://localhost:3000",
-            "https://localhost:3000"
+            "https://localhost:3000",
+            "*"
         ],
         "method": [
             "GET",
@@ -11,13 +12,23 @@
             "PUT",
             "DELETE",
             "HEAD",
-            "OPTIONS"
+            "OPTIONS",
+            "PATCH"
         ],
         "maxAgeSeconds": 3600,
         "responseHeader": [
             "Content-Type",
             "Authorization",
-            "x-goog-resumable"
+            "x-goog-resumable",
+            "x-goog-upload-url",
+            "x-goog-upload-header-content-length",
+            "x-goog-upload-header-content-type",
+            "x-goog-upload-header-final-length",
+            "x-goog-upload-protocol",
+            "Access-Control-Allow-Origin",
+            "Access-Control-Allow-Methods",
+            "Access-Control-Allow-Headers",
+            "Access-Control-Max-Age"
         ]
     }
 ]

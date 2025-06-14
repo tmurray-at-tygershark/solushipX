@@ -73,7 +73,7 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 const CustomerDetail = React.lazy(() => import('./CustomerDetail'));
 const AddCustomer = React.lazy(() => import('./AddCustomer'));
 
-const Customers = ({ isModal = false, onClose = null, showCloseButton = false, onNavigateToShipments = null }) => {
+const Customers = ({ isModal = false, onClose = null, showCloseButton = false, onNavigateToShipments = null, deepLinkParams = null }) => {
     const navigate = useNavigate();
     const { companyIdForAddress } = useCompany();
 
@@ -119,6 +119,23 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
     useEffect(() => {
         fetchCustomers();
     }, [page, rowsPerPage, selectedTab]);
+
+    // Handle deep link navigation from email notifications
+    useEffect(() => {
+        if (deepLinkParams && deepLinkParams.customerId && customers.length > 0) {
+            console.log('Processing deep link in Customers component:', deepLinkParams);
+
+            // Find the customer in the loaded customers
+            const customer = customers.find(c => c.id === deepLinkParams.customerId);
+            if (customer) {
+                console.log('Found customer for deep link:', customer.name);
+                // Navigate to customer detail view
+                handleViewCustomerDetail(deepLinkParams.customerId);
+            } else {
+                console.log('Customer not found in current list, customer may be on different page or filtered out');
+            }
+        }
+    }, [deepLinkParams, customers]);
 
     useEffect(() => {
         if (companyIdForAddress) {
@@ -457,7 +474,7 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
         }
     };
 
-    const handleCustomerIdClick = (customerId, event) => {
+    const handleCompanyNameClick = (customerId, event) => {
         event.stopPropagation();
         handleViewCustomerDetail(customerId);
     };
@@ -985,8 +1002,7 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                                                     sx={{ padding: '4px' }}
                                                                 />
                                                             </TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Customer ID</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Name / Company</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Company Name</TableCell>
                                                             <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Contact</TableCell>
                                                             <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '180px' }}>Email</TableCell>
                                                             <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '200px' }}>Address</TableCell>
@@ -1020,24 +1036,29 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                                                 <TableCell>
                                                                     <Button
                                                                         variant="text"
-                                                                        onClick={(event) => handleCustomerIdClick(customer.id, event)}
+                                                                        onClick={(event) => handleCompanyNameClick(customer.id, event)}
                                                                         sx={{
                                                                             fontSize: '12px',
                                                                             textTransform: 'none',
                                                                             padding: 0,
                                                                             minWidth: 'auto',
                                                                             color: '#1976d2',
-                                                                            textDecoration: 'underline',
+                                                                            textDecoration: 'none !important',
                                                                             '&:hover': {
                                                                                 backgroundColor: 'transparent',
-                                                                                textDecoration: 'underline'
+                                                                                textDecoration: 'none !important'
+                                                                            },
+                                                                            '&:focus': {
+                                                                                textDecoration: 'none !important'
+                                                                            },
+                                                                            '&:active': {
+                                                                                textDecoration: 'none !important'
                                                                             }
                                                                         }}
                                                                     >
-                                                                        {customer.customerID}
+                                                                        {customer.name || 'N/A'}
                                                                     </Button>
                                                                 </TableCell>
-                                                                <TableCell>{customer.name || 'N/A'}</TableCell>
                                                                 <TableCell>{customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A')}</TableCell>
                                                                 <TableCell>
                                                                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
@@ -1115,9 +1136,15 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                     </Box>
 
                     {/* Customer Detail View */}
-                    <Box sx={{ width: '33.33%', minHeight: '100%', position: 'relative' }}>
+                    <Box sx={{ width: '33.33%', height: '100%', position: 'relative', overflow: 'hidden' }}>
                         {currentView === 'detail' && selectedCustomerId && (
-                            <Box sx={{ position: 'relative', height: '100%' }}>
+                            <Box sx={{
+                                position: 'relative',
+                                height: '100%',
+                                overflow: 'auto',
+                                display: 'flex',
+                                flexDirection: 'column'
+                            }}>
                                 {/* Customer Detail Content */}
                                 <Suspense fallback={
                                     <Box sx={{
@@ -1136,6 +1163,7 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                         onBackToTable={handleBackToTable}
                                         onNavigateToShipments={onNavigateToShipments}
                                         isModal={true}
+                                        highlightNoteId={deepLinkParams?.noteId}
                                     />
                                 </Suspense>
                             </Box>

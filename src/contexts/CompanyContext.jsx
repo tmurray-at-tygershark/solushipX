@@ -19,14 +19,7 @@ export const CompanyProvider = ({ children }) => {
         const cachedCompanyData = localStorage.getItem('solushipx_company_data');
         const cachedCompanyIdForAddress = localStorage.getItem('solushipx_company_id_for_address');
 
-        console.log('CompanyContext: Checking cached data:', {
-            hasCachedCompanyData: !!cachedCompanyData,
-            hasCachedCompanyIdForAddress: !!cachedCompanyIdForAddress,
-            cachedCompanyIdForAddress
-        });
-
         if (cachedCompanyData && cachedCompanyIdForAddress) {
-            console.log('CompanyContext: Using cached company data');
             setCompanyData(JSON.parse(cachedCompanyData));
             setCompanyIdForAddress(cachedCompanyIdForAddress);
             setLoading(false);
@@ -35,7 +28,6 @@ export const CompanyProvider = ({ children }) => {
 
         const fetchCompanyData = async () => {
             if (!currentUser) {
-                console.log('CompanyContext: No current user, skipping fetch');
                 setLoading(false);
                 return;
             }
@@ -44,7 +36,6 @@ export const CompanyProvider = ({ children }) => {
             setError(null);
 
             try {
-                console.log('CompanyContext: Fetching company ID for user:', currentUser.uid);
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
 
                 if (!userDoc.exists()) {
@@ -52,19 +43,12 @@ export const CompanyProvider = ({ children }) => {
                 }
 
                 const userData = userDoc.data();
-                console.log('CompanyContext: User data:', {
-                    uid: currentUser.uid,
-                    connectedCompanies: userData.connectedCompanies,
-                    companies: userData.companies
-                });
 
                 const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
 
                 if (!companyIdValue) {
                     throw new Error('No company ID found.');
                 }
-
-                console.log("CompanyContext: Found companyID value:", companyIdValue);
 
                 // Query for the company document where companyID field equals the value
                 const companiesQuery = query(
@@ -84,12 +68,6 @@ export const CompanyProvider = ({ children }) => {
                 const companyDocData = companyDoc.data();
                 const companyDocId = companyDoc.id;
 
-                console.log('CompanyContext: Found company document:', {
-                    id: companyDocId,
-                    companyID: companyDocData.companyID,
-                    name: companyDocData.name
-                });
-
                 // Save the Firebase document ID and the value for addressBook
                 const companyWithId = {
                     ...companyDocData,
@@ -106,11 +84,6 @@ export const CompanyProvider = ({ children }) => {
 
             } catch (err) {
                 console.error('Error fetching company data:', err);
-                console.error('Error details:', {
-                    message: err.message,
-                    code: err.code,
-                    stack: err.stack
-                });
                 setError(err.message || 'Failed to fetch company data.');
                 setLoading(false);
             }
@@ -130,13 +103,10 @@ export const CompanyProvider = ({ children }) => {
     // Function to refresh company data from Firestore
     const refreshCompanyData = async () => {
         if (!currentUser || !companyData?.id) {
-            console.log('CompanyContext: Cannot refresh - no user or company data');
             return;
         }
 
         try {
-            console.log('CompanyContext: Refreshing company data from Firestore');
-
             // Fetch fresh data from Firestore using the document ID
             const companyDoc = await getDoc(doc(db, 'companies', companyData.id));
 
@@ -155,7 +125,6 @@ export const CompanyProvider = ({ children }) => {
             // Update state
             setCompanyData(freshCompanyData);
 
-            console.log('CompanyContext: Company data refreshed successfully');
         } catch (err) {
             console.error('Error refreshing company data:', err);
             setError(err.message || 'Failed to refresh company data');

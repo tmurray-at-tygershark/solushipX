@@ -328,7 +328,7 @@ const addressToString = (address) => {
     }
 
     const result = parts.filter(Boolean).join(', ');
-    console.log('🔄 Address conversion:', { input: address, output: result });
+    //console.log('🔄 Address conversion:', { input: address, output: result });
     return result;
 };
 
@@ -336,7 +336,7 @@ const getCityCoordinates = async (address) => {
     // Convert address to string format for geocoding
     const addressString = addressToString(address);
 
-    console.log('🗺️ Geocoding request:', { originalAddress: address, convertedString: addressString });
+    //console.log('🗺️ Geocoding request:', { originalAddress: address, convertedString: addressString });
 
     if (!addressString) {
         console.warn('⚠️ Empty address string, using fallback coordinates');
@@ -402,32 +402,32 @@ const getCityCoordinates = async (address) => {
 
 const latLngToVector3 = (lat, lng, radius = 10) => {
     // Comprehensive coordinate debugging
-    console.log(`\n🌍 === COORDINATE CONVERSION DEBUG ===`);
-    console.log(`📍 INPUT: lat=${lat}°, lng=${lng}°`);
+    //console.log(`\n🌍 === COORDINATE CONVERSION DEBUG ===`);
+    //console.log(`📍 INPUT: lat=${lat}°, lng=${lng}°`);
 
     // Coordinate conversion with longitude inversion for horizontally flipped Earth texture
     const phi = (90 - lat) * Math.PI / 180;  // colatitude
     const theta = (-lng) * Math.PI / 180;       // longitude INVERTED - Earth texture is horizontally flipped
 
-    console.log(`🔄 CONVERSION: phi=${(phi * 180 / Math.PI).toFixed(1)}° (colatitude), theta=${(theta * 180 / Math.PI).toFixed(1)}° (longitude)`);
+    //console.log(`🔄 CONVERSION: phi=${(phi * 180 / Math.PI).toFixed(1)}° (colatitude), theta=${(theta * 180 / Math.PI).toFixed(1)}° (longitude)`);
 
     const x = radius * Math.sin(phi) * Math.cos(theta);
     const y = radius * Math.cos(phi);
     const z = radius * Math.sin(phi) * Math.sin(theta);
 
-    console.log(`📊 OUTPUT: x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)}`);
-    console.log(`📐 SPHERICAL: r=${radius}, φ=${(phi * 180 / Math.PI).toFixed(1)}°, θ=${(theta * 180 / Math.PI).toFixed(1)}°`);
+    //console.log(`📊 OUTPUT: x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)}`);
+    //console.log(`📐 SPHERICAL: r=${radius}, φ=${(phi * 180 / Math.PI).toFixed(1)}°, θ=${(theta * 180 / Math.PI).toFixed(1)}°`);
 
     // Add reference information
     if (lat === 0 && lng === 0) {
-        console.log(`🎯 THIS IS EQUATOR/PRIME MERIDIAN - Should be off west coast of Africa`);
+        //console.log(`🎯 THIS IS EQUATOR/PRIME MERIDIAN - Should be off west coast of Africa`);
     } else if (Math.abs(lat - 51.5) < 0.1 && Math.abs(lng - (-0.1)) < 0.1) {
-        console.log(`🇬🇧 THIS IS LONDON - Should be over UK/England`);
+        //console.log(`🇬🇧 THIS IS LONDON - Should be over UK/England`);
     } else if (Math.abs(lat - 40.7) < 0.1 && Math.abs(lng - (-74.0)) < 0.1) {
-        console.log(`🇺🇸 THIS IS NEW YORK - Should be over eastern USA`);
+        //console.log(`🇺🇸 THIS IS NEW YORK - Should be over eastern USA`);
     }
 
-    console.log(`🌍 === END DEBUG ===\n`);
+    //console.log(`🌍 === END DEBUG ===\n`);
 
     return new THREE.Vector3(x, y, z);
 };
@@ -578,7 +578,7 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
         const processAllShipments = async () => {
             for (const [index, shipment] of validShipments.entries()) {
                 try {
-                    console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
+                    // console.log(`🔍 Processing shipment ${index + 1}/${validShipments.length}: ${shipment.id}`);
 
                     const originCoords = await getCityCoordinates(shipment.origin);
                     const destCoords = await getCityCoordinates(shipment.destination);

@@ -172,10 +172,10 @@ const ModalHeader = ({
                         <IconButton
                             onClick={onClose}
                             sx={{
-                                color: '#6e6e73',
-                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                color: 'white',
+                                backgroundColor: '#1c277d', // Navy blue background
                                 '&:hover': {
-                                    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+                                    backgroundColor: '#1a237e', // Darker navy on hover
                                 },
                                 p: 1
                             }}

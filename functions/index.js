@@ -63,7 +63,8 @@ const { smartStatusUpdate, forceStatusRefresh, performSmartStatusUpdate } = requ
 const { 
   onShipmentCreated, 
   onShipmentStatusChanged, 
-  sendTestNotification, 
+  sendTestNotification,
+  sendCustomerNoteNotification,
   updateNotificationPreferences,
   getNotificationPreferences,
   migrateToCollectionSystem
@@ -109,9 +110,8 @@ exports.performSmartStatusUpdate = performSmartStatusUpdate;
 exports.onShipmentCreated = onShipmentCreated;
 exports.onShipmentStatusChanged = onShipmentStatusChanged;
 exports.sendTestNotification = sendTestNotification;
+exports.sendCustomerNoteNotification = sendCustomerNoteNotification;
 exports.updateNotificationPreferences = updateNotificationPreferences;
-exports.getNotificationPreferences = getNotificationPreferences;
-exports.migrateToCollectionSystem = migrateToCollectionSystem;
 exports.getNotificationPreferences = getNotificationPreferences;
 exports.migrateToCollectionSystem = migrateToCollectionSystem;
 
