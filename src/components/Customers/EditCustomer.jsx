@@ -14,6 +14,8 @@ import {
     Select,
     MenuItem,
     FormHelperText,
+    Switch,
+    FormControlLabel,
     Stack,
     IconButton,
     TableContainer,
@@ -28,7 +30,8 @@ import {
     DialogContent,
     DialogActions,
     Container,
-    Link as MuiLink
+    Link as MuiLink,
+    Alert
 } from '@mui/material';
 import {
     Home as HomeIcon,
@@ -40,12 +43,13 @@ import {
     Delete as DeleteIcon,
     ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
-import { doc, getDoc, updateDoc, setDoc, collection, query, where, getDocs, serverTimestamp, limit, writeBatch, deleteDoc, addDoc } from 'firebase/firestore';
+import ModalHeader from '../common/ModalHeader';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, serverTimestamp, limit, writeBatch, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useSnackbar } from 'notistack';
 import './EditCustomer.css';
 import DestinationAddressDialog from './DestinationAddressDialog';
-import { isValidCustomerID, isValidEmail } from '../../utils/validationUtils';
+import { isValidEmail } from '../../utils/validationUtils';
 
 const emptyAddress = () => ({
     name: '',
@@ -87,10 +91,15 @@ const initialEditFormState = {
     mainContact_specialInstructions: '',
 };
 
-const EditCustomer = () => {
+
+
+const EditCustomer = ({ customerId = null, onBackToDetail = null, onCustomerUpdated = null, isModal = false }) => {
     const { id: customerDocIdFromUrl } = useParams();
     const navigate = useNavigate();
     const { enqueueSnackbar } = useSnackbar();
+
+    // Use prop customerId if provided, otherwise fall back to URL parameter
+    const id = customerId || customerDocIdFromUrl;
 
     const [customerData, setCustomerData] = useState(initialEditFormState);
     const [loading, setLoading] = useState(true);
@@ -104,14 +113,17 @@ const EditCustomer = () => {
     const [initialUserDefinedCustomerID, setInitialUserDefinedCustomerID] = useState('');
     const [mainContactAddressBookId, setMainContactAddressBookId] = useState(null);
 
+
     useEffect(() => {
-        if (!customerDocIdFromUrl) {
+        if (!id) {
             enqueueSnackbar('No customer ID provided for editing.', { variant: 'error' });
-            navigate('/customers');
+            if (!isModal) {
+                navigate('/customers');
+            }
             return;
         }
         setLoading(true);
-        const customerDocRef = doc(db, 'customers', customerDocIdFromUrl);
+        const customerDocRef = doc(db, 'customers', id);
         getDoc(customerDocRef)
             .then(async (docSnap) => {
                 if (docSnap.exists()) {
@@ -186,7 +198,9 @@ const EditCustomer = () => {
                     }
                 } else {
                     enqueueSnackbar('Customer not found.', { variant: 'error' });
-                    navigate('/customers');
+                    if (!isModal) {
+                        navigate('/customers');
+                    }
                 }
             })
             .catch((error) => {
@@ -194,7 +208,7 @@ const EditCustomer = () => {
                 enqueueSnackbar('Error fetching customer data: ' + error.message, { variant: 'error' });
             })
             .finally(() => setLoading(false));
-    }, [customerDocIdFromUrl, navigate, enqueueSnackbar]);
+    }, [id, navigate, enqueueSnackbar, isModal]);
 
     const fetchDestinationAddresses = async (userDefinedCustID) => {
         if (!userDefinedCustID) {
@@ -229,18 +243,27 @@ const EditCustomer = () => {
         }
     };
 
+
+
     const validateForm = async () => {
         const newErrors = {};
+
+        // Customer name validation
         if (!customerData.name?.trim()) {
             newErrors.name = 'Customer / Company Name is required.';
         }
-        if (!customerData.mainContact_firstName?.trim() && !customerData.mainContact_lastName?.trim()) {
-            newErrors.mainContact_firstName = 'Main Contact First Name is required.';
-            newErrors.mainContact_lastName = 'Main Contact Last Name is required.';
-        } else if (!customerData.mainContact_firstName?.trim()) {
-            newErrors.mainContact_firstName = 'Main Contact First Name is required.';
-        } else if (!customerData.mainContact_lastName?.trim()) {
-            newErrors.mainContact_lastName = 'Main Contact Last Name is required.';
+
+        // Customer ID validation - just check if it exists (should always exist for edit)
+        if (!customerData.customerID?.trim()) {
+            newErrors.customerID = 'Customer ID is required.';
+        }
+
+        // Contact validation
+        if (!customerData.mainContact_firstName?.trim()) {
+            newErrors.mainContact_firstName = 'First Name is required.';
+        }
+        if (!customerData.mainContact_lastName?.trim()) {
+            newErrors.mainContact_lastName = 'Last Name is required.';
         }
         if (!customerData.mainContact_email?.trim()) {
             newErrors.mainContact_email = 'Main Contact Email is required.';
@@ -266,7 +289,7 @@ const EditCustomer = () => {
 
     const handleSave = async () => {
         if (!await validateForm()) return;
-        if (!customerDocIdFromUrl) {
+        if (!id) {
             enqueueSnackbar('Error: No customer document ID found for update.', { variant: 'error' });
             return;
         }
@@ -307,7 +330,7 @@ const EditCustomer = () => {
         }
 
         try {
-            const customerDocRef = doc(db, 'customers', customerDocIdFromUrl);
+            const customerDocRef = doc(db, 'customers', id);
             await updateDoc(customerDocRef, customerCoreDataToSave);
 
             if (mainContactAddressBookId) {
@@ -318,7 +341,18 @@ const EditCustomer = () => {
                 setMainContactAddressBookId(newContactRef.id);
             }
             enqueueSnackbar('Customer updated successfully!', { variant: 'success' });
-            navigate(`/customers/${customerDocIdFromUrl}`);
+
+            // Call onCustomerUpdated callback if provided (for modal mode)
+            if (onCustomerUpdated) {
+                onCustomerUpdated(id);
+            }
+
+            // Navigate based on modal mode
+            if (onBackToDetail) {
+                onBackToDetail();
+            } else {
+                navigate(`/customers/${id}`);
+            }
         } catch (error) {
             console.error('Error updating customer:', error);
             enqueueSnackbar('Error updating customer: ' + error.message, { variant: 'error' });
@@ -447,190 +481,618 @@ const EditCustomer = () => {
     }
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 2, mb: 4 }}>
-            <Box className="edit-customer-container" sx={{ p: 0 }}>
-                <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 2 }}>
-                    <MuiLink
-                        component={RouterLink}
-                        to="/"
-                        sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
-                    >
-                        <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
-                        Home
-                    </MuiLink>
-                    <MuiLink
-                        component={RouterLink}
-                        to="/customers"
-                        sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
-                    >
-                        Customers
-                    </MuiLink>
-                    <Typography color="text.primary">
-                        {customerData.name || 'Edit Customer'}
-                    </Typography>
-                </Breadcrumbs>
+        <Box sx={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'white'
+        }}>
+            {/* Modal Header - only show when used as standalone modal, not in sliding system */}
+            {isModal && !onBackToDetail && (
+                <ModalHeader
+                    title="Edit Customer"
+                    onBack={() => navigate('/customers')}
+                    showBackButton={true}
+                    showCloseButton={false}
+                />
+            )}
 
-                <Paper elevation={3} sx={{ p: { xs: 2, sm: 3, md: 4 }, mb: 4 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap' }}>
-                        <Typography variant="h4" component="h1" sx={{ mb: { xs: 2, sm: 0 } }}>
-                            {`Edit: ${customerData.name || customerData.customerID}`}
+            {/* Breadcrumb - only show when not in modal mode */}
+            {!isModal && (
+                <Box sx={{ px: 2, pt: 2 }}>
+                    <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 2 }}>
+                        <MuiLink
+                            component={RouterLink}
+                            to="/"
+                            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+                        >
+                            <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+                            Home
+                        </MuiLink>
+                        <MuiLink
+                            component={RouterLink}
+                            to="/customers"
+                            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+                        >
+                            Customers
+                        </MuiLink>
+                        <Typography color="text.primary">
+                            {customerData.name || 'Edit Customer'}
                         </Typography>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-                            <Button variant="outlined" onClick={() => navigate('/customers')} disabled={saving} startIcon={<ArrowBackIcon />} sx={{ width: '100%' }}>
-                                Back
+                    </Breadcrumbs>
+                </Box>
+            )}
+
+            {/* Scrollable Content Area */}
+            <Box sx={{
+                flex: 1,
+                overflow: 'auto',
+                minHeight: 0,
+                px: 3,
+                pb: 4
+            }}>
+                {/* Customer Header - show in all modal modes */}
+                {isModal && (
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        mb: 3,
+                        pt: 2
+                    }}>
+                        <Box>
+                            <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, mb: 1 }}>
+                                Editing: {customerData.name || 'Customer'}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
+                                    Customer ID: {customerData.customerID}
+                                </Typography>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(customerData.customerID);
+                                    }}
+                                    sx={{
+                                        padding: '2px',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                        }
+                                    }}
+                                    title="Copy Customer ID to clipboard"
+                                >
+                                    <ContentCopyIcon sx={{ fontSize: '12px' }} />
+                                </IconButton>
+                            </Box>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={() => {
+                                    if (onBackToDetail) {
+                                        onBackToDetail();
+                                    } else {
+                                        navigate(`/customers/${id}`);
+                                    }
+                                }}
+                                disabled={saving}
+                                sx={{ fontSize: '12px', textTransform: 'none' }}
+                            >
+                                Cancel
                             </Button>
-                            <Button variant="contained" color="primary" onClick={handleSave} disabled={saving || loading} startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />} sx={{ width: '100%' }}>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                                onClick={handleSave}
+                                disabled={saving || loading}
+                                sx={{ fontSize: '12px', textTransform: 'none' }}
+                            >
                                 {saving ? 'Saving...' : 'Save'}
                             </Button>
-                        </Stack>
+                        </Box>
                     </Box>
+                )}
 
-                    <Grid container spacing={3}>
-                        <Grid item xs={12}><Typography variant="h6">Customer Details</Typography></Grid>
+                {/* Header Section - only show when not in modal mode */}
+                {!isModal && (
+                    <Paper sx={{
+                        p: 3,
+                        mb: 2,
+                        border: '1px solid #e2e8f0'
+                    }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <Typography variant="h5" component="h1" sx={{ fontSize: '18px', fontWeight: 600, mb: { xs: 2, sm: 0 } }}>
+                                {`Edit: ${customerData.name || customerData.customerID}`}
+                            </Typography>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => {
+                                        if (onBackToDetail) {
+                                            onBackToDetail();
+                                        } else {
+                                            navigate(`/customers/${id}`);
+                                        }
+                                    }}
+                                    disabled={saving}
+                                    startIcon={<ArrowBackIcon />}
+                                    size="small"
+                                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                                >
+                                    Back
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    color="primary"
+                                    onClick={handleSave}
+                                    disabled={saving || loading}
+                                    startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                                    size="small"
+                                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                                >
+                                    {saving ? 'Saving...' : 'Save Changes'}
+                                </Button>
+                            </Stack>
+                        </Box>
+                    </Paper>
+                )}
+
+                {/* Customer Details Section */}
+                <Paper sx={{
+                    p: 3,
+                    mb: 2,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 2
+                }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Customer Details
+                    </Typography>
+                    <Grid container spacing={2}>
                         <Grid item xs={12} md={6}>
                             <TextField
-                                label="Customer ID (Alphanumeric)"
-                                name="customerID"
-                                value={customerData.customerID}
-                                error={!!errors.customerID}
-                                helperText={errors.customerID}
+                                label="Customer / Company Name"
+                                name="name"
+                                value={customerData.name}
+                                onChange={handleInputChange}
+                                error={!!errors.name}
+                                helperText={errors.name}
                                 fullWidth
                                 required
-                                InputProps={{
-                                    readOnly: true,
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
                                 }}
                             />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Customer / Company Name" name="name" value={customerData.name} onChange={handleInputChange} error={!!errors.name} helperText={errors.name} fullWidth required disabled={saving || loading} />
+                            <TextField
+                                label="Customer ID"
+                                name="customerID"
+                                value={customerData.customerID}
+                                error={!!errors.customerID}
+                                helperText={errors.customerID || 'Customer ID cannot be changed after creation'}
+                                fullWidth
+                                required
+                                disabled={true}
+                                size="small"
+                                inputProps={{
+                                    style: { textTransform: 'uppercase' }
+                                }}
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
 
-                        <Grid item xs={12} sx={{ mt: 2 }}><Typography variant="h6">Main Contact Person & Address</Typography></Grid>
+                        <Grid item xs={12}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={customerData.status === 'active'}
+                                        onChange={(e) => {
+                                            setCustomerData(prev => ({
+                                                ...prev,
+                                                status: e.target.checked ? 'active' : 'inactive'
+                                            }));
+                                            if (errors.status) {
+                                                setErrors(prev => ({ ...prev, status: null }));
+                                            }
+                                        }}
+                                        disabled={saving || loading}
+                                        color="primary"
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                        Customer Status: {customerData.status === 'active' ? 'Active' : 'Inactive'}
+                                    </Typography>
+                                }
+                                sx={{ mt: 1 }}
+                            />
+                            {errors.status && (
+                                <FormHelperText error sx={{ ml: 0, mt: 0.5 }}>
+                                    {errors.status}
+                                </FormHelperText>
+                            )}
+                        </Grid>
+                    </Grid>
+                </Paper>
+
+                {/* Main Contact Section */}
+                <Paper sx={{
+                    p: 3,
+                    mb: 2,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 2
+                }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Main Contact Person & Address
+                    </Typography>
+                    <Grid container spacing={2}>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact First Name" name="mainContact_firstName" value={customerData.mainContact_firstName} onChange={handleInputChange} error={!!errors.mainContact_firstName} helperText={errors.mainContact_firstName} fullWidth disabled={saving || loading} />
+                            <TextField
+                                label="First Name"
+                                name="mainContact_firstName"
+                                value={customerData.mainContact_firstName}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_firstName}
+                                helperText={errors.mainContact_firstName}
+                                fullWidth
+                                required
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Last Name" name="mainContact_lastName" value={customerData.mainContact_lastName} onChange={handleInputChange} error={!!errors.mainContact_lastName} helperText={errors.mainContact_lastName} fullWidth disabled={saving || loading} />
+                            <TextField
+                                label="Last Name"
+                                name="mainContact_lastName"
+                                value={customerData.mainContact_lastName}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_lastName}
+                                helperText={errors.mainContact_lastName}
+                                fullWidth
+                                required
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Email" name="mainContact_email" type="email" value={customerData.mainContact_email} onChange={handleInputChange} error={!!errors.mainContact_email} helperText={errors.mainContact_email} fullWidth required disabled={saving || loading} />
+                            <TextField
+                                label="Email"
+                                name="mainContact_email"
+                                type="email"
+                                value={customerData.mainContact_email}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_email}
+                                helperText={errors.mainContact_email}
+                                fullWidth
+                                required
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Phone" name="mainContact_phone" type="tel" value={customerData.mainContact_phone} onChange={handleInputChange} error={!!errors.mainContact_phone} helperText={errors.mainContact_phone} fullWidth required disabled={saving || loading} />
+                            <TextField
+                                label="Phone"
+                                name="mainContact_phone"
+                                type="tel"
+                                value={customerData.mainContact_phone}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_phone}
+                                helperText={errors.mainContact_phone}
+                                fullWidth
+                                required
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Company Name"
+                                name="mainContact_companyName"
+                                value={customerData.mainContact_companyName}
+                                onChange={handleInputChange}
+                                helperText="Defaults to Customer Name if blank"
+                                fullWidth
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Company (for address)" name="mainContact_companyName" value={customerData.mainContact_companyName} onChange={handleInputChange} helperText="Defaults to Customer Name if blank" fullWidth disabled={saving || loading} />
+                            <TextField
+                                label="Street Address"
+                                name="mainContact_street"
+                                value={customerData.mainContact_street}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_street}
+                                helperText={errors.mainContact_street}
+                                fullWidth
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Attention" name="mainContact_attention" value={customerData.mainContact_attention} onChange={handleInputChange} fullWidth disabled={saving || loading} />
+                            <TextField
+                                label="Street Address 2"
+                                name="mainContact_street2"
+                                value={customerData.mainContact_street2}
+                                onChange={handleInputChange}
+                                fullWidth
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Street" name="mainContact_street" value={customerData.mainContact_street} onChange={handleInputChange} error={!!errors.mainContact_street} helperText={errors.mainContact_street} fullWidth disabled={saving || loading} />
+                        <Grid item xs={12} md={4}>
+                            <TextField
+                                label="City"
+                                name="mainContact_city"
+                                value={customerData.mainContact_city}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_city}
+                                helperText={errors.mainContact_city}
+                                fullWidth
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField label="Main Contact Street 2" name="mainContact_street2" value={customerData.mainContact_street2} onChange={handleInputChange} fullWidth disabled={saving || loading} />
+                        <Grid item xs={12} md={4}>
+                            <TextField
+                                label="State/Province"
+                                name="mainContact_state"
+                                value={customerData.mainContact_state}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_state}
+                                helperText={errors.mainContact_state}
+                                fullWidth
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
-                        <Grid item xs={12} md={3}>
-                            <TextField label="Main Contact City" name="mainContact_city" value={customerData.mainContact_city} onChange={handleInputChange} error={!!errors.mainContact_city} helperText={errors.mainContact_city} fullWidth disabled={saving || loading} />
+                        <Grid item xs={12} md={4}>
+                            <TextField
+                                label="Postal Code"
+                                name="mainContact_postalCode"
+                                value={customerData.mainContact_postalCode}
+                                onChange={handleInputChange}
+                                error={!!errors.mainContact_postalCode}
+                                helperText={errors.mainContact_postalCode}
+                                fullWidth
+                                disabled={saving || loading}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiInputLabel-root': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                            />
                         </Grid>
-                        <Grid item xs={12} md={3}>
-                            <TextField label="Main Contact State/Province" name="mainContact_state" value={customerData.mainContact_state} onChange={handleInputChange} error={!!errors.mainContact_state} helperText={errors.mainContact_state} fullWidth disabled={saving || loading} />
-                        </Grid>
-                        <Grid item xs={12} md={3}>
-                            <TextField label="Main Contact Postal Code" name="mainContact_postalCode" value={customerData.mainContact_postalCode} onChange={handleInputChange} error={!!errors.mainContact_postalCode} helperText={errors.mainContact_postalCode} fullWidth disabled={saving || loading} />
-                        </Grid>
-                        <Grid item xs={12} md={3}>
-                            <FormControl fullWidth error={!!errors.mainContact_country} disabled={saving || loading}>
-                                <InputLabel>Main Contact Country</InputLabel>
-                                <Select name="mainContact_country" value={customerData.mainContact_country || 'US'} onChange={handleInputChange} label="Main Contact Country">
+                        <Grid item xs={12}>
+                            <FormControl fullWidth error={!!errors.mainContact_country} disabled={saving || loading} size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                <Select
+                                    name="mainContact_country"
+                                    value={customerData.mainContact_country || 'US'}
+                                    onChange={handleInputChange}
+                                    label="Country"
+                                    sx={{
+                                        fontSize: '12px'
+                                    }}
+                                >
                                     <MenuItem value="US">United States</MenuItem>
                                     <MenuItem value="CA">Canada</MenuItem>
                                 </Select>
                                 {errors.mainContact_country && <FormHelperText>{errors.mainContact_country}</FormHelperText>}
                             </FormControl>
                         </Grid>
-                        <Grid item xs={12}>
-                            <TextField label="Main Contact Address Nickname" name="mainContact_nickname" value={customerData.mainContact_nickname} onChange={handleInputChange} helperText="e.g., Main Office, Billing Address" fullWidth disabled={saving || loading} />
-                        </Grid>
-
-                        <Grid item xs={12} sx={{ mt: 2 }}><Typography variant="h6">Additional Customer Settings</Typography></Grid>
-                        <Grid item xs={12} md={12}>
-                            <FormControl fullWidth error={!!errors.status} disabled={saving || loading}>
-                                <InputLabel>Customer Status</InputLabel>
-                                <Select name="status" value={customerData.status} onChange={handleInputChange} label="Customer Status">
-                                    <MenuItem value="active">Active</MenuItem>
-                                    <MenuItem value="inactive">Inactive</MenuItem>
-                                    <MenuItem value="pending">Pending Approval</MenuItem>
-                                    <MenuItem value="suspended">Suspended</MenuItem>
-                                </Select>
-                                {errors.status && <FormHelperText>{errors.status}</FormHelperText>}
-                            </FormControl>
-                        </Grid>
                     </Grid>
                 </Paper>
 
-                <Paper elevation={3} sx={{ p: { xs: 2, sm: 3, md: 4 }, mt: 4 }}>
+                {/* Destination Addresses Section */}
+                <Paper sx={{
+                    p: 3,
+                    mb: 4,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 2
+                }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-                        <Typography variant="h5" gutterBottom component="div" sx={{ mb: { xs: 1, sm: 0 } }}>Destination Addresses</Typography>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-                            <Button variant="contained" onClick={() => handleOpenAddressDialog()} startIcon={<AddIcon />} disabled={saving || loading} size="small" sx={{ width: '100%' }}>
-                                Add Destination Address
-                            </Button>
-                        </Stack>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: { xs: 1, sm: 0 } }}>
+                            Destination Addresses
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            onClick={() => handleOpenAddressDialog()}
+                            startIcon={<AddIcon />}
+                            disabled={saving || loading}
+                            size="small"
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            Add Address
+                        </Button>
                     </Box>
                     {destinationAddresses.length === 0 ? (
-                        <Typography variant="body1" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-                            No destination addresses. Click "Add Destination" to create one.
-                        </Typography>
+                        <Alert severity="info" sx={{ fontSize: '12px' }}>
+                            No destination addresses. Click "Add Address" to create one.
+                        </Alert>
                     ) : (
                         <TableContainer>
-                            <Table size="small">
+                            <Table size="small" sx={{
+                                '& .MuiTableCell-root': {
+                                    fontSize: '12px',
+                                    padding: '8px 12px'
+                                },
+                                '& .MuiTableHead-root .MuiTableCell-root': {
+                                    fontWeight: 600,
+                                    backgroundColor: '#f8fafc',
+                                    color: '#374151'
+                                }
+                            }}>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Nickname/Name</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Company</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Address</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Contact Info</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Default</TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                                        <TableCell>Name</TableCell>
+                                        <TableCell>Company</TableCell>
+                                        <TableCell>Address</TableCell>
+                                        <TableCell>Contact</TableCell>
+                                        <TableCell>Default</TableCell>
+                                        <TableCell align="right">Actions</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {destinationAddresses.map((addr, index) => {
-                                        console.log(`EditCustomer Table Render - Destination Address ${index}:`, JSON.parse(JSON.stringify(addr)));
-                                        return (
-                                            <TableRow key={addr.id || index} hover>
-                                                <TableCell>{addr.nickname || addr.name || 'N/A'}</TableCell>
-                                                <TableCell>{addr.companyName || addr.company || 'N/A'}</TableCell>
-                                                <TableCell>
-                                                    {addr.street || addr.address1 || ''}
-                                                    {addr.street2 || addr.address2 ? <><br />{addr.street2 || addr.address2}</> : ''}
-                                                    <br />
-                                                    {`${addr.city || ''}, ${addr.state || addr.stateProv || ''} ${addr.postalCode || addr.zipPostal || ''}`}
-                                                    <br />
-                                                    {addr.country || addr.countryCode || ''}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {addr.contactName || `${addr.firstName || ''} ${addr.lastName || ''}`.trim() || 'N/A'}
-                                                    {addr.contactEmail || addr.email ? <><br />{addr.contactEmail || addr.email}</> : <><br />N/A</>}
-                                                    {addr.contactPhone || addr.phone ? <><br />{addr.contactPhone || addr.phone}</> : <><br />N/A</>}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {addr.isDefault || addr.isDefaultShipping ? <Chip label="Yes" color="primary" size="small" /> : <Chip label="No" variant="outlined" size="small" />}
-                                                </TableCell>
-                                                <TableCell align="right">
-                                                    <IconButton size="small" onClick={() => handleOpenAddressDialog(addr)} disabled={saving || loading} title="Edit Address"><EditIcon /></IconButton>
-                                                    <IconButton size="small" onClick={() => openConfirmDeleteDialog(addr.id)} disabled={saving || loading} title="Delete Address"><DeleteIcon color="error" /></IconButton>
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
+                                    {destinationAddresses.map((addr, index) => (
+                                        <TableRow key={addr.id || index} hover>
+                                            <TableCell>{addr.nickname || addr.name || 'N/A'}</TableCell>
+                                            <TableCell>{addr.companyName || addr.company || 'N/A'}</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', lineHeight: '1.4' }}>
+                                                {addr.street || addr.address1 || ''}
+                                                {addr.street2 || addr.address2 ? <><br />{addr.street2 || addr.address2}</> : ''}
+                                                <br />
+                                                {`${addr.city || ''}, ${addr.state || addr.stateProv || ''} ${addr.postalCode || addr.zipPostal || ''}`}
+                                                <br />
+                                                {addr.country || addr.countryCode || ''}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', lineHeight: '1.4' }}>
+                                                {addr.contactName || `${addr.firstName || ''} ${addr.lastName || ''}`.trim() || 'N/A'}
+                                                {addr.contactEmail || addr.email ? <><br />{addr.contactEmail || addr.email}</> : <><br />N/A</>}
+                                                {addr.contactPhone || addr.phone ? <><br />{addr.contactPhone || addr.phone}</> : <><br />N/A</>}
+                                            </TableCell>
+                                            <TableCell>
+                                                {addr.isDefault || addr.isDefaultShipping ?
+                                                    <Chip label="Yes" color="primary" size="small" sx={{ fontSize: '10px' }} /> :
+                                                    <Chip label="No" variant="outlined" size="small" sx={{ fontSize: '10px' }} />
+                                                }
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleOpenAddressDialog(addr)}
+                                                    disabled={saving || loading}
+                                                    title="Edit Address"
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => openConfirmDeleteDialog(addr.id)}
+                                                    disabled={saving || loading}
+                                                    title="Delete Address"
+                                                >
+                                                    <DeleteIcon fontSize="small" color="error" />
+                                                </IconButton>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
                                 </TableBody>
                             </Table>
                         </TableContainer>
                     )}
                 </Paper>
 
+                {/* Bottom spacing with subtle visual element */}
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    py: 4,
+                    mt: 2
+                }}>
+                    <Box sx={{
+                        width: '100px',
+                        height: '2px',
+                        background: 'linear-gradient(90deg, transparent, #e2e8f0, transparent)',
+                        borderRadius: '1px'
+                    }} />
+                </Box>
+
+                {/* Dialogs */}
                 <DestinationAddressDialog
                     key={editingAddress ? editingAddress.id || `addr-${Date.now()}` : 'new-address-dialog'}
                     open={isAddressDialogOpen}
@@ -642,19 +1104,33 @@ const EditCustomer = () => {
                 />
 
                 <Dialog open={isConfirmDeleteDialogOpen} onClose={() => setIsConfirmDeleteDialogOpen(false)}>
-                    <DialogTitle>Confirm Delete Address</DialogTitle>
+                    <DialogTitle sx={{ fontSize: '16px' }}>Confirm Delete Address</DialogTitle>
                     <DialogContent>
-                        <Typography>Are you sure you want to delete this destination address?</Typography>
+                        <Typography sx={{ fontSize: '12px' }}>Are you sure you want to delete this destination address?</Typography>
                     </DialogContent>
                     <DialogActions>
-                        <Button onClick={() => setIsConfirmDeleteDialogOpen(false)} disabled={saving}>Cancel</Button>
-                        <Button onClick={() => handleDeleteAddress(addressToDelete)} color="error" variant="contained" disabled={saving}>
-                            {saving ? <CircularProgress size={20} color="inherit" /> : 'Delete Address'}
+                        <Button
+                            onClick={() => setIsConfirmDeleteDialogOpen(false)}
+                            disabled={saving}
+                            size="small"
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => handleDeleteAddress(addressToDelete)}
+                            color="error"
+                            variant="contained"
+                            disabled={saving}
+                            size="small"
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            {saving ? <CircularProgress size={16} color="inherit" /> : 'Delete Address'}
                         </Button>
                     </DialogActions>
                 </Dialog>
             </Box>
-        </Container>
+        </Box>
     );
 };
 

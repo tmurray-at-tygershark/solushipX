@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, useImperativeHandle } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
     Box,
@@ -190,6 +190,9 @@ import './CustomerDetail.css';
 
 // Import common components
 import ModalHeader from '../common/ModalHeader';
+
+// Import EditCustomer component for sliding
+const EditCustomer = React.lazy(() => import('./EditCustomer'));
 
 // Enhanced emoji picker data for 2025 enterprise warehouse system
 const EMOJI_CATEGORIES = {
@@ -446,7 +449,7 @@ const StatusChip = React.memo(({ status }) => {
     );
 });
 
-const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToShipments = null, isModal = false, highlightNoteId = null }) => {
+const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = null, onNavigateToShipments = null, isModal = false, highlightNoteId = null, onEditStateChange = null }, ref) => {
     const { id: urlId } = useParams();
     const navigate = useNavigate();
     const { companyIdForAddress } = useCompany();
@@ -467,7 +470,9 @@ const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToS
     // Use prop customerId if provided, otherwise fall back to URL parameter
     const id = customerId || urlId;
 
-    // Use highlightNoteId prop for deep linking (passed from email notifications)
+    // Add sliding state for edit mode
+    const [showEditView, setShowEditView] = useState(false);
+    const [isSliding, setIsSliding] = useState(false);
 
     // Basic state
     const [customer, setCustomer] = useState(null);
@@ -547,6 +552,49 @@ const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToS
     const noteInputRef = useRef(null);
     const editorRef = useRef(null);
     const recordingIntervalRef = useRef(null);
+
+    // Sliding navigation handlers
+    const handleEditCustomer = () => {
+        setIsSliding(true);
+        setTimeout(() => {
+            setShowEditView(true);
+            // Notify parent about edit state change
+            if (onEditStateChange) {
+                onEditStateChange(true);
+            }
+            setTimeout(() => {
+                setIsSliding(false);
+            }, 50);
+        }, 150);
+    };
+
+    const handleBackToDetail = () => {
+        setIsSliding(true);
+        setTimeout(() => {
+            setShowEditView(false);
+            // Notify parent about edit state change
+            if (onEditStateChange) {
+                onEditStateChange(false);
+            }
+            setTimeout(() => {
+                setIsSliding(false);
+                // Refresh customer data after potential updates
+                fetchCustomerData();
+            }, 50);
+        }, 150);
+    };
+
+    const handleCustomerUpdated = (customerId) => {
+        // Refresh the customer data after update
+        fetchCustomerData();
+        // Show success message
+        setShowSuccess(true);
+    };
+
+    // Expose methods to parent component via ref
+    useImperativeHandle(ref, () => ({
+        handleBackToDetail
+    }));
 
     // Initialize component with enterprise features
     useEffect(() => {
@@ -1743,630 +1791,506 @@ const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToS
             sx={{
                 width: '100%',
                 flex: 1,
-                p: 3,
-                overflow: 'auto'
+                position: 'relative',
+                overflow: 'hidden'
             }}>
-            {/* Breadcrumb - only show when not in modal mode */}
-            {!isModal && (
-                <Box sx={{ mb: 2 }}>
-                    <div className="breadcrumb-container">
-                        <Link to="/dashboard" className="breadcrumb-link">
-                            <HomeIcon />
-                            <Typography variant="body2" sx={{ fontSize: '12px' }}>Dashboard</Typography>
-                        </Link>
-                        <div className="breadcrumb-separator">
-                            <NavigateNextIcon />
-                        </div>
-                        <Link to="/customers" className="breadcrumb-link">
-                            <Typography variant="body2" sx={{ fontSize: '12px' }}>Customers</Typography>
-                        </Link>
-                        <div className="breadcrumb-separator">
-                            <NavigateNextIcon />
-                        </div>
-                        <Typography variant="body2" className="breadcrumb-current" sx={{ fontSize: '12px' }}>
-                            {customer?.name || 'Customer Details'}
-                        </Typography>
-                    </div>
-                </Box>
+
+            {/* Modal Header - only show when used as standalone modal, not in sliding system */}
+            {isModal && !onBackToTable && !showEditView && (
+                <ModalHeader
+                    title="Customer Details"
+                    onBack={onBackToTable}
+                    onClose={() => {
+                        // Handle modal close if needed
+                    }}
+                    showBackButton={!!onBackToTable}
+                    showCloseButton={!onBackToTable}
+                />
             )}
 
-            {/* Customer Header */}
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                mb: 3
-            }}>
-                <Box>
-                    <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, mb: 1 }}>
-                        {customer.name}
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
-                            Customer ID: {customer.customerID}
-                        </Typography>
-                        <IconButton
-                            size="small"
-                            onClick={() => {
-                                navigator.clipboard.writeText(customer.customerID);
-                                // You could add a toast notification here if desired
-                            }}
-                            sx={{
-                                padding: '2px',
-                                '&:hover': {
-                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                }
-                            }}
-                            title="Copy Customer ID to clipboard"
-                        >
-                            <ContentCopyIcon sx={{ fontSize: '12px' }} />
-                        </IconButton>
+            {/* Main Customer Detail View */}
+            <Box
+                sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    transform: showEditView ? 'translateX(-100%)' : 'translateX(0)',
+                    transition: 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.3s ease',
+                    opacity: isSliding ? 0.8 : 1,
+                    p: 3,
+                    overflow: 'auto',
+                    zIndex: showEditView ? 1 : 2
+                }}
+            >
+                {/* Breadcrumb - only show when not in modal mode */}
+                {!isModal && (
+                    <Box sx={{ mb: 2 }}>
+                        <div className="breadcrumb-container">
+                            <Link to="/dashboard" className="breadcrumb-link">
+                                <HomeIcon />
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>Dashboard</Typography>
+                            </Link>
+                            <div className="breadcrumb-separator">
+                                <NavigateNextIcon />
+                            </div>
+                            <Link to="/customers" className="breadcrumb-link">
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>Customers</Typography>
+                            </Link>
+                            <div className="breadcrumb-separator">
+                                <NavigateNextIcon />
+                            </div>
+                            <Typography variant="body2" className="breadcrumb-current" sx={{ fontSize: '12px' }}>
+                                {customer?.name || 'Customer Details'}
+                            </Typography>
+                        </div>
                     </Box>
-                </Box>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                    <Chip
-                        label={customer.status || 'Unknown'}
-                        color={customer.status === 'active' ? 'success' : 'default'}
-                        size="small"
-                    />
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<ShippingIcon />}
-                        onClick={() => {
-                            if (onNavigateToShipments) {
-                                onNavigateToShipments({ customerId: customer.customerID });
-                            } else {
-                                navigate(`/shipments?customerId=${customer.customerID}`);
-                            }
-                        }}
-                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                    >
-                        View Shipments
-                    </Button>
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<EditIcon />}
-                        onClick={() => navigate(`/customers/${id}/edit`)}
-                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                    >
-                        Edit Customer
-                    </Button>
-                </Box>
-            </Box>
-
-            {/* Main Content Grid */}
-            <Grid container spacing={2}>
-                {/* Contact Information */}
-                <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                            Contact Information
-                        </Typography>
-                        <Stack spacing={2}>
-                            <Box>
-                                <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
-                                    Contact Person
-                                </Typography>
-                                <Typography sx={{ fontSize: '12px' }}>
-                                    {mainContactDetails ? `${mainContactDetails.firstName || ''} ${mainContactDetails.lastName || ''}`.trim() : 'N/A'}
-                                </Typography>
-                            </Box>
-                            <Box>
-                                <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
-                                    Email Address
-                                </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Typography sx={{ fontSize: '12px' }}>
-                                        {mainContactDetails ? mainContactDetails.email : (customer.email || 'N/A')}
-                                    </Typography>
-                                    {(mainContactDetails?.email || customer.email) && (
-                                        <IconButton
-                                            size="small"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(mainContactDetails?.email || customer.email);
-                                            }}
-                                            sx={{
-                                                padding: '2px',
-                                                '&:hover': {
-                                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                                }
-                                            }}
-                                            title="Copy email to clipboard"
-                                        >
-                                            <ContentCopyIcon sx={{ fontSize: '12px' }} />
-                                        </IconButton>
-                                    )}
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
-                                    Phone Number
-                                </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Typography sx={{ fontSize: '12px' }}>
-                                        {mainContactDetails ? mainContactDetails.phone : (customer.phone || 'N/A')}
-                                    </Typography>
-                                    {(mainContactDetails?.phone || customer.phone) && (
-                                        <IconButton
-                                            size="small"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(mainContactDetails?.phone || customer.phone);
-                                            }}
-                                            sx={{
-                                                padding: '2px',
-                                                '&:hover': {
-                                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                                }
-                                            }}
-                                            title="Copy phone number to clipboard"
-                                        >
-                                            <ContentCopyIcon sx={{ fontSize: '12px' }} />
-                                        </IconButton>
-                                    )}
-                                </Box>
-                            </Box>
-
-                        </Stack>
-                    </Paper>
-                </Grid>
-
-                {/* Address Information */}
-                <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                            Address Information
-                        </Typography>
-                        <Stack spacing={2}>
-                            <Box>
-                                <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
-                                    Address
-                                </Typography>
-                                {mainContactDetails ? (
-                                    <Box sx={{ fontSize: '12px', lineHeight: '1.4' }}>
-                                        {mainContactDetails.address1 && <div>{mainContactDetails.address1}</div>}
-                                        {mainContactDetails.address2 && <div>{mainContactDetails.address2}</div>}
-                                        {(mainContactDetails.city || mainContactDetails.stateProv || mainContactDetails.zipPostal) && (
-                                            <div>
-                                                {[mainContactDetails.city, mainContactDetails.stateProv, mainContactDetails.zipPostal].filter(Boolean).join(', ')}
-                                            </div>
-                                        )}
-                                        {mainContactDetails.country && <div>{mainContactDetails.country}</div>}
-                                    </Box>
-                                ) : (
-                                    <Typography sx={{ fontSize: '12px' }}>N/A</Typography>
-                                )}
-                            </Box>
-                            {mainContactDetails && (
-                                <Box sx={{ mt: 2 }}>
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        startIcon={<MapIcon />}
-                                        onClick={handleViewLocation}
-                                        disabled={mapLoading}
-                                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                                    >
-                                        {mapLoading ? 'Loading...' : 'View Location'}
-                                    </Button>
-                                </Box>
-                            )}
-                        </Stack>
-                    </Paper>
-                </Grid>
-
-                {/* Shipment Destinations */}
-                {destinationAddresses.length > 0 && (
-                    <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                            Delivery Addresses
-                        </Typography>
-                        <TableContainer>
-                            <Table sx={{
-                                '& .MuiTableCell-root': {
-                                    fontSize: '12px',
-                                    padding: '12px 16px'
-                                },
-                                '& .MuiTableHead-root .MuiTableCell-root': {
-                                    fontWeight: 600,
-                                    backgroundColor: '#f8fafc',
-                                    color: '#374151'
-                                }
-                            }}>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Nickname</TableCell>
-                                        <TableCell>Company Name</TableCell>
-                                        <TableCell>Contact</TableCell>
-                                        <TableCell>Address</TableCell>
-                                        <TableCell>Email</TableCell>
-                                        <TableCell>Phone</TableCell>
-                                        <TableCell>Default</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {destinationAddresses.map((addr) => (
-                                        <TableRow key={addr.id} hover>
-                                            <TableCell>{addr.nickname || 'N/A'}</TableCell>
-                                            <TableCell>{addr.companyName || 'N/A'}</TableCell>
-                                            <TableCell>{`${addr.firstName || ''} ${addr.lastName || ''}`.trim() || 'N/A'}</TableCell>
-                                            <TableCell sx={{ fontSize: '12px', lineHeight: '1.4' }}>
-                                                {addr.address1}
-                                                {addr.address2 && <><br />{addr.address2}</>}
-                                                <br />
-                                                {`${addr.city}, ${addr.stateProv} ${addr.zipPostal}`}
-                                                <br />
-                                                {addr.country}
-                                            </TableCell>
-                                            <TableCell>{addr.email || 'N/A'}</TableCell>
-                                            <TableCell>{addr.phone || 'N/A'}</TableCell>
-                                            <TableCell>
-                                                {addr.isDefault ?
-                                                    <Chip label="Yes" color="primary" size="small" /> :
-                                                    <Chip label="No" variant="outlined" size="small" />
-                                                }
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Grid>
                 )}
 
-                {/* Customer Notes */}
-                <Grid item xs={12}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            Customer Notes
-                            {notes.length > 0 && (
-                                <Chip
-                                    label={notes.length}
-                                    size="small"
-                                    sx={{ ml: 1, fontSize: '11px', height: '20px' }}
-                                />
-                            )}
+                {/* Customer Header */}
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    mb: 3
+                }}>
+                    <Box>
+                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, mb: 1 }}>
+                            {customer.name}
                         </Typography>
-                        {notes.length > 0 && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
-                                Last updated {formatRelativeTime(notes[0]?.createdAt)}
+                                Customer ID: {customer.customerID}
                             </Typography>
-                        )}
-                    </Box>
-
-                    {/* Add Note Section */}
-                    <Box sx={{ mb: 3, p: 3, bgcolor: '#f8fafc', borderRadius: 2, width: '100%', maxWidth: 'none' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                            {getUserAvatar(getCurrentUserUID())}
+                            <IconButton
+                                size="small"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(customer.customerID);
+                                    // You could add a toast notification here if desired
+                                }}
+                                sx={{
+                                    padding: '2px',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                                title="Copy Customer ID to clipboard"
+                            >
+                                <ContentCopyIcon sx={{ fontSize: '12px' }} />
+                            </IconButton>
                         </Box>
-                        <TextField
-                            ref={noteInputRef}
-                            fullWidth
-                            multiline
-                            rows={4}
-                            placeholder="Add a note about this customer..."
-                            value={newNote}
-                            onChange={(e) => setNewNote(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.ctrlKey && e.key === 'Enter' && !addingNote && newNote.trim()) {
-                                    e.preventDefault();
-                                    handleAddNote();
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Chip
+                            label={customer.status || 'Unknown'}
+                            color={customer.status === 'active' ? 'success' : 'default'}
+                            size="small"
+                        />
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<ShippingIcon />}
+                            onClick={() => {
+                                if (onNavigateToShipments) {
+                                    onNavigateToShipments({ customerId: customer.customerID });
+                                } else {
+                                    navigate(`/shipments?customerId=${customer.customerID}`);
                                 }
                             }}
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            View Shipments
+                        </Button>
+                        <Button
                             variant="outlined"
-                            disabled={addingNote}
-                            sx={{
-                                mb: 2,
-                                width: '100% !important',
-                                maxWidth: 'none !important',
-                                minWidth: '100%',
-                                '& .MuiFormControl-root': {
-                                    width: '100% !important',
-                                    maxWidth: 'none !important'
-                                },
-                                '& .MuiOutlinedInput-root': {
-                                    fontSize: '14px',
-                                    backgroundColor: 'white',
+                            size="small"
+                            startIcon={<EditIcon />}
+                            onClick={handleEditCustomer}
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            Edit Customer
+                        </Button>
+                    </Box>
+                </Box>
+
+                {/* Main Content Grid */}
+                <Grid container spacing={2}>
+                    {/* Contact Information */}
+                    <Grid item xs={12} md={6}>
+                        <Paper sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                                Contact Information
+                            </Typography>
+                            <Stack spacing={2}>
+                                <Box>
+                                    <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
+                                        Contact Person
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {mainContactDetails ? `${mainContactDetails.firstName || ''} ${mainContactDetails.lastName || ''}`.trim() : 'N/A'}
+                                    </Typography>
+                                </Box>
+                                <Box>
+                                    <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
+                                        Email Address
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography sx={{ fontSize: '12px' }}>
+                                            {mainContactDetails ? mainContactDetails.email : (customer.email || 'N/A')}
+                                        </Typography>
+                                        {(mainContactDetails?.email || customer.email) && (
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(mainContactDetails?.email || customer.email);
+                                                }}
+                                                sx={{
+                                                    padding: '2px',
+                                                    '&:hover': {
+                                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                                    }
+                                                }}
+                                                title="Copy email to clipboard"
+                                            >
+                                                <ContentCopyIcon sx={{ fontSize: '12px' }} />
+                                            </IconButton>
+                                        )}
+                                    </Box>
+                                </Box>
+                                <Box>
+                                    <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
+                                        Phone Number
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography sx={{ fontSize: '12px' }}>
+                                            {mainContactDetails ? mainContactDetails.phone : (customer.phone || 'N/A')}
+                                        </Typography>
+                                        {(mainContactDetails?.phone || customer.phone) && (
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(mainContactDetails?.phone || customer.phone);
+                                                }}
+                                                sx={{
+                                                    padding: '2px',
+                                                    '&:hover': {
+                                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                                    }
+                                                }}
+                                                title="Copy phone number to clipboard"
+                                            >
+                                                <ContentCopyIcon sx={{ fontSize: '12px' }} />
+                                            </IconButton>
+                                        )}
+                                    </Box>
+                                </Box>
+
+                            </Stack>
+                        </Paper>
+                    </Grid>
+
+                    {/* Address Information */}
+                    <Grid item xs={12} md={6}>
+                        <Paper sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                                Address Information
+                            </Typography>
+                            <Stack spacing={2}>
+                                <Box>
+                                    <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500, mb: 0.5 }}>
+                                        Address
+                                    </Typography>
+                                    {mainContactDetails ? (
+                                        <Box sx={{ fontSize: '12px', lineHeight: '1.4' }}>
+                                            {mainContactDetails.address1 && <div>{mainContactDetails.address1}</div>}
+                                            {mainContactDetails.address2 && <div>{mainContactDetails.address2}</div>}
+                                            {(mainContactDetails.city || mainContactDetails.stateProv || mainContactDetails.zipPostal) && (
+                                                <div>
+                                                    {[mainContactDetails.city, mainContactDetails.stateProv, mainContactDetails.zipPostal].filter(Boolean).join(', ')}
+                                                </div>
+                                            )}
+                                            {mainContactDetails.country && <div>{mainContactDetails.country}</div>}
+                                        </Box>
+                                    ) : (
+                                        <Typography sx={{ fontSize: '12px' }}>N/A</Typography>
+                                    )}
+                                </Box>
+                                {mainContactDetails && (
+                                    <Box sx={{ mt: 2 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            startIcon={<MapIcon />}
+                                            onClick={handleViewLocation}
+                                            disabled={mapLoading}
+                                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                                        >
+                                            {mapLoading ? 'Loading...' : 'View Location'}
+                                        </Button>
+                                    </Box>
+                                )}
+                            </Stack>
+                        </Paper>
+                    </Grid>
+
+                    {/* Shipment Destinations */}
+                    {destinationAddresses.length > 0 && (
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                                Delivery Addresses
+                            </Typography>
+                            <TableContainer>
+                                <Table sx={{
+                                    '& .MuiTableCell-root': {
+                                        fontSize: '12px',
+                                        padding: '12px 16px'
+                                    },
+                                    '& .MuiTableHead-root .MuiTableCell-root': {
+                                        fontWeight: 600,
+                                        backgroundColor: '#f8fafc',
+                                        color: '#374151'
+                                    }
+                                }}>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Nickname</TableCell>
+                                            <TableCell>Company Name</TableCell>
+                                            <TableCell>Contact</TableCell>
+                                            <TableCell>Address</TableCell>
+                                            <TableCell>Email</TableCell>
+                                            <TableCell>Phone</TableCell>
+                                            <TableCell>Default</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {destinationAddresses.map((addr) => (
+                                            <TableRow key={addr.id} hover>
+                                                <TableCell>{addr.nickname || 'N/A'}</TableCell>
+                                                <TableCell>{addr.companyName || 'N/A'}</TableCell>
+                                                <TableCell>{`${addr.firstName || ''} ${addr.lastName || ''}`.trim() || 'N/A'}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px', lineHeight: '1.4' }}>
+                                                    {addr.address1}
+                                                    {addr.address2 && <><br />{addr.address2}</>}
+                                                    <br />
+                                                    {`${addr.city}, ${addr.stateProv} ${addr.zipPostal}`}
+                                                    <br />
+                                                    {addr.country}
+                                                </TableCell>
+                                                <TableCell>{addr.email || 'N/A'}</TableCell>
+                                                <TableCell>{addr.phone || 'N/A'}</TableCell>
+                                                <TableCell>
+                                                    {addr.isDefault ?
+                                                        <Chip label="Yes" color="primary" size="small" /> :
+                                                        <Chip label="No" variant="outlined" size="small" />
+                                                    }
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Grid>
+                    )}
+
+                    {/* Customer Notes */}
+                    <Grid item xs={12}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                Customer Notes
+                                {notes.length > 0 && (
+                                    <Chip
+                                        label={notes.length}
+                                        size="small"
+                                        sx={{ ml: 1, fontSize: '11px', height: '20px' }}
+                                    />
+                                )}
+                            </Typography>
+                            {notes.length > 0 && (
+                                <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
+                                    Last updated {formatRelativeTime(notes[0]?.createdAt)}
+                                </Typography>
+                            )}
+                        </Box>
+
+                        {/* Add Note Section */}
+                        <Box sx={{ mb: 3, p: 3, bgcolor: '#f8fafc', borderRadius: 2, width: '100%', maxWidth: 'none' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                {getUserAvatar(getCurrentUserUID())}
+                            </Box>
+                            <TextField
+                                ref={noteInputRef}
+                                fullWidth
+                                multiline
+                                rows={4}
+                                placeholder="Add a note about this customer..."
+                                value={newNote}
+                                onChange={(e) => setNewNote(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.ctrlKey && e.key === 'Enter' && !addingNote && newNote.trim()) {
+                                        e.preventDefault();
+                                        handleAddNote();
+                                    }
+                                }}
+                                variant="outlined"
+                                disabled={addingNote}
+                                sx={{
+                                    mb: 2,
                                     width: '100% !important',
                                     maxWidth: 'none !important',
                                     minWidth: '100%',
-                                    '&:hover': {
-                                        borderColor: '#3b82f6'
+                                    '& .MuiFormControl-root': {
+                                        width: '100% !important',
+                                        maxWidth: 'none !important'
                                     },
-                                    '&.Mui-focused': {
-                                        borderColor: '#3b82f6',
-                                        boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)'
+                                    '& .MuiOutlinedInput-root': {
+                                        fontSize: '14px',
+                                        backgroundColor: 'white',
+                                        width: '100% !important',
+                                        maxWidth: 'none !important',
+                                        minWidth: '100%',
+                                        '&:hover': {
+                                            borderColor: '#3b82f6'
+                                        },
+                                        '&.Mui-focused': {
+                                            borderColor: '#3b82f6',
+                                            boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)'
+                                        }
+                                    },
+                                    '& .MuiInputBase-root': {
+                                        width: '100% !important',
+                                        maxWidth: 'none !important',
+                                        minWidth: '100%'
+                                    },
+                                    '& .MuiInputBase-input': {
+                                        width: '100% !important',
+                                        maxWidth: 'none !important',
+                                        minWidth: '100%'
+                                    },
+                                    '& textarea': {
+                                        width: '100% !important',
+                                        maxWidth: 'none !important',
+                                        minWidth: '100%'
                                     }
-                                },
-                                '& .MuiInputBase-root': {
-                                    width: '100% !important',
-                                    maxWidth: 'none !important',
-                                    minWidth: '100%'
-                                },
-                                '& .MuiInputBase-input': {
-                                    width: '100% !important',
-                                    maxWidth: 'none !important',
-                                    minWidth: '100%'
-                                },
-                                '& textarea': {
-                                    width: '100% !important',
-                                    maxWidth: 'none !important',
-                                    minWidth: '100%'
-                                }
-                            }}
-                        />
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    style={{ display: 'none' }}
-                                    onChange={handleFileSelect}
-                                    multiple
-                                    accept="image/*,.pdf,.doc,.docx,.txt,.xlsx,.csv"
-                                />
-                                <Tooltip title="Attach file">
-                                    <IconButton
+                                }}
+                            />
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        style={{ display: 'none' }}
+                                        onChange={handleFileSelect}
+                                        multiple
+                                        accept="image/*,.pdf,.doc,.docx,.txt,.xlsx,.csv"
+                                    />
+                                    <Tooltip title="Attach file">
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={addingNote || uploadingFile}
+                                            sx={{
+                                                bgcolor: uploadingFile ? '#f3f4f6' : 'transparent',
+                                                '&:hover': { bgcolor: '#e5e7eb' }
+                                            }}
+                                        >
+                                            {uploadingFile ? <CircularProgress size={16} /> : <AttachFileIcon />}
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Add emoji">
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => setEmojiPickerOpen('new-note')}
+                                            disabled={addingNote}
+                                            sx={{ fontSize: '16px', '&:hover': { bgcolor: '#e5e7eb' } }}
+                                        >
+                                            😊
+                                        </IconButton>
+                                    </Tooltip>
+                                    {uploadingFile && (
+                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                            Uploading...
+                                        </Typography>
+                                    )}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        {newNote.length}/2000
+                                    </Typography>
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleAddNote}
+                                        disabled={!newNote.trim() || addingNote || newNote.length > 2000 || authLoading}
                                         size="small"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={addingNote || uploadingFile}
                                         sx={{
-                                            bgcolor: uploadingFile ? '#f3f4f6' : 'transparent',
-                                            '&:hover': { bgcolor: '#e5e7eb' }
+                                            fontSize: '12px',
+                                            textTransform: 'none',
+                                            minWidth: '80px'
                                         }}
                                     >
-                                        {uploadingFile ? <CircularProgress size={16} /> : <AttachFileIcon />}
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Add emoji">
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => setEmojiPickerOpen('new-note')}
-                                        disabled={addingNote}
-                                        sx={{ fontSize: '16px', '&:hover': { bgcolor: '#e5e7eb' } }}
-                                    >
-                                        😊
-                                    </IconButton>
-                                </Tooltip>
-                                {uploadingFile && (
-                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                        Uploading...
+                                        {addingNote ? <CircularProgress size={16} /> : authLoading ? 'Loading...' : 'Add Note'}
+                                    </Button>
+                                </Box>
+                            </Box>
+
+                            {/* Attachments Preview */}
+                            {attachments.length > 0 && (
+                                <Box sx={{ mt: 2 }}>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
+                                        Attachments ({attachments.length})
                                     </Typography>
-                                )}
+                                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                                        {attachments.map((attachment, index) =>
+                                            renderAttachment(attachment, index, true)
+                                        )}
+                                    </Stack>
+                                </Box>
+                            )}
+                        </Box>
+
+                        {/* Notes List */}
+                        {loading ? (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                                <CircularProgress />
                             </Box>
-                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {newNote.length}/2000
+                        ) : notes.length === 0 ? (
+                            <Box sx={{ textAlign: 'center', py: 4, color: '#64748b' }}>
+                                <Typography sx={{ fontSize: '14px' }}>
+                                    No notes yet. Add the first note above.
                                 </Typography>
-                                <Button
-                                    variant="contained"
-                                    onClick={handleAddNote}
-                                    disabled={!newNote.trim() || addingNote || newNote.length > 2000 || authLoading}
-                                    size="small"
-                                    sx={{
-                                        fontSize: '12px',
-                                        textTransform: 'none',
-                                        minWidth: '80px'
-                                    }}
-                                >
-                                    {addingNote ? <CircularProgress size={16} /> : authLoading ? 'Loading...' : 'Add Note'}
-                                </Button>
                             </Box>
-                        </Box>
-
-                        {/* Attachments Preview */}
-                        {attachments.length > 0 && (
-                            <Box sx={{ mt: 2 }}>
-                                <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
-                                    Attachments ({attachments.length})
-                                </Typography>
-                                <Stack direction="row" spacing={1} flexWrap="wrap">
-                                    {attachments.map((attachment, index) =>
-                                        renderAttachment(attachment, index, true)
-                                    )}
-                                </Stack>
-                            </Box>
-                        )}
-                    </Box>
-
-                    {/* Notes List */}
-                    {loading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                            <CircularProgress />
-                        </Box>
-                    ) : notes.length === 0 ? (
-                        <Box sx={{ textAlign: 'center', py: 4, color: '#64748b' }}>
-                            <Typography sx={{ fontSize: '14px' }}>
-                                No notes yet. Add the first note above.
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <Stack spacing={2}>
-                            {notes.map((note) => (
-                                <Card key={note.id} sx={{ border: '1px solid #e2e8f0' }}>
-                                    <CardHeader
-                                        avatar={getUserAvatar(note.createdByUID)}
-                                        title={
-                                            <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
-                                                {userProfiles[note.createdByUID]?.displayName || note.createdBy}
-                                            </Typography>
-                                        }
-                                        subheader={
-                                            <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
-                                                {formatRelativeTime(note.createdAt)}
-                                            </Typography>
-                                        }
-                                        sx={{ pb: 1 }}
-                                    />
-                                    <CardContent sx={{ pt: 0 }}>
-                                        {editingNote === note.id ? (
-                                            <Box>
-                                                <TextField
-                                                    fullWidth
-                                                    multiline
-                                                    rows={3}
-                                                    value={editNoteContent}
-                                                    onChange={(e) => setEditNoteContent(e.target.value)}
-                                                    sx={{
-                                                        mb: 2,
-                                                        width: '100% !important',
-                                                        maxWidth: 'none !important',
-                                                        '& .MuiOutlinedInput-root': {
-                                                            width: '100% !important',
-                                                            maxWidth: 'none !important'
-                                                        },
-                                                        '& .MuiInputBase-input': {
-                                                            width: '100% !important',
-                                                            maxWidth: 'none !important'
-                                                        }
-                                                    }}
-                                                />
-                                                <Box sx={{ display: 'flex', gap: 1 }}>
-                                                    <Button
-                                                        size="small"
-                                                        variant="contained"
-                                                        onClick={() => handleEditNote(note.id, editNoteContent)}
-                                                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                                                    >
-                                                        Save
-                                                    </Button>
-                                                    <Button
-                                                        size="small"
-                                                        onClick={() => setEditingNote(null)}
-                                                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                </Box>
-                                            </Box>
-                                        ) : (
-                                            <Typography sx={{ fontSize: '14px', mb: 1 }}>
-                                                {note.content}
-                                            </Typography>
-                                        )}
-
-                                        {/* Note Attachments */}
-                                        {note.attachments && note.attachments.length > 0 && (
-                                            <Box sx={{ mt: 2 }}>
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
-                                                    Attachments
+                        ) : (
+                            <Stack spacing={2}>
+                                {notes.map((note) => (
+                                    <Card key={note.id} sx={{ border: '1px solid #e2e8f0' }}>
+                                        <CardHeader
+                                            avatar={getUserAvatar(note.createdByUID)}
+                                            title={
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                                    {userProfiles[note.createdByUID]?.displayName || note.createdBy}
                                                 </Typography>
-                                                <Stack direction="row" spacing={1} flexWrap="wrap">
-                                                    {note.attachments.map((attachment, index) =>
-                                                        renderAttachment(attachment, index, false)
-                                                    )}
-                                                </Stack>
-                                            </Box>
-                                        )}
-                                    </CardContent>
-                                    {/* Note Reactions */}
-                                    {note.reactions && Object.keys(note.reactions).length > 0 && (
-                                        <Box sx={{ px: 2, pb: 1 }}>
-                                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                                {Object.entries(note.reactions).map(([emoji, userIds]) =>
-                                                    userIds.length > 0 && (
-                                                        <Chip
-                                                            key={emoji}
-                                                            label={`${emoji} ${userIds.length}`}
-                                                            size="small"
-                                                            variant={userIds.includes(getCurrentUserUID()) ? "filled" : "outlined"}
-                                                            onClick={() => handleToggleReaction(note.id, emoji)}
-                                                            sx={{
-                                                                fontSize: '11px',
-                                                                height: '24px',
-                                                                cursor: 'pointer',
-                                                                '&:hover': { backgroundColor: '#f1f5f9' }
-                                                            }}
-                                                        />
-                                                    )
-                                                )}
-                                            </Box>
-                                        </Box>
-                                    )}
-
-                                    <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
-                                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => setEmojiPickerOpen(note.id)}
-                                                title="Add reaction"
-                                                sx={{ fontSize: '16px' }}
-                                            >
-                                                😊
-                                            </IconButton>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => setReplyingTo(replyingTo === note.id ? null : note.id)}
-                                                title="Reply"
-                                            >
-                                                <ReplyIcon />
-                                            </IconButton>
-                                            {note.replies && note.replies.length > 0 && (
-                                                <Button
-                                                    size="small"
-                                                    startIcon={expandedNotes.has(note.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                                                    onClick={() => toggleNoteExpansion(note.id)}
-                                                    sx={{ fontSize: '12px', textTransform: 'none' }}
-                                                >
-                                                    {note.replies.length} {note.replies.length === 1 ? 'reply' : 'replies'}
-                                                </Button>
-                                            )}
-                                            {note.isEdited && (
-                                                <Typography sx={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>
-                                                    (edited)
+                                            }
+                                            subheader={
+                                                <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
+                                                    {formatRelativeTime(note.createdAt)}
                                                 </Typography>
-                                            )}
-                                        </Box>
-                                        {note.createdByUID === getCurrentUserUID() && (
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => {
-                                                        setEditingNote(note.id);
-                                                        setEditNoteContent(note.content);
-                                                    }}
-                                                    title="Edit"
-                                                >
-                                                    <EditIcon />
-                                                </IconButton>
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => handleDeleteNote(note.id)}
-                                                    sx={{ color: '#ef4444' }}
-                                                    title="Delete"
-                                                >
-                                                    <DeleteIcon />
-                                                </IconButton>
-                                            </Box>
-                                        )}
-                                    </CardActions>
-
-                                    {/* Emoji Picker Dialog */}
-                                    {renderEmojiPicker(note.id)}
-
-                                    {/* Reply Input */}
-                                    <Collapse in={replyingTo === note.id}>
-                                        <Box sx={{ px: 2, pb: 2, bgcolor: '#f8fafc', borderRadius: 1, mx: 2, mb: 1 }}>
-                                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', pt: 2 }}>
-                                                {getUserAvatar(getCurrentUserUID())}
-                                                <Box sx={{ flex: 1 }}>
+                                            }
+                                            sx={{ pb: 1 }}
+                                        />
+                                        <CardContent sx={{ pt: 0 }}>
+                                            {editingNote === note.id ? (
+                                                <Box>
                                                     <TextField
                                                         fullWidth
-                                                        placeholder="Write a reply..."
-                                                        value={replyText}
-                                                        onChange={(e) => setReplyText(e.target.value)}
                                                         multiline
                                                         rows={3}
-                                                        variant="outlined"
-                                                        size="small"
+                                                        value={editNoteContent}
+                                                        onChange={(e) => setEditNoteContent(e.target.value)}
                                                         sx={{
-                                                            mb: 1,
+                                                            mb: 2,
                                                             width: '100% !important',
                                                             maxWidth: 'none !important',
                                                             '& .MuiOutlinedInput-root': {
-                                                                fontSize: '14px',
-                                                                backgroundColor: 'white',
                                                                 width: '100% !important',
                                                                 maxWidth: 'none !important'
                                                             },
@@ -2376,78 +2300,275 @@ const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToS
                                                             }
                                                         }}
                                                     />
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <Box sx={{ display: 'flex', gap: 1 }}>
-                                                            <IconButton
+                                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                                        <Button
+                                                            size="small"
+                                                            variant="contained"
+                                                            onClick={() => handleEditNote(note.id, editNoteContent)}
+                                                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                                                        >
+                                                            Save
+                                                        </Button>
+                                                        <Button
+                                                            size="small"
+                                                            onClick={() => setEditingNote(null)}
+                                                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </Box>
+                                                </Box>
+                                            ) : (
+                                                <Typography sx={{ fontSize: '14px', mb: 1 }}>
+                                                    {note.content}
+                                                </Typography>
+                                            )}
+
+                                            {/* Note Attachments */}
+                                            {note.attachments && note.attachments.length > 0 && (
+                                                <Box sx={{ mt: 2 }}>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
+                                                        Attachments
+                                                    </Typography>
+                                                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                                                        {note.attachments.map((attachment, index) =>
+                                                            renderAttachment(attachment, index, false)
+                                                        )}
+                                                    </Stack>
+                                                </Box>
+                                            )}
+                                        </CardContent>
+                                        {/* Note Reactions */}
+                                        {note.reactions && Object.keys(note.reactions).length > 0 && (
+                                            <Box sx={{ px: 2, pb: 1 }}>
+                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                    {Object.entries(note.reactions).map(([emoji, userIds]) =>
+                                                        userIds.length > 0 && (
+                                                            <Chip
+                                                                key={emoji}
+                                                                label={`${emoji} ${userIds.length}`}
                                                                 size="small"
-                                                                onClick={() => setEmojiPickerOpen(`${note.id}-reply`)}
-                                                                title="Add emoji"
-                                                                sx={{ fontSize: '16px' }}
-                                                            >
-                                                                😊
-                                                            </IconButton>
-                                                        </Box>
-                                                        <Box sx={{ display: 'flex', gap: 1 }}>
-                                                            <Button
-                                                                size="small"
-                                                                onClick={() => {
-                                                                    setReplyingTo(null);
-                                                                    setReplyText('');
+                                                                variant={userIds.includes(getCurrentUserUID()) ? "filled" : "outlined"}
+                                                                onClick={() => handleToggleReaction(note.id, emoji)}
+                                                                sx={{
+                                                                    fontSize: '11px',
+                                                                    height: '24px',
+                                                                    cursor: 'pointer',
+                                                                    '&:hover': { backgroundColor: '#f1f5f9' }
                                                                 }}
-                                                                sx={{ fontSize: '12px', textTransform: 'none' }}
-                                                            >
-                                                                Cancel
-                                                            </Button>
-                                                            <Button
-                                                                variant="contained"
-                                                                size="small"
-                                                                onClick={() => handleAddReply(note.id)}
-                                                                disabled={!replyText.trim()}
-                                                                sx={{ fontSize: '12px', textTransform: 'none' }}
-                                                            >
-                                                                Reply
-                                                            </Button>
+                                                            />
+                                                        )
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                        )}
+
+                                        <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
+                                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => setEmojiPickerOpen(note.id)}
+                                                    title="Add reaction"
+                                                    sx={{ fontSize: '16px' }}
+                                                >
+                                                    😊
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => setReplyingTo(replyingTo === note.id ? null : note.id)}
+                                                    title="Reply"
+                                                >
+                                                    <ReplyIcon />
+                                                </IconButton>
+                                                {note.replies && note.replies.length > 0 && (
+                                                    <Button
+                                                        size="small"
+                                                        startIcon={expandedNotes.has(note.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                                        onClick={() => toggleNoteExpansion(note.id)}
+                                                        sx={{ fontSize: '12px', textTransform: 'none' }}
+                                                    >
+                                                        {note.replies.length} {note.replies.length === 1 ? 'reply' : 'replies'}
+                                                    </Button>
+                                                )}
+                                                {note.isEdited && (
+                                                    <Typography sx={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>
+                                                        (edited)
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                            {note.createdByUID === getCurrentUserUID() && (
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setEditingNote(note.id);
+                                                            setEditNoteContent(note.content);
+                                                        }}
+                                                        title="Edit"
+                                                    >
+                                                        <EditIcon />
+                                                    </IconButton>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleDeleteNote(note.id)}
+                                                        sx={{ color: '#ef4444' }}
+                                                        title="Delete"
+                                                    >
+                                                        <DeleteIcon />
+                                                    </IconButton>
+                                                </Box>
+                                            )}
+                                        </CardActions>
+
+                                        {/* Emoji Picker Dialog */}
+                                        {renderEmojiPicker(note.id)}
+
+                                        {/* Reply Input */}
+                                        <Collapse in={replyingTo === note.id}>
+                                            <Box sx={{ px: 2, pb: 2, bgcolor: '#f8fafc', borderRadius: 1, mx: 2, mb: 1 }}>
+                                                <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', pt: 2 }}>
+                                                    {getUserAvatar(getCurrentUserUID())}
+                                                    <Box sx={{ flex: 1 }}>
+                                                        <TextField
+                                                            fullWidth
+                                                            placeholder="Write a reply..."
+                                                            value={replyText}
+                                                            onChange={(e) => setReplyText(e.target.value)}
+                                                            multiline
+                                                            rows={3}
+                                                            variant="outlined"
+                                                            size="small"
+                                                            sx={{
+                                                                mb: 1,
+                                                                width: '100% !important',
+                                                                maxWidth: 'none !important',
+                                                                '& .MuiOutlinedInput-root': {
+                                                                    fontSize: '14px',
+                                                                    backgroundColor: 'white',
+                                                                    width: '100% !important',
+                                                                    maxWidth: 'none !important',
+                                                                    minWidth: '100%',
+                                                                    '&:hover': {
+                                                                        borderColor: '#3b82f6'
+                                                                    },
+                                                                    '&.Mui-focused': {
+                                                                        borderColor: '#3b82f6',
+                                                                        boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)'
+                                                                    }
+                                                                },
+                                                                '& .MuiInputBase-input': {
+                                                                    width: '100% !important',
+                                                                    maxWidth: 'none !important',
+                                                                    minWidth: '100%'
+                                                                }
+                                                            }}
+                                                        />
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => setEmojiPickerOpen(`${note.id}-reply`)}
+                                                                    title="Add emoji"
+                                                                    sx={{ fontSize: '16px' }}
+                                                                >
+                                                                    😊
+                                                                </IconButton>
+                                                            </Box>
+                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                <Button
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        setReplyingTo(null);
+                                                                        setReplyText('');
+                                                                    }}
+                                                                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                                                                >
+                                                                    Cancel
+                                                                </Button>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    size="small"
+                                                                    onClick={() => handleAddReply(note.id)}
+                                                                    disabled={!replyText.trim()}
+                                                                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                                                                >
+                                                                    Reply
+                                                                </Button>
+                                                            </Box>
                                                         </Box>
                                                     </Box>
                                                 </Box>
                                             </Box>
-                                        </Box>
-                                    </Collapse>
+                                        </Collapse>
 
-                                    {/* Replies */}
-                                    <Collapse in={expandedNotes.has(note.id)}>
-                                        <Box sx={{ px: 2, pb: 2 }}>
-                                            {note.replies && note.replies.map((reply) => (
-                                                <Card key={reply.id} sx={{ ml: 4, mb: 1, border: '1px solid #e2e8f0' }}>
-                                                    <CardHeader
-                                                        avatar={getUserAvatar(reply.createdByUID)}
-                                                        title={
-                                                            <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
-                                                                {userProfiles[reply.createdByUID]?.displayName || reply.createdBy}
+                                        {/* Replies */}
+                                        <Collapse in={expandedNotes.has(note.id)}>
+                                            <Box sx={{ px: 2, pb: 2 }}>
+                                                {note.replies && note.replies.map((reply) => (
+                                                    <Card key={reply.id} sx={{ ml: 4, mb: 1, border: '1px solid #e2e8f0' }}>
+                                                        <CardHeader
+                                                            avatar={getUserAvatar(reply.createdByUID)}
+                                                            title={
+                                                                <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                                                    {userProfiles[reply.createdByUID]?.displayName || reply.createdBy}
+                                                                </Typography>
+                                                            }
+                                                            subheader={
+                                                                <Typography sx={{ fontSize: '11px', color: '#64748b' }}>
+                                                                    {formatRelativeTime(reply.createdAt)}
+                                                                </Typography>
+                                                            }
+                                                            sx={{ py: 1 }}
+                                                        />
+                                                        <CardContent sx={{ pt: 0, pb: 1 }}>
+                                                            <Typography sx={{ fontSize: '13px' }}>
+                                                                {reply.content}
                                                             </Typography>
-                                                        }
-                                                        subheader={
-                                                            <Typography sx={{ fontSize: '11px', color: '#64748b' }}>
-                                                                {formatRelativeTime(reply.createdAt)}
-                                                            </Typography>
-                                                        }
-                                                        sx={{ py: 1 }}
-                                                    />
-                                                    <CardContent sx={{ pt: 0, pb: 1 }}>
-                                                        <Typography sx={{ fontSize: '13px' }}>
-                                                            {reply.content}
-                                                        </Typography>
-                                                    </CardContent>
-                                                </Card>
-                                            ))}
-                                        </Box>
-                                    </Collapse>
-                                </Card>
-                            ))}
-                        </Stack>
-                    )}
+                                                        </CardContent>
+                                                    </Card>
+                                                ))}
+                                            </Box>
+                                        </Collapse>
+                                    </Card>
+                                ))}
+                            </Stack>
+                        )}
+                    </Grid>
                 </Grid>
-            </Grid>
+            </Box>
+
+            {/* Edit Customer Sliding View */}
+            <Box
+                sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: '100%',
+                    width: '100%',
+                    height: '100%',
+                    transform: showEditView ? 'translateX(-100%)' : 'translateX(0)',
+                    transition: 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.3s ease',
+                    opacity: isSliding ? 0.8 : 1,
+                    backgroundColor: 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    zIndex: showEditView ? 2 : 1
+                }}
+            >
+                {showEditView && (
+                    <Suspense fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <EditCustomer
+                            customerId={id}
+                            onBackToDetail={handleBackToDetail}
+                            onCustomerUpdated={handleCustomerUpdated}
+                            isModal={true}
+                        />
+                    </Suspense>
+                )}
+            </Box>
 
             {/* Emoji Picker for New Note */}
             <Dialog
@@ -2523,8 +2644,6 @@ const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToS
                     </Dialog>
                 )
             }
-
-            {/* Link Dialog removed - URLs are now auto-detected from text */}
 
             {/* Success Snackbar */}
             <Snackbar
@@ -2648,8 +2767,8 @@ const CustomerDetail = ({ customerId = null, onBackToTable = null, onNavigateToS
                     )}
                 </DialogContent>
             </Dialog>
-        </Box >
+        </Box>
     );
-};
+});
 
 export default CustomerDetail; 

@@ -136,33 +136,6 @@ const GlobeLoadingScreen = ({ phase = 'initializing' }) => {
 
             {/* Main loading content */}
             <Box sx={{ textAlign: 'center', zIndex: 1, maxWidth: '400px', px: 3 }}>
-                {/* Logo with glow effect */}
-                <Fade in timeout={1000}>
-                    <Box sx={{ mb: 4, position: 'relative' }}>
-                        <Box sx={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            width: '120px',
-                            height: '120px',
-                            borderRadius: '50%',
-                            background: 'radial-gradient(circle, rgba(96, 165, 250, 0.3) 0%, transparent 70%)',
-                            animation: 'pulse 2s ease-in-out infinite'
-                        }} />
-                        <img
-                            src="/images/solushipx_logo_white.png"
-                            alt="SoluShipX"
-                            style={{
-                                height: 80,
-                                position: 'relative',
-                                zIndex: 2,
-                                filter: 'drop-shadow(0 0 20px rgba(96, 165, 250, 0.5))'
-                            }}
-                        />
-                    </Box>
-                </Fade>
-
                 {/* Progress circle with percentage */}
                 <Box sx={{ position: 'relative', display: 'inline-flex', mb: 3 }}>
                     <CircularProgress

@@ -115,6 +115,10 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
     const [currentView, setCurrentView] = useState('table'); // 'table', 'detail', or 'add'
     const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [isSliding, setIsSliding] = useState(false);
+    const [isCustomerInEditMode, setIsCustomerInEditMode] = useState(false);
+
+    // Ref to CustomerDetail component for direct method calls
+    const customerDetailRef = React.useRef(null);
 
     useEffect(() => {
         fetchCustomers();
@@ -590,31 +594,21 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
     };
 
     const handleBackToTable = () => {
-        // Go back in navigation stack
+        setCurrentView('table');
+        setSelectedCustomerId(null);
+        setIsCustomerInEditMode(false); // Reset edit state
         modalNavigation.goBack();
-
-        setIsSliding(true);
-
-        setTimeout(() => {
-            setCurrentView('table');
-            setTimeout(() => {
-                setIsSliding(false);
-                setSelectedCustomerId(null);
-            }, 300); // Match CSS transition duration
-        }, 50);
     };
 
     const handleCustomerCreated = (newCustomerId) => {
-        // Refresh the customers list
+        console.log('New customer created with ID:', newCustomerId);
         fetchCustomers();
+        handleViewCustomerDetail(newCustomerId);
+    };
 
-        // Navigate to the newly created customer detail
-        if (newCustomerId) {
-            handleViewCustomerDetail(newCustomerId);
-        } else {
-            // If no ID provided, just go back to table
-            handleBackToTable();
-        }
+    // Handle edit state changes from CustomerDetail
+    const handleCustomerEditStateChange = (isInEditMode) => {
+        setIsCustomerInEditMode(isInEditMode);
     };
 
     // Add navigation object function for ModalHeader (similar to ShipmentsX)
@@ -622,21 +616,52 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
         const currentPage = modalNavigation.getCurrentPage();
         const canGoBackNow = (currentPage?.component === 'customer-detail' || currentPage?.component === 'add-customer') || modalNavigation.canGoBack;
 
+        // Update title based on edit state
+        let title = 'Customers';
+        if (currentView === 'detail') {
+            title = isCustomerInEditMode ? 'Edit Customer' : 'Customer Details';
+        } else if (currentView === 'add') {
+            title = 'Add Customer';
+        }
+
+        // Determine the correct back handler based on current state
+        let backHandler = null;
+        let backText = 'Back';
+        if (canGoBackNow) {
+            if (isCustomerInEditMode) {
+                // When in edit mode, back button should go back to customer detail view
+                // Call the CustomerDetail component's handleBackToDetail method directly
+                backHandler = () => {
+                    if (customerDetailRef.current && customerDetailRef.current.handleBackToDetail) {
+                        customerDetailRef.current.handleBackToDetail();
+                    } else {
+                        // Fallback: just change the edit state
+                        setIsCustomerInEditMode(false);
+                    }
+                };
+                backText = 'Back'; // Show "Back" when in edit mode
+            } else {
+                // Normal back navigation to customers list
+                backHandler = handleBackToTable;
+                backText = modalNavigation.navigationStack[modalNavigation.currentIndex - 1]
+                    ? modalNavigation.navigationStack[modalNavigation.currentIndex - 1].shortTitle || 'Back'
+                    : 'Back';
+            }
+        }
+
         return {
-            title: currentPage?.title || 'Customers',
+            title: title,
             canGoBack: canGoBackNow,
-            onBack: canGoBackNow ? handleBackToTable : null,
-            backText: canGoBackNow && modalNavigation.navigationStack[modalNavigation.currentIndex - 1]
-                ? modalNavigation.navigationStack[modalNavigation.currentIndex - 1].shortTitle || 'Back'
-                : 'Back'
+            onBack: backHandler,
+            backText: backText
         };
     };
 
     return (
         <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
             <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
-                {/* Modal Header */}
-                {isModal && (
+                {/* Modal Header - show when in table or detail view */}
+                {isModal && (currentView === 'table' || currentView === 'detail') && (
                     <ModalHeader
                         navigation={getNavigationObject()}
                         onClose={showCloseButton ? onClose : null}
@@ -1158,12 +1183,14 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                     </Box>
                                 }>
                                     <CustomerDetail
+                                        ref={customerDetailRef}
                                         key={selectedCustomerId}
                                         customerId={selectedCustomerId}
                                         onBackToTable={handleBackToTable}
                                         onNavigateToShipments={onNavigateToShipments}
                                         isModal={true}
                                         highlightNoteId={deepLinkParams?.noteId}
+                                        onEditStateChange={handleCustomerEditStateChange}
                                     />
                                 </Suspense>
                             </Box>

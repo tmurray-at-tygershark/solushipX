@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { Typography, Box, CircularProgress, Button, Grid, TextField, FormControl, InputLabel, Select, MenuItem, FormHelperText, Stack, Paper, Breadcrumbs, Checkbox, FormControlLabel, Container, Link as MuiLink } from '@mui/material';
+import { Typography, Box, CircularProgress, Button, Grid, TextField, FormControl, InputLabel, Select, MenuItem, FormHelperText, Stack, Paper, Breadcrumbs, Checkbox, FormControlLabel, Container, Link as MuiLink, Switch } from '@mui/material';
 import { Home as HomeIcon, NavigateNext as NavigateNextIcon, Save as SaveIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { collection, query, where, getDocs, serverTimestamp, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -293,16 +293,35 @@ const AddCustomer = ({ isModal = false, onBackToTable = null, onCustomerCreated 
 
                         <Grid item xs={12} sx={{ mt: 2 }}><Typography variant="h6">Additional Customer Settings</Typography></Grid>
                         <Grid item xs={12} md={12}>
-                            <FormControl fullWidth error={!!errors.status} disabled={saving}>
-                                <InputLabel>Customer Status</InputLabel>
-                                <Select name="status" value={customerData.status} onChange={handleInputChange} label="Customer Status">
-                                    <MenuItem value="active">Active</MenuItem>
-                                    <MenuItem value="inactive">Inactive</MenuItem>
-                                    <MenuItem value="pending">Pending Approval</MenuItem>
-                                    <MenuItem value="suspended">Suspended</MenuItem>
-                                </Select>
-                                {errors.status && <FormHelperText>{errors.status}</FormHelperText>}
-                            </FormControl>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={customerData.status === 'active'}
+                                        onChange={(e) => {
+                                            setCustomerData(prev => ({
+                                                ...prev,
+                                                status: e.target.checked ? 'active' : 'inactive'
+                                            }));
+                                            if (errors.status) {
+                                                setErrors(prev => ({ ...prev, status: null }));
+                                            }
+                                        }}
+                                        disabled={saving}
+                                        color="primary"
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '14px', fontWeight: 500 }}>
+                                        Customer Status: {customerData.status === 'active' ? 'Active' : 'Inactive'}
+                                    </Typography>
+                                }
+                                sx={{ mt: 1 }}
+                            />
+                            {errors.status && (
+                                <FormHelperText error sx={{ ml: 0, mt: 0.5 }}>
+                                    {errors.status}
+                                </FormHelperText>
+                            )}
                         </Grid>
 
                         <Grid item xs={12}>
