@@ -42,12 +42,37 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useNavigate } from 'react-router-dom';
 
-// Helper to format date as YYYY-MM-DD
+// Helper to get current date and time in EST timezone
+const getCurrentDateTimeEST = () => {
+    return new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+};
+
+// Helper to format date as YYYY-MM-DD in EST
 const formatDateForInput = (date) => {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
+    const estDate = new Date(date.toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const year = estDate.getFullYear();
+    const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
+    const day = estDate.getDate().toString().padStart(2, '0');
     return `${year}-${month}-${day}`;
+};
+
+// Helper to format time as HH:MM in EST
+const formatTimeForInput = (date) => {
+    const estDate = new Date(date.toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const hours = estDate.getHours().toString().padStart(2, '0');
+    const minutes = estDate.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+};
+
+// Helper to check if a date/time combination is in the past (EST timezone)
+const isDateTimeInPast = (dateStr, timeStr) => {
+    if (!dateStr || !timeStr) return false;
+
+    // Create the selected datetime in EST
+    const selectedDateTime = new Date(`${dateStr}T${timeStr}`);
+    const now = getCurrentDateTimeEST();
+
+    return selectedDateTime < now;
 };
 
 // Helper to determine available shipment types based on connected carriers and their Firestore data
@@ -85,7 +110,7 @@ const getAvailableShipmentTypes = (connectedCarriers, carrierData) => {
     return availableTypes;
 };
 
-const ShipmentInfo = ({ onNext, onPrevious }) => {
+const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) => {
     const { formData, updateFormSection } = useShipmentForm();
     const { companyData } = useCompany();
     const [errors, setErrors] = useState({});
@@ -160,10 +185,13 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     useEffect(() => {
         const currentData = formData.shipmentInfo || {};
         if (!currentData.shipmentDate) {
+            const now = getCurrentDateTimeEST();
+            const currentTime = formatTimeForInput(now);
+
             updateFormSection('shipmentInfo', {
                 ...currentData,
-                shipmentDate: formatDateForInput(new Date()),
-                earliestPickup: currentData.earliestPickup || '09:00',
+                shipmentDate: formatDateForInput(now),
+                earliestPickup: currentData.earliestPickup || currentTime,
                 latestPickup: currentData.latestPickup || '17:00',
                 earliestDelivery: currentData.earliestDelivery || '09:00',
                 latestDelivery: currentData.latestDelivery || '17:00',
@@ -173,11 +201,15 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     }, [formData.shipmentInfo, updateFormSection]);
 
     const handleInputChange = (e) => {
-        const { id, value, type } = e.target;
+        const { id, name, value, type } = e.target;
+        const fieldName = name || id; // Use name if available, fallback to id
         const newValue = type === 'checkbox' ? e.target.checked : value;
-        updateFormSection('shipmentInfo', { [id]: newValue });
-        if (errors[id]) {
-            setErrors(prev => ({ ...prev, [id]: null }));
+
+        console.log('🔄 handleInputChange:', { fieldName, newValue, id, name, type });
+
+        updateFormSection('shipmentInfo', { [fieldName]: newValue });
+        if (errors[fieldName]) {
+            setErrors(prev => ({ ...prev, [fieldName]: null }));
         }
     };
 
@@ -210,11 +242,51 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
             newErrors.shipmentDate = 'Please select a shipment date';
         } else {
             const selectedDate = new Date(currentData.shipmentDate);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            const todayEST = getCurrentDateTimeEST();
+            todayEST.setHours(0, 0, 0, 0);
+            selectedDate.setHours(0, 0, 0, 0);
 
-            if (selectedDate < today) {
+            if (selectedDate < todayEST) {
                 newErrors.shipmentDate = 'Shipment date cannot be in the past';
+            }
+        }
+
+        // Validate pickup times
+        if (currentData.shipmentDate && currentData.earliestPickup) {
+            if (isDateTimeInPast(currentData.shipmentDate, currentData.earliestPickup)) {
+                newErrors.earliestPickup = 'Earliest pickup time cannot be in the past';
+            }
+        }
+
+        if (currentData.shipmentDate && currentData.latestPickup) {
+            if (isDateTimeInPast(currentData.shipmentDate, currentData.latestPickup)) {
+                newErrors.latestPickup = 'Latest pickup time cannot be in the past';
+            }
+        }
+
+        // Validate delivery times
+        if (currentData.shipmentDate && currentData.earliestDelivery) {
+            if (isDateTimeInPast(currentData.shipmentDate, currentData.earliestDelivery)) {
+                newErrors.earliestDelivery = 'Earliest delivery time cannot be in the past';
+            }
+        }
+
+        if (currentData.shipmentDate && currentData.latestDelivery) {
+            if (isDateTimeInPast(currentData.shipmentDate, currentData.latestDelivery)) {
+                newErrors.latestDelivery = 'Latest delivery time cannot be in the past';
+            }
+        }
+
+        // Validate time order logic
+        if (currentData.earliestPickup && currentData.latestPickup) {
+            if (currentData.earliestPickup >= currentData.latestPickup) {
+                newErrors.latestPickup = 'Latest pickup must be after earliest pickup';
+            }
+        }
+
+        if (currentData.earliestDelivery && currentData.latestDelivery) {
+            if (currentData.earliestDelivery >= currentData.latestDelivery) {
+                newErrors.latestDelivery = 'Latest delivery must be after earliest delivery';
             }
         }
 
@@ -224,7 +296,9 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
     };
 
     const handleSubmit = (e) => {
-        e.preventDefault();
+        if (e && e.preventDefault) {
+            e.preventDefault();
+        }
         console.log('🚀 handleSubmit - Form submission started');
 
         if (noCarriersEnabled) {
@@ -276,10 +350,18 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                         <Button
                             color="inherit"
                             size="small"
-                            onClick={() => navigate('/carriers')}
+                            onClick={() => {
+                                if (isModal && onClose) {
+                                    // In modal mode, close the modal and let parent handle navigation
+                                    onClose();
+                                } else {
+                                    // In normal mode, navigate to carriers page
+                                    navigate('/carriers');
+                                }
+                            }}
                             sx={{ fontSize: '12px' }}
                         >
-                            Configure Carriers
+                            {isModal ? 'Close & Configure' : 'Configure Carriers'}
                         </Button>
                     }
                 >
@@ -388,9 +470,10 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 helperText={errors.shipmentDate}
                                 InputLabelProps={{ shrink: true }}
                                 inputProps={{
-                                    min: formatDateForInput(new Date()),
+                                    min: formatDateForInput(getCurrentDateTimeEST()),
                                     style: { fontSize: '12px' }
                                 }}
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
                                 required
                             />
                         </Grid>
@@ -432,6 +515,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 <InputLabel>Bill Type</InputLabel>
                                 <Select
                                     id="billType"
+                                    name="billType"
                                     value={formData.shipmentInfo?.billType || 'prepaid'}
                                     onChange={handleInputChange}
                                     label="Bill Type"
@@ -461,8 +545,11 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 type="time"
                                 value={formData.shipmentInfo?.earliestPickup || '09:00'}
                                 onChange={handleInputChange}
+                                error={!!errors.earliestPickup}
+                                helperText={errors.earliestPickup}
                                 InputLabelProps={{ shrink: true }}
                                 inputProps={{ style: { fontSize: '12px' } }}
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
                             />
                         </Grid>
 
@@ -474,8 +561,11 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 type="time"
                                 value={formData.shipmentInfo?.latestPickup || '17:00'}
                                 onChange={handleInputChange}
+                                error={!!errors.latestPickup}
+                                helperText={errors.latestPickup}
                                 InputLabelProps={{ shrink: true }}
                                 inputProps={{ style: { fontSize: '12px' } }}
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
                             />
                         </Grid>
 
@@ -487,8 +577,11 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 type="time"
                                 value={formData.shipmentInfo?.earliestDelivery || '09:00'}
                                 onChange={handleInputChange}
+                                error={!!errors.earliestDelivery}
+                                helperText={errors.earliestDelivery}
                                 InputLabelProps={{ shrink: true }}
                                 inputProps={{ style: { fontSize: '12px' } }}
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
                             />
                         </Grid>
 
@@ -500,8 +593,11 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                 type="time"
                                 value={formData.shipmentInfo?.latestDelivery || '17:00'}
                                 onChange={handleInputChange}
+                                error={!!errors.latestDelivery}
+                                helperText={errors.latestDelivery}
                                 InputLabelProps={{ shrink: true }}
                                 inputProps={{ style: { fontSize: '12px' } }}
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
                             />
                         </Grid>
                     </Grid>
@@ -540,6 +636,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                         <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
                                         <Select
                                             id="deliveryPickupOption"
+                                            name="deliveryPickupOption"
                                             value={formData.shipmentInfo?.deliveryPickupOption || ''}
                                             onChange={handleInputChange}
                                             label="Delivery Options"
@@ -569,6 +666,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                         <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
                                         <Select
                                             id="hazardousGoods"
+                                            name="hazardousGoods"
                                             value={formData.shipmentInfo?.hazardousGoods || ''}
                                             onChange={handleInputChange}
                                             label="Hazardous Goods"
@@ -593,6 +691,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                         <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
                                         <Select
                                             id="priorityDelivery"
+                                            name="priorityDelivery"
                                             value={formData.shipmentInfo?.priorityDelivery || ''}
                                             onChange={handleInputChange}
                                             label="Priority Options"
@@ -617,6 +716,7 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                                         <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
                                         <Select
                                             id="signatureOptions"
+                                            name="signatureOptions"
                                             value={formData.shipmentInfo?.signatureOptions || ''}
                                             onChange={handleInputChange}
                                             label="Signature Options"
@@ -644,9 +744,10 @@ const ShipmentInfo = ({ onNext, onPrevious }) => {
                         Previous
                     </Button>
                     <Button
-                        type="submit"
+                        type="button"
                         variant="contained"
                         disabled={noCarriersEnabled}
+                        onClick={handleSubmit}
                         sx={{
                             px: 6,
                             py: 1.5,

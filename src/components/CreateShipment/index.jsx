@@ -953,7 +953,14 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
         console.log('Rendering step:', currentStep, 'with form data from context. Active draft:', activeDraftId);
         const safeApiKey = API_KEY || 'e61c3e150511db70aa0f2d2476ab8511';
 
-        const stepProps = { onNext: handleNext, onPrevious: handlePrevious, apiKey: safeApiKey, activeDraftId };
+        const stepProps = {
+            onNext: handleNext,
+            onPrevious: handlePrevious,
+            apiKey: safeApiKey,
+            activeDraftId,
+            isModal,
+            onClose
+        };
 
         switch (currentStep) {
             case 1: return <ShipmentInfo key={`shipment-info-${activeDraftId || 'new'}`} {...stepProps} />;

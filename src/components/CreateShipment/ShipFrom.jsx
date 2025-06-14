@@ -6,8 +6,37 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
-import { Skeleton, Card, CardContent, Grid, Box, Typography, Chip, Button, Alert } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import {
+    Skeleton,
+    Card,
+    CardContent,
+    Grid,
+    Box,
+    Typography,
+    Chip,
+    Button,
+    Alert,
+    TextField,
+    InputAdornment,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Paper,
+    Container,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    FormControlLabel,
+    Checkbox
+} from '@mui/material';
+import {
+    Add as AddIcon,
+    Search as SearchIcon,
+    Close as CloseIcon,
+    ArrowForward as ArrowForwardIcon
+} from '@mui/icons-material';
 import './ShipFrom.css';
 
 const ShipFrom = ({ onNext, onPrevious }) => {
@@ -15,6 +44,8 @@ const ShipFrom = ({ onNext, onPrevious }) => {
     const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
     const { formData, updateFormSection } = useShipmentForm();
     const [shipFromAddresses, setShipFromAddresses] = useState([]);
+    const [filteredAddresses, setFilteredAddresses] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
     const [selectedAddressId, setSelectedAddressId] = useState(formData.shipFrom?.id || null);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
@@ -60,6 +91,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 const fetchedAddresses = addressesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 console.log(`ShipFrom: Found ${fetchedAddresses.length} origin addresses from addressBook:`, fetchedAddresses);
                 setShipFromAddresses(fetchedAddresses);
+                setFilteredAddresses(fetchedAddresses);
 
                 // Enhanced logic to handle partial draft data
                 const currentShipFrom = formData.shipFrom || {};
@@ -103,6 +135,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 console.error('ShipFrom: Error fetching addresses:', err);
                 setError(err.message || 'Failed to fetch shipping addresses.');
                 setShipFromAddresses([]);
+                setFilteredAddresses([]);
             } finally {
                 setLoadingAddresses(false);
             }
@@ -134,16 +167,50 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         };
     };
 
+    // Search functionality
+    useEffect(() => {
+        if (!searchTerm.trim()) {
+            setFilteredAddresses(shipFromAddresses);
+        } else {
+            const filtered = shipFromAddresses.filter(address =>
+                address.nickname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.address1?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                `${address.firstName} ${address.lastName}`.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            setFilteredAddresses(filtered);
+        }
+    }, [searchTerm, shipFromAddresses]);
+
+    const handleSearchChange = useCallback((e) => {
+        setSearchTerm(e.target.value);
+    }, []);
+
     const handleAddressChange = useCallback(async (addressId) => {
         const selectedDbAddress = shipFromAddresses.find(addr => addr.id === addressId);
         if (selectedDbAddress) {
-            console.log('ShipFrom: Address card clicked:', selectedDbAddress);
+            console.log('🏠 ShipFrom: Address card clicked:', selectedDbAddress);
             setSelectedAddressId(addressId);
             const shipFromObject = mapAddressBookToShipFrom(selectedDbAddress, companyData);
+
+            // Populate special instructions if they exist
+            if (selectedDbAddress.specialInstructions) {
+                shipFromObject.specialInstructions = selectedDbAddress.specialInstructions;
+            }
+
+            console.log('🏠 ShipFrom: Mapped shipFromObject:', shipFromObject);
             updateFormSection('shipFrom', shipFromObject);
-            console.log("ShipFrom: Context updated with selected address:", shipFromObject);
+            console.log("🏠 ShipFrom: Context updated with selected address");
+
+            // Verify the update worked
+            setTimeout(() => {
+                console.log("🏠 ShipFrom: Verification - formData.shipFrom after update:", formData.shipFrom);
+            }, 100);
+        } else {
+            console.error('❌ ShipFrom: Could not find address with ID:', addressId);
         }
-    }, [shipFromAddresses, companyData, updateFormSection]);
+    }, [shipFromAddresses, companyData, updateFormSection, formData.shipFrom]);
 
     const handleSelectedAddressInputChange = useCallback((e) => {
         const { name, value } = e.target;
@@ -215,13 +282,30 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         const currentShipFrom = formData.shipFrom || {};
         let validationErrorMessages = [];
 
-        console.log("ShipFrom handleSubmit: Validating currentShipFrom from context:", currentShipFrom);
+        console.log("🔍 ShipFrom handleSubmit: Starting validation");
+        console.log("🔍 selectedAddressId:", selectedAddressId);
+        console.log("🔍 currentShipFrom from context:", currentShipFrom);
+        console.log("🔍 formData.shipFrom:", formData.shipFrom);
 
         if (!selectedAddressId && !currentShipFrom.street) {
             validationErrorMessages.push('Please select or add a shipping origin address.');
+            console.log("❌ No address selected and no street in currentShipFrom");
         } else {
             const requiredFields = ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName', 'contactPhone', 'contactEmail'];
-            const missingFields = requiredFields.filter(field => !currentShipFrom[field] || String(currentShipFrom[field]).trim() === '');
+            const missingFields = requiredFields.filter(field => {
+                const fieldValue = currentShipFrom[field];
+                const isEmpty = !fieldValue || String(fieldValue).trim() === '';
+                if (isEmpty) {
+                    console.log(`❌ Missing field: ${field} = "${fieldValue}"`);
+                }
+                return isEmpty;
+            });
+
+            console.log("🔍 Required fields check:", {
+                requiredFields,
+                missingFields,
+                currentShipFromKeys: Object.keys(currentShipFrom)
+            });
 
             if (missingFields.length > 0) {
                 missingFields.forEach(field => {
@@ -238,12 +322,14 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         if (validationErrorMessages.length > 0) {
             const errorMessage = validationErrorMessages.join(' \n ');
             setError(errorMessage);
-            console.warn("ShipFrom handleSubmit: Validation failed:", validationErrorMessages);
+            console.warn("❌ ShipFrom handleSubmit: Validation failed:", validationErrorMessages);
             return;
         }
 
-        console.log("ShipFrom handleSubmit: Validation passed. Calling onNext with data from context:", currentShipFrom);
+        console.log("✅ ShipFrom handleSubmit: Validation passed. Calling onNext with data:", currentShipFrom);
+        console.log("🚀 About to call onNext...");
         onNext(currentShipFrom);
+        console.log("✅ onNext called successfully");
     }, [selectedAddressId, formData.shipFrom, onNext, companyData]);
 
     const getAttentionLine = useCallback((address) => {
@@ -263,450 +349,490 @@ const ShipFrom = ({ onNext, onPrevious }) => {
     }, []);
 
     return (
-        <form className="ship-from-form">
+        <Container maxWidth="lg" sx={{ py: 4 }}>
             {error && (
-                <Alert severity="error" sx={{ mb: 2, mt: 2 }}
-                    onClose={() => setError(null)}
-                >
-                    {error.split(' \n ').map((line, index) => <div key={index}>{line}</div>)}
+                <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                    {error.split(' \n ').map((line, index) => <div key={index} style={{ fontSize: '12px' }}>{line}</div>)}
                 </Alert>
             )}
             {success && (
-                <div className="alert alert-success alert-dismissible fade show" role="alert">
-                    {success}
-                    <button type="button" className="btn-close" onClick={() => setSuccess(null)}></button>
-                </div>
+                <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+                    <Typography sx={{ fontSize: '12px' }}>{success}</Typography>
+                </Alert>
             )}
 
-            <div className="card shadow-sm mb-4">
-                <div className="card-body">
-                    <h5 className="card-title mb-4">Select Shipping Origin</h5>
-                    <div className="address-selection mb-4">
-                        <div className="d-flex justify-content-between align-items-center mb-3">
-                            <label className="form-label mb-0">Saved Addresses</label>
-                            {!showAddAddressForm && (
-                                <button
-                                    type="button"
-                                    className="btn btn-outline-primary btn-sm"
-                                    onClick={() => setShowAddAddressForm(true)}
-                                >
-                                    <i className="bi bi-plus-lg me-1"></i> Add New Address
-                                </button>
-                            )}
-                        </div>
+            <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                <Box sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                        Pickup Location
+                    </Typography>
+                </Box>
 
-                        {loadingAddresses ? (
-                            <div className="py-4">
-                                <Skeleton variant="rectangular" height={100} sx={{ mb: 2 }} />
-                                <Skeleton variant="rectangular" height={100} />
-                            </div>
-                        ) : showAddAddressForm ? (
-                            <div className="add-address-form mb-4">
-                                <div className="card border-primary">
-                                    <div className="card-header bg-light d-flex justify-content-between align-items-center">
-                                        <h6 className="mb-0">Add New Shipping Origin</h6>
-                                        <button
-                                            type="button"
-                                            className="btn-close"
-                                            onClick={() => setShowAddAddressForm(false)}
-                                            disabled={isSubmittingNew}
-                                        ></button>
-                                    </div>
-                                    <div className="card-body p-4">
-                                        {error && (
-                                            <div className="alert alert-danger" role="alert">
-                                                {error}
-                                            </div>
-                                        )}
-
-                                        <div className="row g-3">
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newNickname">Address Label*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newNickname"
-                                                        name="nickname"
-                                                        className="form-control"
-                                                        value={newAddress.nickname}
-                                                        onChange={handleNewAddressChange}
-                                                        placeholder="e.g., Main Office, Warehouse"
-                                                        required
-                                                    />
-                                                    <small className="form-text text-muted">Internal label to identify this address</small>
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newCompanyName">Company Name*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newCompanyName"
-                                                        name="companyName"
-                                                        className="form-control"
-                                                        value={newAddress.companyName}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newFirstName">First Name*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newFirstName"
-                                                        name="firstName"
-                                                        className="form-control"
-                                                        value={newAddress.firstName}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newLastName">Last Name*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newLastName"
-                                                        name="lastName"
-                                                        className="form-control"
-                                                        value={newAddress.lastName}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-12">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newAddress1">Street Address*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newAddress1"
-                                                        name="address1"
-                                                        className="form-control"
-                                                        value={newAddress.address1}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-12">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newAddress2">Suite/Unit (Optional)</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newAddress2"
-                                                        name="address2"
-                                                        className="form-control"
-                                                        value={newAddress.address2}
-                                                        onChange={handleNewAddressChange}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newCity">City*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newCity"
-                                                        name="city"
-                                                        className="form-control"
-                                                        value={newAddress.city}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newStateProv">{getStateLabel(newAddress.country)}*</label>
-                                                    <select
-                                                        id="newStateProv"
-                                                        name="stateProv"
-                                                        className="form-control"
-                                                        value={newAddress.stateProv}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    >
-                                                        <option value="">Select {getStateLabel(newAddress.country)}</option>
-                                                        {getStateOptions(newAddress.country).map(({ value, label }) => (
-                                                            <option key={value} value={value}>{label}</option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newZipPostal">Postal Code*</label>
-                                                    <input
-                                                        type="text"
-                                                        id="newZipPostal"
-                                                        name="zipPostal"
-                                                        className="form-control"
-                                                        value={newAddress.zipPostal}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newCountry">Country*</label>
-                                                    <select
-                                                        id="newCountry"
-                                                        name="country"
-                                                        className="form-control"
-                                                        value={newAddress.country}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    >
-                                                        <option value="US">United States</option>
-                                                        <option value="CA">Canada</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newPhone">Phone*</label>
-                                                    <input
-                                                        type="tel"
-                                                        id="newPhone"
-                                                        name="phone"
-                                                        className="form-control"
-                                                        value={newAddress.phone}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="form-group">
-                                                    <label className="form-label" htmlFor="newEmail">Email*</label>
-                                                    <input
-                                                        type="email"
-                                                        id="newEmail"
-                                                        name="email"
-                                                        className="form-control"
-                                                        value={newAddress.email}
-                                                        onChange={handleNewAddressChange}
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="col-12 mt-3">
-                                                <div className="form-check">
-                                                    <input
-                                                        type="checkbox"
-                                                        id="newIsDefault"
-                                                        name="isDefault"
-                                                        className="form-check-input"
-                                                        checked={newAddress.isDefault}
-                                                        onChange={handleNewAddressChange}
-                                                    />
-                                                    <label className="form-check-label" htmlFor="newIsDefault">
-                                                        Set as default address
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="card-footer bg-light">
-                                        <div className="d-flex justify-content-between">
-                                            <button
-                                                type="button"
-                                                className="btn btn-secondary"
-                                                onClick={() => setShowAddAddressForm(false)}
-                                                disabled={isSubmittingNew}
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="btn btn-success"
-                                                onClick={handleAddNewAddressSubmit}
-                                                disabled={isSubmittingNew}
-                                            >
-                                                {isSubmittingNew ? (
-                                                    <>
-                                                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                                        Adding...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <i className="bi bi-check-lg me-1"></i> Add Address
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="address-list">
-                                {shipFromAddresses.length > 0 ? (
-                                    shipFromAddresses.map((address) => {
-                                        const addressId = address.id;
-                                        const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
-                                        const attentionLine = getAttentionLine(address);
-                                        console.log(`Address ${address.nickname} (${addressId}): isSelected=${isSelected}, localSelectedId=${selectedAddressId}`);
-                                        return (
-                                            <div key={addressId} className="mb-2">
-                                                <Card
-                                                    sx={{
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.3s ease',
-                                                        borderRadius: '8px',
-                                                        width: '100%',
-                                                        mb: 2,
-                                                        ...(isSelected
-                                                            ? {
-                                                                borderColor: '#6b46c1 !important',
-                                                                border: '3px solid #6b46c1 !important',
-                                                                borderLeft: '8px solid #6b46c1 !important',
-                                                                bgcolor: 'rgba(107, 70, 193, 0.12) !important',
-                                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                                transform: 'scale(1.02) !important',
-                                                                position: 'relative',
-                                                                '&:hover': {
-                                                                    boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                                    borderColor: '#6b46c1 !important',
-                                                                    borderLeft: '8px solid #6b46c1 !important',
-                                                                },
-                                                                '&::after': {
-                                                                    content: '""',
-                                                                    position: 'absolute',
-                                                                    top: '15px',
-                                                                    right: '15px',
-                                                                    width: '20px',
-                                                                    height: '20px',
-                                                                    borderRadius: '50%',
-                                                                    backgroundColor: '#6b46c1',
-                                                                    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
-                                                                    backgroundSize: '14px 14px',
-                                                                    backgroundPosition: 'center',
-                                                                    backgroundRepeat: 'no-repeat',
-                                                                }
-                                                            }
-                                                            : {
-                                                                borderColor: 'rgba(0, 0, 0, 0.12) !important',
-                                                                border: '1px solid rgba(0, 0, 0, 0.12) !important',
-                                                                borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
-                                                                bgcolor: 'transparent !important',
-                                                                background: 'none !important',
-                                                                boxShadow: 'none !important',
-                                                                transform: 'none !important',
-                                                                '&:hover': {
-                                                                    boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
-                                                                    transform: 'translateY(-4px)',
-                                                                    borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
-                                                                }
-                                                            })
-                                                    }}
-                                                    onClick={() => handleAddressChange(addressId)}
-                                                    data-selected={isSelected ? "true" : "false"}
-                                                    data-address-id={addressId}
-                                                >
-                                                    <CardContent sx={{ p: 2 }}>
-                                                        <Grid container alignItems="center" spacing={2}>
-                                                            <Grid item xs={12} sm={4}>
-                                                                <Box display="flex" alignItems="center">
-                                                                    <Typography variant="subtitle1" fontWeight="500" sx={{ mr: 1 }}>
-                                                                        {address.nickname}
-                                                                    </Typography>
-                                                                    {address.isDefault && (
-                                                                        <Chip
-                                                                            size="small"
-                                                                            label="Default"
-                                                                            color="primary"
-                                                                            sx={{ height: 22 }}
-                                                                        />
-                                                                    )}
-                                                                </Box>
-                                                                <Typography variant="body2" color="text.secondary">
-                                                                    {address.companyName}
-                                                                </Typography>
-                                                                {attentionLine && (
-                                                                    <Typography variant="body2" color="text.secondary">
-                                                                        <Box component="span" fontWeight="500">Attn:</Box> {attentionLine}
-                                                                    </Typography>
-                                                                )}
-                                                            </Grid>
-                                                            <Grid item xs={12} sm={4}>
-                                                                <Typography variant="body2">
-                                                                    {address.address1}
-                                                                    {address.address2 && <>, {address.address2}</>}
-                                                                </Typography>
-                                                                <Typography variant="body2">
-                                                                    {address.city}, {address.stateProv} {address.zipPostal}
-                                                                </Typography>
-                                                            </Grid>
-                                                            <Grid item xs={12} sm={4}>
-                                                                <Typography variant="body2">
-                                                                    <Box component="span" fontWeight="500">Phone:</Box> {address.phone}
-                                                                </Typography>
-                                                                <Typography variant="body2">
-                                                                    <Box component="span" fontWeight="500">Email:</Box> {address.email}
-                                                                </Typography>
-                                                            </Grid>
-                                                        </Grid>
-                                                    </CardContent>
-                                                </Card>
-                                            </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-center py-4">
-                                        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                                            No saved origin addresses found.
-                                        </Typography>
-                                        <Button
-                                            variant="contained"
-                                            color="primary"
-                                            startIcon={<AddIcon />}
-                                            onClick={() => setShowAddAddressForm(true)}
-                                        >
-                                            Add Origin Address
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
+                <Box sx={{ mb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Search pickup locations..."
+                            value={searchTerm}
+                            onChange={handleSearchChange}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ color: '#666', fontSize: '20px' }} />
+                                    </InputAdornment>
+                                ),
+                                sx: { fontSize: '12px' }
+                            }}
+                            sx={{ mr: 2, maxWidth: '400px' }}
+                        />
+                        {!showAddAddressForm && (
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<AddIcon />}
+                                onClick={() => setShowAddAddressForm(true)}
+                                sx={{ fontSize: '12px', minWidth: '140px' }}
+                            >
+                                Add New
+                            </Button>
                         )}
-                    </div>
+                    </Box>
 
-                    <div className="special-instructions mt-4">
-                        <label className="form-label">Special Instructions (Optional)</label>
-                        <textarea
-                            name="specialInstructions"
-                            className="form-control"
-                            value={formData.shipFrom?.specialInstructions || ''}
-                            onChange={handleSelectedAddressInputChange}
-                            rows="3"
-                            placeholder="Enter any special handling instructions or notes for the carrier"
-                        ></textarea>
-                    </div>
-                </div>
-            </div>
+                    {loadingAddresses ? (
+                        <Box sx={{ py: 4 }}>
+                            <Skeleton variant="rectangular" height={100} sx={{ mb: 2 }} />
+                            <Skeleton variant="rectangular" height={100} />
+                        </Box>
+                    ) : (
+                        <Box>
+                            {filteredAddresses.length > 0 ? (
+                                filteredAddresses.map((address) => {
+                                    const addressId = address.id;
+                                    const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
+                                    const attentionLine = getAttentionLine(address);
 
-            <div className="navigation-buttons d-flex justify-content-between mt-4">
-                <button
-                    type="button"
-                    className="btn btn-outline-primary"
+                                    return (
+                                        <Card
+                                            key={addressId}
+                                            sx={{
+                                                cursor: 'pointer',
+                                                transition: 'all 0.3s ease',
+                                                borderRadius: '8px',
+                                                width: '100%',
+                                                mb: 2,
+                                                ...(isSelected
+                                                    ? {
+                                                        borderColor: '#6b46c1 !important',
+                                                        border: '3px solid #6b46c1 !important',
+                                                        borderLeft: '8px solid #6b46c1 !important',
+                                                        bgcolor: 'rgba(107, 70, 193, 0.12) !important',
+                                                        boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                        transform: 'scale(1.02) !important',
+                                                        position: 'relative',
+                                                        '&:hover': {
+                                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                            borderColor: '#6b46c1 !important',
+                                                            borderLeft: '8px solid #6b46c1 !important',
+                                                        },
+                                                        '&::after': {
+                                                            content: '""',
+                                                            position: 'absolute',
+                                                            top: '15px',
+                                                            right: '15px',
+                                                            width: '20px',
+                                                            height: '20px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: '#6b46c1',
+                                                            backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
+                                                            backgroundSize: '14px 14px',
+                                                            backgroundPosition: 'center',
+                                                            backgroundRepeat: 'no-repeat',
+                                                        }
+                                                    }
+                                                    : {
+                                                        borderColor: 'rgba(0, 0, 0, 0.12) !important',
+                                                        border: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                        borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                        bgcolor: 'transparent !important',
+                                                        background: 'none !important',
+                                                        boxShadow: 'none !important',
+                                                        transform: 'none !important',
+                                                        '&:hover': {
+                                                            boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+                                                            transform: 'translateY(-4px)',
+                                                            borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
+                                                        }
+                                                    })
+                                            }}
+                                            onClick={() => handleAddressChange(addressId)}
+                                        >
+                                            <CardContent sx={{ p: 2 }}>
+                                                <Grid container alignItems="center" spacing={2}>
+                                                    <Grid item xs={12} sm={4}>
+                                                        <Box display="flex" alignItems="center">
+                                                            <Typography variant="subtitle1" fontWeight="500" sx={{ mr: 1, fontSize: '14px' }}>
+                                                                {address.nickname}
+                                                            </Typography>
+                                                            {address.isDefault && (
+                                                                <Chip
+                                                                    size="small"
+                                                                    label="Default"
+                                                                    color="primary"
+                                                                    sx={{ height: 22, fontSize: '10px' }}
+                                                                />
+                                                            )}
+                                                        </Box>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                            {address.companyName}
+                                                        </Typography>
+                                                        {attentionLine && (
+                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                                <Box component="span" fontWeight="500">Attn:</Box> {attentionLine}
+                                                            </Typography>
+                                                        )}
+                                                    </Grid>
+                                                    <Grid item xs={12} sm={4}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                            {address.address1}
+                                                            {address.address2 && <>, {address.address2}</>}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                            {address.city}, {address.stateProv} {address.zipPostal}
+                                                        </Typography>
+                                                    </Grid>
+                                                    <Grid item xs={12} sm={4}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                            <Box component="span" fontWeight="500">Phone:</Box> {address.phone}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                            <Box component="span" fontWeight="500">Email:</Box> {address.email}
+                                                        </Typography>
+                                                    </Grid>
+                                                </Grid>
+                                            </CardContent>
+                                        </Card>
+                                    );
+                                })
+                            ) : (
+                                <Box sx={{ textAlign: 'center', py: 4 }}>
+                                    <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>
+                                        {searchTerm ? 'No pickup locations found matching your search.' : 'No saved pickup locations found.'}
+                                    </Typography>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => setShowAddAddressForm(true)}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        Add Pickup Location
+                                    </Button>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+                </Box>
+
+                <Box sx={{ mt: 4 }}>
+                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, mb: 1 }}>
+                        Special Instructions (Optional)
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        multiline
+                        rows={3}
+                        name="specialInstructions"
+                        value={formData.shipFrom?.specialInstructions || ''}
+                        onChange={handleSelectedAddressInputChange}
+                        placeholder="Enter any special handling instructions or notes for the carrier"
+                        InputProps={{
+                            sx: { fontSize: '12px' }
+                        }}
+                        sx={{ mb: 2 }}
+                    />
+                </Box>
+            </Paper>
+
+            {/* Navigation Buttons */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+                <Button
+                    variant="outlined"
                     onClick={onPrevious}
+                    sx={{ px: 4, fontSize: '12px' }}
                 >
-                    <i className="bi bi-arrow-left me-2"></i> Previous
-                </button>
-                <button
+                    Previous
+                </Button>
+                <Button
                     type="button"
-                    className="btn btn-primary btn-next-green"
+                    variant="contained"
                     onClick={handleSubmit}
                     disabled={!selectedAddressId && !formData.shipFrom?.street}
+                    sx={{
+                        px: 6,
+                        py: 1.5,
+                        fontSize: '12px',
+                        backgroundColor: '#10B981',
+                        minWidth: '160px',
+                        '&:hover': {
+                            backgroundColor: '#059669'
+                        },
+                        '&:disabled': {
+                            backgroundColor: '#cccccc'
+                        }
+                    }}
+                    endIcon={<ArrowForwardIcon />}
                 >
-                    Next <i className="bi bi-arrow-right ms-2"></i>
-                </button>
-            </div>
-        </form>
+                    Next
+                </Button>
+            </Box>
+
+            {/* Add New Address Dialog */}
+            <Dialog
+                open={showAddAddressForm}
+                onClose={() => setShowAddAddressForm(false)}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 2,
+                        maxHeight: '90vh'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    pb: 2,
+                    borderBottom: '1px solid #e2e8f0'
+                }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                        Add New Pickup Location
+                    </Typography>
+                    <Button
+                        onClick={() => setShowAddAddressForm(false)}
+                        sx={{ minWidth: 'auto', p: 1 }}
+                        disabled={isSubmittingNew}
+                    >
+                        <CloseIcon />
+                    </Button>
+                </DialogTitle>
+
+                <DialogContent sx={{ pt: 3 }}>
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Address Label"
+                                name="nickname"
+                                value={newAddress.nickname}
+                                onChange={handleNewAddressChange}
+                                placeholder="e.g., Main Office, Warehouse"
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                                helperText="Internal label to identify this address"
+                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Company Name"
+                                name="companyName"
+                                value={newAddress.companyName}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="First Name"
+                                name="firstName"
+                                value={newAddress.firstName}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Last Name"
+                                name="lastName"
+                                value={newAddress.lastName}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Street Address"
+                                name="address1"
+                                value={newAddress.address1}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Suite/Unit (Optional)"
+                                name="address2"
+                                value={newAddress.address2}
+                                onChange={handleNewAddressChange}
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="City"
+                                name="city"
+                                value={newAddress.city}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small" required>
+                                <InputLabel sx={{ fontSize: '14px' }}>{getStateLabel(newAddress.country)}</InputLabel>
+                                <Select
+                                    name="stateProv"
+                                    value={newAddress.stateProv}
+                                    onChange={handleNewAddressChange}
+                                    label={getStateLabel(newAddress.country)}
+                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                >
+                                    {getStateOptions(newAddress.country).map(({ value, label }) => (
+                                        <MenuItem key={value} value={value} sx={{ fontSize: '12px' }}>
+                                            {label}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Postal Code"
+                                name="zipPostal"
+                                value={newAddress.zipPostal}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small" required>
+                                <InputLabel sx={{ fontSize: '14px' }}>Country</InputLabel>
+                                <Select
+                                    name="country"
+                                    value={newAddress.country}
+                                    onChange={handleNewAddressChange}
+                                    label="Country"
+                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                >
+                                    <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                    <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Phone"
+                                name="phone"
+                                type="tel"
+                                value={newAddress.phone}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Email"
+                                name="email"
+                                type="email"
+                                value={newAddress.email}
+                                onChange={handleNewAddressChange}
+                                required
+                                InputLabelProps={{ sx: { fontSize: '14px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        name="isDefault"
+                                        checked={newAddress.isDefault}
+                                        onChange={handleNewAddressChange}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        Set as default pickup location
+                                    </Typography>
+                                }
+                            />
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+
+                <DialogActions sx={{ p: 3, borderTop: '1px solid #e2e8f0' }}>
+                    <Button
+                        onClick={() => setShowAddAddressForm(false)}
+                        disabled={isSubmittingNew}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleAddNewAddressSubmit}
+                        variant="contained"
+                        disabled={isSubmittingNew}
+                        sx={{
+                            fontSize: '12px',
+                            backgroundColor: '#10B981',
+                            '&:hover': {
+                                backgroundColor: '#059669'
+                            }
+                        }}
+                    >
+                        {isSubmittingNew ? 'Adding...' : 'Add Location'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </Container>
     );
 };
 
