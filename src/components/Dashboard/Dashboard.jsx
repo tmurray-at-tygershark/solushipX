@@ -623,7 +623,7 @@ const Dashboard = () => {
                     <IconButton onClick={() => setIsNavDrawerOpen(true)} sx={{ color: 'white' }}>
                         <MenuIcon />
                     </IconButton>
-                    <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 24, cursor: 'pointer' }} onClick={() => navigate('/dashboard')} />
+                    <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 28, cursor: 'pointer' }} onClick={() => navigate('/dashboard')} />
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <TextField

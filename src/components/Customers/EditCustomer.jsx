@@ -977,7 +977,7 @@ const EditCustomer = ({ customerId = null, onBackToDetail = null, onCustomerUpda
                     </Grid>
                 </Paper>
 
-                {/* Destination Addresses Section */}
+                {/* Delivery Addresses Section */}
                 <Paper sx={{
                     p: 3,
                     mb: 4,
@@ -986,7 +986,7 @@ const EditCustomer = ({ customerId = null, onBackToDetail = null, onCustomerUpda
                 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                         <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: { xs: 1, sm: 0 } }}>
-                            Destination Addresses
+                            Delivery Addresses
                         </Typography>
                         <Button
                             variant="contained"
@@ -1001,7 +1001,7 @@ const EditCustomer = ({ customerId = null, onBackToDetail = null, onCustomerUpda
                     </Box>
                     {destinationAddresses.length === 0 ? (
                         <Alert severity="info" sx={{ fontSize: '12px' }}>
-                            No destination addresses. Click "Add Address" to create one.
+                            No delivery addresses. Click "Add Address" to create one.
                         </Alert>
                     ) : (
                         <TableContainer>

@@ -122,7 +122,7 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
 
     useEffect(() => {
         fetchCustomers();
-    }, [page, rowsPerPage, selectedTab]);
+    }, [page, rowsPerPage]);
 
     // Handle deep link navigation from email notifications
     useEffect(() => {
@@ -162,14 +162,10 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                 console.log('No companyIdForAddress available, fetching all customers');
             }
 
-            if (selectedTab !== 'all') {
-                console.log('Adding status filter:', selectedTab);
-                clauses.push(where('status', '==', selectedTab));
-            }
-
+            // Remove status filter from database query - we'll filter client-side for better tab functionality
             console.log('Adding sort clause: name, asc');
             clauses.push(orderBy('name', 'asc'));
-            clauses.push(limit(rowsPerPage));
+            // Remove limit to get all customers for proper filtering
 
             const q = clauses.length > 0 ? query(customersRef, ...clauses) : customersRef;
             console.log('Executing query with clauses:', clauses);
@@ -506,6 +502,12 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
 
     // Define filteredCustomers first before using it in selection logic
     const filteredCustomers = customers.filter(customer => {
+        // Status filter (tab filter)
+        let matchesStatusFilter = true;
+        if (selectedTab !== 'all') {
+            matchesStatusFilter = customer.status?.toLowerCase() === selectedTab.toLowerCase();
+        }
+
         // Quick search (toolbar search)
         const searchLower = searchQuery.toLowerCase();
         let matchesQuickSearch = true;
@@ -536,12 +538,27 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
             matchesAdvancedSearch = matchesAdvancedSearch && customer.contact?.email?.toLowerCase().includes(searchFields.email.toLowerCase());
         }
 
-        return matchesQuickSearch && matchesAdvancedSearch;
+        return matchesStatusFilter && matchesQuickSearch && matchesAdvancedSearch;
     });
 
     const isSelected = (customerId) => selectedCustomers.has(customerId);
     const isIndeterminate = selectedCustomers.size > 0 && selectedCustomers.size < filteredCustomers.length;
     const isAllSelected = filteredCustomers.length > 0 && selectedCustomers.size === filteredCustomers.length;
+
+    // Calculate tab counts
+    const getTabCounts = () => {
+        const allCount = customers.length;
+        const activeCount = customers.filter(c => c.status?.toLowerCase() === 'active').length;
+        const inactiveCount = customers.filter(c => c.status?.toLowerCase() === 'inactive').length;
+
+        return {
+            all: allCount,
+            active: activeCount,
+            inactive: inactiveCount
+        };
+    };
+
+    const tabCounts = getTabCounts();
 
     // Clear selections when filters change
     useEffect(() => {
@@ -660,8 +677,8 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
     return (
         <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
             <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
-                {/* Modal Header - show when in table or detail view */}
-                {isModal && (currentView === 'table' || currentView === 'detail') && (
+                {/* Modal Header - show when in table, detail, or add view */}
+                {isModal && (currentView === 'table' || currentView === 'detail' || currentView === 'add') && (
                     <ModalHeader
                         navigation={getNavigationObject()}
                         onClose={showCloseButton ? onClose : null}
@@ -739,9 +756,9 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                             }
                                         }}
                                     >
-                                        <Tab label="All" value="all" />
-                                        <Tab label="Active" value="active" />
-                                        <Tab label="Inactive" value="inactive" />
+                                        <Tab label={`All (${tabCounts.all})`} value="all" />
+                                        <Tab label={`Active (${tabCounts.active})`} value="active" />
+                                        <Tab label={`Inactive (${tabCounts.inactive})`} value="inactive" />
                                     </Tabs>
 
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -1028,11 +1045,11 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                                                 />
                                                             </TableCell>
                                                             <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Company Name</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Contact</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '180px' }}>Email</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '140px' }}>Contact</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '280px' }}>Email</TableCell>
                                                             <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '200px' }}>Address</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Phone</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '90px' }}>Created</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '120px' }}>Phone</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '80px' }}>Created</TableCell>
                                                             <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '100px' }}>Status</TableCell>
                                                         </TableRow>
                                                     </TableHead>
@@ -1069,6 +1086,8 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                                                             minWidth: 'auto',
                                                                             color: '#1976d2',
                                                                             textDecoration: 'none !important',
+                                                                            justifyContent: 'flex-start',
+                                                                            textAlign: 'left',
                                                                             '&:hover': {
                                                                                 backgroundColor: 'transparent',
                                                                                 textDecoration: 'none !important'

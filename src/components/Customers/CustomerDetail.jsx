@@ -1856,29 +1856,31 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
                     mb: 3
                 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, mb: 1 }}>
-                            {customer.name}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
-                                Customer ID: {customer.customerID}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                            <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600 }}>
+                                {customer.name}
                             </Typography>
-                            <IconButton
-                                size="small"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(customer.customerID);
-                                    // You could add a toast notification here if desired
-                                }}
-                                sx={{
-                                    padding: '2px',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                                title="Copy Customer ID to clipboard"
-                            >
-                                <ContentCopyIcon sx={{ fontSize: '12px' }} />
-                            </IconButton>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography sx={{ fontSize: '12px', color: '#64748b' }}>
+                                    ID: {customer.customerID}
+                                </Typography>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(customer.customerID);
+                                        // You could add a toast notification here if desired
+                                    }}
+                                    sx={{
+                                        padding: '2px',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                        }
+                                    }}
+                                    title="Copy Customer ID to clipboard"
+                                >
+                                    <ContentCopyIcon sx={{ fontSize: '12px' }} />
+                                </IconButton>
+                            </Box>
                         </Box>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
