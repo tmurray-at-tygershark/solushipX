@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel, FormHelperText, Container } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon, ArrowForward as ArrowForwardIcon } from '@mui/icons-material';
+import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, InputAdornment, FormControlLabel, FormHelperText, Container, Alert } from '@mui/material';
+import { Add as AddIcon, Info as InfoIcon, ArrowForward as ArrowForwardIcon } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 
 // Comprehensive Freight Class Data
@@ -178,7 +178,10 @@ const Packages = ({ onNext, onPrevious }) => {
         { code: 'USD', symbol: '$', name: 'US Dollar' },
         { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' }
     ]);
-    // Removed freightClassErrors state - freight class selection is now purely user choice without validation
+
+    // Error state management
+    const [errors, setErrors] = useState({});
+    const [showErrors, setShowErrors] = useState(false);
 
     useEffect(() => {
         // Enhanced package initialization logic for draft data
@@ -222,6 +225,78 @@ const Packages = ({ onNext, onPrevious }) => {
 
     const updateContext = (newPackages) => {
         updateFormSection('packages', newPackages);
+    };
+
+    // Validation functions
+    const validatePackage = (pkg, index, shipmentType) => {
+        const packageErrors = {};
+
+        // Item Description validation
+        if (!pkg.itemDescription || String(pkg.itemDescription).trim() === '') {
+            packageErrors.itemDescription = 'Item description is required';
+        }
+
+        // Quantity validation
+        if (!pkg.packagingQuantity || String(pkg.packagingQuantity).trim() === '' || isNaN(parseInt(pkg.packagingQuantity)) || parseInt(pkg.packagingQuantity) < 1) {
+            packageErrors.packagingQuantity = 'Quantity must be at least 1';
+        }
+
+        // Weight validation
+        if (!pkg.weight || String(pkg.weight).trim() === '' || isNaN(parseFloat(pkg.weight)) || parseFloat(pkg.weight) <= 0) {
+            packageErrors.weight = 'Weight must be greater than 0';
+        }
+
+        // Dimensions validation
+        if (!pkg.length || String(pkg.length).trim() === '' || isNaN(parseFloat(pkg.length)) || parseFloat(pkg.length) <= 0) {
+            packageErrors.length = 'Length must be greater than 0';
+        }
+
+        if (!pkg.width || String(pkg.width).trim() === '' || isNaN(parseFloat(pkg.width)) || parseFloat(pkg.width) <= 0) {
+            packageErrors.width = 'Width must be greater than 0';
+        }
+
+        if (!pkg.height || String(pkg.height).trim() === '' || isNaN(parseFloat(pkg.height)) || parseFloat(pkg.height) <= 0) {
+            packageErrors.height = 'Height must be greater than 0';
+        }
+
+        // Freight-specific validations
+        if (shipmentType === 'freight') {
+            if (!pkg.packagingType) {
+                packageErrors.packagingType = 'Packaging type is required for freight shipments';
+            }
+
+            if (!pkg.freightClass) {
+                packageErrors.freightClass = 'Freight class is required for freight shipments';
+            }
+        }
+
+        return packageErrors;
+    };
+
+    const validateAllPackages = () => {
+        const currentPackages = formData.packages || [];
+        const shipmentType = formData.shipmentInfo?.shipmentType;
+        const allErrors = {};
+
+        currentPackages.forEach((pkg, index) => {
+            const packageErrors = validatePackage(pkg, index, shipmentType);
+            if (Object.keys(packageErrors).length > 0) {
+                allErrors[index] = packageErrors;
+            }
+        });
+
+        return allErrors;
+    };
+
+    const getFieldError = (packageIndex, fieldName) => {
+        return errors[packageIndex]?.[fieldName] || '';
+    };
+
+    const hasFieldError = (packageIndex, fieldName) => {
+        if (fieldName === 'any') {
+            return showErrors && !!errors[packageIndex] && Object.keys(errors[packageIndex]).length > 0;
+        }
+        return showErrors && !!getFieldError(packageIndex, fieldName);
     };
 
     const lbsToKg = (lbs) => (lbs * 0.453592).toFixed(2);
@@ -307,113 +382,153 @@ const Packages = ({ onNext, onPrevious }) => {
         });
         setPackages(updatedPackages);
         updateContext(updatedPackages);
+
+        // Clear field-specific error when user starts typing
+        if (showErrors && errors[index]?.[field]) {
+            const newErrors = { ...errors };
+            if (newErrors[index]) {
+                delete newErrors[index][field];
+                if (Object.keys(newErrors[index]).length === 0) {
+                    delete newErrors[index];
+                }
+                setErrors(newErrors);
+            }
+        }
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const currentPackages = formData.packages || [];
-        const shipmentType = formData.shipmentInfo?.shipmentType;
 
-        const hasEmptyFields = currentPackages.some(pkg => {
-            // Basic required fields for all shipment types
-            const basicFieldsInvalid =
-                !pkg.itemDescription || String(pkg.itemDescription).trim() === '' ||
-                !pkg.packagingQuantity || String(pkg.packagingQuantity).trim() === '' || isNaN(parseInt(pkg.packagingQuantity)) || parseInt(pkg.packagingQuantity) < 1 ||
-                !pkg.weight || String(pkg.weight).trim() === '' || isNaN(parseFloat(pkg.weight)) || parseFloat(pkg.weight) <= 0 ||
-                !pkg.height || String(pkg.height).trim() === '' || isNaN(parseFloat(pkg.height)) || parseFloat(pkg.height) <= 0 ||
-                !pkg.width || String(pkg.width).trim() === '' || isNaN(parseFloat(pkg.width)) || parseFloat(pkg.width) <= 0 ||
-                !pkg.length || String(pkg.length).trim() === '' || isNaN(parseFloat(pkg.length)) || parseFloat(pkg.length) <= 0;
+        // Validate all packages
+        const validationErrors = validateAllPackages();
 
-            // Packaging type is only required for freight shipments
-            const packagingTypeInvalid = shipmentType === 'freight' && !pkg.packagingType;
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
+            setShowErrors(true);
 
-            // Freight class is only required for freight shipments
-            const freightClassInvalid = shipmentType === 'freight' && !pkg.freightClass;
+            // Scroll to first error
+            const firstErrorPackageIndex = Object.keys(validationErrors)[0];
+            const firstErrorElement = document.querySelector(`[data-package-index="${firstErrorPackageIndex}"]`);
+            if (firstErrorElement) {
+                firstErrorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
 
-            return basicFieldsInvalid || packagingTypeInvalid || freightClassInvalid;
-        });
-
-        if (hasEmptyFields) {
-            const requiredFieldsMessage = shipmentType === 'freight'
-                ? 'Please fill in all required fields for each package (Description, Type, Qty > 0, Weight > 0, Dimensions > 0, Freight Class).'
-                : 'Please fill in all required fields for each package (Description, Qty > 0, Weight > 0, Dimensions > 0).';
-            alert(requiredFieldsMessage);
-            console.warn("Packages handleSubmit: Validation failed due to empty/invalid required fields.", currentPackages);
+            console.warn("Packages handleSubmit: Validation failed due to invalid fields.", validationErrors);
             return;
         }
 
-        console.log("Packages handleSubmit: Validation passed. Calling onNext with data from context:", currentPackages);
-        onNext(currentPackages);
+        // Clear any existing errors
+        setErrors({});
+        setShowErrors(false);
+
+        console.log("Packages handleSubmit: Validation passed. Calling onNext with data from context:", formData.packages);
+        onNext(formData.packages);
     };
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 600, color: 'text.primary' }}>
-                    Package Information
-                </Typography>
-                <Typography variant="body1" color="text.secondary">
-                    Add details about your packages for shipping
-                </Typography>
-            </Box>
+        <Container maxWidth="lg" sx={{ py: 2 }}>
+            {/* Error Summary */}
+            {showErrors && Object.keys(errors).length > 0 && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                        Please correct the following errors:
+                    </Typography>
+                    <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                        {Object.entries(errors).map(([packageIndex, packageErrors]) => (
+                            <Box key={packageIndex} component="li" sx={{ mb: 0.5 }}>
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                    <strong>Package {parseInt(packageIndex) + 1}:</strong>{' '}
+                                    {Object.values(packageErrors).join(', ')}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Box>
+                </Alert>
+            )}
 
             <div className="package-list">
                 {packages.map((pkg, index) => (
-                    <Paper
+                    <Box
                         key={pkg.id || index}
-                        elevation={2}
+                        component="fieldset"
+                        data-package-index={index}
                         sx={{
-                            p: 3,
-                            mb: 3,
-                            borderRadius: 2,
                             border: '1px solid',
-                            borderColor: 'divider',
-                            '&:hover': {
-                                boxShadow: 3
-                            },
+                            borderColor: hasFieldError(index, 'any') ? 'error.main' : 'divider',
+                            borderRadius: 2,
+                            p: 2,
+                            mb: 2,
                             position: 'relative',
-                            overflow: 'hidden'
+                            '&:hover': {
+                                borderColor: hasFieldError(index, 'any') ? 'error.main' : 'primary.main'
+                            }
                         }}
                     >
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                Package {index + 1}
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                {packages.length > 1 && (
-                                    <Tooltip title="Remove Package">
-                                        <IconButton
-                                            onClick={() => removePackage(index)}
-                                            size="small"
-                                            sx={{ color: 'error.main' }}
-                                        >
-                                            <DeleteIcon />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                            </Box>
+                        <Box
+                            component="legend"
+                            sx={{
+                                px: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 2,
+                                fontSize: '0.875rem',
+                                fontWeight: 600,
+                                color: 'text.primary'
+                            }}
+                        >
+                            Package {index + 1}
+                            {packages.length > 1 && (
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    onClick={() => removePackage(index)}
+                                    sx={{
+                                        fontSize: '10px',
+                                        textTransform: 'none',
+                                        minWidth: 'auto',
+                                        px: 1.5,
+                                        py: 0.25,
+                                        minHeight: '24px'
+                                    }}
+                                >
+                                    Remove
+                                </Button>
+                            )}
                         </Box>
 
-                        <Grid container spacing={3}>
+                        <Grid container spacing={2}>
                             <Grid item xs={12} md={5}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Item Description"
                                     value={pkg.itemDescription || ''}
                                     onChange={(e) => updatePackage(index, 'itemDescription', e.target.value)}
                                     required
+                                    error={hasFieldError(index, 'itemDescription')}
+                                    helperText={getFieldError(index, 'itemDescription')}
+                                    sx={{
+                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                 />
                             </Grid>
 
                             {/* Packaging Type - Only show for freight shipments */}
                             {formData.shipmentInfo?.shipmentType === 'freight' && (
                                 <Grid item xs={12} md={4}>
-                                    <FormControl fullWidth required>
-                                        <InputLabel>Packaging Type</InputLabel>
+                                    <FormControl fullWidth required size="small" error={hasFieldError(index, 'packagingType')}>
+                                        <InputLabel sx={{ fontSize: '12px' }}>Packaging Type</InputLabel>
                                         <Select
                                             value={pkg.packagingType || ''}
                                             onChange={(e) => updatePackage(index, 'packagingType', e.target.value)}
                                             label="Packaging Type"
+                                            sx={{
+                                                '& .MuiSelect-select': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
                                         >
                                             <MenuItem value={237}>10KG BOX</MenuItem>
                                             <MenuItem value={238}>25KG BOX</MenuItem>
@@ -450,46 +565,67 @@ const Packages = ({ onNext, onPrevious }) => {
                                             <MenuItem value={274}>RACKS</MenuItem>
                                             <MenuItem value={275}>GAYLORDS</MenuItem>
                                         </Select>
+                                        {hasFieldError(index, 'packagingType') && (
+                                            <FormHelperText sx={{ fontSize: '11px' }}>
+                                                {getFieldError(index, 'packagingType')}
+                                            </FormHelperText>
+                                        )}
                                     </FormControl>
                                 </Grid>
                             )}
 
                             <Grid item xs={12} md={formData.shipmentInfo?.shipmentType === 'freight' ? 3 : 7}>
-                                <FormControl fullWidth required>
-                                    <InputLabel>Qty</InputLabel>
+                                <FormControl fullWidth required size="small" error={hasFieldError(index, 'packagingQuantity')}>
+                                    <InputLabel sx={{ fontSize: '12px' }}>Qty</InputLabel>
                                     <Select
                                         value={pkg.packagingQuantity || ''}
                                         onChange={(e) => updatePackage(index, 'packagingQuantity', e.target.value)}
                                         label="Qty"
+                                        sx={{
+                                            '& .MuiSelect-select': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
                                     >
                                         {[...Array(20)].map((_, i) => (
-                                            <MenuItem key={i + 1} value={i + 1}>
+                                            <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '12px' }}>
                                                 {i + 1}
                                             </MenuItem>
                                         ))}
                                     </Select>
+                                    {hasFieldError(index, 'packagingQuantity') && (
+                                        <FormHelperText sx={{ fontSize: '11px' }}>
+                                            {getFieldError(index, 'packagingQuantity')}
+                                        </FormHelperText>
+                                    )}
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Package Reference ID"
-                                    placeholder="Enter package reference ID for tracking"
-                                    value={pkg.packageReferenceID || ''}
-                                    onChange={(e) => updatePackage(index, 'packageReferenceID', e.target.value)}
-                                    helperText="Optional: Used to track individual packages within a shipment"
-                                />
-                            </Grid>
+                            {/* Package Reference ID - Hidden for now */}
+                            {false && (
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Package Reference ID"
+                                        placeholder="Enter package reference ID for tracking"
+                                        value={pkg.packageReferenceID || ''}
+                                        onChange={(e) => updatePackage(index, 'packageReferenceID', e.target.value)}
+                                        helperText="Optional: Used to track individual packages within a shipment"
+                                    />
+                                </Grid>
+                            )}
 
                             {/* Freight Class - Only show for freight shipments */}
                             {formData.shipmentInfo?.shipmentType === 'freight' && (
                                 <Grid item xs={12}>
-                                    <FormControl fullWidth required>
-                                        <InputLabel>Freight Class</InputLabel>
+                                    <FormControl fullWidth required size="small" error={hasFieldError(index, 'freightClass')}>
+                                        <InputLabel sx={{ fontSize: '12px' }}>Freight Class</InputLabel>
                                         <Select
                                             value={pkg.freightClass || ''}
                                             onChange={(e) => updatePackage(index, 'freightClass', e.target.value)}
                                             label="Freight Class"
+                                            sx={{
+                                                '& .MuiSelect-select': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
                                             renderValue={(value) => {
                                                 const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
                                                 return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
@@ -503,8 +639,11 @@ const Packages = ({ onNext, onPrevious }) => {
                                                 </MenuItem>
                                             ))}
                                         </Select>
-                                        <FormHelperText sx={{ mt: 1 }}>
-                                            Select the appropriate freight class for your shipment
+                                        <FormHelperText sx={{ mt: 1, fontSize: '11px' }}>
+                                            {hasFieldError(index, 'freightClass')
+                                                ? getFieldError(index, 'freightClass')
+                                                : 'Select the appropriate freight class for your shipment'
+                                            }
                                         </FormHelperText>
                                     </FormControl>
                                 </Grid>
@@ -513,11 +652,19 @@ const Packages = ({ onNext, onPrevious }) => {
                             <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Weight"
                                     type="number"
                                     value={pkg.weight || ''}
                                     onChange={(e) => updatePackage(index, 'weight', e.target.value)}
                                     required
+                                    error={hasFieldError(index, 'weight')}
+                                    helperText={getFieldError(index, 'weight')}
+                                    sx={{
+                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                     InputProps={{
                                         endAdornment: (
                                             <InputAdornment position="end">
@@ -541,11 +688,19 @@ const Packages = ({ onNext, onPrevious }) => {
                             <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Length"
                                     type="number"
                                     value={pkg.length || ''}
                                     onChange={(e) => updatePackage(index, 'length', e.target.value)}
                                     required
+                                    error={hasFieldError(index, 'length')}
+                                    helperText={getFieldError(index, 'length')}
+                                    sx={{
+                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                     InputProps={{
                                         endAdornment: (
                                             <InputAdornment position="end">
@@ -569,11 +724,19 @@ const Packages = ({ onNext, onPrevious }) => {
                             <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Width"
                                     type="number"
                                     value={pkg.width || ''}
                                     onChange={(e) => updatePackage(index, 'width', e.target.value)}
                                     required
+                                    error={hasFieldError(index, 'width')}
+                                    helperText={getFieldError(index, 'width')}
+                                    sx={{
+                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                     InputProps={{
                                         endAdornment: (
                                             <InputAdornment position="end">
@@ -597,11 +760,19 @@ const Packages = ({ onNext, onPrevious }) => {
                             <Grid item xs={12} md={2.4}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Height"
                                     type="number"
                                     value={pkg.height || ''}
                                     onChange={(e) => updatePackage(index, 'height', e.target.value)}
                                     required
+                                    error={hasFieldError(index, 'height')}
+                                    helperText={getFieldError(index, 'height')}
+                                    sx={{
+                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                     InputProps={{
                                         endAdornment: (
                                             <InputAdornment position="end">
@@ -624,7 +795,7 @@ const Packages = ({ onNext, onPrevious }) => {
                             </Grid>
                             <Grid item xs={12} md={2.4} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Typography variant="body2" color="text.secondary">Imperial</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Imperial</Typography>
                                     <Switch
                                         checked={unitSystem === 'metric'}
                                         onChange={handleUnitChange}
@@ -640,7 +811,7 @@ const Packages = ({ onNext, onPrevious }) => {
                                             }
                                         }}
                                     />
-                                    <Typography variant="body2" color="text.secondary">Metric</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Metric</Typography>
                                 </Box>
                             </Grid>
 
@@ -670,17 +841,18 @@ const Packages = ({ onNext, onPrevious }) => {
                                 </Grid>
                             )}
                         </Grid>
-                    </Paper>
+                    </Box>
                 ))}
             </div>
 
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 4 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3 }}>
                 <Button
                     variant="outlined"
                     startIcon={<AddIcon />}
                     onClick={addPackage}
+                    size="small"
                     sx={{
-                        py: 1.5,
+                        py: 1,
                         borderStyle: 'dashed',
                         borderWidth: 2,
                         '&:hover': {
@@ -692,7 +864,7 @@ const Packages = ({ onNext, onPrevious }) => {
                     Add Another Package
                 </Button>
 
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
                     <Button
                         variant="outlined"
                         onClick={onPrevious}

@@ -164,7 +164,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     // Draft deletion states
     const [isDeleteDraftsDialogOpen, setIsDeleteDraftsDialogOpen] = useState(false);
     const [isDeletingDrafts, setIsDeletingDrafts] = useState(false);
-    const [deleteAction, setDeleteAction] = useState('all'); // 'all' or 'selected'
 
     // Add new state for document availability
     const [documentAvailability, setDocumentAvailability] = useState({});
@@ -984,7 +983,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         color="error"
                                                         size="small"
                                                         onClick={() => {
-                                                            setDeleteAction('selected');
                                                             setIsDeleteDraftsDialogOpen(true);
                                                         }}
                                                         disabled={isDeletingDrafts}
@@ -993,19 +991,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         Delete Selected ({selected.filter(id => shipments.find(s => s.id === id)?.status === 'draft').length})
                                                     </Button>
                                                 )}
-                                                <Button
-                                                    variant="outlined"
-                                                    color="error"
-                                                    size="small"
-                                                    onClick={() => {
-                                                        setDeleteAction('all');
-                                                        setIsDeleteDraftsDialogOpen(true);
-                                                    }}
-                                                    disabled={isDeletingDrafts}
-                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
-                                                >
-                                                    Delete All Drafts
-                                                </Button>
                                             </>
                                         )}
 
@@ -1511,35 +1496,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     }, [selected, shipments, showSnackbar, loadShipments]);
 
-    // Handle deleting all drafts
-    const handleDeleteAllDrafts = useCallback(async () => {
-        setIsDeletingDrafts(true);
-        try {
-            const allDrafts = allShipments.filter(s => s.status === 'draft');
 
-            if (allDrafts.length === 0) {
-                showSnackbar('No draft shipments to delete', 'info');
-                return;
-            }
-
-            // Delete all drafts
-            const deletePromises = allDrafts.map(shipment =>
-                deleteDoc(doc(db, 'shipments', shipment.id))
-            );
-
-            await Promise.all(deletePromises);
-
-            showSnackbar(`Successfully deleted ${allDrafts.length} draft shipment${allDrafts.length > 1 ? 's' : ''}`, 'success');
-            setSelected([]); // Clear selection
-            loadShipments(); // Reload the shipments list
-        } catch (error) {
-            console.error('Error deleting all drafts:', error);
-            showSnackbar('Error deleting draft shipments', 'error');
-        } finally {
-            setIsDeletingDrafts(false);
-            setIsDeleteDraftsDialogOpen(false);
-        }
-    }, [allShipments, showSnackbar, loadShipments]);
 
     // Create dynamic navigation object based on current state
     const getNavigationObject = () => {
@@ -1844,14 +1801,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 fullWidth
             >
                 <DialogTitle>
-                    {deleteAction === 'selected' ? 'Delete Selected Drafts' : 'Delete All Drafts'}
+                    Delete Selected Drafts
                 </DialogTitle>
                 <DialogContent>
                     <Typography>
-                        {deleteAction === 'selected'
-                            ? `Are you sure you want to delete ${selected.filter(id => shipments.find(s => s.id === id)?.status === 'draft').length} selected draft shipment${selected.filter(id => shipments.find(s => s.id === id)?.status === 'draft').length > 1 ? 's' : ''}?`
-                            : `Are you sure you want to delete all ${stats.drafts} draft shipment${stats.drafts > 1 ? 's' : ''}?`
-                        }
+                        Are you sure you want to delete {selected.filter(id => shipments.find(s => s.id === id)?.status === 'draft').length} selected draft shipment{selected.filter(id => shipments.find(s => s.id === id)?.status === 'draft').length > 1 ? 's' : ''}?
                     </Typography>
                     <Typography variant="body2" sx={{ mt: 1, color: '#64748b' }}>
                         This action cannot be undone. Draft shipments will be permanently removed.
@@ -1865,7 +1819,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         Cancel
                     </Button>
                     <Button
-                        onClick={deleteAction === 'selected' ? handleDeleteSelectedDrafts : handleDeleteAllDrafts}
+                        onClick={handleDeleteSelectedDrafts}
                         color="error"
                         variant="contained"
                         disabled={isDeletingDrafts}

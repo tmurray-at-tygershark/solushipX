@@ -1121,20 +1121,22 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                             <Box sx={{ display: 'flex', justifyContent: 'center', my: 5 }}><CircularProgress /></Box>
                         ) : (
                             <>
-                                <StepperComponent
-                                    currentStep={currentStep}
-                                    dataCompleteness={dataCompleteness}
-                                    onStepClick={(step) => {
-                                        const stepSlug = STEP_SLUGS[step];
-                                        if (isModal) {
-                                            // In modal mode, just change the step without navigation
-                                            setCurrentStep(step);
-                                        } else {
-                                            const path = activeDraftId ? `/create-shipment/${stepSlug}/${activeDraftId}` : `/create-shipment/${stepSlug}`;
-                                            navigate(path);
-                                        }
-                                    }}
-                                />
+                                <Box sx={{ pt: 3, pb: 2.125 }}>
+                                    <StepperComponent
+                                        currentStep={currentStep}
+                                        dataCompleteness={dataCompleteness}
+                                        onStepClick={(step) => {
+                                            const stepSlug = STEP_SLUGS[step];
+                                            if (isModal) {
+                                                // In modal mode, just change the step without navigation
+                                                setCurrentStep(step);
+                                            } else {
+                                                const path = activeDraftId ? `/create-shipment/${stepSlug}/${activeDraftId}` : `/create-shipment/${stepSlug}`;
+                                                navigate(path);
+                                            }
+                                        }}
+                                    />
+                                </Box>
                                 <form id="shipmentForm" className="needs-validation" noValidate onSubmit={handleSubmit}>
                                     {renderStep()}
                                 </form>
