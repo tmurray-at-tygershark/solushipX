@@ -495,13 +495,14 @@ const AddCustomer = ({ isModal = false, onBackToTable = null, onCustomerCreated 
             flexDirection: 'column',
             backgroundColor: 'white'
         }}>
-            {/* Modal Header - only show when used as standalone modal, not in sliding system */}
-            {isModal && !onBackToTable && (
+            {/* Modal Header - show when used as standalone modal */}
+            {isModal && (
                 <ModalHeader
                     title="Create New Customer"
-                    onBack={() => navigate('/customers')}
+                    onBack={onBackToTable || (() => navigate('/customers'))}
+                    onClose={onBackToTable}
                     showBackButton={true}
-                    showCloseButton={false}
+                    showCloseButton={!!onBackToTable}
                 />
             )}
 
@@ -537,7 +538,7 @@ const AddCustomer = ({ isModal = false, onBackToTable = null, onCustomerCreated 
                 px: 3,
                 pb: 4
             }}>
-                {/* Customer Header - show in all modal modes */}
+                {/* Customer Header - show in modal modes */}
                 {isModal && (
                     <Box sx={{
                         display: 'flex',

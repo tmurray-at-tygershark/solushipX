@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel, FormHelperText } from '@mui/material';
+import { Switch, Paper, Typography, Box, Grid, TextField, Select, MenuItem, InputLabel, FormControl, Button, Divider, Tooltip, IconButton, InputAdornment, FormControlLabel, FormHelperText, Container } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon, ArrowForward as ArrowForwardIcon } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 
@@ -347,7 +347,7 @@ const Packages = ({ onNext, onPrevious }) => {
     };
 
     return (
-        <div className="form-section">
+        <Container maxWidth="lg" sx={{ py: 4 }}>
             <Box sx={{ mb: 4 }}>
                 <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 600, color: 'text.primary' }}>
                     Package Information
@@ -718,7 +718,7 @@ const Packages = ({ onNext, onPrevious }) => {
                     </Button>
                 </Box>
             </Box>
-        </div>
+        </Container>
     );
 };
 

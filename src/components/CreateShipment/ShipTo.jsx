@@ -1,21 +1,37 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect, useCallback } from 'react';
+import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
-import './ShipTo.css';
-import { Autocomplete, TextField, Box, Typography, Chip, CircularProgress, Pagination, Card, CardContent, Grid, Button, Divider, List, TablePagination, Skeleton, IconButton, Alert } from '@mui/material';
 import {
-    LocationOn as LocationOnIcon,
-    LocalPhone as LocalPhoneIcon,
-    Email as EmailIcon,
-    Business as BusinessIcon,
-    Home as HomeIcon,
+    Skeleton,
+    Card,
+    CardContent,
+    Grid,
+    Box,
+    Typography,
+    Chip,
+    Button,
+    Alert,
+    TextField,
+    InputAdornment,
+    Paper,
+    Container,
+    Autocomplete,
+    CircularProgress,
+    Dialog
+} from '@mui/material';
+import {
     Add as AddIcon,
     Search as SearchIcon,
-    Clear as ClearIcon,
-    Person as PersonIcon
+    ArrowForward as ArrowForwardIcon,
+    Clear as ClearIcon
 } from '@mui/icons-material';
+import DestinationAddressDialog from '../Customers/DestinationAddressDialog';
+import AddCustomer from '../Customers/AddCustomer';
+import { useSnackbar } from 'notistack';
+import { getCountryFlag } from '../Shipments/utils/shipmentHelpers';
+import './ShipTo.css';
 
 const emptyAddress = () => ({
     company: '',
@@ -38,61 +54,52 @@ const emptyAddress = () => ({
 const ShipTo = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
     const { formData, updateFormSection } = useShipmentForm();
+    const { enqueueSnackbar } = useSnackbar();
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomerState, setSelectedCustomerState] = useState(null);
     const [customerAddresses, setCustomerAddresses] = useState([]);
+    const [filteredAddresses, setFilteredAddresses] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
     const [selectedAddressId, setSelectedAddressId] = useState(formData.shipTo?.selectedAddressId || null);
-
-    const [searchQuery, setSearchQuery] = useState('');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [customersPerPage] = useState(5);
-    const [totalPages, setTotalPages] = useState(1);
 
     const [loading, setLoading] = useState(true);
     const [loadingDestinations, setLoadingDestinations] = useState(false);
     const [error, setError] = useState(null);
-    const [companyId, setCompanyId] = useState(null);
+    const [success, setSuccess] = useState(null);
 
+    // Add New Address Dialog states
+    const [isAddressDialogOpen, setIsAddressDialogOpen] = useState(false);
+
+    // Add Customer Modal states
+    const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
+
+    // Search functionality for addresses
     useEffect(() => {
-        const customerIdFromContext = formData.shipTo?.customerID;
-        const selectedAddressIdFromContext = formData.shipTo?.selectedAddressId;
-
-        console.log("ShipTo: Context sync effect triggered:", {
-            customerIdFromContext,
-            selectedAddressIdFromContext,
-            currentSelectedCustomer: selectedCustomerState?.customerID,
-            currentSelectedAddress: selectedAddressId
-        });
-
-        // Handle customer selection from context
-        if (customerIdFromContext && (!selectedCustomerState || selectedCustomerState.customerID !== customerIdFromContext)) {
-            const customerFromList = customers.find(c => c.customerID === customerIdFromContext || c.id === customerIdFromContext);
-            if (customerFromList) {
-                console.log("ShipTo: Setting customer from context:", customerFromList);
-                setSelectedCustomerState(customerFromList);
-            } else {
-                console.log("ShipTo: Customer ID from context not found in customer list, will search when customers load");
-            }
+        if (!searchTerm.trim()) {
+            setFilteredAddresses(customerAddresses);
+        } else {
+            const filtered = customerAddresses.filter(address =>
+                address.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.street?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                address.contactName?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            setFilteredAddresses(filtered);
         }
+    }, [searchTerm, customerAddresses]);
 
-        // Handle address selection from context
-        if (selectedAddressIdFromContext !== selectedAddressId) {
-            console.log("ShipTo: Updating selected address ID from context:", selectedAddressIdFromContext);
-            setSelectedAddressId(selectedAddressIdFromContext || null);
-        }
-    }, [formData.shipTo?.customerID, formData.shipTo?.selectedAddressId, customers, selectedCustomerState?.customerID, selectedAddressId]);
+    const handleSearchChange = useCallback((e) => {
+        setSearchTerm(e.target.value);
+    }, []);
 
-    useEffect(() => {
-        setTotalPages(Math.ceil(customers.length / customersPerPage));
-    }, [customers, customersPerPage]);
-
-    const fetchCustomers = useCallback(async (id) => {
-        if (!id) return;
+    const fetchCustomers = useCallback(async (companyId) => {
+        if (!companyId) return;
         setLoading(true);
         try {
             setError(null);
-            const customersSnapshot = await getDocs(query(collection(db, 'customers'), where('companyID', '==', id)));
+            const customersSnapshot = await getDocs(query(collection(db, 'customers'), where('companyID', '==', companyId)));
             let customersData = [];
             if (!customersSnapshot.empty) {
                 customersData = customersSnapshot.docs.map(doc => {
@@ -101,9 +108,14 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 });
             }
             setCustomers(customersData);
+
+            // Handle existing customer selection from context
             if (formData.shipTo?.customerID && customersData.length > 0) {
                 const preSelected = customersData.find(c => c.customerID === formData.shipTo.customerID || c.id === formData.shipTo.customerID);
-                if (preSelected) setSelectedCustomerState(preSelected);
+                if (preSelected) {
+                    console.log("ShipTo: Setting customer from context:", preSelected);
+                    setSelectedCustomerState(preSelected);
+                }
             }
         } catch (err) {
             console.error('Error fetching customers:', err);
@@ -112,11 +124,14 @@ const ShipTo = ({ onNext, onPrevious }) => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [formData.shipTo?.customerID]);
 
     useEffect(() => {
         const fetchCompanyId = async () => {
-            if (!currentUser) { setLoading(false); return; }
+            if (!currentUser) {
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             try {
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -139,13 +154,23 @@ const ShipTo = ({ onNext, onPrevious }) => {
         const localCustomerID = customerForAddresses?.customerID || customerForAddresses?.id;
         if (!localCustomerID) {
             setCustomerAddresses([]);
+            setFilteredAddresses([]);
             return;
         }
-        setLoadingDestinations(true); setError(null);
+
+        setLoadingDestinations(true);
+        setError(null);
+
         try {
             let addressesToProcess = [];
-            const addressesQuery = query(collection(db, 'addressBook'), where('addressClass', '==', 'customer'), where('addressType', '==', 'destination'), where('addressClassID', '==', localCustomerID));
+            const addressesQuery = query(
+                collection(db, 'addressBook'),
+                where('addressClass', '==', 'customer'),
+                where('addressType', '==', 'destination'),
+                where('addressClassID', '==', localCustomerID)
+            );
             const addressesSnapshot = await getDocs(addressesQuery);
+
             if (!addressesSnapshot.empty) {
                 addressesToProcess = addressesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             } else if (customerForAddresses.addresses && customerForAddresses.addresses.length > 0 && customerForAddresses.addresses[0]?.street) {
@@ -153,11 +178,12 @@ const ShipTo = ({ onNext, onPrevious }) => {
             }
 
             const primaryContact = customerForAddresses.contacts?.find(c => c.isPrimary) || customerForAddresses.contacts?.[0] || {};
+
             const formattedAddresses = addressesToProcess.map(addr => ({
                 id: addr.id,
                 customerID: localCustomerID,
                 name: addr.nickname || addr.name || customerForAddresses.name || '',
-                company: addr.companyName || customerForAddresses.company || '',
+                company: addr.companyName || customerForAddresses.company || customerForAddresses.name || '',
                 attention: addr.attention || `${addr.firstName || ''} ${addr.lastName || ''}`.trim() || primaryContact.name || '',
                 street: addr.address1 || addr.street || '',
                 street2: addr.address2 || addr.street2 || '',
@@ -171,10 +197,13 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 specialInstructions: addr.specialInstructions || '',
                 isDefault: addr.isDefault || false
             }));
-            formattedAddresses.sort((a, b) => (a.isDefault === b.isDefault) ? 0 : a.isDefault ? -1 : 1);
-            setCustomerAddresses(formattedAddresses);
 
-            let addressToSelectObject = null;
+            // Sort with default addresses first
+            formattedAddresses.sort((a, b) => (a.isDefault === b.isDefault) ? 0 : a.isDefault ? -1 : 1);
+
+            console.log("ShipTo: Formatted addresses:", formattedAddresses);
+            setCustomerAddresses(formattedAddresses);
+            setFilteredAddresses(formattedAddresses);
 
             // Enhanced address selection logic for draft data
             const currentShipToData = formData.shipTo || {};
@@ -186,6 +215,8 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 currentShipToData,
                 formattedAddressesCount: formattedAddresses.length
             });
+
+            let addressToSelectObject = null;
 
             if (formData.shipTo?.selectedAddressId && formattedAddresses.length > 0) {
                 // Try to find the address by ID first
@@ -232,7 +263,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 updateFormSection('shipTo', {
                     ...emptyAddress(),
                     customerID: localCustomerID,
-                    company: customerForAddresses.company || ''
+                    company: customerForAddresses.company || customerForAddresses.name || ''
                 });
                 setSelectedAddressId(null);
             }
@@ -240,6 +271,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
             console.error('Error loading/processing addresses:', err);
             setError(`Failed to load addresses: ${err.message}`);
             setCustomerAddresses([]);
+            setFilteredAddresses([]);
         } finally {
             setLoadingDestinations(false);
         }
@@ -249,11 +281,12 @@ const ShipTo = ({ onNext, onPrevious }) => {
         if (selectedCustomerState && selectedCustomerState.customerID) {
             const currentContextCustomerId = formData.shipTo?.customerID;
             if (currentContextCustomerId !== selectedCustomerState.customerID || customerAddresses.length === 0 || (customerAddresses.length > 0 && customerAddresses[0].customerID !== selectedCustomerState.customerID)) {
-                console.log(`Load Address Effect: Triggering address load for customer ${selectedCustomerState.customerID}`);
+                console.log(`ShipTo: Triggering address load for customer ${selectedCustomerState.customerID}`);
                 loadAndProcessAddresses(selectedCustomerState);
             }
         } else {
             setCustomerAddresses([]);
+            setFilteredAddresses([]);
         }
     }, [selectedCustomerState, loadAndProcessAddresses, formData.shipTo?.customerID, customerAddresses]);
 
@@ -262,776 +295,744 @@ const ShipTo = ({ onNext, onPrevious }) => {
             setSelectedCustomerState(null);
             setSelectedAddressId(null);
             setCustomerAddresses([]);
+            setFilteredAddresses([]);
             updateFormSection('shipTo', { ...emptyAddress(), customerID: null, selectedAddressId: null });
             return;
         }
         const customerID = customer.customerID || customer.id;
+        console.log("🏠 ShipTo: Customer selected:", customer);
         setSelectedCustomerState({ ...customer, customerID });
         setSelectedAddressId(null);
         updateFormSection('shipTo', {
             ...emptyAddress(),
             customerID: customerID,
-            company: customer.company || '',
+            company: customer.company || customer.name || '',
             selectedAddressId: null
         });
     }, [updateFormSection]);
-
-    useEffect(() => {
-        if (formData.shipTo &&
-            formData.shipTo.attention &&
-            !formData.shipTo.contactName) {
-
-            // Only update if there's an actual change to avoid potential loops
-            const currentContactName = formData.shipTo.contactName;
-            const currentContactPhone = formData.shipTo.contactPhone;
-            const currentContactEmail = formData.shipTo.contactEmail;
-
-            const newContactName = formData.shipTo.attention;
-            // Ensure fallback for phone/email considers existing formData.shipTo values first
-            const newContactPhone = formData.shipTo.contactPhone || formData.shipTo.phone || '';
-            const newContactEmail = formData.shipTo.contactEmail || formData.shipTo.email || '';
-
-            if (newContactName !== currentContactName ||
-                newContactPhone !== currentContactPhone ||
-                newContactEmail !== currentContactEmail) {
-
-                console.log("ShipTo: Auto-populating contact fields from attention/defaults.", {
-                    attention: formData.shipTo.attention,
-                    currentContactName, newContactName,
-                    currentContactPhone, newContactPhone,
-                    currentContactEmail, newContactEmail
-                });
-
-                updateFormSection('shipTo', {
-                    ...formData.shipTo, // Preserve existing shipTo fields
-                    contactName: newContactName,
-                    contactPhone: newContactPhone,
-                    contactEmail: newContactEmail
-                });
-            }
-        }
-    }, [formData.shipTo, updateFormSection]);
-
-    const ensureContactFields = useCallback((data) => {
-        if (!data.contactName && data.attention) {
-            data.contactName = data.attention;
-        }
-
-        if (!data.contactPhone && data.phone) {
-            data.contactPhone = data.phone;
-        }
-
-        if (!data.contactEmail && data.email) {
-            data.contactEmail = data.email;
-        }
-
-        return data;
-    }, []);
 
     const handleAddressChange = useCallback((addressId) => {
         const addressIdStr = addressId ? String(addressId) : null;
         if (!addressIdStr || !selectedCustomerState) return;
 
+        console.log('🏠 ShipTo: Address card clicked, ID:', addressIdStr);
         setSelectedAddressId(addressIdStr);
         const selectedAddressData = customerAddresses.find(addr => String(addr.id) === addressIdStr);
 
         if (selectedAddressData) {
+            console.log('🏠 ShipTo: Found address data:', selectedAddressData);
             const shipToUpdate = {
                 ...selectedAddressData,
                 customerID: selectedCustomerState.customerID || selectedCustomerState.id,
                 selectedAddressId: addressIdStr
             };
+            console.log('🏠 ShipTo: Updating context with:', shipToUpdate);
             updateFormSection('shipTo', shipToUpdate);
+
+            // Verify the update worked
+            setTimeout(() => {
+                console.log("🏠 ShipTo: Verification - formData.shipTo after update:", formData.shipTo);
+            }, 100);
         } else {
-            console.error(`No address found with ID: ${addressIdStr} in local list.`);
+            console.error(`❌ ShipTo: No address found with ID: ${addressIdStr} in local list.`);
         }
-    }, [customerAddresses, selectedCustomerState, updateFormSection]);
+    }, [customerAddresses, selectedCustomerState, updateFormSection, formData.shipTo]);
+
+    // Add New Address Dialog handlers
+    const handleOpenAddressDialog = useCallback(() => {
+        if (!selectedCustomerState) {
+            enqueueSnackbar('Please select a customer first.', { variant: 'warning' });
+            return;
+        }
+        setIsAddressDialogOpen(true);
+    }, [selectedCustomerState, enqueueSnackbar]);
+
+    const handleCloseAddressDialog = useCallback(() => {
+        setIsAddressDialogOpen(false);
+    }, []);
+
+    const handleSaveAddress = useCallback(async (addressData) => {
+        if (!selectedCustomerState) {
+            enqueueSnackbar('No customer selected.', { variant: 'error' });
+            return;
+        }
+
+        try {
+            const customerID = selectedCustomerState.customerID || selectedCustomerState.id;
+
+            // Prepare address data for addressBook collection
+            const addressBookData = {
+                addressClass: 'customer',
+                addressClassID: customerID,
+                addressType: 'destination',
+                nickname: addressData.nickname || '',
+                companyName: addressData.companyName || selectedCustomerState.company || selectedCustomerState.name || '',
+                firstName: addressData.firstName || '',
+                lastName: addressData.lastName || '',
+                attention: addressData.attention || `${addressData.firstName || ''} ${addressData.lastName || ''}`.trim(),
+                address1: addressData.address1 || addressData.street || '',
+                address2: addressData.address2 || addressData.street2 || '',
+                city: addressData.city || '',
+                stateProv: addressData.stateProv || addressData.state || '',
+                zipPostal: addressData.zipPostal || addressData.postalCode || '',
+                country: addressData.country || 'US',
+                phone: addressData.phone || '',
+                email: addressData.email || '',
+                specialInstructions: addressData.specialInstructions || '',
+                isDefault: addressData.isDefault || false,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            console.log('🏠 ShipTo: Saving new address to addressBook:', addressBookData);
+
+            // Add to addressBook collection
+            const docRef = await addDoc(collection(db, 'addressBook'), addressBookData);
+            console.log('🏠 ShipTo: Address saved with ID:', docRef.id);
+
+            // Refresh the addresses list
+            await loadAndProcessAddresses(selectedCustomerState);
+
+            // Auto-select the newly created address
+            const newAddressFormatted = {
+                id: docRef.id,
+                customerID: customerID,
+                name: addressData.nickname || 'New Address',
+                company: addressData.companyName || selectedCustomerState.company || selectedCustomerState.name || '',
+                attention: addressData.attention || `${addressData.firstName || ''} ${addressData.lastName || ''}`.trim(),
+                street: addressData.address1 || '',
+                street2: addressData.address2 || '',
+                city: addressData.city || '',
+                state: addressData.stateProv || '',
+                postalCode: addressData.zipPostal || '',
+                country: addressData.country || 'US',
+                contactName: `${addressData.firstName || ''} ${addressData.lastName || ''}`.trim(),
+                contactPhone: addressData.phone || '',
+                contactEmail: addressData.email || '',
+                specialInstructions: addressData.specialInstructions || '',
+                isDefault: addressData.isDefault || false
+            };
+
+            // Update form context with new address
+            setSelectedAddressId(docRef.id);
+            updateFormSection('shipTo', {
+                ...newAddressFormatted,
+                customerID: customerID,
+                selectedAddressId: docRef.id
+            });
+
+            enqueueSnackbar('Delivery address added successfully!', { variant: 'success' });
+            setIsAddressDialogOpen(false);
+
+        } catch (error) {
+            console.error('Error saving address:', error);
+            enqueueSnackbar(`Failed to save address: ${error.message}`, { variant: 'error' });
+        }
+    }, [selectedCustomerState, loadAndProcessAddresses, updateFormSection, enqueueSnackbar]);
+
+    // Add Customer Modal handlers
+    const handleOpenAddCustomerModal = useCallback(() => {
+        setIsAddCustomerModalOpen(true);
+    }, []);
+
+    const handleCloseAddCustomerModal = useCallback(() => {
+        setIsAddCustomerModalOpen(false);
+    }, []);
+
+    const handleCustomerCreated = useCallback(async (newCustomerFirestoreId) => {
+        try {
+            console.log('🏠 ShipTo: Customer created with ID:', newCustomerFirestoreId);
+
+            // Close the add customer modal
+            setIsAddCustomerModalOpen(false);
+
+            // Refresh the customers list
+            if (currentUser) {
+                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    const companyId = userData.companyID || userData.companyId || userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+                    if (companyId) {
+                        await fetchCustomers(companyId);
+
+                        // Find and auto-select the newly created customer
+                        const customersSnapshot = await getDocs(query(collection(db, 'customers'), where('companyID', '==', companyId)));
+                        const newCustomer = customersSnapshot.docs.find(doc => doc.id === newCustomerFirestoreId);
+
+                        if (newCustomer) {
+                            const customerData = { id: newCustomer.id, customerID: newCustomer.data().customerID || newCustomer.id, ...newCustomer.data() };
+                            console.log('🏠 ShipTo: Auto-selecting newly created customer:', customerData);
+                            handleCustomerSelect(customerData);
+                            enqueueSnackbar('Customer created and selected successfully!', { variant: 'success' });
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error handling customer creation:', error);
+            enqueueSnackbar('Customer created but failed to auto-select. Please select manually.', { variant: 'warning' });
+        }
+    }, [currentUser, fetchCustomers, handleCustomerSelect, enqueueSnackbar]);
 
     const handleSubmit = useCallback(() => {
         setError(null);
         const currentShipToData = formData.shipTo || {};
         let validationErrorMessages = [];
 
-        console.log("ShipTo handleSubmit: Validating currentShipToData from context:", currentShipToData);
+        console.log("🔍 ShipTo handleSubmit: Starting validation");
+        console.log("🔍 selectedCustomerState:", selectedCustomerState);
+        console.log("🔍 selectedAddressId:", selectedAddressId);
+        console.log("🔍 currentShipToData from context:", currentShipToData);
 
         if (!currentShipToData.customerID) {
             validationErrorMessages.push('Please select a customer.');
-            console.warn("ShipTo Validation: No selected customer ID.");
+            console.log("❌ No customer selected");
         }
 
-        if (!currentShipToData.street) {
-            validationErrorMessages.push('Please select or complete a shipping address (street is missing).');
-            console.warn("ShipTo Validation: Street is missing.");
-        }
-
-        const requiredAddressFields = ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName', 'contactPhone', 'contactEmail'];
-        const missingFields = requiredAddressFields.filter(field => !currentShipToData[field] || String(currentShipToData[field]).trim() === '');
-
-        if (missingFields.length > 0) {
-            missingFields.forEach(field => {
-                let fieldName = field.charAt(0).toUpperCase() + field.slice(1);
-                if (field === 'contactPhone') fieldName = 'Contact Phone';
-                else if (field === 'contactEmail') fieldName = 'Contact Email';
-                else if (field === 'contactName') fieldName = 'Contact Name';
-                else if (field === 'postalCode') fieldName = 'Postal Code';
-                validationErrorMessages.push(`Ship To ${fieldName} is required.`);
+        if (!selectedAddressId && !currentShipToData.street) {
+            validationErrorMessages.push('Please select or add a shipping destination address.');
+            console.log("❌ No address selected and no street in currentShipToData");
+        } else {
+            const requiredFields = ['company', 'street', 'city', 'state', 'postalCode', 'country', 'contactName', 'contactPhone', 'contactEmail'];
+            const missingFields = requiredFields.filter(field => {
+                const fieldValue = currentShipToData[field];
+                const isEmpty = !fieldValue || String(fieldValue).trim() === '';
+                if (isEmpty) {
+                    console.log(`❌ Missing field: ${field} = "${fieldValue}"`);
+                }
+                return isEmpty;
             });
-            console.warn("ShipTo Validation: Missing required address fields:", missingFields);
+
+            console.log("🔍 Required fields check:", {
+                requiredFields,
+                missingFields,
+                currentShipToDataKeys: Object.keys(currentShipToData)
+            });
+
+            if (missingFields.length > 0) {
+                missingFields.forEach(field => {
+                    let fieldName = field.charAt(0).toUpperCase() + field.slice(1);
+                    if (field === 'contactPhone') fieldName = 'Contact Phone';
+                    if (field === 'contactEmail') fieldName = 'Contact Email';
+                    if (field === 'contactName') fieldName = 'Contact Name';
+                    if (field === 'postalCode') fieldName = 'Postal Code';
+                    validationErrorMessages.push(`Destination ${fieldName} is required.`);
+                });
+            }
         }
 
         if (validationErrorMessages.length > 0) {
             const errorMessage = validationErrorMessages.join(' \n ');
             setError(errorMessage);
+            console.warn("❌ ShipTo handleSubmit: Validation failed:", validationErrorMessages);
             return;
         }
 
-        console.log("ShipTo handleSubmit: Validation passed. Calling onNext with:", currentShipToData);
+        console.log("✅ ShipTo handleSubmit: Validation passed. Calling onNext with data:", currentShipToData);
+        console.log("🚀 About to call onNext...");
         onNext(currentShipToData);
-    }, [formData.shipTo, onNext]);
+        console.log("✅ onNext called successfully");
+    }, [selectedCustomerState, selectedAddressId, formData.shipTo, onNext]);
 
-    const handleClearCustomer = useCallback(() => {
-        setSelectedCustomerState(null);
-        setSelectedAddressId(null);
-        setCustomerAddresses([]);
-        updateFormSection('shipTo', { ...emptyAddress(), customerID: null, selectedAddressId: null });
-    }, [updateFormSection]);
-
-    const handleAddCustomerClick = () => {
-        console.log("Add new customer clicked");
-    };
-
-    const handleAddAddressClick = () => {
-        console.log("Add new address clicked", selectedCustomerState?.id);
-    };
-
-    const renderCustomerSearch = () => (
-        <div className="customer-search mb-4">
-            <Autocomplete
-                options={customers}
-                getOptionLabel={(option) => option.name || ''}
-                value={selectedCustomerState}
-                onChange={(event, newValue) => {
-                    handleCustomerSelect(newValue);
-                }}
-                renderInput={(params) => (
-                    <TextField
-                        {...params}
-                        label="Search Customers"
-                        variant="outlined"
-                        fullWidth
-                        placeholder="Start typing to search customers..."
-                        InputProps={{
-                            ...params.InputProps,
-                            endAdornment: (
-                                <>
-                                    {loading ? <CircularProgress color="inherit" size={20} /> : null}
-                                    {params.InputProps.endAdornment}
-                                </>
-                            ),
-                        }}
-                        sx={{
-                            '& .MuiOutlinedInput-root': {
-                                backgroundColor: 'white',
-                                '&:hover': {
-                                    backgroundColor: 'white',
-                                },
-                            },
-                        }}
-                    />
-                )}
-                renderOption={(props, option) => (
-                    <Box component="li" {...props}>
-                        <div className="d-flex align-items-center w-100">
-                            <div className="customer-avatar me-3">
-                                {option.name?.charAt(0) || 'C'}
-                            </div>
-                            <div>
-                                <Typography variant="subtitle1">{option.name}</Typography>
-                                {option.contacts?.[0] && (
-                                    <Typography variant="body2" color="textSecondary">
-                                        <i className="bi bi-person me-1"></i> {option.contacts[0].name}
-                                    </Typography>
-                                )}
-                            </div>
-                        </div>
-                    </Box>
-                )}
-                filterOptions={(options, { inputValue }) => {
-                    const searchValue = inputValue.toLowerCase();
-                    return options.filter(option =>
-                        option.name?.toLowerCase().includes(searchValue) ||
-                        option.contacts?.some(contact =>
-                            contact.name?.toLowerCase().includes(searchValue) ||
-                            contact.email?.toLowerCase().includes(searchValue)
-                        )
-                    );
-                }}
-                ListboxProps={{
-                    sx: {
-                        maxHeight: '300px',
-                        '& .MuiAutocomplete-option': {
-                            padding: '8px 16px',
-                            '&:hover': {
-                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                            },
-                        },
-                    },
-                }}
-                disablePortal
-                disableClearable
-                blurOnSelect
-            />
-        </div>
-    );
-
-    const getCurrentPageCustomers = () => {
-        const startIndex = (currentPage - 1) * customersPerPage;
-        const endIndex = startIndex + customersPerPage;
-        return customers.slice(startIndex, endIndex);
-    };
-
-    const renderCustomerList = () => {
-        if (loading) {
-            return (
-                <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-                    <CircularProgress />
-                </Box>
-            );
-        }
-
-        if (customers.length === 0) {
-            return (
-                <Box sx={{ textAlign: 'center', py: 3 }}>
-                    <Typography variant="body1" color="text.secondary">
-                        No customers found. Please add a new customer.
-                    </Typography>
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        startIcon={<AddIcon />}
-                        sx={{ mt: 2 }}
-                        onClick={handleAddCustomerClick}
-                    >
-                        Add Customer
-                    </Button>
-                </Box>
-            );
-        }
-
-        const filteredCustomers = searchQuery
-            ? customers.filter(
-                customer =>
-                    (customer.name && customer.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                    (customer.company && customer.company.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                    (customer.contacts && customer.contacts.some(contact =>
-                        (contact.name && contact.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                        (contact.email && contact.email.toLowerCase().includes(searchQuery.toLowerCase()))
-                    ))
-            )
-            : customers;
-
-        const indexOfLastCustomer = currentPage * customersPerPage;
-        const indexOfFirstCustomer = indexOfLastCustomer - customersPerPage;
-        const currentCustomers = filteredCustomers.slice(indexOfFirstCustomer, indexOfLastCustomer);
-        const totalCustomerPages = Math.ceil(filteredCustomers.length / customersPerPage);
-
-        if (filteredCustomers.length === 0) {
-            return (
-                <Box sx={{ textAlign: 'center', py: 3 }}>
-                    <Typography variant="body1" color="text.secondary">
-                        No customers match your search. Try a different query.
-                    </Typography>
-                    <Button
-                        variant="outlined"
-                        color="secondary"
-                        startIcon={<ClearIcon />}
-                        onClick={() => setSearchQuery('')}
-                        sx={{ mt: 2 }}
-                    >
-                        Clear Search
-                    </Button>
-                </Box>
-            );
-        }
-
-        return (
-            <>
-                <Grid container spacing={2}>
-                    {currentCustomers.map((customer, index) => {
-                        const isSelected = selectedCustomerState && (
-                            (selectedCustomerState?.customerID && selectedCustomerState.customerID === customer.customerID) ||
-                            (selectedCustomerState?.id && selectedCustomerState.id === customer.id)
-                        );
-                        const customerName = customer.name || 'Unnamed Customer';
-                        const customerCompany = customer.company || '';
-                        const primaryContact = customer.contacts?.[0] || {};
-
-                        return (
-                            <Grid item xs={12} key={index}>
-                                <Card
-                                    sx={{
-                                        cursor: 'pointer',
-                                        transition: 'all 0.3s ease',
-                                        borderRadius: '8px',
-                                        width: '100%',
-                                        mb: 1,
-                                        ...(isSelected
-                                            ? {
-                                                borderColor: '#6b46c1 !important',
-                                                border: '2px solid #6b46c1 !important',
-                                                bgcolor: 'rgba(107, 70, 193, 0.12) !important',
-                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                transform: 'scale(1.01) !important',
-                                                position: 'relative',
-                                                '&:hover': {
-                                                    boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                    borderColor: '#6b46c1 !important',
-                                                },
-                                                '&::after': {
-                                                    content: '""',
-                                                    position: 'absolute',
-                                                    top: '15px',
-                                                    right: '15px',
-                                                    width: '20px',
-                                                    height: '20px',
-                                                    borderRadius: '50%',
-                                                    backgroundColor: '#6b46c1',
-                                                    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
-                                                    backgroundSize: '14px 14px',
-                                                    backgroundPosition: 'center',
-                                                    backgroundRepeat: 'no-repeat',
-                                                }
-                                            }
-                                            : {
-                                                borderColor: 'rgba(0, 0, 0, 0.12)',
-                                                border: '1px solid rgba(0, 0, 0, 0.12)',
-                                                bgcolor: 'transparent',
-                                                background: 'none',
-                                                boxShadow: 'none',
-                                                transform: 'none',
-                                                '&:hover': {
-                                                    boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
-                                                    transform: 'translateY(-4px)',
-                                                }
-                                            })
-                                    }}
-                                    onClick={() => handleCustomerSelect(customer)}
-                                    data-selected={isSelected ? "true" : "false"}
-                                    data-customer-id={customer.customerID || customer.id}
-                                >
-                                    <CardContent>
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={12} sm={6}>
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography
-                                                        variant="subtitle1"
-                                                        component="div"
-                                                        sx={{
-                                                            fontWeight: 600,
-                                                            color: 'text.primary',
-                                                            fontSize: '1.1rem'
-                                                        }}
-                                                    >
-                                                        {customerName}
-                                                    </Typography>
-                                                    <Typography
-                                                        variant="body2"
-                                                        color="text.secondary"
-                                                        sx={{
-                                                            fontSize: '0.75rem',
-                                                            letterSpacing: '0.5px',
-                                                            textTransform: 'uppercase'
-                                                        }}
-                                                    >
-                                                        ID: {customer.customerID || customer.id}
-                                                    </Typography>
-                                                </Box>
-
-                                                {customerCompany && (
-                                                    <Typography
-                                                        variant="body2"
-                                                        color="text.secondary"
-                                                        sx={{
-                                                            mb: 1
-                                                        }}
-                                                    >
-                                                        {customerCompany}
-                                                    </Typography>
-                                                )}
-                                            </Grid>
-
-                                            <Grid item xs={12} sm={6}>
-                                                {primaryContact.name && (
-                                                    <Typography
-                                                        variant="body2"
-                                                        sx={{
-                                                            mb: 1
-                                                        }}
-                                                    >
-                                                        {primaryContact.name}
-                                                    </Typography>
-                                                )}
-
-                                                {primaryContact.email && (
-                                                    <Typography
-                                                        variant="body2"
-                                                        sx={{
-                                                            mb: 1
-                                                        }}
-                                                    >
-                                                        {primaryContact.email}
-                                                    </Typography>
-                                                )}
-
-                                                {primaryContact.phone && (
-                                                    <Typography
-                                                        variant="body2"
-                                                    >
-                                                        {primaryContact.phone}
-                                                    </Typography>
-                                                )}
-                                            </Grid>
-                                        </Grid>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        );
-                    })}
-                </Grid>
-
-                {totalCustomerPages > 1 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-                        <Pagination
-                            count={totalCustomerPages}
-                            page={currentPage}
-                            onChange={(e, page) => setCurrentPage(page)}
-                            color="primary"
-                        />
-                    </Box>
-                )}
-            </>
-        );
-    };
-
-    const renderAddressSuggestions = () => {
-        if (!selectedCustomerState) {
-            return (
-                <Box sx={{ textAlign: 'center', py: 5 }}>
-                    <Typography variant="body1" color="text.secondary">
-                        Please select a customer first to see their addresses.
-                    </Typography>
-                </Box>
-            );
-        }
-
-        if (loadingDestinations) {
-            return (
-                <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-                    <CircularProgress />
-                </Box>
-            );
-        }
-
-        if (customerAddresses.length === 0) {
-            return (
-                <Box sx={{ textAlign: 'center', py: 3 }}>
-                    <Typography variant="body1" color="text.secondary">
-                        No addresses found for this customer.
-                    </Typography>
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        startIcon={<AddIcon />}
-                        sx={{ mt: 2 }}
-                        onClick={handleAddAddressClick}
-                    >
-                        Add New Address
-                    </Button>
-                </Box>
-            );
-        }
-
-        console.log("Address objects structure:", customerAddresses);
-        if (customerAddresses.length > 0) {
-            console.log("First address fields:",
-                Object.keys(customerAddresses[0]).map(key => `${key}: ${typeof customerAddresses[0][key]}`));
-            console.log("First address object:", customerAddresses[0]);
-        }
-
-        return (
-            <Grid container spacing={2}>
-                {customerAddresses.map((address, index) => {
-                    const isSelected = String(selectedAddressId) === String(address.id);
-
-                    if (isSelected) {
-                        console.log(`Selected address ${index}: ${address.name} (ID: ${address.id}, default: ${address.isDefault})`);
-                    }
-
-                    return (
-                        <Grid item xs={12} key={index}>
-                            <Card
-                                sx={{
-                                    cursor: 'pointer',
-                                    transition: 'all 0.3s ease',
-                                    borderRadius: '8px',
-                                    width: '100%',
-                                    mb: 1,
-                                    ...(isSelected
-                                        ? {
-                                            borderColor: '#6b46c1 !important',
-                                            border: '2px solid #6b46c1 !important',
-                                            borderLeft: '8px solid #6b46c1 !important',
-                                            bgcolor: 'rgba(107, 70, 193, 0.12) !important',
-                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                            transform: 'scale(1.01) !important',
-                                            position: 'relative',
-                                            '&:hover': {
-                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
-                                                borderColor: '#6b46c1 !important',
-                                                borderLeft: '8px solid #6b46c1 !important',
-                                            },
-                                            '&::after': {
-                                                content: '""',
-                                                position: 'absolute',
-                                                top: '15px',
-                                                right: '15px',
-                                                width: '20px',
-                                                height: '20px',
-                                                borderRadius: '50%',
-                                                backgroundColor: '#6b46c1',
-                                                backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
-                                                backgroundSize: '14px 14px',
-                                                backgroundPosition: 'center',
-                                                backgroundRepeat: 'no-repeat',
-                                            }
-                                        }
-                                        : {
-                                            borderColor: 'rgba(0, 0, 0, 0.12)',
-                                            border: '1px solid rgba(0, 0, 0, 0.12)',
-                                            borderLeft: '1px solid rgba(0, 0, 0, 0.12)',
-                                            bgcolor: 'transparent',
-                                            background: 'none',
-                                            boxShadow: 'none',
-                                            transform: 'none',
-                                            '&:hover': {
-                                                boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
-                                                transform: 'translateY(-4px)',
-                                                borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
-                                            }
-                                        })
-                                }}
-                                onClick={() => handleAddressChange(address.id)}
-                                data-selected={isSelected ? "true" : "false"}
-                                data-address-id={address.id}
-                                data-is-default={address.isDefault ? "true" : "false"}
-                            >
-                                <CardContent>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={4}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                <Typography variant="subtitle1" component="h6" sx={{ mr: 1 }}>
-                                                    {address.name || "Unnamed Address"}
-                                                </Typography>
-                                                {address.isDefault && (
-                                                    <Chip
-                                                        label="Default"
-                                                        color="primary"
-                                                        size="small"
-                                                    />
-                                                )}
-                                            </Box>
-                                            <Typography variant="body2">
-                                                {selectedCustomerState?.name || address.company || ""}
-                                            </Typography>
-                                            {address.attention && (
-                                                <Typography variant="body2" sx={{ mt: 0.5, fontStyle: 'italic' }}>
-                                                    Attn: {address.attention}
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                        <Grid item xs={12} sm={4}>
-                                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                {address.street || "(Address Line 1 Missing)"}
-                                            </Typography>
-                                            {address.street2 && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    {address.street2}
-                                                </Typography>
-                                            )}
-                                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                {address.city || "(City Missing)"}, {address.state || "(State Missing)"} {address.postalCode || "(Postal Code Missing)"}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                {address.country || "US"}
-                                            </Typography>
-                                            {address.specialInstructions && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1, fontStyle: 'italic' }}>
-                                                    Note: {address.specialInstructions}
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                        <Grid item xs={12} sm={4}>
-                                            {(typeof address.contactName === 'string' || typeof address.contact?.name === 'string') && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Contact:</Box>
-                                                    {address.contactName || address.contact?.name}
-                                                </Typography>
-                                            )}
-                                            {(typeof address.contactPhone === 'string' || typeof address.contact?.phone === 'string') && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Phone:</Box>
-                                                    {address.contactPhone || address.contact?.phone}
-                                                </Typography>
-                                            )}
-                                            {(typeof address.contactEmail === 'string' || typeof address.contact?.email === 'string') && (
-                                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                    <Box component="span" sx={{ fontWeight: 'bold', display: 'inline-block', minWidth: '70px' }}>Email:</Box>
-                                                    {address.contactEmail || address.contact?.email}
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    );
-                })}
-            </Grid>
-        );
-    };
-
-    if (loading) {
-        return (
-            <div className="ship-to-container">
-                <div className="section-title mb-4">
-                    <Skeleton variant="text" width={200} height={40} />
-                    <Skeleton variant="text" width={300} height={20} />
-                </div>
-
-                <Box sx={{ mb: 4 }}>
-                    <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
-                </Box>
-
-                <Grid container spacing={2}>
-                    {[1, 2, 3].map((index) => (
-                        <Grid item xs={12} key={index}>
-                            <Card sx={{ mb: 2 }}>
-                                <CardContent>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={6}>
-                                            <Skeleton variant="text" width={200} height={30} />
-                                            <Skeleton variant="text" width={150} height={20} />
-                                            <Skeleton variant="text" width={180} height={20} />
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Skeleton variant="text" width={200} height={20} />
-                                            <Skeleton variant="text" width={180} height={20} />
-                                            <Skeleton variant="text" width={160} height={20} />
-                                        </Grid>
-                                    </Grid>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    ))}
-                </Grid>
-
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-                    <Skeleton variant="rectangular" width={120} height={40} />
-                    <Skeleton variant="rectangular" width={120} height={40} />
-                </Box>
-            </div>
-        );
-    }
-
-    const currentShipToData = formData.shipTo || {};
+    const getAttentionLine = useCallback((address) => {
+        if (!address) return '';
+        return address.attention || address.contactName || '';
+    }, []);
 
     return (
-        <div className="ship-to-container">
-            <div className="section-title mb-4">
-                <div className="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2>Ship To</h2>
-                        <p className="text-muted">Select or search for a customer to ship to</p>
-                    </div>
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        startIcon={<AddIcon />}
-                        onClick={selectedCustomerState ? handleAddAddressClick : handleAddCustomerClick}
-                    >
-                        {selectedCustomerState ? "Add Address" : "Add Customer"}
-                    </Button>
-                </div>
-            </div>
-
+        <Container maxWidth="lg" sx={{ py: 4 }}>
             {error && (
-                <Alert severity="error" sx={{ mb: 2, mt: 2 }}
-                    onClose={() => setError(null)}
-                >
-                    {error.split(' \n ').map((line, index) => <div key={index}>{line}</div>)}
+                <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                    {error.split(' \n ').map((line, index) => <div key={index} style={{ fontSize: '12px' }}>{line}</div>)}
+                </Alert>
+            )}
+            {success && (
+                <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+                    <Typography sx={{ fontSize: '12px' }}>{success}</Typography>
                 </Alert>
             )}
 
-            {renderCustomerSearch()}
+            <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                <Box sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                        Delivery Location
+                    </Typography>
+                </Box>
 
-            {!selectedCustomerState && renderCustomerList()}
-
-            {selectedCustomerState && (
-                <>
-                    <div className="selected-customer mb-4">
-                        <div className="d-flex justify-content-between align-items-start w-100">
-                            <div className="customer-info">
-                                <div>
-                                    <h3>{selectedCustomerState.name}</h3>
+                {/* Customer Selection */}
+                <Box sx={{ mb: 3 }}>
+                    {!selectedCustomerState ? (
+                        <>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                    Select Customer
+                                </Typography>
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<AddIcon />}
+                                    onClick={handleOpenAddCustomerModal}
+                                    sx={{
+                                        fontSize: '12px',
+                                        minWidth: '140px',
+                                        borderColor: '#6b46c1',
+                                        color: '#6b46c1',
+                                        '&:hover': {
+                                            borderColor: '#553c9a',
+                                            backgroundColor: 'rgba(107, 70, 193, 0.04)'
+                                        }
+                                    }}
+                                >
+                                    Add Customer
+                                </Button>
+                            </Box>
+                            <Autocomplete
+                                options={customers}
+                                getOptionLabel={(option) => option.name || ''}
+                                value={selectedCustomerState}
+                                onChange={(event, newValue) => {
+                                    handleCustomerSelect(newValue);
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        size="medium"
+                                        placeholder="Search customers..."
+                                        InputProps={{
+                                            ...params.InputProps,
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <SearchIcon sx={{ color: '#666', fontSize: '24px' }} />
+                                                </InputAdornment>
+                                            ),
+                                            endAdornment: (
+                                                <>
+                                                    {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                                                    {params.InputProps.endAdornment}
+                                                </>
+                                            ),
+                                            sx: {
+                                                fontSize: '16px',
+                                                height: '56px',
+                                                '& .MuiInputBase-input': {
+                                                    fontSize: '16px',
+                                                    fontWeight: 500,
+                                                    padding: '16px 14px'
+                                                }
+                                            }
+                                        }}
+                                        sx={{
+                                            '& .MuiOutlinedInput-root': {
+                                                borderRadius: '12px',
+                                                border: '2px solid #e2e8f0',
+                                                '& .MuiOutlinedInput-notchedOutline': {
+                                                    border: 'none'
+                                                },
+                                                '&:hover': {
+                                                    borderColor: '#6b46c1',
+                                                    boxShadow: '0 4px 12px rgba(107, 70, 193, 0.15)',
+                                                    '& .MuiOutlinedInput-notchedOutline': {
+                                                        border: 'none'
+                                                    }
+                                                },
+                                                '&.Mui-focused': {
+                                                    borderColor: '#6b46c1',
+                                                    boxShadow: '0 4px 20px rgba(107, 70, 193, 0.25)',
+                                                    '& .MuiOutlinedInput-notchedOutline': {
+                                                        border: 'none'
+                                                    }
+                                                }
+                                            }
+                                        }}
+                                    />
+                                )}
+                                renderOption={(props, option) => (
+                                    <Box component="li" {...props}>
+                                        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                            <div style={{ marginRight: '12px', width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#6b46c1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' }}>
+                                                {option.name?.charAt(0) || 'C'}
+                                            </div>
+                                            <div>
+                                                <Typography variant="subtitle1" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    {option.name}
+                                                </Typography>
+                                                {option.contacts?.[0] && (
+                                                    <Typography variant="body2" color="textSecondary" sx={{ fontSize: '11px' }}>
+                                                        {option.contacts[0].name}
+                                                    </Typography>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </Box>
+                                )}
+                                filterOptions={(options, { inputValue }) => {
+                                    const searchValue = inputValue.toLowerCase();
+                                    return options.filter(option =>
+                                        option.name?.toLowerCase().includes(searchValue) ||
+                                        option.contacts?.some(contact =>
+                                            contact.name?.toLowerCase().includes(searchValue) ||
+                                            contact.email?.toLowerCase().includes(searchValue)
+                                        )
+                                    );
+                                }}
+                                ListboxProps={{
+                                    sx: {
+                                        maxHeight: '300px',
+                                        '& .MuiAutocomplete-option': {
+                                            padding: '8px 16px',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                            },
+                                        },
+                                    },
+                                }}
+                                disablePortal
+                                loading={loading}
+                            />
+                        </>
+                    ) : (
+                        <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            p: 2,
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 1,
+                            backgroundColor: '#f8fafc'
+                        }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Box sx={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '50%',
+                                    backgroundColor: '#6b46c1',
+                                    color: 'white',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '14px',
+                                    fontWeight: 'bold',
+                                    mr: 2
+                                }}>
+                                    {selectedCustomerState.name?.charAt(0) || 'C'}
+                                </Box>
+                                <Box>
+                                    <Typography variant="subtitle1" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                        {selectedCustomerState.name}
+                                    </Typography>
                                     {selectedCustomerState.contacts?.[0] && (
-                                        <p className="text-muted mb-0">
-                                            <i className="bi bi-person me-1"></i> {selectedCustomerState.contacts[0].name}
-                                        </p>
+                                        <Typography variant="body2" color="textSecondary" sx={{ fontSize: '12px' }}>
+                                            {selectedCustomerState.contacts[0].name}
+                                        </Typography>
                                     )}
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                className="btn btn-outline-secondary btn-sm"
-                                onClick={handleClearCustomer}
-                                aria-label="Clear selected customer"
+                                </Box>
+                            </Box>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={() => handleCustomerSelect(null)}
+                                sx={{
+                                    fontSize: '12px',
+                                    minWidth: '120px',
+                                    borderColor: '#6b46c1',
+                                    color: '#6b46c1',
+                                    '&:hover': {
+                                        borderColor: '#553c9a',
+                                        backgroundColor: 'rgba(107, 70, 193, 0.04)'
+                                    }
+                                }}
                             >
-                                <i className="bi bi-x-lg"></i> Change Customer
-                            </button>
-                        </div>
-                    </div>
+                                Change Customer
+                            </Button>
+                        </Box>
+                    )}
+                </Box>
 
-                    {renderAddressSuggestions()}
-                </>
-            )}
+                {/* Address Selection */}
+                {selectedCustomerState && (
+                    <Box sx={{ mb: 3 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                            <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                Select Delivery Address
+                            </Typography>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<AddIcon />}
+                                onClick={handleOpenAddressDialog}
+                                sx={{ fontSize: '12px', minWidth: '100px' }}
+                            >
+                                Add
+                            </Button>
+                        </Box>
 
-            <div className="navigation-buttons">
-                <button
-                    type="button"
-                    className="btn btn-outline-primary btn-navigation"
+                        {loadingDestinations ? (
+                            <Box sx={{ py: 4 }}>
+                                <Skeleton variant="rectangular" height={100} sx={{ mb: 2 }} />
+                                <Skeleton variant="rectangular" height={100} />
+                            </Box>
+                        ) : (
+                            <Box>
+                                {filteredAddresses.length > 0 ? (
+                                    filteredAddresses.map((address) => {
+                                        const addressId = address.id;
+                                        const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
+                                        const attentionLine = getAttentionLine(address);
+
+                                        return (
+                                            <Card
+                                                key={addressId}
+                                                sx={{
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.3s ease',
+                                                    borderRadius: '8px',
+                                                    width: '100%',
+                                                    mb: 2,
+                                                    position: 'relative',
+                                                    ...(isSelected
+                                                        ? {
+                                                            borderColor: '#6b46c1 !important',
+                                                            border: '3px solid #6b46c1 !important',
+                                                            borderLeft: '8px solid #6b46c1 !important',
+                                                            bgcolor: 'rgba(107, 70, 193, 0.12) !important',
+                                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                            transform: 'scale(1.02) !important',
+                                                            '&:hover': {
+                                                                boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15) !important',
+                                                                borderColor: '#6b46c1 !important',
+                                                                borderLeft: '8px solid #6b46c1 !important',
+                                                            },
+                                                            '&::after': {
+                                                                content: '""',
+                                                                position: 'absolute',
+                                                                top: '15px',
+                                                                right: '15px',
+                                                                width: '20px',
+                                                                height: '20px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: '#6b46c1',
+                                                                backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'white\'%3E%3Cpath d=\'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\'/%3E%3C/svg%3E")',
+                                                                backgroundSize: '14px 14px',
+                                                                backgroundPosition: 'center',
+                                                                backgroundRepeat: 'no-repeat',
+                                                            }
+                                                        }
+                                                        : {
+                                                            borderColor: 'rgba(0, 0, 0, 0.12) !important',
+                                                            border: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                            borderLeft: '1px solid rgba(0, 0, 0, 0.12) !important',
+                                                            bgcolor: 'transparent !important',
+                                                            background: 'none !important',
+                                                            boxShadow: 'none !important',
+                                                            transform: 'none !important',
+                                                            '&:hover': {
+                                                                boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+                                                                transform: 'translateY(-4px)',
+                                                                borderLeft: '4px solid rgba(107, 70, 193, 0.5)',
+                                                            }
+                                                        })
+                                                }}
+                                                onClick={() => handleAddressChange(addressId)}
+                                            >
+                                                {/* Country Flag */}
+                                                {getCountryFlag(address) && (
+                                                    <Box
+                                                        sx={{
+                                                            position: 'absolute',
+                                                            bottom: '12px',
+                                                            right: '12px',
+                                                            fontSize: '20px',
+                                                            zIndex: 1,
+                                                            opacity: 0.8,
+                                                            transition: 'opacity 0.2s ease',
+                                                            '&:hover': {
+                                                                opacity: 1
+                                                            }
+                                                        }}
+                                                        title={`Country: ${address.country || 'Unknown'}`}
+                                                    >
+                                                        {getCountryFlag(address)}
+                                                    </Box>
+                                                )}
+
+                                                <CardContent sx={{ p: 2 }}>
+                                                    <Grid container alignItems="center" spacing={2}>
+                                                        <Grid item xs={12} sm={4}>
+                                                            <Box display="flex" alignItems="center">
+                                                                <Typography variant="subtitle1" fontWeight="500" sx={{ mr: 1, fontSize: '14px' }}>
+                                                                    {address.name || "Unnamed Address"}
+                                                                </Typography>
+                                                                {address.isDefault && (
+                                                                    <Chip
+                                                                        size="small"
+                                                                        label="Default"
+                                                                        color="primary"
+                                                                        sx={{ height: 22, fontSize: '10px' }}
+                                                                    />
+                                                                )}
+                                                            </Box>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                                {address.company}
+                                                            </Typography>
+                                                            {attentionLine && (
+                                                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                                    <Box component="span" fontWeight="500">Attn:</Box> {attentionLine}
+                                                                </Typography>
+                                                            )}
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={4}>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                                {address.street}
+                                                                {address.street2 && <>, {address.street2}</>}
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                                {address.city}, {address.state} {address.postalCode}
+                                                            </Typography>
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={4}>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                                <Box component="span" fontWeight="500">Phone:</Box> {address.contactPhone}
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                                <Box component="span" fontWeight="500">Email:</Box> {address.contactEmail}
+                                                            </Typography>
+                                                        </Grid>
+                                                    </Grid>
+                                                </CardContent>
+                                            </Card>
+                                        );
+                                    })
+                                ) : (
+                                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                                        <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>
+                                            {searchTerm ? 'No delivery locations found matching your search.' : 'No saved delivery locations found.'}
+                                        </Typography>
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            startIcon={<AddIcon />}
+                                            onClick={handleOpenAddressDialog}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Add Delivery Location
+                                        </Button>
+                                    </Box>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
+                )}
+
+                <Box sx={{ mt: 4 }}>
+                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, mb: 1 }}>
+                        Special Instructions
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        multiline
+                        rows={3}
+                        name="specialInstructions"
+                        value={formData.shipTo?.specialInstructions || ''}
+                        onChange={(e) => {
+                            updateFormSection('shipTo', {
+                                ...formData.shipTo,
+                                specialInstructions: e.target.value
+                            });
+                        }}
+                        placeholder="Enter any special delivery instructions or notes for the carrier"
+                        InputProps={{
+                            sx: { fontSize: '12px' }
+                        }}
+                        sx={{ mb: 2 }}
+                    />
+                </Box>
+            </Paper>
+
+            {/* Add New Address Dialog */}
+            <DestinationAddressDialog
+                open={isAddressDialogOpen}
+                onClose={handleCloseAddressDialog}
+                onSave={handleSaveAddress}
+                customerID={selectedCustomerState?.customerID || selectedCustomerState?.id}
+                customerCompanyName={selectedCustomerState?.company || selectedCustomerState?.name || ''}
+                addressData={null} // Always null for new addresses
+            />
+
+            {/* Navigation Buttons */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+                <Button
+                    variant="outlined"
                     onClick={onPrevious}
+                    sx={{ px: 4, fontSize: '12px' }}
                 >
-                    <i className="bi bi-arrow-left"></i> Previous
-                </button>
-                <button
+                    Previous
+                </Button>
+                <Button
                     type="button"
-                    className="btn btn-primary btn-navigation btn-next-green"
+                    variant="contained"
                     onClick={handleSubmit}
-                    disabled={!selectedCustomerState || (!currentShipToData.selectedAddressId && !currentShipToData.street) || loadingDestinations}
+                    disabled={!selectedCustomerState || (!selectedAddressId && !formData.shipTo?.street) || loadingDestinations}
+                    sx={{
+                        px: 6,
+                        py: 1.5,
+                        fontSize: '12px',
+                        backgroundColor: '#10B981',
+                        minWidth: '160px',
+                        '&:hover': {
+                            backgroundColor: '#059669'
+                        },
+                        '&:disabled': {
+                            backgroundColor: '#cccccc'
+                        }
+                    }}
+                    endIcon={<ArrowForwardIcon />}
                 >
-                    Next <i className="bi bi-arrow-right"></i>
-                </button>
-            </div>
+                    Next
+                </Button>
+            </Box>
 
-            {selectedCustomerState && !currentShipToData.selectedAddressId && !currentShipToData.street && (
-                <div className="text-center mt-3">
-                    <small className="text-danger">
-                        <i className="bi bi-exclamation-triangle-fill me-1"></i>
-                        Please select a destination address to continue
-                    </small>
-                </div>
-            )}
-        </div>
+            {/* Add Customer Modal */}
+            <Dialog
+                open={isAddCustomerModalOpen}
+                onClose={handleCloseAddCustomerModal}
+                maxWidth="lg"
+                fullWidth
+                fullScreen
+                PaperProps={{
+                    sx: {
+                        borderRadius: 0,
+                        backgroundColor: '#ffffff'
+                    }
+                }}
+                TransitionProps={{
+                    timeout: 400
+                }}
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end'
+                    },
+                    '& .MuiBackdrop-root': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)'
+                    }
+                }}
+            >
+                <AddCustomer
+                    isModal={true}
+                    onBackToTable={handleCloseAddCustomerModal}
+                    onCustomerCreated={handleCustomerCreated}
+                />
+            </Dialog>
+
+            {/* Add New Address Dialog */}
+            <DestinationAddressDialog
+                open={isAddressDialogOpen}
+                onClose={handleCloseAddressDialog}
+                onSave={handleSaveAddress}
+                customerID={selectedCustomerState?.customerID || selectedCustomerState?.id}
+                customerCompanyName={selectedCustomerState?.company || selectedCustomerState?.name || ''}
+                addressData={null} // Always null for new addresses
+            />
+        </Container>
     );
 };
 

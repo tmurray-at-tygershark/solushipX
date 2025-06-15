@@ -65,7 +65,8 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         lastName: '',
         phone: '',
         email: '',
-        isDefault: false
+        isDefault: false,
+        specialInstructions: ''
     });
 
     useEffect(() => {
@@ -233,7 +234,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
     }, [shipFromAddresses]);
 
     const resetNewAddressForm = () => {
-        setNewAddress({ nickname: '', companyName: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'US', firstName: '', lastName: '', phone: '', email: '', isDefault: false });
+        setNewAddress({ nickname: '', companyName: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'US', firstName: '', lastName: '', phone: '', email: '', isDefault: false, specialInstructions: '' });
     };
 
     const handleAddNewAddressSubmit = useCallback(async () => {
@@ -604,125 +605,238 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    pb: 2,
-                    borderBottom: '1px solid #e2e8f0'
+                    borderBottom: '1px solid #e2e8f0',
+                    pb: 2
                 }}>
-                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                        Add New Pickup Location
-                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <AddIcon color="primary" />
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                Add New Pickup Location
+                            </Typography>
+                        </Box>
+                        {companyData?.name && (
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b', ml: 3 }}>
+                                for {companyData.name}
+                            </Typography>
+                        )}
+                    </Box>
                     <Button
                         onClick={() => setShowAddAddressForm(false)}
-                        sx={{ minWidth: 'auto', p: 1 }}
+                        sx={{
+                            minWidth: 'auto',
+                            p: 1,
+                            color: '#64748b',
+                            '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' }
+                        }}
                         disabled={isSubmittingNew}
                     >
                         <CloseIcon />
                     </Button>
                 </DialogTitle>
 
-                <DialogContent sx={{ pt: 3 }}>
-                    <Grid container spacing={3}>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Address Label"
-                                name="nickname"
-                                value={newAddress.nickname}
-                                onChange={handleNewAddressChange}
-                                placeholder="e.g., Main Office, Warehouse"
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                                helperText="Internal label to identify this address"
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                            />
+                <DialogContent sx={{ pt: 4 }}>
+                    {error && (
+                        <Paper sx={{
+                            p: 2,
+                            mb: 3,
+                            backgroundColor: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            borderRadius: 1
+                        }}>
+                            <Typography sx={{ fontSize: '12px', color: '#dc2626' }}>
+                                {error}
+                            </Typography>
+                        </Paper>
+                    )}
+                    <Grid container spacing={2}>
+                        {/* Address Identification */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, color: '#374151' }}>
+                                Address Information
+                            </Typography>
                         </Grid>
+
                         <Grid item xs={12} md={6}>
                             <TextField
-                                fullWidth
-                                size="small"
-                                label="Company Name"
+                                label="Company Name (at pickup location)"
                                 name="companyName"
                                 value={newAddress.companyName}
                                 onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
                         </Grid>
+
                         <Grid item xs={12} md={6}>
                             <TextField
+                                label="Address Nickname"
+                                name="nickname"
+                                value={newAddress.nickname}
+                                onChange={handleNewAddressChange}
+                                helperText="e.g., Main Office, Warehouse (optional)"
                                 fullWidth
+                                disabled={isSubmittingNew}
                                 size="small"
-                                label="First Name"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Contact Information */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 1, color: '#374151' }}>
+                                Contact Information
+                            </Typography>
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact First Name"
                                 name="firstName"
                                 value={newAddress.firstName}
                                 onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
                         </Grid>
+
                         <Grid item xs={12} md={6}>
                             <TextField
-                                fullWidth
-                                size="small"
-                                label="Last Name"
+                                label="Contact Last Name"
                                 name="lastName"
                                 value={newAddress.lastName}
                                 onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Email"
+                                name="email"
+                                type="email"
+                                value={newAddress.email}
+                                onChange={handleNewAddressChange}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Contact Phone"
+                                name="phone"
+                                value={newAddress.phone}
+                                onChange={handleNewAddressChange}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Physical Address */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 1, color: '#374151' }}>
+                                Physical Address
+                            </Typography>
                         </Grid>
                         <Grid item xs={12}>
                             <TextField
-                                fullWidth
-                                size="small"
                                 label="Street Address"
                                 name="address1"
                                 value={newAddress.address1}
                                 onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
                         </Grid>
+
                         <Grid item xs={12}>
                             <TextField
-                                fullWidth
-                                size="small"
                                 label="Suite/Unit (Optional)"
                                 name="address2"
                                 value={newAddress.address2}
                                 onChange={handleNewAddressChange}
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={6}>
+
+                        <Grid item xs={12} md={4}>
                             <TextField
-                                fullWidth
-                                size="small"
                                 label="City"
                                 name="city"
                                 value={newAddress.city}
                                 onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={6}>
-                            <FormControl fullWidth size="small" required>
-                                <InputLabel sx={{ fontSize: '14px' }}>{getStateLabel(newAddress.country)}</InputLabel>
+
+                        <Grid item xs={12} md={4}>
+                            <FormControl fullWidth size="small" disabled={isSubmittingNew}>
+                                <InputLabel sx={{ fontSize: '12px' }}>{getStateLabel(newAddress.country)}</InputLabel>
                                 <Select
                                     name="stateProv"
                                     value={newAddress.stateProv}
                                     onChange={handleNewAddressChange}
                                     label={getStateLabel(newAddress.country)}
-                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    sx={{
+                                        '& .MuiSelect-select': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
                                 >
                                     {getStateOptions(newAddress.country).map(({ value, label }) => (
                                         <MenuItem key={value} value={value} sx={{ fontSize: '12px' }}>
@@ -732,63 +846,44 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                 </Select>
                             </FormControl>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+
+                        <Grid item xs={12} md={4}>
                             <TextField
-                                fullWidth
-                                size="small"
                                 label="Postal Code"
                                 name="zipPostal"
                                 value={newAddress.zipPostal}
                                 onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
                             />
                         </Grid>
+
                         <Grid item xs={12} md={6}>
-                            <FormControl fullWidth size="small" required>
-                                <InputLabel sx={{ fontSize: '14px' }}>Country</InputLabel>
+                            <FormControl fullWidth size="small" disabled={isSubmittingNew}>
+                                <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
                                 <Select
                                     name="country"
                                     value={newAddress.country}
                                     onChange={handleNewAddressChange}
                                     label="Country"
-                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    sx={{
+                                        '& .MuiSelect-select': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
                                 >
                                     <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
                                     <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
                                 </Select>
                             </FormControl>
                         </Grid>
+
                         <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Phone"
-                                name="phone"
-                                type="tel"
-                                value={newAddress.phone}
-                                onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Email"
-                                name="email"
-                                type="email"
-                                value={newAddress.email}
-                                onChange={handleNewAddressChange}
-                                required
-                                InputLabelProps={{ sx: { fontSize: '14px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
                             <FormControlLabel
                                 control={
                                     <Checkbox
@@ -796,6 +891,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                         checked={newAddress.isDefault}
                                         onChange={handleNewAddressChange}
                                         size="small"
+                                        disabled={isSubmittingNew}
                                     />
                                 }
                                 label={
@@ -805,14 +901,56 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                 }
                             />
                         </Grid>
+
+                        {/* Special Instructions */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 1, color: '#374151' }}>
+                                Special Instructions
+                            </Typography>
+                        </Grid>
+
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Special Instructions (Optional)"
+                                name="specialInstructions"
+                                value={newAddress.specialInstructions || ''}
+                                onChange={handleNewAddressChange}
+                                multiline
+                                rows={3}
+                                fullWidth
+                                disabled={isSubmittingNew}
+                                size="small"
+                                placeholder="Enter any special pickup instructions or notes"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
+                            />
+                        </Grid>
                     </Grid>
                 </DialogContent>
 
-                <DialogActions sx={{ p: 3, borderTop: '1px solid #e2e8f0' }}>
+                <DialogActions sx={{
+                    p: 3,
+                    borderTop: '1px solid #e2e8f0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                }}>
                     <Button
                         onClick={() => setShowAddAddressForm(false)}
                         disabled={isSubmittingNew}
-                        sx={{ fontSize: '12px' }}
+                        variant="outlined"
+                        sx={{
+                            fontSize: '12px',
+                            color: '#64748b',
+                            borderColor: '#e2e8f0',
+                            '&:hover': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                borderColor: '#cbd5e1'
+                            }
+                        }}
                     >
                         Cancel
                     </Button>
@@ -820,15 +958,21 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                         onClick={handleAddNewAddressSubmit}
                         variant="contained"
                         disabled={isSubmittingNew}
+                        startIcon={isSubmittingNew ? null : <AddIcon />}
                         sx={{
                             fontSize: '12px',
                             backgroundColor: '#10B981',
+                            px: 3,
+                            py: 1,
                             '&:hover': {
                                 backgroundColor: '#059669'
+                            },
+                            '&:disabled': {
+                                backgroundColor: '#cccccc'
                             }
                         }}
                     >
-                        {isSubmittingNew ? 'Adding...' : 'Add Location'}
+                        {isSubmittingNew ? 'Adding...' : 'Add Pickup Location'}
                     </Button>
                 </DialogActions>
             </Dialog>

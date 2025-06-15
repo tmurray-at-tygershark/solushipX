@@ -187,4 +187,217 @@
   content: '*';
   color: #d32f2f;
   margin-left: 4px;
+}
+
+/* Import ShipTo styles for consistency */
+@import './ShipTo.css';
+
+/* Additional styles specific to ShipmentInfo */
+.shipment-info-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Shipment type selection cards */
+.shipment-type-card {
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.shipment-type-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px 0 rgba(0,0,0,0.08);
+    border-color: rgba(107, 70, 193, 0.5);
+}
+
+.shipment-type-card.selected {
+    border-color: #6b46c1;
+    background-color: rgba(107, 70, 193, 0.12);
+    box-shadow: 0 8px 24px 0 rgba(0,0,0,0.15);
+    transform: scale(1.01);
+}
+
+.shipment-type-card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.shipment-type-card.disabled:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: rgba(0, 0, 0, 0.125);
+}
+
+/* Service options collapsible section */
+.service-options-header {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.service-options-header:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Form field styling to match ShipTo */
+.MuiTextField-root {
+    margin-bottom: 1rem;
+}
+
+.MuiTextField-root .MuiInputBase-input {
+    font-size: 12px;
+}
+
+.MuiFormHelperText-root {
+    font-size: 10px;
+}
+
+.MuiSelect-select {
+    font-size: 12px;
+}
+
+.MuiMenuItem-root {
+    font-size: 12px;
+}
+
+/* Time input styling */
+.time-input-group {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.time-input-group .MuiTextField-root {
+    flex: 1;
+    min-width: 150px;
+}
+
+/* Error styling */
+.error-message {
+    color: #dc3545;
+    font-size: 12px;
+    margin-top: 0.25rem;
+}
+
+/* Loading skeleton styling */
+.loading-skeleton {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .shipment-info-container {
+        padding: 1rem;
+    }
+    
+    .time-input-group {
+        flex-direction: column;
+    }
+    
+    .time-input-group .MuiTextField-root {
+        min-width: 100%;
+    }
+}
+
+/* Green next button styling to match ShipTo */
+.btn-next-green {
+    background-color: #10B981 !important;
+    border-color: #10B981 !important;
+    color: white !important;
+}
+
+.btn-next-green:hover {
+    background-color: #059669 !important;
+    border-color: #059669 !important;
+    color: white !important;
+}
+
+.btn-next-green:disabled {
+    background-color: #cccccc !important;
+    border-color: #cccccc !important;
+    color: #666666 !important;
+}
+
+/* Additional card styling for consistency */
+.MuiCard-root {
+    transition: all 0.3s ease;
+}
+
+.MuiCard-root:hover {
+    box-shadow: 0 4px 12px 0 rgba(0,0,0,0.08);
+}
+
+/* Ensure consistent spacing */
+.section-spacing {
+    margin-bottom: 2rem;
+}
+
+/* Alert styling consistency */
+.MuiAlert-root {
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.MuiAlert-message {
+    font-size: 12px;
+}
+
+/* Chip styling for consistency */
+.MuiChip-root {
+    font-size: 10px;
+    height: 24px;
+}
+
+/* Typography consistency */
+.section-title h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.5rem;
+}
+
+.section-title .text-muted {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 0;
+}
+
+/* Form control consistency */
+.MuiFormControl-root {
+    margin-bottom: 1rem;
+}
+
+.MuiInputLabel-root {
+    font-size: 14px;
+}
+
+.MuiInputLabel-shrink {
+    font-size: 12px;
+}
+
+/* Collapse animation */
+.MuiCollapse-root {
+    transition: height 0.3s ease;
+}
+
+/* Icon styling */
+.expand-icon {
+    transition: transform 0.3s ease;
+}
+
+.expand-icon.expanded {
+    transform: rotate(180deg);
 } 

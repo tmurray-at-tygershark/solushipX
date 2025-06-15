@@ -592,7 +592,7 @@ const Dashboard = () => {
 
     const menuItems = [
         { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', action: () => navigate('/dashboard') },
-        { text: 'Create Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
+        { text: 'New Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
         { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
         { text: 'Carriers', icon: <BusinessIcon />, action: () => setIsCarriersModalOpen(true) },

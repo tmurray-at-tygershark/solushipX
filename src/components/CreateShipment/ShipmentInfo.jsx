@@ -324,19 +324,23 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
 
     if (loading) {
         return (
-            <Container maxWidth="lg" sx={{ py: 4 }}>
-                <Box sx={{ mb: 4 }}>
-                    <Skeleton variant="text" width={300} height={40} />
-                    <Skeleton variant="text" width={500} height={24} sx={{ mt: 1 }} />
-                </Box>
+            <div className="ship-to-container">
                 <Grid container spacing={3}>
                     {[1, 2, 3].map((item) => (
                         <Grid item xs={12} md={4} key={item}>
-                            <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
+                            <Card sx={{ mb: 2 }}>
+                                <CardContent>
+                                    <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
+                                </CardContent>
+                            </Card>
                         </Grid>
                     ))}
                 </Grid>
-            </Container>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+                    <Skeleton variant="rectangular" width={120} height={40} />
+                    <Skeleton variant="rectangular" width={120} height={40} />
+                </Box>
+            </div>
         );
     }
 
@@ -371,401 +375,421 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
                 </Alert>
             )}
 
+            {errorMessage && (
+                <Alert severity="error" sx={{ mb: 2, mt: 2 }}
+                    onClose={() => setErrorMessage('')}
+                >
+                    {errorMessage.split(' \n ').map((line, index) => <div key={index}>{line}</div>)}
+                </Alert>
+            )}
+
             <form onSubmit={handleSubmit}>
                 {/* Shipment Type Selection */}
-                <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
-                    <Box sx={{ mb: 3 }}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                            Shipment Type
-                        </Typography>
-                    </Box>
+                <Card sx={{ mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                Shipment Type
+                            </Typography>
+                        </Box>
 
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
-                            <Card
-                                sx={{
-                                    cursor: availableShipmentTypes.courier ? 'pointer' : 'not-allowed',
-                                    border: formData.shipmentInfo?.shipmentType === 'courier' ? '2px solid #1976d2' : '1px solid #e0e0e0',
-                                    opacity: availableShipmentTypes.courier ? 1 : 0.5,
-                                    '&:hover': availableShipmentTypes.courier ? { boxShadow: 3 } : {}
-                                }}
-                                onClick={() => availableShipmentTypes.courier && handleShipmentTypeChange('courier')}
-                            >
-                                <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                                    <EmailIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                                    <Typography variant="h6" gutterBottom>
-                                        Courier Service
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                        Fast delivery for packages and documents
-                                    </Typography>
-                                    {!availableShipmentTypes.courier && (
-                                        <Chip
-                                            label="Not Available"
-                                            color="error"
-                                            size="small"
-                                            sx={{ mt: 1, fontSize: '10px' }}
-                                        />
-                                    )}
-                                </CardContent>
-                            </Card>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={6}>
+                                <Card
+                                    sx={{
+                                        cursor: availableShipmentTypes.courier ? 'pointer' : 'not-allowed',
+                                        border: formData.shipmentInfo?.shipmentType === 'courier' ? '2px solid #6b46c1' : '1px solid #e0e0e0',
+                                        opacity: availableShipmentTypes.courier ? 1 : 0.5,
+                                        transition: 'all 0.3s ease',
+                                        '&:hover': availableShipmentTypes.courier ? {
+                                            boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+                                            transform: 'translateY(-2px)'
+                                        } : {},
+                                        ...(formData.shipmentInfo?.shipmentType === 'courier' && {
+                                            bgcolor: 'rgba(107, 70, 193, 0.12)',
+                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15)',
+                                            transform: 'scale(1.01)'
+                                        })
+                                    }}
+                                    onClick={() => availableShipmentTypes.courier && handleShipmentTypeChange('courier')}
+                                >
+                                    <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                                        <EmailIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                                        <Typography variant="h6" gutterBottom>
+                                            Courier Service
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                            Fast delivery for packages and documents
+                                        </Typography>
+                                        {!availableShipmentTypes.courier && (
+                                            <Chip
+                                                label="Not Available"
+                                                color="error"
+                                                size="small"
+                                                sx={{ mt: 1, fontSize: '10px' }}
+                                            />
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+
+                            <Grid item xs={12} md={6}>
+                                <Card
+                                    sx={{
+                                        cursor: availableShipmentTypes.freight ? 'pointer' : 'not-allowed',
+                                        border: formData.shipmentInfo?.shipmentType === 'freight' ? '2px solid #6b46c1' : '1px solid #e0e0e0',
+                                        opacity: availableShipmentTypes.freight ? 1 : 0.5,
+                                        transition: 'all 0.3s ease',
+                                        '&:hover': availableShipmentTypes.freight ? {
+                                            boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+                                            transform: 'translateY(-2px)'
+                                        } : {},
+                                        ...(formData.shipmentInfo?.shipmentType === 'freight' && {
+                                            bgcolor: 'rgba(107, 70, 193, 0.12)',
+                                            boxShadow: '0 8px 24px 0 rgba(0,0,0,0.15)',
+                                            transform: 'scale(1.01)'
+                                        })
+                                    }}
+                                    onClick={() => availableShipmentTypes.freight && handleShipmentTypeChange('freight')}
+                                >
+                                    <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                                        <LocalShippingIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                                        <Typography variant="h6" gutterBottom>
+                                            Freight Service
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                            Heavy cargo and large shipments
+                                        </Typography>
+                                        {!availableShipmentTypes.freight && (
+                                            <Chip
+                                                label="Not Available"
+                                                color="error"
+                                                size="small"
+                                                sx={{ mt: 1, fontSize: '10px' }}
+                                            />
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
                         </Grid>
 
-                        <Grid item xs={12} md={6}>
-                            <Card
-                                sx={{
-                                    cursor: availableShipmentTypes.freight ? 'pointer' : 'not-allowed',
-                                    border: formData.shipmentInfo?.shipmentType === 'freight' ? '2px solid #1976d2' : '1px solid #e0e0e0',
-                                    opacity: availableShipmentTypes.freight ? 1 : 0.5,
-                                    '&:hover': availableShipmentTypes.freight ? { boxShadow: 3 } : {}
-                                }}
-                                onClick={() => availableShipmentTypes.freight && handleShipmentTypeChange('freight')}
-                            >
-                                <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                                    <LocalShippingIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                                    <Typography variant="h6" gutterBottom>
-                                        Freight Service
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                        Heavy cargo and large shipments
-                                    </Typography>
-                                    {!availableShipmentTypes.freight && (
-                                        <Chip
-                                            label="Not Available"
-                                            color="error"
-                                            size="small"
-                                            sx={{ mt: 1, fontSize: '10px' }}
-                                        />
-                                    )}
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    </Grid>
-
-                    {errors.shipmentType && (
-                        <Typography color="error" sx={{ mt: 1, fontSize: '12px' }}>
-                            {errors.shipmentType}
-                        </Typography>
-                    )}
-                </Paper>
+                        {errors.shipmentType && (
+                            <Typography color="error" sx={{ mt: 1, fontSize: '12px' }}>
+                                {errors.shipmentType}
+                            </Typography>
+                        )}
+                    </CardContent>
+                </Card>
 
                 {/* Shipment Info */}
-                <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
-                    <Box sx={{ mb: 3 }}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                            Shipment Info
-                        </Typography>
-                    </Box>
+                <Card sx={{ mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                Shipment Details
+                            </Typography>
+                        </Box>
 
-                    <Grid container spacing={3}>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                id="shipmentDate"
-                                label="Shipment Date"
-                                type="date"
-                                value={formData.shipmentInfo?.shipmentDate || ''}
-                                onChange={handleInputChange}
-                                error={!!errors.shipmentDate}
-                                helperText={errors.shipmentDate}
-                                InputLabelProps={{ shrink: true }}
-                                inputProps={{
-                                    min: formatDateForInput(getCurrentDateTimeEST()),
-                                    style: { fontSize: '12px' }
-                                }}
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                                required
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                id="shipperReferenceNumber"
-                                label="Reference Number"
-                                value={formData.shipmentInfo?.shipperReferenceNumber || ''}
-                                onChange={handleInputChange}
-                                placeholder="PO Number, Invoice, etc."
-                                InputLabelProps={{
-                                    shrink: true,
-                                    sx: { fontSize: '14px' }
-                                }}
-                                inputProps={{
-                                    style: { fontSize: '12px' }
-                                }}
-                                InputProps={{
-                                    sx: {
-                                        fontSize: '12px',
-                                        '& input': {
-                                            fontSize: '12px !important'
-                                        },
-                                        '& input::placeholder': {
-                                            fontSize: '12px !important',
-                                            opacity: 0.6
-                                        }
-                                    }
-                                }}
-                                helperText="Optional reference for tracking"
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} md={6}>
-                            <FormControl fullWidth>
-                                <InputLabel>Bill Type</InputLabel>
-                                <Select
-                                    id="billType"
-                                    name="billType"
-                                    value={formData.shipmentInfo?.billType || 'prepaid'}
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    id="shipmentDate"
+                                    label="Shipment Date"
+                                    type="date"
+                                    value={formData.shipmentInfo?.shipmentDate || ''}
                                     onChange={handleInputChange}
-                                    label="Bill Type"
-                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                >
-                                    <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
-                                    <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
-                                    <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
-                                </Select>
-                            </FormControl>
+                                    error={!!errors.shipmentDate}
+                                    helperText={errors.shipmentDate}
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{
+                                        min: formatDateForInput(getCurrentDateTimeEST()),
+                                        style: { fontSize: '12px' }
+                                    }}
+                                    FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                                    required
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    id="shipperReferenceNumber"
+                                    label="Reference Number"
+                                    value={formData.shipmentInfo?.shipperReferenceNumber || ''}
+                                    onChange={handleInputChange}
+                                    placeholder="PO Number, Invoice, etc."
+                                    InputLabelProps={{
+                                        shrink: true,
+                                        sx: { fontSize: '14px' }
+                                    }}
+                                    inputProps={{
+                                        style: { fontSize: '12px' }
+                                    }}
+                                    InputProps={{
+                                        sx: {
+                                            fontSize: '12px',
+                                            '& input': {
+                                                fontSize: '12px !important'
+                                            },
+                                            '& input::placeholder': {
+                                                fontSize: '12px !important',
+                                                opacity: 0.6
+                                            }
+                                        }
+                                    }}
+                                    helperText="Optional reference for tracking"
+                                    FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} md={6}>
+                                <FormControl fullWidth>
+                                    <InputLabel>Bill Type</InputLabel>
+                                    <Select
+                                        id="billType"
+                                        name="billType"
+                                        value={formData.shipmentInfo?.billType || 'prepaid'}
+                                        onChange={handleInputChange}
+                                        label="Bill Type"
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    >
+                                        <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
+                                        <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
+                                        <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Grid>
                         </Grid>
-                    </Grid>
-                </Paper>
+                    </CardContent>
+                </Card>
 
                 {/* Pickup & Delivery Times */}
-                <Paper sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
-                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 3 }}>
-                        Pickup & Delivery Windows
-                    </Typography>
+                <Card sx={{ mb: 3, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 3 }}>
+                            Pickup & Delivery Windows
+                        </Typography>
 
-                    <Grid container spacing={3}>
-                        <Grid item xs={12} md={3}>
-                            <TextField
-                                fullWidth
-                                id="earliestPickup"
-                                label="Earliest Pickup"
-                                type="time"
-                                value={formData.shipmentInfo?.earliestPickup || '09:00'}
-                                onChange={handleInputChange}
-                                error={!!errors.earliestPickup}
-                                helperText={errors.earliestPickup}
-                                InputLabelProps={{ shrink: true }}
-                                inputProps={{ style: { fontSize: '12px' } }}
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                            />
-                        </Grid>
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    id="earliestPickup"
+                                    label="Earliest Pickup"
+                                    type="time"
+                                    value={formData.shipmentInfo?.earliestPickup || '09:00'}
+                                    onChange={handleInputChange}
+                                    error={!!errors.earliestPickup}
+                                    helperText={errors.earliestPickup}
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{ style: { fontSize: '12px' } }}
+                                    FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                                />
+                            </Grid>
 
-                        <Grid item xs={12} md={3}>
-                            <TextField
-                                fullWidth
-                                id="latestPickup"
-                                label="Latest Pickup"
-                                type="time"
-                                value={formData.shipmentInfo?.latestPickup || '17:00'}
-                                onChange={handleInputChange}
-                                error={!!errors.latestPickup}
-                                helperText={errors.latestPickup}
-                                InputLabelProps={{ shrink: true }}
-                                inputProps={{ style: { fontSize: '12px' } }}
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                            />
-                        </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    id="latestPickup"
+                                    label="Latest Pickup"
+                                    type="time"
+                                    value={formData.shipmentInfo?.latestPickup || '17:00'}
+                                    onChange={handleInputChange}
+                                    error={!!errors.latestPickup}
+                                    helperText={errors.latestPickup}
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{ style: { fontSize: '12px' } }}
+                                    FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                                />
+                            </Grid>
 
-                        <Grid item xs={12} md={3}>
-                            <TextField
-                                fullWidth
-                                id="earliestDelivery"
-                                label="Earliest Delivery"
-                                type="time"
-                                value={formData.shipmentInfo?.earliestDelivery || '09:00'}
-                                onChange={handleInputChange}
-                                error={!!errors.earliestDelivery}
-                                helperText={errors.earliestDelivery}
-                                InputLabelProps={{ shrink: true }}
-                                inputProps={{ style: { fontSize: '12px' } }}
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                            />
-                        </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    id="earliestDelivery"
+                                    label="Earliest Delivery"
+                                    type="time"
+                                    value={formData.shipmentInfo?.earliestDelivery || '09:00'}
+                                    onChange={handleInputChange}
+                                    error={!!errors.earliestDelivery}
+                                    helperText={errors.earliestDelivery}
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{ style: { fontSize: '12px' } }}
+                                    FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                                />
+                            </Grid>
 
-                        <Grid item xs={12} md={3}>
-                            <TextField
-                                fullWidth
-                                id="latestDelivery"
-                                label="Latest Delivery"
-                                type="time"
-                                value={formData.shipmentInfo?.latestDelivery || '17:00'}
-                                onChange={handleInputChange}
-                                error={!!errors.latestDelivery}
-                                helperText={errors.latestDelivery}
-                                InputLabelProps={{ shrink: true }}
-                                inputProps={{ style: { fontSize: '12px' } }}
-                                FormHelperTextProps={{ sx: { fontSize: '10px' } }}
-                            />
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    id="latestDelivery"
+                                    label="Latest Delivery"
+                                    type="time"
+                                    value={formData.shipmentInfo?.latestDelivery || '17:00'}
+                                    onChange={handleInputChange}
+                                    error={!!errors.latestDelivery}
+                                    helperText={errors.latestDelivery}
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{ style: { fontSize: '12px' } }}
+                                    FormHelperTextProps={{ sx: { fontSize: '10px' } }}
+                                />
+                            </Grid>
                         </Grid>
-                    </Grid>
-                </Paper>
+                    </CardContent>
+                </Card>
 
                 {/* Service Options */}
-                <Paper sx={{ p: 3, mb: 4, border: '1px solid #e2e8f0', borderRadius: 2 }}>
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            cursor: 'pointer',
-                            mb: serviceOptionsExpanded ? 3 : 0
-                        }}
-                        onClick={() => setServiceOptionsExpanded(!serviceOptionsExpanded)}
-                    >
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, flex: 1 }}>
-                            Additional Options
-                        </Typography>
-                        {serviceOptionsExpanded ? (
-                            <ExpandLessIcon sx={{ color: '#666' }} />
-                        ) : (
-                            <ExpandMoreIcon sx={{ color: '#666' }} />
-                        )}
-                    </Box>
+                <Card sx={{ mb: 4, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                cursor: 'pointer',
+                                mb: serviceOptionsExpanded ? 3 : 0
+                            }}
+                            onClick={() => setServiceOptionsExpanded(!serviceOptionsExpanded)}
+                        >
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, flex: 1 }}>
+                                Additional Options
+                            </Typography>
+                            {serviceOptionsExpanded ? (
+                                <ExpandLessIcon sx={{ color: '#666' }} />
+                            ) : (
+                                <ExpandMoreIcon sx={{ color: '#666' }} />
+                            )}
+                        </Box>
 
-                    <Collapse in={serviceOptionsExpanded}>
-                        <Grid container spacing={3}>
-                            {/* Delivery & Pickup Options */}
-                            <Grid item xs={12} md={6}>
-                                <Box sx={{ mb: 1 }}>
-                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                        Delivery & Pickup Options
-                                    </Typography>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
-                                        <Select
-                                            id="deliveryPickupOption"
-                                            name="deliveryPickupOption"
-                                            value={formData.shipmentInfo?.deliveryPickupOption || ''}
-                                            onChange={handleInputChange}
-                                            label="Delivery Options"
-                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                        >
-                                            <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                Standard Delivery
-                                            </MenuItem>
-                                            <MenuItem value="residential" sx={{ fontSize: '12px' }}>
-                                                Residential Delivery
-                                            </MenuItem>
-                                            <MenuItem value="holdForPickup" sx={{ fontSize: '12px' }}>
-                                                Hold for Pickup
-                                            </MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                </Box>
-                            </Grid>
+                        <Collapse in={serviceOptionsExpanded}>
+                            <Grid container spacing={3}>
+                                {/* Delivery & Pickup Options */}
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ mb: 1 }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            Delivery & Pickup Options
+                                        </Typography>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
+                                            <Select
+                                                id="deliveryPickupOption"
+                                                name="deliveryPickupOption"
+                                                value={formData.shipmentInfo?.deliveryPickupOption || ''}
+                                                onChange={handleInputChange}
+                                                label="Delivery Options"
+                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                            >
+                                                <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                    Standard Delivery
+                                                </MenuItem>
+                                                <MenuItem value="residential" sx={{ fontSize: '12px' }}>
+                                                    Residential Delivery
+                                                </MenuItem>
+                                                <MenuItem value="holdForPickup" sx={{ fontSize: '12px' }}>
+                                                    Hold for Pickup
+                                                </MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+                                </Grid>
 
-                            {/* Hazardous Goods */}
-                            <Grid item xs={12} md={6}>
-                                <Box sx={{ mb: 1 }}>
-                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                        Hazardous Materials
-                                    </Typography>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
-                                        <Select
-                                            id="hazardousGoods"
-                                            name="hazardousGoods"
-                                            value={formData.shipmentInfo?.hazardousGoods || ''}
-                                            onChange={handleInputChange}
-                                            label="Hazardous Goods"
-                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                        >
-                                            <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
-                                            <MenuItem value="limited_quantity" sx={{ fontSize: '12px' }}>Limited Quantity</MenuItem>
-                                            <MenuItem value="500kg_exemption" sx={{ fontSize: '12px' }}>500kg Exemption</MenuItem>
-                                            <MenuItem value="fully_regulated" sx={{ fontSize: '12px' }}>Fully Regulated</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                </Box>
-                            </Grid>
+                                {/* Hazardous Goods */}
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ mb: 1 }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            Hazardous Materials
+                                        </Typography>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
+                                            <Select
+                                                id="hazardousGoods"
+                                                name="hazardousGoods"
+                                                value={formData.shipmentInfo?.hazardousGoods || ''}
+                                                onChange={handleInputChange}
+                                                label="Hazardous Goods"
+                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                            >
+                                                <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                                                <MenuItem value="limited_quantity" sx={{ fontSize: '12px' }}>Limited Quantity</MenuItem>
+                                                <MenuItem value="500kg_exemption" sx={{ fontSize: '12px' }}>500kg Exemption</MenuItem>
+                                                <MenuItem value="fully_regulated" sx={{ fontSize: '12px' }}>Fully Regulated</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+                                </Grid>
 
-                            {/* Priority Delivery */}
-                            <Grid item xs={12} md={6}>
-                                <Box sx={{ mb: 1 }}>
-                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                        Priority Delivery
-                                    </Typography>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
-                                        <Select
-                                            id="priorityDelivery"
-                                            name="priorityDelivery"
-                                            value={formData.shipmentInfo?.priorityDelivery || ''}
-                                            onChange={handleInputChange}
-                                            label="Priority Options"
-                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                        >
-                                            <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
-                                            <MenuItem value="10am" sx={{ fontSize: '12px' }}>10AM Delivery</MenuItem>
-                                            <MenuItem value="noon" sx={{ fontSize: '12px' }}>Noon Delivery</MenuItem>
-                                            <MenuItem value="saturday" sx={{ fontSize: '12px' }}>Saturday Delivery</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                </Box>
-                            </Grid>
+                                {/* Priority Delivery */}
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ mb: 1 }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            Priority Delivery
+                                        </Typography>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
+                                            <Select
+                                                id="priorityDelivery"
+                                                name="priorityDelivery"
+                                                value={formData.shipmentInfo?.priorityDelivery || ''}
+                                                onChange={handleInputChange}
+                                                label="Priority Options"
+                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                            >
+                                                <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
+                                                <MenuItem value="10am" sx={{ fontSize: '12px' }}>10AM Delivery</MenuItem>
+                                                <MenuItem value="noon" sx={{ fontSize: '12px' }}>Noon Delivery</MenuItem>
+                                                <MenuItem value="saturday" sx={{ fontSize: '12px' }}>Saturday Delivery</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+                                </Grid>
 
-                            {/* Signature Options */}
-                            <Grid item xs={12} md={6}>
-                                <Box sx={{ mb: 1 }}>
-                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                        Signature Requirements
-                                    </Typography>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
-                                        <Select
-                                            id="signatureOptions"
-                                            name="signatureOptions"
-                                            value={formData.shipmentInfo?.signatureOptions || ''}
-                                            onChange={handleInputChange}
-                                            label="Signature Options"
-                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                        >
-                                            <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
-                                            <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>
-                                            <MenuItem value="adult" sx={{ fontSize: '12px' }}>Adult Signature Required</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                </Box>
+                                {/* Signature Options */}
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ mb: 1 }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            Signature Requirements
+                                        </Typography>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
+                                            <Select
+                                                id="signatureOptions"
+                                                name="signatureOptions"
+                                                value={formData.shipmentInfo?.signatureOptions || ''}
+                                                onChange={handleInputChange}
+                                                label="Signature Options"
+                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                            >
+                                                <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
+                                                <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>
+                                                <MenuItem value="adult" sx={{ fontSize: '12px' }}>Adult Signature Required</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+                                </Grid>
                             </Grid>
-                        </Grid>
-                    </Collapse>
-                </Paper>
+                        </Collapse>
+                    </CardContent>
+                </Card>
 
                 {/* Navigation Buttons */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-                    <Button
-                        variant="outlined"
+                <div className="navigation-buttons">
+                    <button
+                        type="button"
+                        className="btn btn-outline-primary btn-navigation"
                         onClick={onPrevious}
                         disabled={!onPrevious}
-                        sx={{ px: 4, fontSize: '12px' }}
                     >
-                        Previous
-                    </Button>
-                    <Button
+                        <i className="bi bi-arrow-left"></i> Previous
+                    </button>
+                    <button
                         type="button"
-                        variant="contained"
+                        className="btn btn-primary btn-navigation btn-next-green"
                         disabled={noCarriersEnabled}
                         onClick={handleSubmit}
-                        sx={{
-                            px: 6,
-                            py: 1.5,
-                            fontSize: '12px',
-                            backgroundColor: '#10B981',
-                            minWidth: '160px',
-                            '&:hover': {
-                                backgroundColor: '#059669'
-                            },
-                            '&:disabled': {
-                                backgroundColor: '#cccccc'
-                            }
-                        }}
-                        endIcon={<ArrowForwardIcon />}
                     >
-                        Next
-                    </Button>
-                </Box>
+                        Next <i className="bi bi-arrow-right"></i>
+                    </button>
+                </div>
             </form>
 
             <Snackbar

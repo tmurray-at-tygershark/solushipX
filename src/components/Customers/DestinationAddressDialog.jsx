@@ -397,11 +397,18 @@ const DestinationAddressDialog = ({
                 borderBottom: '1px solid #e2e8f0',
                 pb: 2
             }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <LocationIcon color="primary" />
-                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                        {dialogTitle}
-                    </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LocationIcon color="primary" />
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                            {dialogTitle}
+                        </Typography>
+                    </Box>
+                    {customerCompanyName && (
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b', ml: 3 }}>
+                            for {customerCompanyName}
+                        </Typography>
+                    )}
                 </Box>
                 <IconButton
                     onClick={handleClose}
@@ -416,7 +423,7 @@ const DestinationAddressDialog = ({
                 </IconButton>
             </DialogTitle>
 
-            <DialogContent sx={{ pt: 3 }}>
+            <DialogContent sx={{ pt: 4 }}>
                 {errors.general && (
                     <Paper sx={{
                         p: 2,
@@ -434,7 +441,7 @@ const DestinationAddressDialog = ({
                 <Grid container spacing={2}>
                     {/* Address Identification */}
                     <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, color: '#374151' }}>
+                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 2, color: '#374151' }}>
                             Address Information
                         </Typography>
                     </Grid>
@@ -479,7 +486,7 @@ const DestinationAddressDialog = ({
 
                     {/* Contact Information */}
                     <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 2, color: '#374151' }}>
+                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, color: '#374151' }}>
                             Contact Information
                         </Typography>
                     </Grid>
@@ -563,7 +570,7 @@ const DestinationAddressDialog = ({
 
                     {/* Physical Address */}
                     <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 2, color: '#374151' }}>
+                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 1, color: '#374151' }}>
                             Physical Address
                         </Typography>
                     </Grid>
@@ -705,10 +712,10 @@ const DestinationAddressDialog = ({
                         />
                     </Grid>
 
-                    {/* Default & Special Instructions */}
+                    {/* Special Instructions */}
                     <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 2, color: '#374151' }}>
-                            Default & Special Instructions
+                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 1, color: '#374151' }}>
+                            Special Instructions
                         </Typography>
                     </Grid>
 
