@@ -815,6 +815,92 @@ const Packages = ({ onNext, onPrevious }) => {
                                 </Box>
                             </Grid>
 
+                            {/* Declared Value */}
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Declared Value"
+                                    type="number"
+                                    value={pkg.declaredValue || ''}
+                                    onChange={(e) => updatePackage(index, 'declaredValue', parseFloat(e.target.value) || 0)}
+                                    error={hasFieldError(index, 'declaredValue')}
+                                    helperText={getFieldError(index, 'declaredValue') || 'Optional: For insurance purposes'}
+                                    sx={{
+                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
+                                    InputProps={{
+                                        startAdornment: (
+                                            <InputAdornment position="start">
+                                                <Box
+                                                    sx={{
+                                                        bgcolor: 'grey.800',
+                                                        color: 'white',
+                                                        px: 1,
+                                                        py: 0.5,
+                                                        borderRadius: 1,
+                                                        fontSize: '0.875rem',
+                                                        mr: 1
+                                                    }}
+                                                >
+                                                    {currencies.find(c => c.code === (pkg.currency || 'USD'))?.symbol || '$'}
+                                                </Box>
+                                            </InputAdornment>
+                                        ),
+                                        endAdornment: (
+                                            <InputAdornment position="end">
+                                                <FormControl size="small" sx={{ minWidth: 60 }}>
+                                                    <Select
+                                                        value={pkg.currency || 'USD'}
+                                                        onChange={(e) => updatePackage(index, 'currency', e.target.value)}
+                                                        variant="standard"
+                                                        sx={{
+                                                            '& .MuiSelect-select': { fontSize: '11px', py: 0 },
+                                                            '& .MuiInput-underline:before': { display: 'none' },
+                                                            '& .MuiInput-underline:after': { display: 'none' }
+                                                        }}
+                                                    >
+                                                        {currencies.map((currency) => (
+                                                            <MenuItem key={currency.code} value={currency.code} sx={{ fontSize: '11px' }}>
+                                                                {currency.code}
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </FormControl>
+                                            </InputAdornment>
+                                        ),
+                                    }}
+                                />
+                            </Grid>
+
+                            {/* Currency Conversion Display */}
+                            {pkg.declaredValue > 0 && pkg.currency && pkg.currency !== 'USD' && (
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{
+                                        p: 1.5,
+                                        bgcolor: 'grey.50',
+                                        borderRadius: 1,
+                                        border: '1px solid',
+                                        borderColor: 'grey.300',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 1
+                                    }}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.secondary' }}>
+                                            USD Equivalent:
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            ${(pkg.declaredValue * (pkg.currency === 'CAD' ? 0.74 : 1)).toFixed(2)} USD
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ fontSize: '10px', color: 'text.secondary' }}>
+                                            (Rate: 1 CAD = 0.74 USD)
+                                        </Typography>
+                                    </Box>
+                                </Grid>
+                            )}
+
                             {/* Stackable - Only show for freight shipments */}
                             {formData.shipmentInfo?.shipmentType === 'freight' && (
                                 <Grid item xs={12}>
@@ -837,6 +923,11 @@ const Packages = ({ onNext, onPrevious }) => {
                                             />
                                         }
                                         label="Stackable"
+                                        sx={{
+                                            '& .MuiFormControlLabel-label': {
+                                                fontSize: '12px'
+                                            }
+                                        }}
                                     />
                                 </Grid>
                             )}

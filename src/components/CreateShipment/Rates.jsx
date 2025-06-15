@@ -12,6 +12,10 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, updateDoc, serverTimestamp, collection, addDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
+import CarrierLoadingDisplay from './CarrierLoadingDisplay';
+import RateErrorDisplay from './RateErrorDisplay';
+import EnhancedRateCard from './EnhancedRateCard';
+import CarrierStatsPopover from './CarrierStatsPopover';
 import { fetchMultiCarrierRates, getEligibleCarriers, getAllCarriers } from '../../utils/carrierEligibility';
 import { validateUniversalRate } from '../../utils/universalDataModel';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
@@ -61,6 +65,8 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
     // Add state for multi-carrier loading details
     const [loadingCarriers, setLoadingCarriers] = useState([]);
+    const [completedCarriers, setCompletedCarriers] = useState([]);
+    const [failedCarriers, setFailedCarriers] = useState([]);
 
     useEffect(() => {
         setSelectedRate(formData.selectedRate || null);
@@ -407,7 +413,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
      * @returns {Array} - Array of enabled carrier configurations
      */
     const getCompanyEligibleCarriers = useCallback((shipmentData) => {
-        console.log('🏢 Getting company-specific eligible carriers...');
+        console.log('Getting company-specific eligible carriers...');
 
         // Get company's connected carriers
         const companyConnectedCarriers = companyData?.connectedCarriers || [];
@@ -518,27 +524,38 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
         setIsLoading(true);
         setError(null);
         setRatesLoaded(false);
+        setCompletedCarriers([]);
+        setFailedCarriers([]);
 
         try {
             // Get company-specific eligible carriers
             const companyEligibleCarriers = getCompanyEligibleCarriers(currentFormDataForRateRequest);
 
             if (companyEligibleCarriers.length === 0) {
-                setError('No carriers are configured for your company. Please contact your administrator to set up carrier connections.');
+                setError('No carriers available for your route and shipment details');
                 setRates([]);
                 setFilteredRates([]);
                 setRawRateApiResponseData(null);
                 return;
             }
 
-            console.log(`🏢 Using ${companyEligibleCarriers.length} company-configured carriers:`,
+            console.log(`Using ${companyEligibleCarriers.length} company-configured carriers:`,
                 companyEligibleCarriers.map(c => c.name));
 
             // Use the company-specific carrier list in multi-carrier fetching
             const multiCarrierResult = await fetchMultiCarrierRates(currentFormDataForRateRequest, {
                 customEligibleCarriers: companyEligibleCarriers, // Pass company carriers
                 progressiveResults: true,   // Return results as they arrive
-                includeFailures: true       // Include failed carriers in results for debugging
+                includeFailures: true,      // Include failed carriers in results for debugging
+                onProgress: (progressData) => {
+                    // Update carrier status as results come in
+                    if (progressData.completed) {
+                        setCompletedCarriers(prev => [...prev, { name: progressData.carrier, rates: progressData.rates?.length || 0 }]);
+                    }
+                    if (progressData.failed) {
+                        setFailedCarriers(prev => [...prev, { name: progressData.carrier, error: progressData.error }]);
+                    }
+                }
             });
 
             console.log('Company-filtered multi-carrier fetch result:', multiCarrierResult);
@@ -557,14 +574,17 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                 console.log(`✅ Company multi-carrier fetch successful: ${validRates.length} valid rates from ${multiCarrierResult.summary.successfulCarriers} carriers`);
                 console.log('Execution summary:', multiCarrierResult.summary);
 
-                // Log carrier breakdown
-                multiCarrierResult.results.forEach(result => {
-                    if (result.success) {
-                        console.log(`✅ ${result.carrier}: ${result.rates.length} rates (${result.responseTime}ms)`);
-                    } else {
-                        console.warn(`❌ ${result.carrier}: ${result.error} (${result.responseTime}ms)`);
-                    }
-                });
+                // Update carrier status from results
+                const completedCarriersList = multiCarrierResult.results
+                    .filter(result => result.success)
+                    .map(result => ({ name: result.carrier, rates: result.rates?.length || 0 }));
+
+                const failedCarriersList = multiCarrierResult.results
+                    .filter(result => !result.success)
+                    .map(result => ({ name: result.carrier, error: result.error }));
+
+                setCompletedCarriers(completedCarriersList);
+                setFailedCarriers(failedCarriersList);
 
                 setRates(validRates);
                 setFilteredRates(validRates);
@@ -585,6 +605,12 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                     if (errors) {
                         errorMessage += ` Carrier errors: ${errors}`;
                     }
+
+                    // Update failed carriers list
+                    const failedCarriersList = multiCarrierResult.results
+                        .filter(result => !result.success)
+                        .map(result => ({ name: result.carrier, error: result.error }));
+                    setFailedCarriers(failedCarriersList);
                 }
 
                 console.error('❌ Company multi-carrier fetch failed:', errorMessage);
@@ -1015,7 +1041,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
     if (isLoading) {
         return (
             <Container maxWidth="lg" sx={{ py: 4 }}>
-                <Grid container spacing={4} alignItems="center" justifyContent="center">
+                <Grid container spacing={4} alignItems="flex-start" justifyContent="center">
                     <Grid item xs={12} md={6}>
                         <ShipmentRateRequestSummary
                             origin={formData.shipFrom}
@@ -1024,39 +1050,13 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                             packages={formData.packages}
                         />
                     </Grid>
-                    <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
-                        <CircularProgress size={50} sx={{ mb: 3 }} />
-                        <Typography variant="h5" component="p" color="text.secondary" textAlign="center">
-                            Fetching Rates from Your Carriers{loadingDots}
-                        </Typography>
-                        <Typography variant="body2" color="text.tertiary" sx={{ mt: 1 }} textAlign="center">
-                            Searching {loadingCarriers.length} configured carrier{loadingCarriers.length !== 1 ? 's' : ''} for your company
-                        </Typography>
-                        {loadingCarriers.length > 0 && (
-                            <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
-                                {loadingCarriers.map((carrier, index) => (
-                                    <Typography
-                                        key={index}
-                                        variant="caption"
-                                        sx={{
-                                            px: 1.5,
-                                            py: 0.5,
-                                            backgroundColor: 'primary.light',
-                                            color: 'primary.contrastText',
-                                            borderRadius: 1,
-                                            fontSize: '0.75rem'
-                                        }}
-                                    >
-                                        {carrier}
-                                    </Typography>
-                                ))}
-                            </Box>
-                        )}
-                        {loadingCarriers.length === 0 && (
-                            <Typography variant="body2" color="error.main" sx={{ mt: 2 }} textAlign="center">
-                                No carriers configured for your company
-                            </Typography>
-                        )}
+                    <Grid item xs={12} md={6}>
+                        <CarrierLoadingDisplay
+                            loadingCarriers={loadingCarriers}
+                            completedCarriers={completedCarriers}
+                            failedCarriers={failedCarriers}
+                            isLoading={isLoading}
+                        />
                     </Grid>
                 </Grid>
                 <Box
@@ -1093,11 +1093,54 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
     if (error) {
         return (
-            <Container maxWidth="md" sx={{ py: 4, textAlign: 'center' }}>
-                <Typography color="error" gutterBottom>Error fetching rates: {error}</Typography>
-                <div className="navigation-buttons" style={{ justifyContent: 'center' }}>
-                    <Button variant="outlined" onClick={onPrevious} className="btn-navigation">Previous</Button>
-                </div>
+            <Container maxWidth="lg" sx={{ py: 4 }}>
+                <Grid container spacing={4}>
+                    <Grid item xs={12} md={6}>
+                        <ShipmentRateRequestSummary
+                            origin={formData.shipFrom}
+                            destination={formData.shipTo}
+                            shipmentDetails={formData.shipmentInfo}
+                            packages={formData.packages}
+                        />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                        <RateErrorDisplay
+                            error={error}
+                            failedCarriers={failedCarriers}
+                            onRetry={() => {
+                                setError(null);
+                                fetchRatesInternal({
+                                    shipFrom: formData.shipFrom,
+                                    shipTo: formData.shipTo,
+                                    packages: formData.packages,
+                                    shipmentInfo: formData.shipmentInfo
+                                });
+                            }}
+                            onEditShipment={onPrevious}
+                            onContactSupport={() => {
+                                window.open('mailto:support@solushipx.com?subject=Rate Fetching Issue', '_blank');
+                            }}
+                        />
+                    </Grid>
+                </Grid>
+                <Box
+                    className="navigation-buttons"
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        mt: 5,
+                        pt: 2,
+                        borderTop: (theme) => `1px solid ${theme.palette.divider}`
+                    }}
+                >
+                    <Button variant="outlined" onClick={onPrevious} type="button">
+                        Previous
+                    </Button>
+                    <Button variant="contained" color="primary" onClick={onNext} disabled={true} type="button">
+                        Next
+                    </Button>
+                </Box>
             </Container>
         );
     }
@@ -1116,21 +1159,27 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
     return (
         <Container maxWidth="lg" sx={{ py: 3 }}>
-            <Typography variant="h4" component="h2" gutterBottom>
-                Available Rates
-            </Typography>
 
             <div className="form-section active" data-step="5">
                 <div className="section-content">
-                    <Paper elevation={1} sx={{ p: 2, mb: 3 }} className="rate-filters">
-                        <Grid container spacing={2} alignItems="center">
+                    <Box sx={{ mb: 3 }}>
+                        <Grid container spacing={3} alignItems="center">
                             <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="subtitle2" gutterBottom className="form-label">Sort By</Typography>
+                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                    Sort By
+                                </Typography>
                                 <select
-                                    className="form-select"
                                     value={sortBy}
                                     onChange={(e) => setSortBy(e.target.value)}
-                                    style={{ width: '100%' }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 12px',
+                                        fontSize: '12px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px',
+                                        backgroundColor: '#fff',
+                                        color: '#374151'
+                                    }}
                                 >
                                     <option value="price">Price (Lowest First)</option>
                                     <option value="transit">Transit Time (Fastest First)</option>
@@ -1138,12 +1187,21 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                 </select>
                             </Grid>
                             <Grid item xs={12} sm={6} md={3}>
-                                <Typography variant="subtitle2" gutterBottom className="form-label">Service Type</Typography>
+                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                    Service Type
+                                </Typography>
                                 <select
-                                    className="form-select"
                                     value={serviceFilter}
                                     onChange={(e) => setServiceFilter(e.target.value)}
-                                    style={{ width: '100%' }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 12px',
+                                        fontSize: '12px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px',
+                                        backgroundColor: '#fff',
+                                        color: '#374151'
+                                    }}
                                 >
                                     <option value="all">All Services</option>
                                     <option value="guaranteed">Guaranteed Only</option>
@@ -1151,29 +1209,36 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                     <option value="express">Express</option>
                                 </select>
                             </Grid>
-                            <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' }, mt: { xs: 2, md: 0 } }}>
-                                <Button
-                                    variant="outlined"
-                                    onClick={toggleAllRateDetails}
-                                    type="button"
-                                    sx={{ mr: 1 }}
-                                >
-                                    {showRateDetails ? 'Hide Details' : 'Rate Details'}
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    onClick={handleAnalyzeRates}
-                                    disabled={isAnalyzing || rates.length === 0}
-                                    startIcon={<SmartToyIcon />}
-                                    type="button"
-                                >
-                                    {isAnalyzing ? 'Analyzing...' : 'AI Analysis'}
-                                </Button>
+                            <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1 }}>
+                                    <CarrierStatsPopover rawRateApiResponseData={rawRateApiResponseData} />
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleAnalyzeRates}
+                                        disabled={isAnalyzing || rates.length === 0}
+                                        type="button"
+                                        sx={{
+                                            fontSize: '12px',
+                                            textTransform: 'none',
+                                            px: 3,
+                                            py: 1,
+                                            backgroundColor: '#6366f1',
+                                            '&:hover': {
+                                                backgroundColor: '#4f46e5'
+                                            },
+                                            '&:disabled': {
+                                                backgroundColor: '#9ca3af'
+                                            }
+                                        }}
+                                    >
+                                        {isAnalyzing ? 'Analyzing...' : 'Help Me Choose'}
+                                    </Button>
+                                </Box>
                             </Grid>
                         </Grid>
-                    </Paper>
+                    </Box>
 
-                    {ratesLoaded && filteredRates.length > 0 && isAnalysisExpanded && (
+                    {ratesLoaded && filteredRates.length > 0 && (analysisResult || isAnalyzing) && (
                         <Card sx={{ mb: 3, bgcolor: 'background.paper' }} elevation={2}>
                             <CardHeader
                                 onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
@@ -1183,7 +1248,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                 title={
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         <SmartToyIcon />
-                                        <Typography variant="h6">AI Rate Analysis</Typography>
+                                        <Typography variant="h6" sx={{ fontSize: '12px' }}>Shipment Analysis</Typography>
                                     </Box>
                                 }
                                 action={
@@ -1209,23 +1274,29 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                                             <ReactMarkdown
                                                 components={{
                                                     h2: ({ ...props }) => (
-                                                        <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }} {...props} />
+                                                        <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold', fontSize: '14px' }} {...props} />
+                                                    ),
+                                                    h3: ({ ...props }) => (
+                                                        <Typography variant="subtitle1" sx={{ mt: 1.5, mb: 1, fontWeight: 600, fontSize: '13px' }} {...props} />
                                                     ),
                                                     ul: ({ ...props }) => (
-                                                        <Box component="ul" sx={{ pl: 2, mb: 1 }} {...props} />
+                                                        <Box component="ul" sx={{ pl: 2, mb: 1, fontSize: '12px' }} {...props} />
                                                     ),
                                                     li: ({ ...props }) => (
-                                                        <Box component="li" sx={{ mb: 0.5 }} {...props} />
+                                                        <Box component="li" sx={{ mb: 0.5, fontSize: '12px' }} {...props} />
                                                     ),
                                                     p: ({ ...props }) => (
-                                                        <Typography variant="body1" sx={{ mb: 1 }} {...props} />
+                                                        <Typography variant="body2" sx={{ mb: 1, fontSize: '12px', lineHeight: 1.5 }} {...props} />
+                                                    ),
+                                                    strong: ({ ...props }) => (
+                                                        <Box component="strong" sx={{ fontWeight: 600, fontSize: '12px' }} {...props} />
                                                     )
                                                 }}
                                             >
                                                 {analysisResult}
                                             </ReactMarkdown>
                                             <Divider sx={{ my: 2 }} />
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>
                                                 This analysis is based on current market rates and historical shipping data.
                                             </Typography>
                                         </Box>
@@ -1253,64 +1324,7 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                         </Card>
                     )}
 
-                    {/* Company Carrier Summary Section */}
-                    {ratesLoaded && rawRateApiResponseData && rawRateApiResponseData.summary && (
-                        <Card sx={{ mb: 3, bgcolor: 'background.paper' }} elevation={2}>
-                            <CardHeader
-                                title={
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="h6">Your Carrier Results</Typography>
-                                    </Box>
-                                }
-                            />
-                            <CardContent>
-                                <Grid container spacing={2}>
-                                    <Grid item xs={6} sm={3}>
-                                        <Typography variant="body2" color="text.secondary">Carriers Queried</Typography>
-                                        <Typography variant="h6">{rawRateApiResponseData.summary.totalCarriers}</Typography>
-                                    </Grid>
-                                    <Grid item xs={6} sm={3}>
-                                        <Typography variant="body2" color="text.secondary">Successful</Typography>
-                                        <Typography variant="h6" color="success.main">{rawRateApiResponseData.summary.successfulCarriers}</Typography>
-                                    </Grid>
-                                    <Grid item xs={6} sm={3}>
-                                        <Typography variant="body2" color="text.secondary">Total Rates</Typography>
-                                        <Typography variant="h6">{rawRateApiResponseData.summary.totalRates}</Typography>
-                                    </Grid>
-                                    <Grid item xs={6} sm={3}>
-                                        <Typography variant="body2" color="text.secondary">Fetch Time</Typography>
-                                        <Typography variant="h6">{(rawRateApiResponseData.summary.executionTime / 1000).toFixed(1)}s</Typography>
-                                    </Grid>
-                                </Grid>
 
-                                {rawRateApiResponseData.results && rawRateApiResponseData.results.length > 0 && (
-                                    <Box sx={{ mt: 2 }}>
-                                        <Typography variant="subtitle2" sx={{ mb: 1 }}>Your Carrier Results:</Typography>
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                            {rawRateApiResponseData.results.map((result, index) => (
-                                                <Typography
-                                                    key={index}
-                                                    variant="caption"
-                                                    sx={{
-                                                        px: 1.5,
-                                                        py: 0.5,
-                                                        backgroundColor: result.success ? 'success.light' : 'error.light',
-                                                        color: result.success ? 'success.contrastText' : 'error.contrastText',
-                                                        borderRadius: 1,
-                                                        fontSize: '0.75rem'
-                                                    }}
-                                                    title={result.success ? `${result.rates.length} rates in ${result.responseTime}ms` : result.error}
-                                                >
-                                                    {result.success ? '✅' : '❌'} {result.carrier}
-                                                    {result.success && ` (${result.rates.length})`}
-                                                </Typography>
-                                            ))}
-                                        </Box>
-                                    </Box>
-                                )}
-                            </CardContent>
-                        </Card>
-                    )}
 
                     {analysisError && (
                         <Paper elevation={2} sx={{ p: 2, my: 2, backgroundColor: 'error.lighter', color: 'error.dark' }}>
@@ -1319,130 +1333,34 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
                     )}
 
                     {ratesLoaded && filteredRates.length === 0 && !error && (
-                        <Paper sx={{ p: 3, textAlign: 'center', my: 3 }} elevation={2}>
-                            <Typography variant="h6">No Rates Found</Typography>
-                            <Typography>No shipping rates are currently available for the provided details. Please check the addresses and package information, or try again later.</Typography>
-                        </Paper>
+                        <RateErrorDisplay
+                            error="No rates available from your configured carriers."
+                            failedCarriers={failedCarriers}
+                            onRetry={() => {
+                                fetchRatesInternal({
+                                    shipFrom: formData.shipFrom,
+                                    shipTo: formData.shipTo,
+                                    packages: formData.packages,
+                                    shipmentInfo: formData.shipmentInfo
+                                });
+                            }}
+                            onEditShipment={onPrevious}
+                            onContactSupport={() => {
+                                window.open('mailto:support@solushipx.com?subject=No Rates Available', '_blank');
+                            }}
+                        />
                     )}
 
                     <Grid container spacing={3}>
                         {filteredRates.map((rate) => (
                             <Grid item xs={12} md={6} lg={4} key={rate.quoteId}>
-                                <Card className="card mb-4" elevation={2}>
-                                    <CardHeader
-                                        title={
-                                            <Box>
-                                                <Typography variant="h6" component="div">
-                                                    {rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier'}
-                                                </Typography>
-                                            </Box>
-                                        }
-                                        sx={{ pb: 0 }}
-                                    />
-                                    <CardContent>
-                                        <div className="days-container">
-                                            <i className="fa-light fa-truck"></i>
-                                            <div>
-                                                <span className="days-number">{rate.transit?.days !== undefined ? rate.transit.days : 'N/A'}</span>
-                                                <span className="days-text">days</span>
-                                            </div>
-                                        </div>
-                                        <div className="mb-3">
-                                            <div className="text-muted small">Est. Delivery: {rate.transit?.estimatedDelivery || 'N/A'}</div>
-                                        </div>
-                                        <div className="rate-details">
-                                            <div className="rate-price">
-                                                <span className="price-amount">${rate.pricing?.total?.toFixed(2) || '0.00'}</span>
-                                                <span className="price-currency"> {rate.pricing?.currency || 'USD'}</span>
-                                            </div>
-                                            <div className="rate-carrier">
-                                                <span className="carrier-name">{rate.displayCarrier?.name || rate.carrier?.name || 'Unknown Carrier'}</span>
-                                            </div>
-                                        </div>
-                                        {(rate.transit?.guaranteed || rate.guaranteedService) && (rate.pricing?.guarantee || rate.guaranteeCharge) !== undefined && (
-                                            <div className="guarantee-option">
-                                                <div className="form-check">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="form-check-input"
-                                                        id={`guarantee-${rate.quoteId || rate.rateId}`}
-                                                        checked={selectedRate?.quoteId === (rate.quoteId || rate.rateId) && selectedRate.guaranteed}
-                                                        onChange={(e) => handleGuaranteeChange(rate, e.target.checked)}
-                                                    />
-                                                    <label className="form-check-label" htmlFor={`guarantee-${rate.quoteId || rate.rateId}`}>
-                                                        Add Guarantee (+${(rate.pricing?.guarantee || rate.guaranteeCharge || 0).toFixed(2)})
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className={`rate-details-content ${showRateDetails ? 'show' : ''}`}>
-                                            <ul className="rate-details-list">
-                                                <li>
-                                                    <span className="charge-name">Service Mode</span>
-                                                    <span className="charge-amount">{rate.serviceMode || rate.service?.name || (typeof rate.service === 'string' ? rate.service : 'N/A')}</span>
-                                                </li>
-                                                <li>
-                                                    <span className="charge-name">Source System</span>
-                                                    <span className="charge-amount">{rate.sourceCarrier?.name || 'Unknown'}</span>
-                                                </li>
-
-                                                {/* Enhanced billing details display */}
-                                                {rate.pricing?.billingDetails && rate.pricing.billingDetails.length > 0 ? (
-                                                    // Show detailed billing breakdown if available (Canpar)
-                                                    rate.pricing.billingDetails.map((detail, index) => (
-                                                        <li key={index}>
-                                                            <span className="charge-name">{detail.name}</span>
-                                                            <span className="charge-amount">${detail.amount.toFixed(2)}</span>
-                                                        </li>
-                                                    ))
-                                                ) : (
-                                                    // Fallback to standard display for other carriers
-                                                    <>
-                                                        <li>
-                                                            <span className="charge-name">Freight Charges</span>
-                                                            <span className="charge-amount">${(rate.pricing?.baseRate || rate.pricing?.freight || rate.freightCharges || 0).toFixed(2)}</span>
-                                                        </li>
-                                                        <li>
-                                                            <span className="charge-name">Fuel Charges</span>
-                                                            <span className="charge-amount">${(rate.pricing?.fuelSurcharge || rate.pricing?.fuel || rate.fuelCharges || 0).toFixed(2)}</span>
-                                                        </li>
-                                                        <li>
-                                                            <span className="charge-name">Service Charges</span>
-                                                            <span className="charge-amount">${(rate.pricing?.serviceCharges || rate.pricing?.service || rate.serviceCharges || 0).toFixed(2)}</span>
-                                                        </li>
-                                                        {(rate.pricing?.accessorialCharges || rate.pricing?.accessorial || rate.accessorialCharges || 0) > 0 && (
-                                                            <li>
-                                                                <span className="charge-name">Accessorial Charges</span>
-                                                                <span className="charge-amount">${(rate.pricing?.accessorialCharges || rate.pricing?.accessorial || rate.accessorialCharges || 0).toFixed(2)}</span>
-                                                            </li>
-                                                        )}
-                                                        {(rate.pricing?.taxes?.total || rate.pricing?.tax || rate.taxCharges || 0) > 0 && (
-                                                            <li>
-                                                                <span className="charge-name">Tax Charges</span>
-                                                                <span className="charge-amount">${(rate.pricing?.taxes?.total || rate.pricing?.tax || rate.taxCharges || 0).toFixed(2)}</span>
-                                                            </li>
-                                                        )}
-                                                    </>
-                                                )}
-
-                                                {/* Total line */}
-                                                <li style={{ borderTop: '2px solid #dee2e6', paddingTop: '0.5rem', marginTop: '0.5rem', fontWeight: 'bold' }}>
-                                                    <span className="charge-name">Total</span>
-                                                    <span className="charge-amount">${(rate.pricing?.totalCharges || rate.pricing?.total || rate.totalCharges || rate.price || 0).toFixed(2)}</span>
-                                                </li>
-                                            </ul>
-                                        </div>
-                                        <Button
-                                            variant={selectedRate?.quoteId === (rate.quoteId || rate.rateId) ? 'contained' : 'outlined'}
-                                            onClick={() => handleRateSelect(rate)}
-                                            type="button"
-                                            fullWidth
-                                            sx={{ mt: 2 }}
-                                        >
-                                            {selectedRate?.quoteId === (rate.quoteId || rate.rateId) ? 'Selected' : 'Select'}
-                                        </Button>
-                                    </CardContent>
-                                </Card>
+                                <EnhancedRateCard
+                                    rate={rate}
+                                    isSelected={selectedRate?.quoteId === (rate.quoteId || rate.rateId)}
+                                    onSelect={handleRateSelect}
+                                    showDetails={showRateDetails}
+                                    onGuaranteeChange={handleGuaranteeChange}
+                                />
                             </Grid>
                         ))}
                     </Grid>

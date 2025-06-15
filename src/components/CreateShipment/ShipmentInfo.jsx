@@ -68,8 +68,23 @@ const formatTimeForInput = (date) => {
 const isDateTimeInPast = (dateStr, timeStr) => {
     if (!dateStr || !timeStr) return false;
 
-    // Create the selected datetime in EST
-    const selectedDateTime = new Date(`${dateStr}T${timeStr}`);
+    // Create the selected date (without time) in EST timezone
+    const selectedDate = new Date(dateStr + 'T00:00:00');
+    const todayEST = getCurrentDateTimeEST();
+    todayEST.setHours(0, 0, 0, 0);
+
+    // If the selected date is in the future, any time is valid
+    if (selectedDate > todayEST) {
+        return false;
+    }
+
+    // If the selected date is in the past, it's always invalid
+    if (selectedDate < todayEST) {
+        return true;
+    }
+
+    // Only if the selected date is TODAY, check if the time is in the past
+    const selectedDateTime = new Date(`${dateStr}T${timeStr}:00`);
     const now = getCurrentDateTimeEST();
 
     return selectedDateTime < now;
@@ -178,25 +193,60 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
         }
     }, [availableShipmentTypes, loading, formData.shipmentInfo?.shipmentType, userHasChanged]);
 
+    // Ensure serviceLevel is valid for the current shipment type
+    useEffect(() => {
+        const currentServiceLevel = formData.shipmentInfo?.serviceLevel;
+        const shipmentType = formData.shipmentInfo?.shipmentType;
+
+        if (currentServiceLevel && shipmentType) {
+            const courierOptions = ['any', 'economy', 'express', 'priority'];
+            const freightOptions = [
+                'any', 'ltl_standard_sk', 'ltl_economy_lb', 'ltl_economy_sk', 'ltl_expedited_lb',
+                'ltl_expedited_sk', 'ltl_economy_skid', 'ltl_skid_sk', 'ltl_customer_specific',
+                'ltl_standard_class', 'same_day_regular', 'same_day_rush', 'same_day_direct',
+                'same_day_after_hours', 'same_day_direct_weekends', 'next_day_regular',
+                'next_day_rush', 'dedicated_truck_hourly', 'ftl_53_dry_van', 'ftl_24_straight_truck',
+                'ftl_sprinter_van', 'ftl_expedited', 'ftl_standard', 'ftl_economy', 'ftl_flatbed'
+            ];
+
+            const validOptions = shipmentType === 'courier' ? courierOptions : freightOptions;
+
+            // Only reset if the current value is not valid for the current shipment type
+            if (!validOptions.includes(currentServiceLevel)) {
+                console.log('🔄 Resetting invalid serviceLevel:', currentServiceLevel, 'for shipmentType:', shipmentType);
+                updateFormSection('shipmentInfo', { serviceLevel: 'any' });
+            }
+        }
+    }, [formData.shipmentInfo?.shipmentType]); // Remove serviceLevel from dependencies to prevent loops
+
     // Check if no carriers are enabled
     const noCarriersEnabled = !loading && !availableShipmentTypes.courier && !availableShipmentTypes.freight;
 
     // Initialize form with default values
     useEffect(() => {
         const currentData = formData.shipmentInfo || {};
-        if (!currentData.shipmentDate) {
-            const now = getCurrentDateTimeEST();
-            const currentTime = formatTimeForInput(now);
+        const now = getCurrentDateTimeEST();
 
-            updateFormSection('shipmentInfo', {
-                ...currentData,
-                shipmentDate: formatDateForInput(now),
-                earliestPickup: currentData.earliestPickup || currentTime,
-                latestPickup: currentData.latestPickup || '17:00',
-                earliestDelivery: currentData.earliestDelivery || '09:00',
-                latestDelivery: currentData.latestDelivery || '17:00',
-                billType: currentData.billType || 'prepaid'
-            });
+        // Always ensure default values are set
+        const updatedData = {
+            ...currentData,
+            shipmentDate: currentData.shipmentDate || formatDateForInput(now),
+            earliestPickup: currentData.earliestPickup || '09:00',
+            latestPickup: currentData.latestPickup || '17:00',
+            earliestDelivery: currentData.earliestDelivery || '09:00',
+            latestDelivery: currentData.latestDelivery || '17:00',
+            billType: currentData.billType || 'prepaid',
+            serviceLevel: currentData.serviceLevel || 'any'
+        };
+
+        // Only update if there are actual changes
+        const hasChanges = Object.keys(updatedData).some(key =>
+            updatedData[key] !== currentData[key]
+        );
+
+        if (hasChanges) {
+            console.log('🔄 Initializing form with defaults:', updatedData);
+            updateFormSection('shipmentInfo', updatedData);
         }
     }, [formData.shipmentInfo, updateFormSection]);
 
@@ -205,9 +255,19 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
         const fieldName = name || id; // Use name if available, fallback to id
         const newValue = type === 'checkbox' ? e.target.checked : value;
 
-        console.log('🔄 handleInputChange:', { fieldName, newValue, id, name, type });
+        // Add debugging for serviceLevel
+        if (fieldName === 'serviceLevel') {
+            console.log('🎯 SERVICE LEVEL handleInputChange:', {
+                fieldName,
+                newValue,
+                id,
+                name,
+                event: e
+            });
+        }
 
         updateFormSection('shipmentInfo', { [fieldName]: newValue });
+
         if (errors[fieldName]) {
             setErrors(prev => ({ ...prev, [fieldName]: null }));
         }
@@ -215,7 +275,10 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
 
     const handleShipmentTypeChange = (type) => {
         setUserHasChanged(true);
-        updateFormSection('shipmentInfo', { shipmentType: type });
+        updateFormSection('shipmentInfo', {
+            shipmentType: type,
+            serviceLevel: 'any' // Reset service level when shipment type changes
+        });
         if (errors.shipmentType) {
             setErrors(prev => ({ ...prev, shipmentType: null }));
         }
@@ -241,39 +304,39 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
         if (!currentData.shipmentDate) {
             newErrors.shipmentDate = 'Please select a shipment date';
         } else {
-            const selectedDate = new Date(currentData.shipmentDate);
+            // Parse the date string properly and compare dates only (not times)
+            const selectedDate = new Date(currentData.shipmentDate + 'T00:00:00');
             const todayEST = getCurrentDateTimeEST();
             todayEST.setHours(0, 0, 0, 0);
-            selectedDate.setHours(0, 0, 0, 0);
 
             if (selectedDate < todayEST) {
                 newErrors.shipmentDate = 'Shipment date cannot be in the past';
             }
         }
 
-        // Validate pickup times
+        // Validate pickup times only if shipment date is today
         if (currentData.shipmentDate && currentData.earliestPickup) {
             if (isDateTimeInPast(currentData.shipmentDate, currentData.earliestPickup)) {
-                newErrors.earliestPickup = 'Earliest pickup time cannot be in the past';
+                newErrors.earliestPickup = 'Pickup time must be in the future for same-day shipments';
             }
         }
 
         if (currentData.shipmentDate && currentData.latestPickup) {
             if (isDateTimeInPast(currentData.shipmentDate, currentData.latestPickup)) {
-                newErrors.latestPickup = 'Latest pickup time cannot be in the past';
+                newErrors.latestPickup = 'Pickup time must be in the future for same-day shipments';
             }
         }
 
-        // Validate delivery times
+        // Validate delivery times only if shipment date is today
         if (currentData.shipmentDate && currentData.earliestDelivery) {
             if (isDateTimeInPast(currentData.shipmentDate, currentData.earliestDelivery)) {
-                newErrors.earliestDelivery = 'Earliest delivery time cannot be in the past';
+                newErrors.earliestDelivery = 'Delivery time must be in the future for same-day shipments';
             }
         }
 
         if (currentData.shipmentDate && currentData.latestDelivery) {
             if (isDateTimeInPast(currentData.shipmentDate, currentData.latestDelivery)) {
-                newErrors.latestDelivery = 'Latest delivery time cannot be in the past';
+                newErrors.latestDelivery = 'Delivery time must be in the future for same-day shipments';
             }
         }
 
@@ -503,7 +566,12 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
                                     helperText={errors.shipmentDate}
                                     InputLabelProps={{ shrink: true }}
                                     inputProps={{
-                                        min: formatDateForInput(getCurrentDateTimeEST()),
+                                        min: (() => {
+                                            // Get today's date in EST and ensure it's at start of day
+                                            const today = getCurrentDateTimeEST();
+                                            today.setHours(0, 0, 0, 0);
+                                            return formatDateForInput(today);
+                                        })(),
                                         style: { fontSize: '12px' }
                                     }}
                                     FormHelperTextProps={{ sx: { fontSize: '10px' } }}
@@ -545,7 +613,54 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
 
                             <Grid item xs={12} md={6}>
                                 <FormControl fullWidth>
-                                    <InputLabel>Bill Type</InputLabel>
+                                    <InputLabel sx={{ fontSize: '14px' }}>Service Level</InputLabel>
+                                    <Select
+                                        id="serviceLevel"
+                                        name="serviceLevel"
+                                        value={formData.shipmentInfo?.serviceLevel || 'any'}
+                                        onChange={handleInputChange}
+                                        label="Service Level"
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    >
+                                        <MenuItem value="any">Any</MenuItem>
+
+                                        {/* Courier Options */}
+                                        <MenuItem value="economy" sx={{ display: formData.shipmentInfo?.shipmentType === 'courier' ? 'block' : 'none' }}>Economy</MenuItem>
+                                        <MenuItem value="express" sx={{ display: formData.shipmentInfo?.shipmentType === 'courier' ? 'block' : 'none' }}>Express</MenuItem>
+                                        <MenuItem value="priority" sx={{ display: formData.shipmentInfo?.shipmentType === 'courier' ? 'block' : 'none' }}>Priority</MenuItem>
+
+                                        {/* Freight Options */}
+                                        <MenuItem value="ltl_standard_sk" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Standard - SK</MenuItem>
+                                        <MenuItem value="ltl_economy_lb" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Economy - LB</MenuItem>
+                                        <MenuItem value="ltl_economy_sk" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Economy - SK</MenuItem>
+                                        <MenuItem value="ltl_expedited_lb" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Expedited - LB</MenuItem>
+                                        <MenuItem value="ltl_expedited_sk" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Expedited - SK</MenuItem>
+                                        <MenuItem value="ltl_economy_skid" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Economy Skid</MenuItem>
+                                        <MenuItem value="ltl_skid_sk" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Skid - SK</MenuItem>
+                                        <MenuItem value="ltl_customer_specific" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Customer Specific</MenuItem>
+                                        <MenuItem value="ltl_standard_class" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>LTL Standard - Class</MenuItem>
+                                        <MenuItem value="same_day_regular" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Same Day Regular [Booked before 11:00AM]</MenuItem>
+                                        <MenuItem value="same_day_rush" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Same Day Rush - 2 to 4 hrs [Booked after 11:00AM or Downtown Area]</MenuItem>
+                                        <MenuItem value="same_day_direct" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Same Day Direct - Door to Door</MenuItem>
+                                        <MenuItem value="same_day_after_hours" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Same Day After Hours [6:00PM to 6:00AM]</MenuItem>
+                                        <MenuItem value="same_day_direct_weekends" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Same Day Direct [Weekends]</MenuItem>
+                                        <MenuItem value="next_day_regular" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Next Day Regular [Booked after 11:00AM]</MenuItem>
+                                        <MenuItem value="next_day_rush" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Next Day Rush [Downtown Area]</MenuItem>
+                                        <MenuItem value="dedicated_truck_hourly" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>Dedicated Truck - Hourly Services</MenuItem>
+                                        <MenuItem value="ftl_53_dry_van" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL - 53' Dry Van</MenuItem>
+                                        <MenuItem value="ftl_24_straight_truck" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL - 24' Straight Truck</MenuItem>
+                                        <MenuItem value="ftl_sprinter_van" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL - Sprinter Van</MenuItem>
+                                        <MenuItem value="ftl_expedited" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL Expedited</MenuItem>
+                                        <MenuItem value="ftl_standard" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL Standard</MenuItem>
+                                        <MenuItem value="ftl_economy" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL Economy</MenuItem>
+                                        <MenuItem value="ftl_flatbed" sx={{ display: formData.shipmentInfo?.shipmentType === 'freight' ? 'block' : 'none' }}>FTL Flatbed</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+
+                            <Grid item xs={12} md={6}>
+                                <FormControl fullWidth>
+                                    <InputLabel sx={{ fontSize: '14px' }}>Bill Type</InputLabel>
                                     <Select
                                         id="billType"
                                         name="billType"

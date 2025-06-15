@@ -115,6 +115,128 @@ exports.updateNotificationPreferences = updateNotificationPreferences;
 exports.getNotificationPreferences = getNotificationPreferences;
 exports.migrateToCollectionSystem = migrateToCollectionSystem;
 
+// AI Analysis function for rates
+exports.analyzeRatesWithAI = onRequest(
+  {
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    cors: true,
+    region: 'us-central1'
+  },
+  async (req, res) => {
+    cors(req, res, async () => {
+      try {
+        const { rates } = req.body;
+
+        if (!rates || !Array.isArray(rates) || rates.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'No rates provided for analysis'
+          });
+        }
+
+        // Set up streaming response
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        // Prepare rate data for analysis
+        const rateAnalysisData = rates.map(rate => ({
+          carrier: rate.carrier?.name || rate.carrier || 'Unknown',
+          service: rate.service?.name || rate.service || 'Standard',
+          price: rate.pricing?.total || rate.totalCharges || rate.price || 0,
+          currency: rate.pricing?.currency || rate.currency || 'USD',
+          transitDays: rate.transit?.days || rate.transitDays || 0,
+          guaranteed: rate.transit?.guaranteed || rate.guaranteed || false,
+          estimatedDelivery: rate.transit?.estimatedDelivery || rate.estimatedDeliveryDate || null
+        }));
+
+        // Create analysis prompt
+        const prompt = `
+You are a shipping and logistics expert AI assistant. Analyze the following shipping rates and provide insights to help the user make an informed decision.
+
+Rate Data:
+${JSON.stringify(rateAnalysisData, null, 2)}
+
+Please provide a comprehensive analysis including:
+
+## 📊 Rate Overview
+- Total number of rates available
+- Price range (lowest to highest)
+- Average transit time
+
+## 💰 Best Value Analysis
+- Most cost-effective option
+- Best balance of price and speed
+- Premium options and their benefits
+
+## ⚡ Speed Analysis
+- Fastest delivery option
+- Standard delivery timeframes
+- Guaranteed vs non-guaranteed services
+
+## 🎯 Recommendations
+Based on different priorities:
+- **Budget-conscious**: Recommend the most economical option
+- **Time-sensitive**: Recommend the fastest option
+- **Balanced**: Recommend the best value for money
+
+## ⚠️ Important Considerations
+- Any significant price differences and why they might exist
+- Transit time variations between carriers
+- Service level differences
+
+Keep your analysis concise, practical, and focused on helping the user choose the right shipping option for their needs. Use clear formatting with bullet points and sections.
+`;
+
+        try {
+          // Generate streaming response using GenKit
+          const response = await ai.generate({
+            prompt: prompt,
+            config: {
+              temperature: 0.3,
+              maxOutputTokens: 2048,
+            }
+          });
+
+          // Stream the response
+          if (response.text) {
+            // Send the complete response
+            res.write(`data: ${JSON.stringify({ chunk: response.text, success: true })}\n\n`);
+            res.write(`data: ${JSON.stringify({ done: true, success: true })}\n\n`);
+          } else {
+            res.write(`data: ${JSON.stringify({ success: false, message: 'No response generated' })}\n\n`);
+          }
+        } catch (aiError) {
+          console.error('AI Generation Error:', aiError);
+          res.write(`data: ${JSON.stringify({ 
+            success: false, 
+            message: 'AI analysis failed: ' + aiError.message 
+          })}\n\n`);
+        }
+
+        res.end();
+
+      } catch (error) {
+        console.error('AI Analysis Error:', error);
+        
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Failed to analyze rates: ' + error.message
+          });
+        } else {
+          res.write(`data: ${JSON.stringify({ 
+            success: false, 
+            message: 'Analysis failed: ' + error.message 
+          })}\n\n`);
+          res.end();
+        }
+      }
+    });
+  }
+);
+
 // Helper function to map HTTP status codes to Firebase HttpsError codes
 // See: https://firebase.google.com/docs/reference/functions/providers_https_.httpserrorcode
 const mapHttpStatusToFirebaseErrorCode = (httpStatus) => {
