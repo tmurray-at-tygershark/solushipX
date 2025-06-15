@@ -38,6 +38,7 @@ import {
     ArrowForward as ArrowForwardIcon
 } from '@mui/icons-material';
 import './ShipFrom.css';
+import { getCountryFlag } from '../Shipments/utils/shipmentHelpers';
 
 const ShipFrom = ({ onNext, onPrevious }) => {
     const { currentUser } = useAuth();
@@ -468,7 +469,25 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                             }}
                                             onClick={() => handleAddressChange(addressId)}
                                         >
-                                            <CardContent sx={{ p: 2 }}>
+                                            <CardContent sx={{ p: 2, position: 'relative' }}>
+                                                {/* Country Flag */}
+                                                <Box
+                                                    sx={{
+                                                        position: 'absolute',
+                                                        top: 12,
+                                                        right: 12,
+                                                        fontSize: '20px',
+                                                        opacity: 0.8,
+                                                        transition: 'opacity 0.2s ease',
+                                                        '&:hover': {
+                                                            opacity: 1
+                                                        }
+                                                    }}
+                                                    title={address.country === 'US' ? 'United States' : address.country === 'CA' ? 'Canada' : address.country}
+                                                >
+                                                    {getCountryFlag(address.country)}
+                                                </Box>
+
                                                 <Grid container alignItems="center" spacing={2}>
                                                     <Grid item xs={12} sm={4}>
                                                         <Box display="flex" alignItems="center">
@@ -652,7 +671,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                     <Grid container spacing={2}>
                         {/* Address Identification */}
                         <Grid item xs={12}>
-                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, color: '#374151' }}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1, mt: 2, color: '#374151' }}>
                                 Address Information
                             </Typography>
                         </Grid>

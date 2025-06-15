@@ -24,7 +24,6 @@ import {
 import {
     Menu as MenuIcon,
     Search as SearchIcon,
-    Dashboard as DashboardIcon,
     Assessment as AssessmentIcon,
     People as PeopleIcon,
     LocalShipping as LocalShippingIcon,
@@ -591,7 +590,6 @@ const Dashboard = () => {
     }, [modalStack]);
 
     const menuItems = [
-        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', action: () => navigate('/dashboard') },
         { text: 'New Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
         { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
