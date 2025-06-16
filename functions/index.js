@@ -88,6 +88,16 @@ const {
 } = require('./src/scheduleReport');
 const { sendTestReportNotification } = require('./src/sendTestReportNotification');
 
+// Import keep-alive functions for preventing cold starts
+const { 
+    keepAliveEShipPlus, 
+    keepAliveCanpar, 
+    keepAlivePolaris, 
+    keepAliveAllCarriers,
+    warmupCarriersNow,
+    carrierHealthCheck 
+} = require('./src/keepAlive');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -148,6 +158,14 @@ exports.deleteReportSchedule = deleteReportSchedule;
 exports.getCompanyReportSchedules = getCompanyReportSchedules;
 exports.triggerScheduledReport = triggerScheduledReport;
 exports.sendTestReportNotification = sendTestReportNotification;
+
+// Export keep-alive functions for preventing cold starts
+exports.keepAliveEShipPlus = keepAliveEShipPlus;
+exports.keepAliveCanpar = keepAliveCanpar;
+exports.keepAlivePolaris = keepAlivePolaris;
+exports.keepAliveAllCarriers = keepAliveAllCarriers;
+exports.warmupCarriersNow = warmupCarriersNow;
+exports.carrierHealthCheck = carrierHealthCheck;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

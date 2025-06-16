@@ -576,8 +576,6 @@ const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', 
                         height: logoSize,
                         objectFit: 'contain',
                         borderRadius: 1,
-                        border: '1px solid',
-                        borderColor: 'divider',
                         bgcolor: 'background.paper',
                         p: 0.5
                     }}

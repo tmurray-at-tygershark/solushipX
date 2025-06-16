@@ -691,13 +691,37 @@ async function processCanparRateRequest(data) {
 // Force deployment update
 exports.getRatesCanpar = onCall({
     cors: true,
-    timeoutSeconds: 30, // Added timeout configuration for multi-carrier compatibility
-    memory: "256MiB",
-    region: 'us-central1'
+    timeoutSeconds: 45, // Increased timeout for better reliability
+    memory: "512MiB", // Increased memory for better performance
+    region: 'us-central1',
+    minInstances: 1, // Keep 1 instance warm to prevent cold starts
+    maxInstances: 10 // Allow scaling for high demand
 }, async (request) => {
     try {
         const data = request.data;
         logger.info('getRatesCanpar function called');
+        
+        // Check if this is a warmup request from keep-alive system
+        if (data && data._isWarmupRequest) {
+            logger.info('🔥 Canpar warmup request detected - returning quick response');
+            return {
+                success: true,
+                message: 'Canpar function is warm',
+                timestamp: new Date().toISOString(),
+                warmup: true
+            };
+        }
+
+        // Check if this is a keep-alive system call
+        if (request.auth && (request.auth.uid === 'keepalive-system' || request.auth.uid === 'health-check' || request.auth.uid?.includes('warmup'))) {
+            logger.info('🔥 Keep-alive system request detected - returning quick response');
+            return {
+                success: true,
+                message: 'Canpar function is responding',
+                timestamp: new Date().toISOString(),
+                keepalive: true
+            };
+        }
         
         return await processCanparRateRequest(data);
         

@@ -43,7 +43,7 @@ const CARRIER_CONFIG = {
         name: 'eShipPlus',
         system: 'eshipplus',
         functionName: 'getRatesEShipPlus',
-        timeout: 28000, // 28 seconds - eShipPlus can be very slow for complex freight quotes
+        timeout: 50000, // 50 seconds - eShipPlus can be very slow for complex freight quotes, Firebase function has 45s timeout
         translator: {
             toRequest: toEShipPlusRequest,
             fromResponse: mapEShipPlusToUniversal

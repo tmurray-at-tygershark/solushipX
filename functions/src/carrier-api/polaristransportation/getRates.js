@@ -485,13 +485,37 @@ async function validateApiKey(apiKey) {
  */
 exports.getRatesPolarisTransportation = onCall({
     cors: true,
-    timeoutSeconds: 30,
-    memory: "256MiB",
-    region: 'us-central1'
+    timeoutSeconds: 45, // Increased timeout for better reliability
+    memory: "512MiB", // Increased memory for better performance
+    region: 'us-central1',
+    minInstances: 1, // Keep 1 instance warm to prevent cold starts
+    maxInstances: 10 // Allow scaling for high demand
 }, async (request) => {
     logger.info('getRatesPolarisTransportation onCall handler invoked. Auth context:', request.auth ? 'Present' : 'Absent');
     
     try {
+        // Check if this is a warmup request from keep-alive system
+        if (request.data && request.data._isWarmupRequest) {
+            logger.info('🔥 Polaris Transportation warmup request detected - returning quick response');
+            return {
+                success: true,
+                message: 'Polaris Transportation function is warm',
+                timestamp: new Date().toISOString(),
+                warmup: true
+            };
+        }
+
+        // Check if this is a keep-alive system call
+        if (request.auth && (request.auth.uid === 'keepalive-system' || request.auth.uid === 'health-check' || request.auth.uid?.includes('warmup'))) {
+            logger.info('🔥 Keep-alive system request detected - returning quick response');
+            return {
+                success: true,
+                message: 'Polaris Transportation function is responding',
+                timestamp: new Date().toISOString(),
+                keepalive: true
+            };
+        }
+        
         return await processRateRequest(request.data);
     } catch (error) {
         if (error.code && error.httpErrorCode) {

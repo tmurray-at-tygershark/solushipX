@@ -182,12 +182,11 @@ const EnhancedRateCard = ({
                             mr: 2,
                             borderRadius: 1,
                             bgcolor: 'white',
-                            p: 0.5,
-                            border: '1px solid #e2e8f0'
+                            p: 0.5
                         }}
                     />
                     <Box sx={{ flex: 1 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem', mb: 0.5 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, fontSize: '0.95rem', mb: 0.5 }}>
                             {carrierName}
                         </Typography>
                         <Chip
@@ -206,7 +205,7 @@ const EnhancedRateCard = ({
                         <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(59, 130, 246, 0.1)' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                 <AccessTimeIcon sx={{ color: 'primary.main', mr: 0.5, fontSize: '1.2rem' }} />
-                                <Typography variant="h3" sx={{ fontWeight: 700, fontSize: '2rem', color: 'primary.main' }}>
+                                <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.6rem', color: 'primary.main' }}>
                                     {transitDays}
                                 </Typography>
                             </Box>
@@ -220,7 +219,7 @@ const EnhancedRateCard = ({
                     <Grid item xs={6}>
                         <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(16, 185, 129, 0.1)' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                                <Typography variant="h3" sx={{ fontWeight: 700, fontSize: '1.8rem', color: 'success.main' }}>
+                                <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: 'success.main' }}>
                                     {formatPrice(totalPrice)}
                                 </Typography>
                             </Box>

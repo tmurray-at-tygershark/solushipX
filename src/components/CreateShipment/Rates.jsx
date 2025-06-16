@@ -542,18 +542,25 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             console.log(`Using ${companyEligibleCarriers.length} company-configured carriers:`,
                 companyEligibleCarriers.map(c => c.name));
 
-            // Use the company-specific carrier list in multi-carrier fetching
+            // Use the company-specific carrier list in multi-carrier fetching with enhanced timeout handling
             const multiCarrierResult = await fetchMultiCarrierRates(currentFormDataForRateRequest, {
                 customEligibleCarriers: companyEligibleCarriers, // Pass company carriers
                 progressiveResults: true,   // Return results as they arrive
                 includeFailures: true,      // Include failed carriers in results for debugging
+                timeout: 60000,            // 60 second total timeout (increased for cold starts)
+                retryAttempts: 2,          // Retry failed requests
+                retryDelay: 3000,          // 3 second delay between retries
                 onProgress: (progressData) => {
+                    console.log('🔄 Rate fetching progress:', progressData);
                     // Update carrier status as results come in
                     if (progressData.completed) {
                         setCompletedCarriers(prev => [...prev, { name: progressData.carrier, rates: progressData.rates?.length || 0 }]);
                     }
                     if (progressData.failed) {
                         setFailedCarriers(prev => [...prev, { name: progressData.carrier, error: progressData.error }]);
+                    }
+                    if (progressData.retrying) {
+                        console.log(`🔄 Retrying ${progressData.carrier} (attempt ${progressData.attempt}/${progressData.maxAttempts})`);
                     }
                 }
             });

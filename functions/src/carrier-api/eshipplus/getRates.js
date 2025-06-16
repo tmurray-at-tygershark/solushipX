@@ -280,13 +280,38 @@ console.log('LOG: getRates.js - processRateRequest defined.');
 console.log('LOG: getRates.js - Setting up exports.getRatesEShipPlus.');
 exports.getRatesEShipPlus = onCall({
   cors: true,
-  timeoutSeconds: 30,
-  memory: "256MiB",
-  region: 'us-central1' // Explicitly set region
+  timeoutSeconds: 45, // Increased timeout for better reliability
+  memory: "512MiB", // Increased memory for better performance
+  region: 'us-central1',
+  minInstances: 1, // Keep 1 instance warm to prevent cold starts
+  maxInstances: 10 // Allow scaling for high demand
 }, async (request) => {
   console.log('LOG: exports.getRatesEShipPlus - onCall handler invoked.');
   logger.info('LOG: exports.getRatesEShipPlus - INFO: onCall handler invoked. Auth context:', request.auth ? 'Present' : 'Absent');
+  
   try {
+    // Check if this is a warmup request from keep-alive system
+    if (request.data && request.data._isWarmupRequest) {
+      logger.info('🔥 eShipPlus warmup request detected - returning quick response');
+      return {
+        success: true,
+        message: 'eShipPlus function is warm',
+        timestamp: new Date().toISOString(),
+        warmup: true
+      };
+    }
+
+    // Check if this is a keep-alive system call
+    if (request.auth && (request.auth.uid === 'keepalive-system' || request.auth.uid === 'health-check' || request.auth.uid?.includes('warmup'))) {
+      logger.info('🔥 Keep-alive system request detected - returning quick response');
+      return {
+        success: true,
+        message: 'eShipPlus function is responding',
+        timestamp: new Date().toISOString(),
+        keepalive: true
+      };
+    }
+
     // request.data already contains the JSON payload from the client
     return await processRateRequest(request.data);
   } catch (error) {
