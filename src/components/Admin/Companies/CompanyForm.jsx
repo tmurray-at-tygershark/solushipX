@@ -59,6 +59,7 @@ const CompanyForm = () => {
     const [formData, setFormData] = useState({
         name: '',
         companyID: '',
+        website: '',
         status: 'active',
         ownerID: '',
         adminUserIdsForForm: [],
@@ -171,6 +172,7 @@ const CompanyForm = () => {
                     ...prev, // Keep any other existing form data if necessary, though most should come from DB
                     name: companyDataFromDb.name || '',
                     companyID: companyDataFromDb.companyID || '',
+                    website: companyDataFromDb.website || '',
                     status: companyDataFromDb.status || 'active',
                     ownerID: companyDataFromDb.ownerID || '',
                     adminUserIdsForForm: currentCompanyAdminIds, // Set directly
@@ -185,6 +187,7 @@ const CompanyForm = () => {
                 setFormData({
                     name: '',
                     companyID: '',
+                    website: '',
                     status: 'active',
                     ownerID: '',
                     adminUserIdsForForm: [],
@@ -348,6 +351,7 @@ const CompanyForm = () => {
             const companyCoreData = {
                 name: formData.name.trim(),
                 companyID: humanReadableCompanyID,
+                website: formData.website.trim(),
                 status: formData.status,
                 ownerID: formData.ownerID,
                 updatedAt: now,
@@ -680,6 +684,18 @@ const CompanyForm = () => {
                             disabled={isEditMode && formData.companyID !== ''}
                             error={Boolean(companyIdError)}
                             helperText={companyIdError || (isCheckingCompanyId ? 'Checking availability...' : '')}
+                        />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                        <TextField
+                            fullWidth
+                            label="Website URL"
+                            name="website"
+                            type="url"
+                            value={formData.website}
+                            onChange={handleCompanyDataChange}
+                            placeholder="https://www.example.com"
+                            helperText="Company website (optional)"
                         />
                     </Grid>
                     <Grid item xs={12} md={6}>

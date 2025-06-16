@@ -111,7 +111,8 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                     collection(db, 'addressBook'),
                     where('addressClass', '==', 'company'),
                     where('addressType', '==', 'origin'),
-                    where('addressClassID', '==', companyIdForAddress)
+                    where('addressClassID', '==', companyIdForAddress),
+                    where('status', '!=', 'deleted')
                 );
                 const addressesSnapshot = await getDocs(addressesQuery);
                 const fetchedAddresses = addressesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -291,7 +292,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 await Promise.all(batchUpdates);
             }
 
-            const addressDataToSave = { ...newAddress, addressClass: 'company', addressType: 'origin', addressClassID: companyIdForAddress, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+            const addressDataToSave = { ...newAddress, addressClass: 'company', addressType: 'origin', addressClassID: companyIdForAddress, status: 'active', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
             const docRef = await addDoc(collection(db, 'addressBook'), addressDataToSave);
             const newSavedAddress = { ...addressDataToSave, id: docRef.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 

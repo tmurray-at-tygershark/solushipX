@@ -167,7 +167,8 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 collection(db, 'addressBook'),
                 where('addressClass', '==', 'customer'),
                 where('addressType', '==', 'destination'),
-                where('addressClassID', '==', localCustomerID)
+                where('addressClassID', '==', localCustomerID),
+                where('status', '!=', 'deleted')
             );
             const addressesSnapshot = await getDocs(addressesQuery);
 
@@ -365,6 +366,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 addressClass: 'customer',
                 addressClassID: customerID,
                 addressType: 'destination',
+                status: 'active',
                 nickname: addressData.nickname || '',
                 companyName: addressData.companyName || selectedCustomerState.company || selectedCustomerState.name || '',
                 firstName: addressData.firstName || '',

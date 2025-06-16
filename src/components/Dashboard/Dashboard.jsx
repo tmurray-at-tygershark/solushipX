@@ -73,6 +73,9 @@ const NotificationPreferencesComponent = lazy(() => import('../NotificationPrefe
 // Lazy load the Profile component for the modal
 const ProfileComponent = lazy(() => import('../Profile/Profile'));
 
+// Lazy load the Company component for the modal
+const CompanyComponent = lazy(() => import('../Company/Company'));
+
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
 
@@ -307,6 +310,7 @@ const Dashboard = () => {
     const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
     const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
 
@@ -637,6 +641,7 @@ const Dashboard = () => {
     ];
 
     const profileMenuItems = [
+        { text: 'My Company', icon: <BusinessIcon />, action: () => setIsCompanyModalOpen(true) },
         { text: 'Profile', icon: <AccountCircleIcon />, action: () => setIsProfileModalOpen(true) },
     ];
 
@@ -843,9 +848,9 @@ const Dashboard = () => {
                                 >
                                     <ListItemIcon sx={{
                                         color: 'rgba(255,255,255,0.8) !important',
-                                        minWidth: { xs: 40, sm: 48 },
+                                        minWidth: { xs: 40, sm: 44, md: 44 },
                                         '& .MuiSvgIcon-root': {
-                                            fontSize: { xs: '1.3rem', sm: '1.5rem' }
+                                            fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.4rem' }
                                         }
                                     }}>
                                         {item.icon}
@@ -853,7 +858,7 @@ const Dashboard = () => {
                                     <ListItemText
                                         primary={item.text}
                                         primaryTypographyProps={{
-                                            fontSize: { xs: '0.9rem', sm: '1rem' },
+                                            fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
                                             fontWeight: 500,
                                             color: 'white'
                                         }}
@@ -897,14 +902,17 @@ const Dashboard = () => {
                                     >
                                         <ListItemIcon sx={{
                                             color: 'rgba(255,255,255,0.8) !important',
-                                            minWidth: { xs: 40, sm: 48 }
+                                            minWidth: { xs: 40, sm: 44, md: 44 },
+                                            '& .MuiSvgIcon-root': {
+                                                fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.4rem' }
+                                            }
                                         }}>
                                             {item.icon}
                                         </ListItemIcon>
                                         <ListItemText
                                             primary={item.text}
                                             primaryTypographyProps={{
-                                                fontSize: { xs: '0.9rem', sm: '1rem' },
+                                                fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
                                                 fontWeight: 500,
                                                 color: 'white'
                                             }}
@@ -940,7 +948,7 @@ const Dashboard = () => {
                             <ListItemText
                                 primary="Logout"
                                 primaryTypographyProps={{
-                                    fontSize: { xs: '0.9rem', sm: '1rem' },
+                                    fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
                                     fontWeight: 600,
                                     color: 'white'
                                 }}
@@ -1320,6 +1328,49 @@ const Dashboard = () => {
                         <ProfileComponent
                             isModal={true}
                             onClose={() => setIsProfileModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Company Fullscreen Modal */}
+            <Dialog
+                open={isCompanyModalOpen}
+                onClose={() => setIsCompanyModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CompanyComponent
+                            isModal={true}
+                            onClose={() => setIsCompanyModalOpen(false)}
                             showCloseButton={true}
                         />
                     </LazyComponentWrapper>

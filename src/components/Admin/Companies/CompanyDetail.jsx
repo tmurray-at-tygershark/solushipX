@@ -100,19 +100,19 @@ const CompanyDetail = () => {
 
             const addressBookRef = collection(db, 'addressBook');
             if (companyData.companyID) {
-                const mainContactQuery = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', companyData.companyID), where('addressType', '==', 'contact'));
+                const mainContactQuery = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', companyData.companyID), where('addressType', '==', 'contact'), where('status', '!=', 'deleted'));
                 const mainContactSnapshot = await getDocs(mainContactQuery);
                 if (!mainContactSnapshot.empty) {
                     setMainContact({ id: mainContactSnapshot.docs[0].id, ...mainContactSnapshot.docs[0].data() });
                 }
-                const billingQuery = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', companyData.companyID), where('addressType', '==', 'billing'));
+                const billingQuery = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', companyData.companyID), where('addressType', '==', 'billing'), where('status', '!=', 'deleted'));
                 const billingSnapshot = await getDocs(billingQuery);
                 if (!billingSnapshot.empty) {
                     setBillingAddress({ id: billingSnapshot.docs[0].id, ...billingSnapshot.docs[0].data() });
                 } else {
                     setBillingAddress(null);
                 }
-                const originsQuery = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', companyData.companyID), where('addressType', '==', 'origin'));
+                const originsQuery = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', companyData.companyID), where('addressType', '==', 'origin'), where('status', '!=', 'deleted'));
                 const originsSnapshot = await getDocs(originsQuery);
                 setOrigins(originsSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             }
@@ -352,6 +352,27 @@ const CompanyDetail = () => {
                         <Grid item xs={12} sm={4}>
                             <Typography variant="subtitle2" color="text.secondary">Created</Typography>
                             <Typography variant="body1">{formatDateString(company.createdAt)}</Typography>
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                            <Typography variant="subtitle2" color="text.secondary">Website</Typography>
+                            {company.website ? (
+                                <Typography
+                                    variant="body1"
+                                    component="a"
+                                    href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    sx={{
+                                        color: 'primary.main',
+                                        textDecoration: 'none',
+                                        '&:hover': { textDecoration: 'underline' }
+                                    }}
+                                >
+                                    {company.website}
+                                </Typography>
+                            ) : (
+                                <Typography variant="body1" color="text.secondary">No website provided</Typography>
+                            )}
                         </Grid>
                     </Grid>
                 </Paper>
