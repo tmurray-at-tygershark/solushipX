@@ -466,6 +466,20 @@ const Dashboard = () => {
         }
     }, [location.search, loading, companyLoading]);
 
+    // Listen for custom events to open shipments modal (from Review component)
+    useEffect(() => {
+        const handleOpenShipmentsModal = () => {
+            console.log('Received openShipmentsModal event, opening shipments modal');
+            setIsShipmentsModalOpen(true);
+        };
+
+        window.addEventListener('openShipmentsModal', handleOpenShipmentsModal);
+
+        return () => {
+            window.removeEventListener('openShipmentsModal', handleOpenShipmentsModal);
+        };
+    }, []);
+
     // Calculate status counts for the Globe
     const statusCounts = useMemo(() => {
         return shipments.reduce((counts, shipment) => {
@@ -618,8 +632,8 @@ const Dashboard = () => {
                 background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
             }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <IconButton onClick={() => setIsNavDrawerOpen(true)} sx={{ color: 'white' }}>
-                        <MenuIcon />
+                    <IconButton onClick={() => setIsNavDrawerOpen(true)} sx={{ color: 'white', p: 1.5 }}>
+                        <MenuIcon sx={{ fontSize: '2rem' }} />
                     </IconButton>
                     <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 28, cursor: 'pointer' }} onClick={() => navigate('/dashboard')} />
                 </Box>

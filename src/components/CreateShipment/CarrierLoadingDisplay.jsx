@@ -3,6 +3,8 @@ import { Box, Typography, CircularProgress, Fade, Chip, Grid } from '@mui/materi
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
 
 const CarrierLoadingDisplay = ({
     loadingCarriers = [],
@@ -43,32 +45,60 @@ const CarrierLoadingDisplay = ({
         return () => clearInterval(carrierInterval);
     }, [isLoading, loadingCarriers.length]);
 
-    const getCarrierLogo = (carrierName) => {
-        // Enhanced carrier logo detection for loading display
-        // Check for eShip Plus patterns in carrier names
-        const isEshipPlus =
-            carrierName === 'eShip Plus' ||
-            carrierName === 'ESHIPPLUS' ||
-            carrierName.toLowerCase().includes('eship') ||
-            carrierName.toLowerCase().includes('freight') ||
-            carrierName.toLowerCase().includes('ltl');
+    // State to store carrier logos fetched from database
+    const [carrierLogos, setCarrierLogos] = useState({});
 
-        if (isEshipPlus) {
-            return '/images/carrier-badges/eship.png';
-        }
+    // Fetch carrier logos from database
+    useEffect(() => {
+        const fetchCarrierLogos = async () => {
+            if (loadingCarriers.length === 0) return;
 
-        const logoMap = {
-            'eShip Plus': '/images/carrier-badges/eship.png',
-            'Canpar': '/images/carrier-badges/canpar.png',
-            'Polaris Transportation': '/images/carrier-badges/polaristransportation.png',
-            'FedEx': '/images/carrier-badges/fedex.png',
-            'UPS': '/images/carrier-badges/ups.png',
-            'DHL': '/images/carrier-badges/dhl.png',
-            'Canada Post': '/images/carrier-badges/canadapost.png',
-            'Purolator': '/images/carrier-badges/purolator.png',
-            'USPS': '/images/carrier-badges/usps.png'
+            const logoMap = {};
+
+            for (const carrierName of loadingCarriers) {
+                try {
+                    // Convert carrier name to uppercase for database query
+                    const upperCaseCarrierID = carrierName.toUpperCase();
+
+                    // Query carriers collection by carrierID field
+                    const carriersQuery = query(
+                        collection(db, 'carriers'),
+                        where('carrierID', '==', upperCaseCarrierID),
+                        limit(1)
+                    );
+
+                    const carriersSnapshot = await getDocs(carriersQuery);
+
+                    if (!carriersSnapshot.empty) {
+                        const carrierDoc = carriersSnapshot.docs[0];
+                        const carrierData = carrierDoc.data();
+                        const logoURL = carrierData.logoURL;
+
+                        if (logoURL) {
+                            logoMap[carrierName] = logoURL;
+                        } else {
+                            // Fallback to default logo
+                            logoMap[carrierName] = '/images/carrier-badges/solushipx.png';
+                        }
+                    } else {
+                        // Fallback to default logo if carrier not found
+                        logoMap[carrierName] = '/images/carrier-badges/solushipx.png';
+                    }
+                } catch (error) {
+                    console.error(`Error fetching logo for ${carrierName}:`, error);
+                    // Fallback to default logo on error
+                    logoMap[carrierName] = '/images/carrier-badges/solushipx.png';
+                }
+            }
+
+            setCarrierLogos(logoMap);
         };
-        return logoMap[carrierName] || '/images/carrier-badges/solushipx.png';
+
+        fetchCarrierLogos();
+    }, [loadingCarriers]);
+
+    const getCarrierLogo = (carrierName) => {
+        return carrierLogos[carrierName] || '/images/carrier-badges/solushipx.png';
     };
 
     const getCarrierStatus = (carrierName) => {
@@ -147,7 +177,12 @@ const CarrierLoadingDisplay = ({
                                             transition: 'all 0.3s ease',
                                             transform: isCurrentlyFetching ? 'scale(1.02)' : 'scale(1)',
                                             minWidth: 100,
-                                            minHeight: 80
+                                            minHeight: 80,
+                                            backgroundColor: 'transparent',
+                                            border: '1px solid #000',
+                                            '&:hover': {
+                                                backgroundColor: 'transparent'
+                                            }
                                         }}
                                     >
                                         {/* Carrier Logo */}
@@ -173,7 +208,7 @@ const CarrierLoadingDisplay = ({
                                                 fontWeight: 500,
                                                 fontSize: '10px',
                                                 textAlign: 'center',
-                                                color: status === 'failed' ? 'error.main' : 'text.secondary',
+                                                color: status === 'failed' ? 'error.main' : '#000',
                                                 lineHeight: 1.2
                                             }}
                                         >
@@ -209,8 +244,9 @@ const CarrierLoadingDisplay = ({
                                                     right: 0,
                                                     bottom: 0,
                                                     borderRadius: 2,
-                                                    background: 'linear-gradient(45deg, transparent 30%, rgba(59, 130, 246, 0.08) 50%, transparent 70%)',
-                                                    animation: 'shimmer 2s infinite'
+                                                    background: 'transparent',
+                                                    border: '2px solid #000',
+                                                    animation: 'pulse 1.5s infinite'
                                                 }}
                                             />
                                         )}

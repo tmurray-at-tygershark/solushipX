@@ -872,7 +872,24 @@ const ShipmentInfo = ({ onNext, onPrevious, isModal = false, onClose = null }) =
                                                 value={formData.shipmentInfo?.signatureOptions || ''}
                                                 onChange={handleInputChange}
                                                 label="Signature Options"
-                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                displayEmpty
+                                                renderValue={(selected) => {
+                                                    if (!selected || selected === '') {
+                                                        return <span style={{ fontSize: '12px', color: '#666' }}>No Signature Required</span>;
+                                                    }
+                                                    const selectedOption = {
+                                                        'standard': 'Signature Required',
+                                                        'adult': 'Adult Signature Required'
+                                                    }[selected];
+                                                    return <span style={{ fontSize: '12px' }}>{selectedOption}</span>;
+                                                }}
+                                                sx={{
+                                                    '& .MuiSelect-select': {
+                                                        fontSize: '12px',
+                                                        display: 'flex',
+                                                        alignItems: 'center'
+                                                    }
+                                                }}
                                             >
                                                 <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
                                                 <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>

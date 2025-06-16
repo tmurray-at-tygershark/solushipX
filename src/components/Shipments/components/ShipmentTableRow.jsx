@@ -37,7 +37,7 @@ const ShipmentTableRow = ({
 
     // Get tracking number
     const getTrackingNumber = () => {
-        return shipment.trackingNumber ||
+        const trackingNumber = shipment.trackingNumber ||
             shipment.selectedRate?.trackingNumber ||
             shipment.selectedRate?.TrackingNumber ||
             shipment.selectedRateRef?.trackingNumber ||
@@ -54,6 +54,8 @@ const ShipmentTableRow = ({
             shipment.carrierTrackingData?.bookingReferenceNumber ||
             shipment.carrierBookingConfirmation?.bookingReference ||
             '';
+
+        return trackingNumber;
     };
 
     // Get carrier name with eShipPlus detection
@@ -62,6 +64,8 @@ const ShipmentTableRow = ({
             shipment.selectedRateRef?.carrier ||
             shipment.selectedRate?.carrier ||
             shipment.carrier || 'N/A';
+
+
 
         // Enhanced eShipPlus detection
         const isEShipPlus =

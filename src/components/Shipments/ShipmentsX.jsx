@@ -535,10 +535,39 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
                     if (selectedRate) {
                         carrierMap[shipmentId] = {
+                            // Basic carrier information
                             carrier: selectedRate.carrier,
                             service: selectedRate.service,
                             totalCharges: selectedRate.totalCharges,
-                            transitDays: selectedRate.transitDays
+                            transitDays: selectedRate.transitDays,
+
+                            // Critical fields for eShip Plus detection and carrier display
+                            displayCarrierId: selectedRate.displayCarrierId,
+                            sourceCarrierName: selectedRate.sourceCarrierName,
+                            displayCarrier: selectedRate.displayCarrier,
+                            sourceCarrier: selectedRate.sourceCarrier,
+                            carrierKey: selectedRate.carrierKey,
+                            carrierId: selectedRate.carrierId,
+                            carrierScac: selectedRate.carrierScac,
+
+                            // Service information
+                            serviceCode: selectedRate.serviceCode,
+                            serviceType: selectedRate.serviceType,
+                            serviceMode: selectedRate.serviceMode,
+
+                            // Pricing breakdown
+                            freightCharges: selectedRate.freightCharges,
+                            fuelCharges: selectedRate.fuelCharges,
+                            accessorialCharges: selectedRate.accessorialCharges,
+
+                            // Transit information
+                            estimatedDeliveryDate: selectedRate.estimatedDeliveryDate,
+                            guaranteed: selectedRate.guaranteed,
+
+                            // Rate metadata
+                            rateId: selectedRate.rateId,
+                            quoteId: selectedRate.quoteId,
+                            status: selectedRate.status
                         };
                     }
                 }

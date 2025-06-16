@@ -55,7 +55,7 @@ export const initialFormState = {
         latestDeliveryTime: '17:00',
         dangerousGoodsType: 'none',
         signatureServiceType: 'none',
-        signatureRequired: true,
+        signatureRequired: false,
         holdForPickup: false,
         saturdayDelivery: false,
         notes: ''
