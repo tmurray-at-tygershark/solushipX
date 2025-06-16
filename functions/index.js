@@ -70,6 +70,13 @@ const {
   migrateToCollectionSystem
 } = require('./src/notifications/emailService');
 
+// Import AI agent functions
+const { createShippingOrigin } = require('./src/createShippingOrigin');
+const { createCustomer } = require('./src/createCustomer');
+const { createCustomerDestination } = require('./src/createCustomerDestination');
+const { trackShipment } = require('./src/trackShipment');
+const { getRatesUniversal } = require('./src/getRatesUniversal');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -114,6 +121,13 @@ exports.sendCustomerNoteNotification = sendCustomerNoteNotification;
 exports.updateNotificationPreferences = updateNotificationPreferences;
 exports.getNotificationPreferences = getNotificationPreferences;
 exports.migrateToCollectionSystem = migrateToCollectionSystem;
+
+// Export AI agent functions
+exports.createShippingOrigin = createShippingOrigin;
+exports.createCustomer = createCustomer;
+exports.createCustomerDestination = createCustomerDestination;
+exports.trackShipment = trackShipment;
+exports.getRatesUniversal = getRatesUniversal;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

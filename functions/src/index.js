@@ -51,6 +51,14 @@ const canparFunctions = require('./carrier-api/canpar');
 // Import universal booking function
 const { bookRateUniversal } = require('./bookRateUniversal');
 
+// Import AI agent functions
+const { createShippingOrigin } = require('./createShippingOrigin');
+const { createCustomer } = require('./createCustomer');
+const { createCustomerDestination } = require('./createCustomerDestination');
+const { trackShipment } = require('./trackShipment');
+const { getRatesUniversal } = require('./getRatesUniversal');
+console.log('LOG-MAIN-INDEX: AI agent functions imported.');
+
 // Initialize Express app
 const app = express();
 app.use(cors({ origin: true }));
@@ -115,6 +123,22 @@ if (carrierApiFunctions && carrierApiFunctions.getRatesCanpar) {
 // Universal booking function
 exports.bookRateUniversal = bookRateUniversal;
 console.log('LOG-MAIN-INDEX: exports.bookRateUniversal defined.');
+
+// AI Agent functions
+exports.createShippingOrigin = createShippingOrigin;
+console.log('LOG-MAIN-INDEX: exports.createShippingOrigin defined.');
+
+exports.createCustomer = createCustomer;
+console.log('LOG-MAIN-INDEX: exports.createCustomer defined.');
+
+exports.createCustomerDestination = createCustomerDestination;
+console.log('LOG-MAIN-INDEX: exports.createCustomerDestination defined.');
+
+exports.trackShipment = trackShipment;
+console.log('LOG-MAIN-INDEX: exports.trackShipment defined.');
+
+exports.getRatesUniversal = getRatesUniversal;
+console.log('LOG-MAIN-INDEX: exports.getRatesUniversal defined.');
 
 // Functions from edi-processing.js
 if (ediProcessingFunctions && ediProcessingFunctions.onFileUploaded) {

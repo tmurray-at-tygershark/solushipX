@@ -73,6 +73,233 @@ const ShipmentAgent = ({
                 return { error: e.message };
             }
         },
+
+        // ===== SHIPPING ORIGINS MANAGEMENT =====
+        createShippingOrigin: async ({ companyId, originData }) => {
+            if (!companyId) return { error: 'Missing companyId' };
+            if (!originData) return { error: 'Missing originData' };
+            try {
+                const fn = httpsCallable(getFunctions(), 'createShippingOrigin');
+                const res = await fn({ companyId, originData });
+                return { result: res.data };
+            } catch (e) {
+                return { error: e.message };
+            }
+        },
+
+        // ===== CUSTOMER MANAGEMENT =====
+        createCustomer: async ({ companyId, customerData }) => {
+            if (!companyId) return { error: 'Missing companyId' };
+            if (!customerData) return { error: 'Missing customerData' };
+            try {
+                const fn = httpsCallable(getFunctions(), 'createCustomer');
+                const res = await fn({ companyId, customerData });
+                return { result: res.data };
+            } catch (e) {
+                return { error: e.message };
+            }
+        },
+
+        createCustomerDestination: async ({ companyId, customerId, destinationData }) => {
+            if (!companyId) return { error: 'Missing companyId' };
+            if (!customerId) return { error: 'Missing customerId' };
+            if (!destinationData) return { error: 'Missing destinationData' };
+            try {
+                const fn = httpsCallable(getFunctions(), 'createCustomerDestination');
+                const res = await fn({ companyId, customerId, destinationData });
+                return { result: res.data };
+            } catch (e) {
+                return { error: e.message };
+            }
+        },
+
+        // ===== SHIPMENT TRACKING =====
+        trackShipment: async ({ identifier, companyId }) => {
+            if (!identifier) return { error: 'Missing identifier (shipment ID or tracking number)' };
+
+            try {
+                console.log(`ShipmentAgent: Tracking shipment with identifier: ${identifier}`);
+
+                let isSolushipXId = identifier.startsWith('IC-') || identifier.startsWith('SID-');
+                let foundShipment = null;
+
+                if (isSolushipXId) {
+                    console.log(`ShipmentAgent: Identified ${identifier} as SolushipX ID.`);
+
+                    // Query for shipment by shipmentID field (same as Dashboard tracking)
+                    const shipmentsRef = collection(db, 'shipments');
+                    const q = query(shipmentsRef, where('shipmentID', '==', identifier));
+                    const querySnapshot = await getDocs(q);
+
+                    if (!querySnapshot.empty) {
+                        foundShipment = querySnapshot.docs[0];
+                        console.log(`ShipmentAgent: Found SolushipX shipment with ID "${identifier}"`);
+                    } else {
+                        console.log(`ShipmentAgent: SolushipX ID "${identifier}" not found in Firestore.`);
+                        return { error: `SolushipX shipment "${identifier}" not found. Please verify the shipment ID is correct.` };
+                    }
+                } else {
+                    // For non-SolushipX IDs, try to find if this tracking number belongs to an existing shipment
+                    console.log(`ShipmentAgent: Checking if "${identifier}" is a tracking number for an existing SolushipX shipment.`);
+
+                    const shipmentsRef = collection(db, 'shipments');
+
+                    // Try multiple tracking number fields that might contain this value (same as Dashboard tracking)
+                    const trackingQueries = [
+                        query(shipmentsRef, where('trackingNumber', '==', identifier)),
+                        query(shipmentsRef, where('selectedRateRef.Barcode', '==', identifier)),
+                        query(shipmentsRef, where('selectedRate.Barcode', '==', identifier)),
+                        query(shipmentsRef, where('carrierBookingConfirmation.trackingNumber', '==', identifier)),
+                        query(shipmentsRef, where('selectedRateRef.trackingNumber', '==', identifier)),
+                        query(shipmentsRef, where('selectedRate.trackingNumber', '==', identifier)),
+                        query(shipmentsRef, where('bookingReferenceNumber', '==', identifier)),
+                        query(shipmentsRef, where('selectedRateRef.BookingReferenceNumber', '==', identifier)),
+                        query(shipmentsRef, where('selectedRate.BookingReferenceNumber', '==', identifier)),
+                        query(shipmentsRef, where('carrierBookingConfirmation.confirmationNumber', '==', identifier)),
+                        query(shipmentsRef, where('carrierBookingConfirmation.proNumber', '==', identifier))
+                    ];
+
+                    for (const q of trackingQueries) {
+                        try {
+                            const querySnapshot = await getDocs(q);
+                            if (!querySnapshot.empty) {
+                                foundShipment = querySnapshot.docs[0];
+                                console.log(`ShipmentAgent: Found SolushipX shipment with tracking number "${identifier}"`);
+                                break;
+                            }
+                        } catch (queryError) {
+                            console.warn(`ShipmentAgent: Query failed (likely due to missing index):`, queryError.message);
+                            // Continue to next query
+                        }
+                    }
+
+                    if (!foundShipment) {
+                        console.log(`ShipmentAgent: No SolushipX shipment found for "${identifier}".`);
+                        return { error: `No tracking information found for "${identifier}". Please verify this is a valid SolushipX shipment ID or tracking number.` };
+                    }
+                }
+
+                // If we found a shipment, format the data for the AI
+                if (foundShipment) {
+                    const data = { id: foundShipment.id, ...foundShipment.data() };
+
+                    // Extract carrier tracking number from the shipment data
+                    const carrierTrackingNumber = data.selectedRateRef?.Barcode ||
+                        data.selectedRate?.Barcode ||
+                        data.carrierBookingConfirmation?.trackingNumber ||
+                        data.selectedRateRef?.trackingNumber ||
+                        data.selectedRate?.trackingNumber ||
+                        data.bookingReferenceNumber ||
+                        data.selectedRateRef?.BookingReferenceNumber ||
+                        data.selectedRate?.BookingReferenceNumber ||
+                        data.carrierBookingConfirmation?.confirmationNumber ||
+                        data.carrierBookingConfirmation?.proNumber;
+
+                    // Determine carrier for display
+                    let carrierName = data.selectedRateRef?.displayCarrierId || data.selectedRate?.displayCarrierId ||
+                        data.selectedRateRef?.carrier || data.selectedRate?.carrier || data.carrier;
+
+                    if (data.selectedRateRef?.sourceCarrierName) {
+                        carrierName = data.selectedRateRef.sourceCarrierName;
+                    }
+
+                    // Enhanced carrier detection for eShipPlus
+                    if (data.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                        data.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                        data.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+                        data.selectedRate?.sourceCarrierName === 'eShipPlus') {
+                        carrierName = 'eShipPlus';
+                    } else if (carrierName) {
+                        const dcLower = carrierName.toLowerCase();
+                        if (dcLower.includes('canpar')) carrierName = 'Canpar';
+                        else if (dcLower.includes('eshipplus') || dcLower.includes('e-ship') || carrierName === 'ESHIPPLUS') {
+                            carrierName = 'eShipPlus';
+                        }
+                    }
+
+                    // Format the response for the AI
+                    const trackingInfo = {
+                        shipment: {
+                            id: foundShipment.id,
+                            shipmentID: data.shipmentID,
+                            status: data.status,
+                            carrier: carrierName,
+                            trackingNumber: carrierTrackingNumber,
+                            origin: data.shipFrom,
+                            destination: data.shipTo,
+                            packages: data.packages || data.items,
+                            createdAt: data.createdAt,
+                            estimatedDelivery: data.carrierBookingConfirmation?.estimatedDeliveryDate || data.selectedRate?.estimatedDeliveryDate,
+                            actualDelivery: data.actualDelivery
+                        },
+                        success: true
+                    };
+
+                    console.log(`ShipmentAgent: Successfully found and formatted shipment data`);
+                    return { result: trackingInfo };
+                }
+
+                return { error: `No shipment found with identifier: ${identifier}` };
+
+            } catch (e) {
+                console.error('ShipmentAgent: Error tracking shipment:', e);
+                return { error: e.message };
+            }
+        },
+
+        getShipmentStatus: async ({ shipmentId, trackingNumber, carrier }) => {
+            if (!shipmentId && !trackingNumber) return { error: 'Either shipmentId or trackingNumber is required' };
+            try {
+                const fn = httpsCallable(getFunctions(), 'checkShipmentStatus');
+                const res = await fn({ shipmentId, trackingNumber, carrier });
+                return { result: res.data };
+            } catch (e) {
+                return { error: e.message };
+            }
+        },
+
+        // ===== UNIVERSAL RATE FETCHING =====
+        getRatesUniversal: async ({ companyId, originAddress, destinationAddress, packages, shipmentInfo }) => {
+            if (!companyId) return { error: 'Missing companyId' };
+            if (!originAddress) return { error: 'Missing originAddress' };
+            if (!destinationAddress) return { error: 'Missing destinationAddress' };
+            if (!packages || !packages.length) return { error: 'Missing package information' };
+
+            try {
+                const fn = httpsCallable(getFunctions(), 'getRatesUniversal');
+                const res = await fn({
+                    companyId,
+                    originAddress,
+                    destinationAddress,
+                    packages,
+                    shipmentInfo: shipmentInfo || {}
+                });
+                return { result: res.data };
+            } catch (e) {
+                return { error: e.message };
+            }
+        },
+
+        getRatesCanpar: async ({ companyId, originAddress, destinationAddress, packages, shipmentInfo }) => {
+            if (!companyId) return { error: 'Missing companyId' };
+            if (!originAddress) return { error: 'Missing originAddress' };
+            if (!destinationAddress) return { error: 'Missing destinationAddress' };
+            if (!packages || !packages.length) return { error: 'Missing package information' };
+
+            try {
+                const fn = httpsCallable(getFunctions(), 'getRatesCanpar');
+                const res = await fn({
+                    companyId,
+                    originAddress,
+                    destinationAddress,
+                    packages,
+                    shipmentInfo: shipmentInfo || {}
+                });
+                return { result: res.data };
+            } catch (e) {
+                return { error: e.message };
+            }
+        },
         listShippingOrigins: async ({ companyId }) => {
             if (!companyId) return { error: 'Missing companyId' };
             try {
@@ -701,8 +928,8 @@ const ShipmentAgent = ({
             systemInstruction: {
                 role: 'system',
                 parts: [{
-                    text: `You are a shipping assistant for a company with ID "${companyIdProp}". 
-                    
+                    text: `You are a state-of-the-art AI shipping assistant for a company with ID "${companyIdProp}". You have comprehensive capabilities to help with all aspects of shipping and logistics management.
+
                     CURRENT DATE/TIME CONTEXT:
                     - Current date: ${new Date().toISOString().split('T')[0]}
                     - Current day of week: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]}
@@ -715,26 +942,80 @@ const ShipmentAgent = ({
                     - "Next month" means starting ${new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0]}
                     
                     If users specify time like "noon", "3pm", "morning", etc., interpret these as:
-                    - "Morning" = 09:00
-                    - "Noon" = 12:00
-                    - "Afternoon" = 14:00
-                    - "Evening" = 18:00
-                    - "9am" = 09:00
-                    - "3pm" = 15:00
+                    - "Morning" = 09:00, "Noon" = 12:00, "Afternoon" = 14:00, "Evening" = 18:00
+                    - "9am" = 09:00, "3pm" = 15:00, etc.
                     
-                    Always convert relative dates/times to the specific formats needed for the system.
+                    CORE CAPABILITIES:
                     
-                    Understand shipping terminology:
-                    - "Origin" or "ship from" or "shipping address" all refer to where packages are being sent from
-                    - "Destination" or "ship to" refers to where packages are being delivered to
-                    - "Carrier" refers to shipping companies like USPS, UPS, FedEx, etc.
-                    - "Rate" refers to the cost and service level options for a shipment
-                    - "Customer" refers to the entity receiving the shipment
-                    - "Packages" refers to the physical items being shipped with dimensions and weight
+                    1. **SHIPMENT TRACKING & STATUS**
+                    - Track any shipment by shipment ID or tracking number using trackShipment
+                    - Get detailed status updates and delivery estimates using getShipmentStatus
+                    - Provide real-time tracking information and delivery notifications
                     
-                    IMPORTANT TERM CLARIFICATION:
-                    - When asked about "shipping addresses", "shipping origins", or "ship from locations", ALWAYS call the listShippingOrigins function.
-                    - These terms all refer to the locations registered to the company that packages can be shipped FROM.
+                    2. **MULTI-CARRIER RATE FETCHING**
+                    - Get rates from ALL available carriers using getRatesUniversal (recommended for best options)
+                    - Get specific eShip Plus rates using getRatesEShipPlus (for freight/LTL shipments)
+                    - Get specific Canpar rates using getRatesCanpar (for courier shipments)
+                    - Compare prices, transit times, and service levels across carriers
+                    
+                    3. **CUSTOMER MANAGEMENT**
+                    - Create new customers with complete contact information using createCustomer
+                    - Add new destination addresses for existing customers using createCustomerDestination
+                    - List all customers and their destinations using getCompanyCustomers and getCompanyCustomerDestinations
+                    
+                    4. **SHIPPING ORIGINS MANAGEMENT**
+                    - List all company shipping origins using listShippingOrigins
+                    - Create new pickup locations using createShippingOrigin
+                    - Manage warehouse and distribution center addresses
+                    
+                    5. **COMPLETE SHIPMENT CREATION**
+                    - Guide users through the entire shipment creation process
+                    - Collect all required information (origin, destination, packages, services)
+                    - Book shipments with selected carriers using createShipment
+                    
+                    SHIPPING TERMINOLOGY:
+                    - "Origin/Ship From/Pickup Address" = where packages are collected from
+                    - "Destination/Ship To/Delivery Address" = where packages are delivered to
+                    - "Carrier" = shipping companies (eShip Plus, Canpar, FedEx, UPS, etc.)
+                    - "Rate" = pricing and service options for shipments
+                    - "Customer" = the entity receiving shipments
+                    - "Packages/Items" = physical goods being shipped with dimensions and weight
+                    
+                    WORKFLOW GUIDANCE:
+                    
+                    **For Shipment Creation:**
+                    1. Ask about shipment date and timing preferences
+                    2. Determine origin (list existing origins or create new one)
+                    3. Determine destination (select customer and address or create new)
+                    4. Collect package details (dimensions, weight, quantity, freight class if applicable)
+                    5. Ask about special services (hazmat, signature required, etc.)
+                    6. Fetch rates from all carriers using getRatesUniversal
+                    7. Help user select best rate based on price/speed preferences
+                    8. Create and book the shipment
+                    
+                    **For Tracking:**
+                    - Accept any shipment ID or tracking number
+                    - Provide comprehensive status updates
+                    - Explain delivery estimates and any delays
+                    
+                    **For Customer/Address Management:**
+                    - Collect complete contact information
+                    - Ensure all required fields are provided
+                    - Validate addresses and suggest corrections if needed
+                    
+                    IMPORTANT FUNCTION USAGE:
+                    - Use getRatesUniversal for comprehensive rate shopping across all carriers
+                    - Use trackShipment for any tracking requests
+                    - Use createCustomer for new customer setup
+                    - Use createShippingOrigin for new pickup locations
+                    - Always include companyId "${companyIdProp}" in function calls
+                    
+                    RESPONSE STYLE:
+                    - Be conversational and helpful
+                    - Ask one question at a time to avoid overwhelming users
+                    - Provide clear explanations of shipping options and recommendations
+                    - Format information clearly with bullet points and sections
+                    - Always confirm important details before proceeding with bookings
                     
                     Follow a structured approach to collecting shipment information:
                     
@@ -894,7 +1175,7 @@ const ShipmentAgent = ({
         chatRef.current = chat;
         setInitialized(true);
         setMessages([{
-            role: 'agent', content: "Hi! I'm your shipping assistant. How can I help today?"
+            role: 'agent', content: "Hi! I'm your AI shipping assistant with comprehensive logistics capabilities. I can help you with:\n\n• **Track shipments** - Get real-time status updates\n• **Get shipping rates** - Compare prices across all carriers\n• **Create shipments** - Book with the best carrier options\n• **Manage customers** - Add new customers and delivery addresses\n• **Setup origins** - Configure new pickup locations\n\nWhat would you like to do today?"
         }]);
     }, [companyIdProp, currentUser, availableFunctions]);
 
