@@ -787,12 +787,12 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
     const RegionNavigationButtons = ({ isFullscreenMode = false }) => (
         <Box sx={{
             position: 'absolute',
-            bottom: isFullscreenMode ? '24px' : { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
-            left: isFullscreenMode ? '24px' : { xs: '1rem', sm: '1.5rem', md: '2rem' }, // Use responsive rem units for consistent spacing
+            bottom: isFullscreenMode ? '24px' : { xs: '0.8rem', sm: '1.2rem', md: '1.5rem', lg: '2rem' },
+            left: isFullscreenMode ? '24px' : { xs: '0.8rem', sm: '1.2rem', md: '1.5rem', lg: '2rem' },
             zIndex: isFullscreenMode ? 10001 : 6,
-            display: 'flex',
+            display: { xs: 'none', md: 'flex' }, // Hide on mobile/small tablets, show on medium screens and up
             flexDirection: 'column',
-            gap: 0.5,
+            gap: { xs: 0.3, sm: 0.4, md: 0.5 },
             alignItems: 'flex-start'
         }}>
             {[
@@ -806,23 +806,29 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                     onClick={region.action}
                     size="small"
                     sx={{
-                        background: 'rgba(0, 0, 0, 0.3)',
+                        background: 'rgba(0, 0, 0, 0.4)',
                         backdropFilter: 'blur(20px)',
                         color: 'white',
-                        fontSize: '0.7rem',
+                        fontSize: { xs: '0.6rem', sm: '0.65rem', md: '0.7rem' },
                         fontWeight: 500,
-                        padding: '4px 12px',
+                        padding: { xs: '3px 8px', sm: '4px 10px', md: '4px 12px' },
                         minWidth: 'auto',
-                        height: '28px',
-                        borderRadius: '14px',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        height: { xs: '24px', sm: '26px', md: '28px' },
+                        borderRadius: { xs: '12px', sm: '13px', md: '14px' },
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
                         textTransform: 'none',
                         '&:hover': {
-                            background: 'rgba(255, 255, 255, 0.1)',
+                            background: 'rgba(255, 255, 255, 0.15)',
                             transform: 'translateX(4px)',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
                         },
-                        transition: 'all 0.3s ease'
+                        '&:active': {
+                            transform: 'translateX(2px) scale(0.98)'
+                        },
+                        transition: 'all 0.3s ease',
+                        // Touch-friendly sizing on mobile (though hidden on mobile)
+                        minHeight: { xs: '44px', sm: '28px' },
+                        minWidth: { xs: '120px', sm: 'auto' }
                     }}
                 >
                     {region.label}
@@ -1437,11 +1443,11 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
             {showOverlays && (
                 <Box sx={{
                     position: 'absolute',
-                    top: { xs: '64px', sm: '72px' }, // Push down to avoid new header
-                    left: 16,
+                    top: { xs: '56px', sm: '64px', md: '72px', lg: '80px' }, // Adaptive top spacing
+                    left: { xs: 8, sm: 12, md: 16, lg: 20 },
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 0.8,
+                    gap: { xs: 0.5, sm: 0.6, md: 0.8 },
                     zIndex: 5
                 }}>
                     {[
@@ -1450,11 +1456,48 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                         { key: 'delivered', label: 'Delivered', color: '#66BB6A', value: realtimeStatusCounts.delivered || 0 },
                         { key: 'delayed', label: 'Delayed', color: '#F44336', value: realtimeStatusCounts.delayed || 0 }
                     ].map(({ key, label, color, value }) => (
-                        <Box key={key} sx={{ background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', padding: '6px 10px', minWidth: '80px', textAlign: 'center' }}>
-                            <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.65rem', fontWeight: 500, textTransform: 'uppercase', display: 'block' }}>
+                        <Box
+                            key={key}
+                            sx={{
+                                background: 'rgba(0, 0, 0, 0.4)',
+                                backdropFilter: 'blur(20px)',
+                                borderRadius: { xs: '6px', sm: '7px', md: '8px' },
+                                padding: { xs: '4px 6px', sm: '5px 8px', md: '6px 10px' },
+                                minWidth: { xs: '60px', sm: '70px', md: '80px' },
+                                textAlign: 'center',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                transition: 'all 0.3s ease',
+                                '&:hover': {
+                                    background: 'rgba(0, 0, 0, 0.6)',
+                                    transform: 'scale(1.05)',
+                                    boxShadow: `0 4px 12px ${color}40`
+                                }
+                            }}
+                        >
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    color: 'rgba(255, 255, 255, 0.8)',
+                                    fontSize: { xs: '0.55rem', sm: '0.6rem', md: '0.65rem' },
+                                    fontWeight: 600,
+                                    textTransform: 'uppercase',
+                                    display: 'block',
+                                    letterSpacing: '0.5px'
+                                }}
+                            >
                                 {label}
                             </Typography>
-                            <Typography variant="h4" sx={{ color: color, fontWeight: 700, fontSize: '1.8rem', lineHeight: 1, textShadow: `0 0 12px ${color}60` }}>
+                            <Typography
+                                variant="h4"
+                                sx={{
+                                    color: color,
+                                    fontWeight: 700,
+                                    fontSize: { xs: '1.2rem', sm: '1.4rem', md: '1.6rem', lg: '1.8rem' },
+                                    lineHeight: 1,
+                                    textShadow: `0 0 12px ${color}60`,
+                                    transition: 'all 0.3s ease'
+                                }}
+                            >
                                 {value}
                             </Typography>
                         </Box>
@@ -1465,87 +1508,135 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
             {!loading && shipments.length > 0 && (
                 <Box sx={{
                     position: 'absolute',
-                    bottom: { xs: '1rem', sm: '1.5rem', md: '2rem' },
+                    bottom: { xs: '0.8rem', sm: '1rem', md: '1.5rem', lg: '2rem' },
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    zIndex: 7
+                    zIndex: 7,
+                    width: { xs: '95%', sm: 'auto' },
+                    maxWidth: { xs: '320px', sm: '380px', md: '420px', lg: '480px' }
                 }}>
-                    <Box sx={{ display: 'flex', minWidth: { xs: '280px', sm: '350px', md: '420px' }, height: { xs: '80px', sm: '90px', md: '100px' }, background: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(20px)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', position: 'relative' }}>
-                        {/* Progress bar at the top of the badge - COMMENTED OUT UNTIL FIXED */}
-                        {/* <Box
-                            sx={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                height: '1px',
-                                backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                                zIndex: 2,
-                                borderRadius: '1px 1px 0 0',
-                                overflow: 'hidden'
-                            }}
-                        >
-                            <Box
-                                sx={{
-                                    height: '100%',
-                                    width: `${animationProgress}%`,
-                                    backgroundColor: 'white',
-                                    transition: 'width 0.3s ease-out',
-                                    boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)'
-                                }}
-                            />
-                        </Box> */}
-                        <Box sx={{ width: { xs: '80px', sm: '110px', md: '140px' }, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: { xs: '8px', sm: '12px', md: '16px' } }}>
+                    <Box sx={{
+                        display: 'flex',
+                        minWidth: { xs: '280px', sm: '350px', md: '420px' },
+                        width: '100%',
+                        height: { xs: '70px', sm: '80px', md: '90px', lg: '100px' },
+                        background: 'rgba(0, 0, 0, 0.4)',
+                        backdropFilter: 'blur(20px)',
+                        borderRadius: { xs: '6px', sm: '7px', md: '8px' },
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        position: 'relative',
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                            background: 'rgba(0, 0, 0, 0.6)',
+                            transform: 'scale(1.02)',
+                            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)'
+                        }
+                    }}>
+                        {/* Carrier Logo Section */}
+                        <Box sx={{
+                            width: { xs: '60px', sm: '80px', md: '110px', lg: '140px' },
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: { xs: '6px', sm: '8px', md: '12px', lg: '16px' },
+                            borderRight: '1px solid rgba(255, 255, 255, 0.1)'
+                        }}>
                             <CarrierLogo activeShipment={activeShipment || shipments[0]} />
                         </Box>
-                        <Box sx={{ flex: 1, padding: { xs: '8px 12px', sm: '12px 16px', md: '16px 20px' }, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative' }}>
+
+                        {/* Shipment Info Section */}
+                        <Box sx={{
+                            flex: 1,
+                            padding: { xs: '6px 8px', sm: '8px 12px', md: '12px 16px', lg: '16px 20px' },
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            position: 'relative',
+                            minWidth: 0 // Prevent flex item from overflowing
+                        }}>
                             <Box>
                                 <Typography
                                     variant="h4"
                                     onClick={handleShipmentIdClick}
                                     sx={{
                                         color: 'white',
-                                        fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.875rem' },
+                                        fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem', lg: '0.875rem' },
                                         fontWeight: 700,
                                         cursor: onOpenTrackingDrawer ? 'pointer' : 'default',
                                         '&:hover': onOpenTrackingDrawer ? {
                                             color: '#60A5FA',
                                             textDecoration: 'underline'
-                                        } : {}
+                                        } : {},
+                                        transition: 'all 0.2s ease',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
                                     }}
                                     title={onOpenTrackingDrawer ? "Click to view tracking details" : undefined}
                                 >
                                     #{(activeShipment || shipments[0])?.trackingNumber || 'Loading...'}
                                 </Typography>
-                                <Typography variant="caption" sx={{ color: '#9CA3AF', fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' }, display: 'block' }}>
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        color: '#9CA3AF',
+                                        fontSize: { xs: '0.6rem', sm: '0.65rem', md: '0.7rem', lg: '0.75rem' },
+                                        display: 'block',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        maxWidth: '100%'
+                                    }}
+                                >
                                     {(activeShipment || shipments[0])?.origin?.city || 'Origin'} → {(activeShipment || shipments[0])?.destination?.city || 'Destination'}
                                 </Typography>
                             </Box>
-                            <Box sx={{ alignSelf: 'flex-start', paddingY: '6px' }}>
-                                <StatusChip status={(activeShipment || shipments[0])?.status || 'pending'} size="small" sx={{ fontSize: '0.7rem', height: '24px' }} />
+                            <Box sx={{ alignSelf: 'flex-start', paddingY: { xs: '4px', sm: '5px', md: '6px' } }}>
+                                <StatusChip
+                                    status={(activeShipment || shipments[0])?.status || 'pending'}
+                                    size="small"
+                                    sx={{
+                                        fontSize: { xs: '0.6rem', sm: '0.65rem', md: '0.7rem' },
+                                        height: { xs: '20px', sm: '22px', md: '24px' },
+                                        '& .MuiChip-label': {
+                                            px: { xs: 1, sm: 1.5 }
+                                        }
+                                    }}
+                                />
                             </Box>
+
+                            {/* Counter Section - Repositioned for mobile */}
                             <Box sx={{
-                                position: 'absolute',
-                                bottom: 20,
-                                right: 20,
+                                position: { xs: 'static', sm: 'absolute' },
+                                bottom: { xs: 'auto', sm: 20 },
+                                right: { xs: 'auto', sm: 20 },
                                 display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'flex-end',
+                                flexDirection: { xs: 'row', sm: 'column' },
+                                alignItems: { xs: 'center', sm: 'flex-end' },
+                                justifyContent: { xs: 'flex-end', sm: 'center' },
                                 gap: 1,
                                 zIndex: 1000,
+                                mt: { xs: 1, sm: 0 }
                             }}>
                                 <Box sx={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: 1,
                                     backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
+                                    padding: { xs: '4px 8px', sm: '6px 10px', md: '8px 12px' },
+                                    borderRadius: { xs: '6px', sm: '7px', md: '8px' },
                                     backdropFilter: 'blur(10px)',
                                     border: '1px solid rgba(255, 255, 255, 0.1)',
                                 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.8rem' }}>
+                                        <Typography
+                                            variant="body2"
+                                            sx={{
+                                                color: 'white',
+                                                fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.8rem' },
+                                                fontWeight: 500
+                                            }}
+                                        >
                                             {currentShipmentIndex + 1}/{shipments.length}
                                         </Typography>
                                     </Box>

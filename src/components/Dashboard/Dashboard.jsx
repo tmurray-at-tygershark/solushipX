@@ -43,6 +43,9 @@ import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 
+// Import responsive CSS
+import './Dashboard.css';
+
 // Lazy load the Globe component to prevent it from loading on other pages
 const ShipmentGlobe = lazy(() => import('../Globe/Globe'));
 
@@ -638,37 +641,82 @@ const Dashboard = () => {
     ];
 
     return (
-        <Box className="dashboard-container" sx={{ height: '100vh', width: '100vw', overflow: 'hidden', position: 'relative', bgcolor: '#000' }}>
-            {/* New Embedded Header */}
+        <Box className="dashboard-container" sx={{
+            height: '100vh',
+            width: '100vw',
+            overflow: 'hidden',
+            position: 'relative',
+            bgcolor: '#000'
+        }}>
+            {/* Enhanced Responsive Header */}
             <Box sx={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 right: 0,
-                p: 2,
+                p: { xs: 1, sm: 1.5, md: 2 },
                 zIndex: 10,
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
+                // Completely transparent header with no background
+                transition: 'all 0.3s ease'
             }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <IconButton onClick={() => setIsNavDrawerOpen(true)} sx={{ color: 'white', p: 1.5 }}>
-                        <MenuIcon sx={{ fontSize: '2rem' }} />
+                {/* Left Section - Menu & Logo */}
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: { xs: 0.5, sm: 1 },
+                    flex: { xs: '0 0 auto', sm: '0 0 auto' }
+                }}>
+                    <IconButton
+                        onClick={() => setIsNavDrawerOpen(true)}
+                        sx={{
+                            color: 'white',
+                            p: { xs: 1, sm: 1.5 },
+                            '&:hover': {
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                transform: 'scale(1.05)'
+                            },
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <MenuIcon sx={{ fontSize: { xs: '1.5rem', sm: '1.8rem', md: '2rem' } }} />
                     </IconButton>
-                    <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 28, cursor: 'pointer' }} onClick={() => navigate('/dashboard')} />
+                    <img
+                        src="/images/solushipx_logo_white.png"
+                        alt="SoluShipX"
+                        style={{
+                            height: window.innerWidth < 600 ? 24 : 28,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onClick={() => navigate('/dashboard')}
+                    />
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+
+                {/* Right Section - Adaptive Search */}
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                    justifyContent: 'flex-end',
+                    ml: { xs: 1, sm: 0 }
+                }}>
                     <TextField
                         variant="standard"
                         value={trackingNumber}
                         onChange={(e) => setTrackingNumber(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
-                        placeholder="Shipment/Tracking Number"
+                        placeholder={window.innerWidth < 600 ? "Track..." : "Shipment/Tracking Number"}
                         InputProps={{
                             startAdornment: (
                                 <InputAdornment position="start">
-                                    <BarcodeIcon sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />
+                                    <BarcodeIcon sx={{
+                                        color: 'rgba(255, 255, 255, 0.7)',
+                                        fontSize: { xs: '1.2rem', sm: '1.4rem' }
+                                    }} />
                                 </InputAdornment>
                             ),
                             disableUnderline: true,
@@ -676,7 +724,7 @@ const Dashboard = () => {
                             sx: {
                                 '& .MuiInputBase-input': {
                                     color: 'white',
-                                    fontSize: '0.8rem',
+                                    fontSize: { xs: '0.75rem', sm: '0.8rem' },
                                     '&::placeholder': {
                                         color: 'rgba(255, 255, 255, 0.7)',
                                         opacity: 1
@@ -687,24 +735,49 @@ const Dashboard = () => {
                         sx={{
                             bgcolor: 'rgba(255, 255, 255, 0.1)',
                             borderRadius: '20px',
-                            p: '4px 16px',
-                            width: '250px',
+                            p: { xs: '3px 12px', sm: '4px 16px' },
+                            width: {
+                                xs: '100%',
+                                sm: '200px',
+                                md: '250px',
+                                lg: '300px'
+                            },
+                            maxWidth: { xs: '200px', sm: 'none' },
                             '& .MuiInputBase-input': {
                                 color: 'white',
-                                fontSize: '0.8rem'
+                                fontSize: { xs: '0.75rem', sm: '0.8rem' }
                             },
                             '& .MuiInputBase-root': {
                                 color: 'white'
-                            }
+                            },
+                            '&:hover': {
+                                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                                transform: 'scale(1.02)'
+                            },
+                            '&:focus-within': {
+                                bgcolor: 'rgba(255, 255, 255, 0.2)',
+                                boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.3)'
+                            },
+                            transition: 'all 0.2s ease'
                         }}
                     />
                 </Box>
             </Box>
 
-            {/* Navigation Drawer (Left) */}
-            <Drawer anchor="left" open={isNavDrawerOpen} onClose={() => setIsNavDrawerOpen(false)}>
+            {/* Enhanced Navigation Drawer (Left) */}
+            <Drawer
+                anchor="left"
+                open={isNavDrawerOpen}
+                onClose={() => setIsNavDrawerOpen(false)}
+                PaperProps={{
+                    sx: {
+                        width: { xs: '280px', sm: '300px', md: '320px' },
+                        maxWidth: '85vw'
+                    }
+                }}
+            >
                 <Box sx={{
-                    width: 250,
+                    width: '100%',
                     height: '100%',
                     color: 'white',
                     display: 'flex',
@@ -727,25 +800,61 @@ const Dashboard = () => {
                         `,
                         animation: 'float 6s ease-in-out infinite'
                     }} />
-                    <Box sx={{ p: 2, pl: 2.5, display: 'flex', justifyContent: 'flex-start', position: 'relative', zIndex: 1 }}>
-                        <img src="/images/solushipx_logo_white.png" alt="SoluShipX" style={{ height: 28 }} />
+
+                    {/* Header with Logo */}
+                    <Box sx={{
+                        p: { xs: 2, sm: 2.5 },
+                        display: 'flex',
+                        justifyContent: 'flex-start',
+                        position: 'relative',
+                        zIndex: 1,
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                        <img
+                            src="/images/solushipx_logo_white.png"
+                            alt="SoluShipX"
+                            style={{ height: 32 }}
+                        />
                     </Box>
-                    <List sx={{ flexGrow: 1, position: 'relative', zIndex: 1 }}>
-                        {menuItems.map((item) => (
-                            <ListItem key={item.text} disablePadding>
+
+                    {/* Enhanced Menu Items */}
+                    <List sx={{
+                        flexGrow: 1,
+                        position: 'relative',
+                        zIndex: 1,
+                        px: { xs: 1, sm: 1.5 },
+                        py: 2
+                    }}>
+                        {menuItems.map((item, index) => (
+                            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
                                 <ListItemButton
                                     onClick={() => { item.action(); setIsNavDrawerOpen(false); }}
                                     sx={{
+                                        borderRadius: '12px',
+                                        py: { xs: 1.5, sm: 2 },
+                                        px: { xs: 2, sm: 2.5 },
                                         '&:hover': {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                                        }
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                            transform: 'translateX(4px)',
+                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                        },
+                                        transition: 'all 0.3s ease'
                                     }}
                                 >
-                                    <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7) !important', minWidth: 40 }}>{item.icon}</ListItemIcon>
+                                    <ListItemIcon sx={{
+                                        color: 'rgba(255,255,255,0.8) !important',
+                                        minWidth: { xs: 40, sm: 48 },
+                                        '& .MuiSvgIcon-root': {
+                                            fontSize: { xs: '1.3rem', sm: '1.5rem' }
+                                        }
+                                    }}>
+                                        {item.icon}
+                                    </ListItemIcon>
                                     <ListItemText
                                         primary={item.text}
                                         primaryTypographyProps={{
-                                            fontSize: '0.9rem',
+                                            fontSize: { xs: '0.9rem', sm: '1rem' },
+                                            fontWeight: 500,
                                             color: 'white'
                                         }}
                                     />
@@ -754,10 +863,18 @@ const Dashboard = () => {
                         ))}
                     </List>
 
-                    <Box sx={{ px: 2, pb: 2, position: 'relative', zIndex: 1 }}>
+                    {/* Enhanced Footer Section */}
+                    <Box sx={{
+                        px: { xs: 2, sm: 2.5 },
+                        pb: { xs: 2, sm: 2.5 },
+                        position: 'relative',
+                        zIndex: 1,
+                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                        pt: 2
+                    }}>
                         <List>
                             {profileMenuItems.map((item) => (
-                                <ListItem key={item.text} disablePadding>
+                                <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
                                     <ListItemButton
                                         onClick={() => {
                                             if (item.action) {
@@ -768,16 +885,27 @@ const Dashboard = () => {
                                             setIsNavDrawerOpen(false);
                                         }}
                                         sx={{
+                                            borderRadius: '12px',
+                                            py: { xs: 1.5, sm: 2 },
+                                            px: { xs: 2, sm: 2.5 },
                                             '&:hover': {
-                                                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                                            }
+                                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                transform: 'translateX(4px)'
+                                            },
+                                            transition: 'all 0.3s ease'
                                         }}
                                     >
-                                        <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7) !important', minWidth: 40 }}>{item.icon}</ListItemIcon>
+                                        <ListItemIcon sx={{
+                                            color: 'rgba(255,255,255,0.8) !important',
+                                            minWidth: { xs: 40, sm: 48 }
+                                        }}>
+                                            {item.icon}
+                                        </ListItemIcon>
                                         <ListItemText
                                             primary={item.text}
                                             primaryTypographyProps={{
-                                                fontSize: '0.9rem',
+                                                fontSize: { xs: '0.9rem', sm: '1rem' },
+                                                fontWeight: 500,
                                                 color: 'white'
                                             }}
                                         />
@@ -789,23 +917,31 @@ const Dashboard = () => {
                         <ListItemButton
                             onClick={handleLogout}
                             sx={{
-                                mt: 1,
-                                borderRadius: '8px',
-                                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                mt: 2,
+                                borderRadius: '12px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                py: { xs: 1.5, sm: 2 },
+                                px: { xs: 2, sm: 2.5 },
                                 '&:hover': {
-                                    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                                    transform: 'scale(1.02)'
                                 },
-                                justifyContent: 'center'
+                                justifyContent: 'center',
+                                transition: 'all 0.3s ease'
                             }}
                         >
-                            <ListItemIcon sx={{ color: 'rgba(255,255,255,0.7) !important', minWidth: 'auto', mr: 1 }}>
+                            <ListItemIcon sx={{
+                                color: 'rgba(255,255,255,0.8) !important',
+                                minWidth: 'auto',
+                                mr: 1.5
+                            }}>
                                 <LogoutIcon />
                             </ListItemIcon>
                             <ListItemText
                                 primary="Logout"
                                 primaryTypographyProps={{
-                                    fontSize: '0.9rem',
-                                    fontWeight: 500,
+                                    fontSize: { xs: '0.9rem', sm: '1rem' },
+                                    fontWeight: 600,
                                     color: 'white'
                                 }}
                             />
@@ -814,7 +950,7 @@ const Dashboard = () => {
                 </Box>
             </Drawer>
 
-            {/* Tracking Drawer (Right) */}
+            {/* Enhanced Tracking Drawer (Right) */}
             {isTrackingDrawerOpen && (
                 <Box
                     onClick={() => setIsTrackingDrawerOpen(false)}
@@ -836,7 +972,13 @@ const Dashboard = () => {
                 onClose={() => setIsTrackingDrawerOpen(false)}
                 PaperProps={{
                     sx: {
-                        width: { xs: '90vw', sm: 400, md: 450 },
+                        width: {
+                            xs: '100vw',
+                            sm: '420px',
+                            md: '480px',
+                            lg: '520px'
+                        },
+                        maxWidth: '100vw',
                         height: '100%',
                         bgcolor: '#0a0a0a',
                         zIndex: 1500,
@@ -850,7 +992,11 @@ const Dashboard = () => {
                     sx: { zIndex: 1500 }
                 }}
             >
-                <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
+                <Box sx={{
+                    width: '100%',
+                    height: '100%',
+                    bgcolor: '#0a0a0a'
+                }} role="presentation">
                     <LazyComponentWrapper fallback={<CircularProgress sx={{ m: 4 }} />}>
                         {/* Pass trackingNumber to the component so it can auto-fetch */}
                         <TrackingDrawerContent
