@@ -67,6 +67,9 @@ const ReportsComponent = lazy(() => import('../Reports/Reports'));
 // Lazy load the NotificationPreferences component for the modal
 const NotificationPreferencesComponent = lazy(() => import('../NotificationPreferences/NotificationPreferences'));
 
+// Lazy load the Profile component for the modal
+const ProfileComponent = lazy(() => import('../Profile/Profile'));
+
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
 
@@ -300,7 +303,9 @@ const Dashboard = () => {
     const [isCarriersModalOpen, setIsCarriersModalOpen] = useState(false);
     const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
     const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
+    const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
 
     // Modal navigation stack for chaining modals (e.g., Customers -> Shipments)
     const [modalStack, setModalStack] = useState([]);
@@ -520,7 +525,23 @@ const Dashboard = () => {
         }
     };
 
-    const handleOpenCreateShipmentModal = () => {
+    const handleOpenCreateShipmentModal = (prePopulatedData = null, draftId = null) => {
+        console.log('🚀 Opening CreateShipment modal with:', { prePopulatedData, draftId });
+
+        // Set pre-populated data if provided
+        setCreateShipmentPrePopulatedData(prePopulatedData);
+
+        // Set draft ID for editing existing drafts
+        if (draftId) {
+            console.log('📝 Opening CreateShipment modal to edit draft:', draftId);
+            // We can use the prePopulatedData state to also pass the draft ID
+            // The CreateShipment component will handle this appropriately
+            setCreateShipmentPrePopulatedData(prev => ({
+                ...prev,
+                editDraftId: draftId
+            }));
+        }
+
         // Close other modals first if open
         if (isShipmentsModalOpen) {
             setIsShipmentsModalOpen(false);
@@ -613,7 +634,7 @@ const Dashboard = () => {
     ];
 
     const profileMenuItems = [
-        { text: 'Profile', icon: <AccountCircleIcon />, path: '/profile' },
+        { text: 'Profile', icon: <AccountCircleIcon />, action: () => setIsProfileModalOpen(true) },
     ];
 
     return (
@@ -738,7 +759,14 @@ const Dashboard = () => {
                             {profileMenuItems.map((item) => (
                                 <ListItem key={item.text} disablePadding>
                                     <ListItemButton
-                                        onClick={() => { navigate(item.path); setIsNavDrawerOpen(false); }}
+                                        onClick={() => {
+                                            if (item.action) {
+                                                item.action();
+                                            } else if (item.path) {
+                                                navigate(item.path);
+                                            }
+                                            setIsNavDrawerOpen(false);
+                                        }}
                                         sx={{
                                             '&:hover': {
                                                 backgroundColor: 'rgba(255, 255, 255, 0.08)',
@@ -919,9 +947,14 @@ const Dashboard = () => {
                     }>
                         <CreateShipmentComponent
                             isModal={true}
-                            onClose={() => setIsCreateShipmentModalOpen(false)}
-                            onReturnToShipments={isShipmentsModalOpen ? handleReturnToShipmentsFromCreateShipment : null}
+                            onClose={() => {
+                                setIsCreateShipmentModalOpen(false);
+                                // Clear pre-populated data when modal closes
+                                setCreateShipmentPrePopulatedData(null);
+                            }}
+                            onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
                             showCloseButton={true}
+                            prePopulatedData={createShipmentPrePopulatedData}
                         />
                     </LazyComponentWrapper>
                 </Box>
@@ -1098,6 +1131,49 @@ const Dashboard = () => {
                         <NotificationPreferencesComponent
                             isModal={true}
                             onClose={() => setIsNotificationsModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Profile Fullscreen Modal */}
+            <Dialog
+                open={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <ProfileComponent
+                            isModal={true}
+                            onClose={() => setIsProfileModalOpen(false)}
                             showCloseButton={true}
                         />
                     </LazyComponentWrapper>

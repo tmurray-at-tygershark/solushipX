@@ -551,11 +551,11 @@ export const tools = [
                             properties: {
                                 originAddress: { type: "object" },
                                 destinationAddress: { type: "object" },
-                                packages: { 
-                                    type: "array",
-                                    items: {
-                                        type: "object",
-                                        properties: {
+                        packages: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
                                             description: { type: "string" },
                                             weight: { type: "number" },
                                             length: { type: "number" },

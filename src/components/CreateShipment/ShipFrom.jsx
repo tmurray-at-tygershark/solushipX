@@ -70,6 +70,30 @@ const ShipFrom = ({ onNext, onPrevious }) => {
         specialInstructions: ''
     });
 
+    const mapAddressBookToShipFrom = (addressDoc, currentCompanyData) => {
+        if (!addressDoc) return {};
+        const firstName = addressDoc.firstName || '';
+        const lastName = addressDoc.lastName || '';
+        const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : addressDoc.nickname || '';
+        return {
+            id: addressDoc.id,
+            name: addressDoc.nickname || '',
+            company: addressDoc.companyName || currentCompanyData?.name || '',
+            attention: contactName,
+            street: addressDoc.address1 || '',
+            street2: addressDoc.address2 || '',
+            city: addressDoc.city || '',
+            state: addressDoc.stateProv || '',
+            postalCode: addressDoc.zipPostal || '',
+            country: addressDoc.country || 'US',
+            contactName: contactName,
+            contactPhone: addressDoc.phone || '',
+            contactEmail: addressDoc.email || '',
+            specialInstructions: addressDoc.specialInstructions || '',
+            isDefault: addressDoc.isDefault || false,
+        };
+    };
+
     useEffect(() => {
         const fetchAddresses = async () => {
             if (!companyIdForAddress) {
@@ -95,7 +119,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 setShipFromAddresses(fetchedAddresses);
                 setFilteredAddresses(fetchedAddresses);
 
-                // Enhanced logic to handle partial draft data
+                // Enhanced logic to handle partial draft data and pre-populated data
                 const currentShipFrom = formData.shipFrom || {};
                 const hasExistingData = currentShipFrom.id || currentShipFrom.street || currentShipFrom.company;
 
@@ -105,18 +129,53 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                 if (hasExistingData) {
                     // If we have existing data, try to match it with an address from the list
                     if (currentShipFrom.id) {
+                        // First try to match by exact ID
                         const matchingAddress = fetchedAddresses.find(addr => addr.id === currentShipFrom.id);
                         if (matchingAddress) {
                             console.log("ShipFrom: Found matching address for existing ID:", matchingAddress);
                             setSelectedAddressId(currentShipFrom.id);
                         } else {
-                            console.log("ShipFrom: No matching address found for ID, keeping current data");
-                            setSelectedAddressId(null);
+                            console.log("ShipFrom: No matching address found for ID, trying address matching");
+                            // Try to match by address details (for pre-populated data)
+                            const matchingByAddress = fetchedAddresses.find(addr =>
+                                addr.address1?.toLowerCase() === currentShipFrom.street?.toLowerCase() &&
+                                addr.city?.toLowerCase() === currentShipFrom.city?.toLowerCase() &&
+                                addr.stateProv === currentShipFrom.state &&
+                                addr.zipPostal === currentShipFrom.postalCode &&
+                                addr.companyName?.toLowerCase() === currentShipFrom.company?.toLowerCase()
+                            );
+
+                            if (matchingByAddress) {
+                                console.log("ShipFrom: Found matching address by details:", matchingByAddress);
+                                setSelectedAddressId(matchingByAddress.id);
+                                // Update the form data with the correct ID
+                                updateFormSection('shipFrom', { ...currentShipFrom, id: matchingByAddress.id });
+                            } else {
+                                console.log("ShipFrom: No matching address found, keeping current data as custom entry");
+                                setSelectedAddressId(null);
+                            }
                         }
                     } else {
-                        // No ID but has other data - this is custom/manual entry
-                        console.log("ShipFrom: Existing data without ID - keeping as custom entry");
-                        setSelectedAddressId(null);
+                        // No ID but has other data - try to match by address details
+                        console.log("ShipFrom: Trying to match pre-populated data by address details");
+                        const matchingByAddress = fetchedAddresses.find(addr =>
+                            addr.address1?.toLowerCase() === currentShipFrom.street?.toLowerCase() &&
+                            addr.city?.toLowerCase() === currentShipFrom.city?.toLowerCase() &&
+                            addr.stateProv === currentShipFrom.state &&
+                            addr.zipPostal === currentShipFrom.postalCode &&
+                            addr.companyName?.toLowerCase() === currentShipFrom.company?.toLowerCase()
+                        );
+
+                        if (matchingByAddress) {
+                            console.log("ShipFrom: Found matching address by details for pre-populated data:", matchingByAddress);
+                            setSelectedAddressId(matchingByAddress.id);
+                            // Update the form data with the matched address including ID
+                            const mappedAddress = mapAddressBookToShipFrom(matchingByAddress, companyData);
+                            updateFormSection('shipFrom', mappedAddress);
+                        } else {
+                            console.log("ShipFrom: No matching address found, keeping as custom entry");
+                            setSelectedAddressId(null);
+                        }
                     }
                 } else if (fetchedAddresses.length > 0) {
                     // No existing data - apply default
@@ -143,31 +202,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
             }
         };
         fetchAddresses();
-    }, [companyIdForAddress, companyData, formData.shipFrom?.id]); // Added formData.shipFrom?.id to dependencies
-
-    const mapAddressBookToShipFrom = (addressDoc, currentCompanyData) => {
-        if (!addressDoc) return {};
-        const firstName = addressDoc.firstName || '';
-        const lastName = addressDoc.lastName || '';
-        const contactName = firstName || lastName ? `${firstName} ${lastName}`.trim() : addressDoc.nickname || '';
-        return {
-            id: addressDoc.id,
-            name: addressDoc.nickname || '',
-            company: addressDoc.companyName || currentCompanyData?.name || '',
-            attention: contactName,
-            street: addressDoc.address1 || '',
-            street2: addressDoc.address2 || '',
-            city: addressDoc.city || '',
-            state: addressDoc.stateProv || '',
-            postalCode: addressDoc.zipPostal || '',
-            country: addressDoc.country || 'US',
-            contactName: contactName,
-            contactPhone: addressDoc.phone || '',
-            contactEmail: addressDoc.email || '',
-            specialInstructions: addressDoc.specialInstructions || '',
-            isDefault: addressDoc.isDefault || false,
-        };
-    };
+    }, [companyIdForAddress, companyData, formData.shipFrom?.id, formData.shipFrom?.street, formData.shipFrom?.company, updateFormSection]); // Added updateFormSection to dependencies
 
     // Search functionality
     useEffect(() => {

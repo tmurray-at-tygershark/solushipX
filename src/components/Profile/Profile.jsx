@@ -8,7 +8,6 @@ import {
     Button,
     Avatar,
     IconButton,
-    Divider,
     Stack,
     Alert,
     Snackbar,
@@ -26,8 +25,6 @@ import {
     Save as SaveIcon,
     Lock as LockIcon,
     Person as PersonIcon,
-    Phone as PhoneIcon,
-    Email as EmailIcon,
     Visibility as VisibilityIcon,
     VisibilityOff as VisibilityOffIcon,
     Home as HomeIcon,
@@ -40,9 +37,11 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage';
 import { updatePassword, updateEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { getApp } from 'firebase/app';
-import './Profile.css';
 
-const Profile = () => {
+// Import common components
+import ModalHeader from '../common/ModalHeader';
+
+const Profile = ({ isModal = false, onClose = null, showCloseButton = false }) => {
     const navigate = useNavigate();
     const { currentUser: user } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -284,325 +283,425 @@ const Profile = () => {
     // Show loading spinner while initial data loads
     if (initialLoading) {
         return (
-            <Box className="profile-container">
-                <Container maxWidth={false} sx={{ maxWidth: '1300px', mx: 'auto' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-                        <CircularProgress />
-                    </Box>
-                </Container>
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+                <CircularProgress />
             </Box>
         );
     }
 
-    // Redirect if no user is logged in
-    if (!user) {
+    // Redirect if no user is logged in (only for non-modal mode)
+    if (!user && !isModal) {
         navigate('/login');
         return null;
     }
 
-    return (
-        <Box className="profile-container">
-            <Container maxWidth={false} sx={{ maxWidth: '1300px', mx: 'auto' }}>
-                <Box className="breadcrumb-container">
-                    <Link component={RouterLink} to="/dashboard" className="breadcrumb-link">
-                        <HomeIcon sx={{ fontSize: 20 }} />
-                        Dashboard
-                    </Link>
-                    <NavigateNextIcon className="breadcrumb-separator" />
-                    <Typography className="breadcrumb-current">Profile</Typography>
-                </Box>
+    // Handle no user in modal mode
+    if (!user && isModal) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', flexDirection: 'column', gap: 2 }}>
+                <Typography variant="h6">Please log in to view profile</Typography>
+                <Button variant="contained" onClick={onClose}>
+                    Close
+                </Button>
+            </Box>
+        );
+    }
 
-                <Paper className="profile-paper">
-                    <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-                        <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                            {/* Header Section */}
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b' }}>
+    return (
+        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
+            <Box sx={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                position: 'relative'
+            }}>
+                {/* Modal Header */}
+                {isModal && (
+                    <ModalHeader
+                        title="Profile"
+                        onClose={showCloseButton ? onClose : null}
+                        showCloseButton={showCloseButton}
+                    />
+                )}
+
+                {/* Scrollable Content Area */}
+                <Box sx={{
+                    flex: 1,
+                    overflow: 'auto',
+                    minHeight: 0,
+                    position: 'relative'
+                }}>
+                    <Box sx={{
+                        p: 3,
+                        minHeight: '100%'
+                    }}>
+                        {/* Breadcrumb - only show when not in modal */}
+                        {!isModal && (
+                            <div className="breadcrumb-container" style={{
+                                marginBottom: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                flexWrap: 'nowrap',
+                                width: '100%'
+                            }}>
+                                <Link component={RouterLink} to="/dashboard" className="breadcrumb-link" style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    textDecoration: 'none',
+                                    color: '#64748b',
+                                    fontSize: '12px',
+                                    whiteSpace: 'nowrap'
+                                }}>
+                                    <HomeIcon sx={{ fontSize: 16 }} />
+                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>Dashboard</Typography>
+                                </Link>
+                                <div className="breadcrumb-separator" style={{ margin: '0 8px', color: '#64748b' }}>
+                                    <NavigateNextIcon sx={{ fontSize: 16 }} />
+                                </div>
+                                <Typography variant="body2" className="breadcrumb-current" sx={{
+                                    color: '#1e293b',
+                                    fontSize: '12px',
+                                    whiteSpace: 'nowrap'
+                                }}>
+                                    Profile
+                                </Typography>
+                            </div>
+                        )}
+
+                        {/* Header - only show when not in modal */}
+                        {!isModal && (
+                            <Box sx={{ mb: 4 }}>
+                                <Typography variant="h4" component="h1" sx={{ fontWeight: 600, color: '#1e293b', mb: 2 }}>
                                     Profile Settings
                                 </Typography>
                             </Box>
+                        )}
 
-                            <Grid container spacing={3}>
-                                {/* Left Column - Avatar and Quick Actions */}
-                                <Grid item xs={12} md={4}>
-                                    <Paper sx={{ p: 3, textAlign: 'center' }}>
-                                        <Box sx={{ position: 'relative', display: 'inline-block' }}>
-                                            <Avatar
-                                                src={avatarPreview || personalInfo.photoURL}
-                                                sx={{ width: 150, height: 150, mb: 2 }}
-                                            >
-                                                {!avatarPreview && !personalInfo.photoURL &&
-                                                    (personalInfo.firstName?.[0] || user?.displayName?.[0] || user?.email?.[0] || '?')
-                                                }
-                                            </Avatar>
-                                            <IconButton
-                                                sx={{
-                                                    position: 'absolute',
-                                                    bottom: 0,
-                                                    right: 0,
-                                                    bgcolor: 'white',
-                                                    '&:hover': { bgcolor: 'white' }
-                                                }}
-                                                onClick={() => setShowAvatarDialog(true)}
-                                            >
-                                                <PhotoCameraIcon />
-                                            </IconButton>
-                                        </Box>
-                                        <Typography variant="h6" gutterBottom>
-                                            {personalInfo.firstName && personalInfo.lastName
-                                                ? `${personalInfo.firstName} ${personalInfo.lastName}`
-                                                : user?.displayName || 'User'
-                                            }
-                                        </Typography>
-                                        <Typography color="text.secondary" gutterBottom>
-                                            {personalInfo.position || 'No position specified'}
-                                        </Typography>
-                                        <Typography color="text.secondary">
-                                            {personalInfo.company || 'No company specified'}
-                                        </Typography>
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<LockIcon />}
-                                            onClick={() => setShowPasswordDialog(true)}
-                                            sx={{ mt: 2 }}
+                        <Grid container spacing={3}>
+                            {/* Left Column - Avatar and Quick Actions */}
+                            <Grid item xs={12} md={4}>
+                                <Paper sx={{ p: 3, textAlign: 'center' }}>
+                                    <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                                        <Avatar
+                                            src={avatarPreview || personalInfo.photoURL}
+                                            sx={{ width: 120, height: 120, mb: 2, mx: 'auto' }}
                                         >
-                                            Change Password
-                                        </Button>
-                                    </Paper>
-                                </Grid>
-
-                                {/* Right Column - Profile Sections */}
-                                <Grid item xs={12} md={8}>
-                                    {/* Personal Information Section */}
-                                    <Paper sx={{ p: 3, mb: 3 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                            <PersonIcon sx={{ mr: 1, color: '#64748b' }} />
-                                            <Typography variant="h6">Personal Information</Typography>
-                                        </Box>
-                                        <form onSubmit={handlePersonalInfoSubmit}>
-                                            <Grid container spacing={2}>
-                                                <Grid item xs={12} sm={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        label="First Name"
-                                                        value={personalInfo.firstName}
-                                                        onChange={(e) => setPersonalInfo({ ...personalInfo, firstName: e.target.value })}
-                                                        required
-                                                        error={!personalInfo.firstName}
-                                                        helperText={!personalInfo.firstName ? 'First name is required' : ''}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} sm={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        label="Last Name"
-                                                        value={personalInfo.lastName}
-                                                        onChange={(e) => setPersonalInfo({ ...personalInfo, lastName: e.target.value })}
-                                                        required
-                                                        error={!personalInfo.lastName}
-                                                        helperText={!personalInfo.lastName ? 'Last name is required' : ''}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} sm={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        label="Email"
-                                                        type="email"
-                                                        value={personalInfo.email}
-                                                        onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
-                                                        required
-                                                        error={!personalInfo.email}
-                                                        helperText={!personalInfo.email ? 'Email is required' : ''}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} sm={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        label="Phone"
-                                                        value={personalInfo.phone}
-                                                        onChange={(e) => setPersonalInfo({ ...personalInfo, phone: e.target.value })}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} sm={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        label="Company"
-                                                        value={personalInfo.company}
-                                                        onChange={(e) => setPersonalInfo({ ...personalInfo, company: e.target.value })}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} sm={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        label="Position"
-                                                        value={personalInfo.position}
-                                                        onChange={(e) => setPersonalInfo({ ...personalInfo, position: e.target.value })}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12}>
-                                                    <Button
-                                                        type="submit"
-                                                        variant="contained"
-                                                        startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
-                                                        disabled={loading}
-                                                    >
-                                                        {loading ? 'Saving...' : 'Save Changes'}
-                                                    </Button>
-                                                </Grid>
-                                            </Grid>
-                                        </form>
-                                    </Paper>
-                                </Grid>
-                            </Grid>
-                        </Box>
-                    </Box>
-
-                    {/* Avatar Upload Dialog */}
-                    <Dialog open={showAvatarDialog} onClose={() => setShowAvatarDialog(false)}>
-                        <DialogTitle>Update Profile Picture</DialogTitle>
-                        <DialogContent>
-                            <Box sx={{ textAlign: 'center', py: 2 }}>
-                                <Avatar
-                                    src={avatarPreview || personalInfo.photoURL}
-                                    sx={{ width: 150, height: 150, mx: 'auto', mb: 2 }}
-                                >
-                                    {!avatarPreview && !personalInfo.photoURL &&
-                                        (personalInfo.firstName?.[0] || user?.displayName?.[0] || user?.email?.[0] || '?')
-                                    }
-                                </Avatar>
-                                <Button
-                                    variant="outlined"
-                                    component="label"
-                                    startIcon={<PhotoCameraIcon />}
-                                >
-                                    Choose Photo
-                                    <input
-                                        type="file"
-                                        hidden
-                                        accept="image/*"
-                                        onChange={handleFileSelect}
-                                    />
-                                </Button>
-                                {selectedFile && (
-                                    <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-                                        Selected: {selectedFile.name}
+                                            {!avatarPreview && !personalInfo.photoURL &&
+                                                (personalInfo.firstName?.[0] || user?.displayName?.[0] || user?.email?.[0] || '?')
+                                            }
+                                        </Avatar>
+                                        <IconButton
+                                            sx={{
+                                                position: 'absolute',
+                                                bottom: 8,
+                                                right: 8,
+                                                bgcolor: 'white',
+                                                boxShadow: 2,
+                                                '&:hover': { bgcolor: 'white' }
+                                            }}
+                                            onClick={() => setShowAvatarDialog(true)}
+                                            size="small"
+                                        >
+                                            <PhotoCameraIcon sx={{ fontSize: 18 }} />
+                                        </IconButton>
+                                    </Box>
+                                    <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                        {personalInfo.firstName && personalInfo.lastName
+                                            ? `${personalInfo.firstName} ${personalInfo.lastName}`
+                                            : user?.displayName || 'User'
+                                        }
                                     </Typography>
-                                )}
-                            </Box>
-                        </DialogContent>
-                        <DialogActions>
-                            <Button onClick={() => setShowAvatarDialog(false)}>Cancel</Button>
-                            <Button
-                                onClick={handleAvatarUpload}
-                                variant="contained"
-                                disabled={!selectedFile || loading}
-                                startIcon={loading ? <CircularProgress size={20} /> : null}
-                            >
-                                {loading ? 'Uploading...' : 'Upload'}
-                            </Button>
-                        </DialogActions>
-                    </Dialog>
+                                    <Typography color="text.secondary" gutterBottom sx={{ fontSize: '12px' }}>
+                                        {personalInfo.position || 'No position specified'}
+                                    </Typography>
+                                    <Typography color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                                        {personalInfo.company || 'No company specified'}
+                                    </Typography>
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<LockIcon />}
+                                        onClick={() => setShowPasswordDialog(true)}
+                                        size="small"
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        Change Password
+                                    </Button>
+                                </Paper>
+                            </Grid>
 
-                    {/* Password Change Dialog */}
-                    <Dialog open={showPasswordDialog} onClose={() => setShowPasswordDialog(false)}>
-                        <DialogTitle>Change Password</DialogTitle>
-                        <DialogContent>
-                            <form onSubmit={handlePasswordChange}>
-                                <Stack spacing={2} sx={{ mt: 2 }}>
-                                    <TextField
-                                        fullWidth
-                                        label="Current Password"
-                                        type={showPasswords.current ? 'text' : 'password'}
-                                        value={password.current}
-                                        onChange={(e) => setPassword({ ...password, current: e.target.value })}
-                                        InputProps={{
-                                            endAdornment: (
-                                                <InputAdornment position="end">
-                                                    <IconButton
-                                                        onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}
-                                                    >
-                                                        {showPasswords.current ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                                                    </IconButton>
-                                                </InputAdornment>
-                                            ),
-                                        }}
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="New Password"
-                                        type={showPasswords.new ? 'text' : 'password'}
-                                        value={password.new}
-                                        onChange={(e) => setPassword({ ...password, new: e.target.value })}
-                                        InputProps={{
-                                            endAdornment: (
-                                                <InputAdornment position="end">
-                                                    <IconButton
-                                                        onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
-                                                    >
-                                                        {showPasswords.new ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                                                    </IconButton>
-                                                </InputAdornment>
-                                            ),
-                                        }}
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="Confirm New Password"
-                                        type={showPasswords.confirm ? 'text' : 'password'}
-                                        value={password.confirm}
-                                        onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
-                                        InputProps={{
-                                            endAdornment: (
-                                                <InputAdornment position="end">
-                                                    <IconButton
-                                                        onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
-                                                    >
-                                                        {showPasswords.confirm ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                                                    </IconButton>
-                                                </InputAdornment>
-                                            ),
-                                        }}
-                                    />
-                                </Stack>
-                            </form>
-                        </DialogContent>
-                        <DialogActions>
-                            <Button onClick={() => setShowPasswordDialog(false)}>Cancel</Button>
-                            <Button
-                                onClick={handlePasswordChange}
-                                variant="contained"
-                                disabled={loading}
-                                startIcon={loading ? <CircularProgress size={20} /> : null}
-                            >
-                                {loading ? 'Changing...' : 'Change Password'}
-                            </Button>
-                        </DialogActions>
-                    </Dialog>
+                            {/* Right Column - Profile Sections */}
+                            <Grid item xs={12} md={8}>
+                                {/* Personal Information Section */}
+                                <Paper sx={{ p: 3 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                                        <PersonIcon sx={{ mr: 1, color: '#64748b', fontSize: 20 }} />
+                                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>Personal Information</Typography>
+                                    </Box>
+                                    <form onSubmit={handlePersonalInfoSubmit}>
+                                        <Grid container spacing={2}>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="First Name"
+                                                    value={personalInfo.firstName}
+                                                    onChange={(e) => setPersonalInfo({ ...personalInfo, firstName: e.target.value })}
+                                                    required
+                                                    error={!personalInfo.firstName}
+                                                    helperText={!personalInfo.firstName ? 'First name is required' : ''}
+                                                    size="small"
+                                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                    inputProps={{ sx: { fontSize: '12px' } }}
+                                                    FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Last Name"
+                                                    value={personalInfo.lastName}
+                                                    onChange={(e) => setPersonalInfo({ ...personalInfo, lastName: e.target.value })}
+                                                    required
+                                                    error={!personalInfo.lastName}
+                                                    helperText={!personalInfo.lastName ? 'Last name is required' : ''}
+                                                    size="small"
+                                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                    inputProps={{ sx: { fontSize: '12px' } }}
+                                                    FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Email"
+                                                    type="email"
+                                                    value={personalInfo.email}
+                                                    onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
+                                                    required
+                                                    error={!personalInfo.email}
+                                                    helperText={!personalInfo.email ? 'Email is required' : ''}
+                                                    size="small"
+                                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                    inputProps={{ sx: { fontSize: '12px' } }}
+                                                    FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Phone"
+                                                    value={personalInfo.phone}
+                                                    onChange={(e) => setPersonalInfo({ ...personalInfo, phone: e.target.value })}
+                                                    size="small"
+                                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                    inputProps={{ sx: { fontSize: '12px' } }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Company"
+                                                    value={personalInfo.company}
+                                                    onChange={(e) => setPersonalInfo({ ...personalInfo, company: e.target.value })}
+                                                    size="small"
+                                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                    inputProps={{ sx: { fontSize: '12px' } }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    label="Position"
+                                                    value={personalInfo.position}
+                                                    onChange={(e) => setPersonalInfo({ ...personalInfo, position: e.target.value })}
+                                                    size="small"
+                                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                    inputProps={{ sx: { fontSize: '12px' } }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12}>
+                                                <Button
+                                                    type="submit"
+                                                    variant="contained"
+                                                    startIcon={loading ? <CircularProgress size={16} /> : <SaveIcon />}
+                                                    disabled={loading}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    {loading ? 'Saving...' : 'Save'}
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
+                                    </form>
+                                </Paper>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                </Box>
+            </Box>
 
-                    {/* Success Snackbar */}
-                    <Snackbar
-                        open={showSuccess}
-                        autoHideDuration={6000}
-                        onClose={() => setShowSuccess(false)}
+            {/* Avatar Upload Dialog */}
+            <Dialog open={showAvatarDialog} onClose={() => setShowAvatarDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ fontSize: '16px' }}>Update Profile Picture</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <Avatar
+                            src={avatarPreview || personalInfo.photoURL}
+                            sx={{ width: 120, height: 120, mx: 'auto', mb: 2 }}
+                        >
+                            {!avatarPreview && !personalInfo.photoURL &&
+                                (personalInfo.firstName?.[0] || user?.displayName?.[0] || user?.email?.[0] || '?')
+                            }
+                        </Avatar>
+                        <Button
+                            variant="outlined"
+                            component="label"
+                            startIcon={<PhotoCameraIcon />}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Choose Photo
+                            <input
+                                type="file"
+                                hidden
+                                accept="image/*"
+                                onChange={handleFileSelect}
+                            />
+                        </Button>
+                        {selectedFile && (
+                            <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary', fontSize: '12px' }}>
+                                Selected: {selectedFile.name}
+                            </Typography>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowAvatarDialog(false)} sx={{ fontSize: '12px' }}>Cancel</Button>
+                    <Button
+                        onClick={handleAvatarUpload}
+                        variant="contained"
+                        disabled={!selectedFile || loading}
+                        startIcon={loading ? <CircularProgress size={16} /> : null}
+                        sx={{ fontSize: '12px' }}
                     >
-                        <Alert severity="success" sx={{ width: '100%' }}>
-                            Profile updated successfully!
-                        </Alert>
-                    </Snackbar>
+                        {loading ? 'Uploading...' : 'Upload'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
-                    {/* Error Snackbar */}
-                    <Snackbar
-                        open={showError}
-                        autoHideDuration={6000}
-                        onClose={() => setShowError(false)}
+            {/* Password Change Dialog */}
+            <Dialog open={showPasswordDialog} onClose={() => setShowPasswordDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ fontSize: '16px' }}>Change Password</DialogTitle>
+                <DialogContent>
+                    <form onSubmit={handlePasswordChange}>
+                        <Stack spacing={2} sx={{ mt: 2 }}>
+                            <TextField
+                                fullWidth
+                                label="Current Password"
+                                type={showPasswords.current ? 'text' : 'password'}
+                                value={password.current}
+                                onChange={(e) => setPassword({ ...password, current: e.target.value })}
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                inputProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <IconButton
+                                                onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}
+                                                size="small"
+                                            >
+                                                {showPasswords.current ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ),
+                                }}
+                            />
+                            <TextField
+                                fullWidth
+                                label="New Password"
+                                type={showPasswords.new ? 'text' : 'password'}
+                                value={password.new}
+                                onChange={(e) => setPassword({ ...password, new: e.target.value })}
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                inputProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <IconButton
+                                                onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
+                                                size="small"
+                                            >
+                                                {showPasswords.new ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ),
+                                }}
+                            />
+                            <TextField
+                                fullWidth
+                                label="Confirm New Password"
+                                type={showPasswords.confirm ? 'text' : 'password'}
+                                value={password.confirm}
+                                onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                inputProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <IconButton
+                                                onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
+                                                size="small"
+                                            >
+                                                {showPasswords.confirm ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ),
+                                }}
+                            />
+                        </Stack>
+                    </form>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowPasswordDialog(false)} sx={{ fontSize: '12px' }}>Cancel</Button>
+                    <Button
+                        onClick={handlePasswordChange}
+                        variant="contained"
+                        disabled={loading}
+                        startIcon={loading ? <CircularProgress size={16} /> : null}
+                        sx={{ fontSize: '12px' }}
                     >
-                        <Alert severity="error" sx={{ width: '100%' }}>
-                            {errorMessage}
-                        </Alert>
-                    </Snackbar>
-                </Paper>
-            </Container>
-        </Box>
+                        {loading ? 'Changing...' : 'Change Password'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Success Snackbar */}
+            <Snackbar
+                open={showSuccess}
+                autoHideDuration={6000}
+                onClose={() => setShowSuccess(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert severity="success" sx={{ width: '100%', fontSize: '12px' }} onClose={() => setShowSuccess(false)}>
+                    Profile updated successfully!
+                </Alert>
+            </Snackbar>
+
+            {/* Error Snackbar */}
+            <Snackbar
+                open={showError}
+                autoHideDuration={6000}
+                onClose={() => setShowError(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert severity="error" sx={{ width: '100%', fontSize: '12px' }} onClose={() => setShowError(false)}>
+                    {errorMessage}
+                </Alert>
+            </Snackbar>
+        </div>
     );
 };
 

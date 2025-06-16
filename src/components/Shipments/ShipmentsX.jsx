@@ -1410,6 +1410,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     onSelect={handleSelect}
                                     onViewShipmentDetail={handleViewShipmentDetail}
                                     onActionMenuOpen={handleActionMenuOpen}
+                                    onEditDraftShipment={handleEditDraftShipment}
                                     customers={customers}
                                     carrierData={carrierData}
                                     searchFields={searchFields}
@@ -1525,7 +1526,85 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     }, [selected, shipments, showSnackbar, loadShipments]);
 
+    // Handle editing a draft shipment
+    const handleEditDraftShipment = useCallback((draftId) => {
+        console.log('📝 handleEditDraftShipment called with draftId:', draftId);
 
+        if (isModal && onOpenCreateShipment) {
+            console.log('🔀 Modal mode: Using onOpenCreateShipment callback to edit draft');
+            // In modal mode, use the callback to open CreateShipment with the draft
+            onOpenCreateShipment(null, draftId); // null for prePopulatedData, draftId for editing existing draft
+        } else {
+            console.log('🔀 Non-modal mode: Navigating to create-shipment URL');
+            // Fallback to navigation for non-modal mode
+            navigate(`/create-shipment/shipment-info/${draftId}`);
+        }
+    }, [isModal, onOpenCreateShipment, navigate]);
+
+    // Handle repeating a shipment (creating a new draft with pre-populated data)
+    const handleRepeatShipment = useCallback(async (shipment) => {
+        try {
+            // Prepare the pre-populated data from the existing shipment
+            const prePopulatedData = {
+                shipmentInfo: {
+                    shipmentType: shipment.shipmentInfo?.shipmentType || shipment.shipmentType || '',
+                    shipmentDate: new Date().toISOString().split('T')[0], // Set to today's date
+                    serviceType: shipment.shipmentInfo?.serviceType || shipment.serviceType || '',
+                    specialInstructions: shipment.shipmentInfo?.specialInstructions || '',
+                    referenceNumber: '', // Clear reference number for new shipment
+                    customerReference: shipment.shipmentInfo?.customerReference || ''
+                },
+                shipFrom: {
+                    company: shipment.shipFrom?.company || '',
+                    street: shipment.shipFrom?.street || '',
+                    street2: shipment.shipFrom?.street2 || '',
+                    city: shipment.shipFrom?.city || '',
+                    state: shipment.shipFrom?.state || '',
+                    postalCode: shipment.shipFrom?.postalCode || '',
+                    country: shipment.shipFrom?.country || 'US',
+                    contactName: shipment.shipFrom?.contactName || '',
+                    contactPhone: shipment.shipFrom?.contactPhone || '',
+                    contactEmail: shipment.shipFrom?.contactEmail || ''
+                },
+                shipTo: {
+                    customerID: shipment.shipTo?.customerID || '',
+                    company: shipment.shipTo?.company || '',
+                    street: shipment.shipTo?.street || '',
+                    street2: shipment.shipTo?.street2 || '',
+                    city: shipment.shipTo?.city || '',
+                    state: shipment.shipTo?.state || '',
+                    postalCode: shipment.shipTo?.postalCode || '',
+                    country: shipment.shipTo?.country || 'US',
+                    contactName: shipment.shipTo?.contactName || '',
+                    contactPhone: shipment.shipTo?.contactPhone || '',
+                    contactEmail: shipment.shipTo?.contactEmail || ''
+                },
+                packages: shipment.packages ? shipment.packages.map(pkg => ({
+                    itemDescription: pkg.itemDescription || '',
+                    packagingType: pkg.packagingType || '',
+                    packagingQuantity: pkg.packagingQuantity || 1,
+                    weight: pkg.weight || '',
+                    height: pkg.height || '',
+                    width: pkg.width || '',
+                    length: pkg.length || '',
+                    declaredValue: pkg.declaredValue || '',
+                    hazmat: pkg.hazmat || false
+                })) : []
+            };
+
+            console.log('🔄 Repeating shipment with pre-populated data:', prePopulatedData);
+
+            // Call the onOpenCreateShipment callback with pre-populated data
+            if (onOpenCreateShipment) {
+                onOpenCreateShipment(prePopulatedData);
+            } else {
+                showSnackbar('Cannot open create shipment - feature not available in this context', 'error');
+            }
+        } catch (error) {
+            console.error('Error repeating shipment:', error);
+            showSnackbar('Error creating repeat shipment', 'error');
+        }
+    }, [onOpenCreateShipment, showSnackbar]);
 
     // Create dynamic navigation object based on current state
     const getNavigationObject = () => {
@@ -1663,6 +1742,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 onClose={handleActionMenuClose}
                 selectedShipment={selectedShipment}
                 onViewShipmentDetail={handleViewShipmentDetail}
+                onRepeatShipment={handleRepeatShipment}
                 onPrintLabel={async (shipment) => {
                     try {
                         // Get document availability using the same logic as the menu

@@ -11,7 +11,8 @@ import {
     Delete as DeleteIcon,
     Edit as EditIcon,
     Description as DescriptionIcon,
-    Warning as WarningIcon
+    Warning as WarningIcon,
+    Repeat as RepeatIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -24,6 +25,7 @@ const ShipmentActionMenu = ({
     onPrintLabel,
     onPrintBOL,
     onViewShipmentDetail,
+    onRepeatShipment,
     documentAvailability,
     checkingDocuments
 }) => {
@@ -45,6 +47,13 @@ const ShipmentActionMenu = ({
         navigate(`/create-shipment/shipment-info/${selectedShipment.id}`);
     };
 
+    const handleRepeatShipment = () => {
+        onClose();
+        if (onRepeatShipment) {
+            onRepeatShipment(selectedShipment);
+        }
+    };
+
     return (
         <Menu
             anchorEl={anchorEl}
@@ -58,12 +67,20 @@ const ShipmentActionMenu = ({
         >
             {/* View Details - Only for non-draft shipments */}
             {selectedShipment?.status !== 'draft' && (
-                <MenuItem onClick={handleViewDetails}>
-                    <ListItemIcon>
-                        <VisibilityIcon sx={{ fontSize: '14px' }} />
-                    </ListItemIcon>
-                    View Details
-                </MenuItem>
+                <>
+                    <MenuItem onClick={handleViewDetails}>
+                        <ListItemIcon>
+                            <VisibilityIcon sx={{ fontSize: '14px' }} />
+                        </ListItemIcon>
+                        View Details
+                    </MenuItem>
+                    <MenuItem onClick={handleRepeatShipment}>
+                        <ListItemIcon>
+                            <RepeatIcon sx={{ fontSize: '14px' }} />
+                        </ListItemIcon>
+                        Repeat
+                    </MenuItem>
+                </>
             )}
 
             {/* Draft shipment options */}

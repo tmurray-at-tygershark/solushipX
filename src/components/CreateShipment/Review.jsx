@@ -539,9 +539,28 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
             console.log(`Draft ${docIdToSave} updated successfully.`);
 
             setDraftSaveSuccess(true);
+
+            // Handle navigation based on modal/non-modal context
             setTimeout(() => {
                 clearFormData();
-                navigate('/shipments');
+
+                // Use the callback if provided (modal mode), otherwise navigate directly
+                if (isModal && onReturnToShipments) {
+                    console.log('Modal mode: Using onReturnToShipments callback for draft save navigation');
+                    onReturnToShipments();
+                } else if (isModal && onClose) {
+                    console.log('Modal mode: Using onClose callback to close modal after draft save');
+                    onClose();
+
+                    // Add a small delay and then trigger the shipments modal to open
+                    setTimeout(() => {
+                        // Dispatch a custom event that the Dashboard can listen for
+                        window.dispatchEvent(new CustomEvent('openShipmentsModal'));
+                    }, 300);
+                } else {
+                    console.log('Non-modal mode: Navigating directly to /shipments after draft save');
+                    navigate('/shipments', { replace: true });
+                }
             }, 1500);
 
         } catch (error) {
@@ -1411,28 +1430,60 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                 size="large"
                                 startIcon={<CheckCircleIcon />}
                                 sx={{
-                                    bgcolor: 'white',
-                                    color: '#1e3a8a',
-                                    fontWeight: 600,
-                                    fontSize: '16px',
+                                    bgcolor: 'white !important',
+                                    color: '#1e3a8a !important',
+                                    fontWeight: '600 !important',
+                                    fontSize: '16px !important',
                                     px: 4,
                                     py: 1.5,
-                                    borderRadius: 2,
-                                    textTransform: 'none',
-                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                                    border: '2px solid transparent',
-                                    transition: 'all 0.3s ease',
+                                    borderRadius: '8px !important',
+                                    textTransform: 'none !important',
+                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15) !important',
+                                    border: '2px solid transparent !important',
+                                    transition: 'all 0.3s ease !important',
+                                    minWidth: '160px !important',
+                                    height: '48px !important',
+                                    fontFamily: 'inherit !important',
+                                    letterSpacing: 'normal !important',
+                                    lineHeight: '1.5 !important',
                                     '&:hover': {
-                                        bgcolor: '#f8fafc',
+                                        bgcolor: '#f8fafc !important',
+                                        color: '#1e3a8a !important',
                                         transform: 'translateY(-2px)',
-                                        boxShadow: '0 8px 20px rgba(0, 0, 0, 0.2)',
-                                        border: '2px solid rgba(255, 255, 255, 0.3)'
+                                        boxShadow: '0 8px 20px rgba(0, 0, 0, 0.2) !important',
+                                        border: '2px solid rgba(255, 255, 255, 0.3) !important'
                                     },
                                     '&:disabled': {
-                                        bgcolor: 'rgba(255, 255, 255, 0.3)',
-                                        color: 'rgba(255, 255, 255, 0.7)',
-                                        transform: 'none',
-                                        boxShadow: 'none'
+                                        bgcolor: 'white !important',
+                                        color: '#94a3b8 !important',
+                                        boxShadow: 'none !important',
+                                        transform: 'none !important'
+                                    },
+                                    '&.MuiButton-contained': {
+                                        bgcolor: 'white !important',
+                                        color: '#1e3a8a !important',
+                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15) !important'
+                                    },
+                                    '&.MuiButton-containedPrimary': {
+                                        bgcolor: 'white !important',
+                                        color: '#1e3a8a !important'
+                                    },
+                                    '&.MuiButton-sizeLarge': {
+                                        fontSize: '16px !important',
+                                        px: 4,
+                                        py: 1.5,
+                                        minWidth: '160px !important',
+                                        height: '48px !important'
+                                    },
+                                    // Ensure icon styling is consistent
+                                    '& .MuiButton-startIcon': {
+                                        color: '#1e3a8a !important',
+                                        fontSize: '20px !important',
+                                        marginRight: '8px !important'
+                                    },
+                                    '& .MuiSvgIcon-root': {
+                                        color: '#1e3a8a !important',
+                                        fontSize: '20px !important'
                                     }
                                 }}
                             >

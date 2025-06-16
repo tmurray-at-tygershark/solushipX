@@ -129,7 +129,7 @@ const emptyAddress = () => ({
 });
 
 // Component that uses the context
-const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false }) => {
+const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false, prePopulatedData = null }) => {
     const { step: stepSlug, draftId: urlDraftId } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -138,6 +138,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
     const { currentUser, loading: authLoading } = useAuth();
     const { companyData, companyIdForAddress, loading: companyLoading, error: companyError } = useCompany();
     const { formData, updateFormSection, setFormData, setDraftShipmentIdentifiers, clearFormData } = useShipmentForm();
+    const functions = getFunctions();
 
     const [currentStep, setCurrentStep] = useState(() => {
         if (isModal) {
@@ -216,8 +217,12 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
         }
     }, [companyIdForAddress]);
 
-    const createNewDraftInternal = async () => {
+    const createNewDraftInternal = async (initialData = null) => {
         console.log("CreateShipment: Attempting to create NEW draft shipment locally...");
+
+        if (initialData) {
+            console.log("🔄 Creating draft with pre-populated data:", initialData);
+        }
 
         // Add detailed authentication checks
         console.log("CreateShipment: Authentication check details:", {
@@ -257,7 +262,8 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                 return null;
             }
 
-            const initialShipmentData = {
+            // Merge initial data with defaults
+            const defaultShipmentData = {
                 readableShipmentID: newShipmentID,
                 shipmentID: newShipmentID,
                 status: 'draft',
@@ -273,23 +279,41 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                 }
             };
 
-            console.log("CreateShipment: Creating document with data:", initialShipmentData);
+            // Apply pre-populated data if provided
+            const finalShipmentData = { ...defaultShipmentData };
+            if (initialData) {
+                if (initialData.shipmentInfo) {
+                    finalShipmentData.shipmentInfo = { ...defaultShipmentData.shipmentInfo, ...initialData.shipmentInfo };
+                }
+                if (initialData.shipFrom) {
+                    finalShipmentData.shipFrom = { ...defaultShipmentData.shipFrom, ...initialData.shipFrom };
+                }
+                if (initialData.shipTo) {
+                    finalShipmentData.shipTo = { ...defaultShipmentData.shipTo, ...initialData.shipTo };
+                }
+                if (initialData.packages && Array.isArray(initialData.packages) && initialData.packages.length > 0) {
+                    finalShipmentData.packages = initialData.packages;
+                }
+            }
 
-            const docRef = await addDoc(collection(db, 'shipments'), initialShipmentData);
+            console.log("CreateShipment: Creating document with data:", finalShipmentData);
+
+            const docRef = await addDoc(collection(db, 'shipments'), finalShipmentData);
 
             console.log("CreateShipment: Document created successfully with ID:", docRef.id);
 
-            // Update the form context and active draft ID
+            // Update the form context and active draft ID with the final data
             setDraftShipmentIdentifiers(docRef.id);
             setActiveDraftId(docRef.id);
-            updateFormSection('shipFrom', initialShipmentData.shipFrom);
-            updateFormSection('shipTo', initialShipmentData.shipTo);
-            updateFormSection('packages', initialShipmentData.packages);
-            updateFormSection('shipmentInfo', initialShipmentData.shipmentInfo);
+            updateFormSection('shipFrom', finalShipmentData.shipFrom);
+            updateFormSection('shipTo', finalShipmentData.shipTo);
+            updateFormSection('packages', finalShipmentData.packages);
+            updateFormSection('shipmentInfo', finalShipmentData.shipmentInfo);
 
             console.log("CreateShipment: New draft created successfully:", {
                 firestoreDocId: docRef.id,
-                shipmentID: newShipmentID
+                shipmentID: newShipmentID,
+                withPrePopulatedData: !!initialData
             });
 
             return docRef.id;
@@ -319,45 +343,28 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
     };
 
     useEffect(() => {
-        // Wait for authentication to complete before proceeding
-        if (authLoading || companyLoading) {
-            console.log("CreateShipment: Waiting for auth/company loading to complete...", {
-                authLoading,
-                companyLoading,
-                currentUser: !!currentUser,
-                companyIdForAddress
-            });
-            return;
-        }
-
-        if (!currentUser || !currentUser.uid) {
-            console.error("CreateShipment: User not authenticated or missing UID");
-            setError("Authentication required to create or load a shipment. Please log in.");
-            setIsDraftProcessing(false);
-            return;
-        }
-
-        if (!companyIdForAddress) {
-            console.log("CreateShipment: Waiting for companyIdForAddress for draft management...");
-            setError("Company information not loaded. Please refresh the page or contact support.");
-            setIsDraftProcessing(false);
-            return;
-        }
+        if (authLoading || companyLoading) return; // Wait for auth and company
 
         const manageDraftLogic = async () => {
-            console.log(`CreateShipment manageDraftLogic START: urlDraftId: ${urlDraftId}, current activeDraftId: ${activeDraftId}, formData.draftId: ${formData.draftFirestoreDocId}`);
+            console.log("CreateShipment: manageDraftLogic called");
             setIsDraftProcessing(true);
-            setError(null); // Clear any previous errors
 
-            if (urlDraftId) {
-                if (urlDraftId === activeDraftId && formData.draftFirestoreDocId === urlDraftId) {
-                    console.log("CreateShipment: urlDraftId matches activeDraftId & context draftId. Draft already managed.");
-                    setIsDraftProcessing(false);
-                    return;
-                }
-                console.log(`CreateShipment: Attempting to load draft. URL Draft ID: ${urlDraftId}, Current Company ID for context: ${companyIdForAddress}`);
+            // Handle draft editing via prePopulatedData.editDraftId (for modal mode)
+            const editDraftId = prePopulatedData?.editDraftId;
+            const draftIdToLoad = editDraftId || urlDraftId;
+
+            console.log("CreateShipment: Draft loading context:", {
+                isModal,
+                editDraftId,
+                urlDraftId,
+                draftIdToLoad,
+                prePopulatedData
+            });
+
+            if (draftIdToLoad) {
+                console.log(`CreateShipment: Attempting to load draft. URL Draft ID: ${draftIdToLoad}, Current Company ID for context: ${companyIdForAddress}`);
                 try {
-                    const draftDocRef = doc(db, 'shipments', urlDraftId);
+                    const draftDocRef = doc(db, 'shipments', draftIdToLoad);
                     console.log(`CreateShipment: Firestore document reference path: ${draftDocRef.path}`);
                     const draftDocSnap = await getDoc(draftDocRef);
                     console.log("CreateShipment: Received draftDocSnap from Firestore:", draftDocSnap);
@@ -381,7 +388,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
 
                             // Enhanced draft data processing with proper fallbacks
                             const processedDraftData = {
-                                draftFirestoreDocId: urlDraftId,
+                                draftFirestoreDocId: draftIdToLoad,
 
                                 // ShipmentInfo with proper fallbacks
                                 shipmentInfo: {
@@ -429,22 +436,22 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
 
                             // Use the enhanced setFormData that properly merges with initial state
                             setFormData(processedDraftData);
-                            setDraftShipmentIdentifiers(urlDraftId);
-                            setActiveDraftId(urlDraftId);
+                            setDraftShipmentIdentifiers(draftIdToLoad);
+                            setActiveDraftId(draftIdToLoad);
                             console.log("CreateShipment: Draft loading completed successfully");
                         } else {
                             console.error("CreateShipment: Draft not valid or access denied.", { draftStatus: draftData.status, draftCompanyID: draftData.companyID, contextCompanyID: companyIdForAddress });
                             throw new Error("Draft not valid or access denied.");
                         }
                     } else {
-                        console.error(`CreateShipment: No draft shipment found with ID in Firestore: ${urlDraftId}`);
-                        throw new Error(`No draft shipment found with ID: ${urlDraftId}.`);
+                        console.error(`CreateShipment: No draft shipment found with ID in Firestore: ${draftIdToLoad}`);
+                        throw new Error(`No draft shipment found with ID: ${draftIdToLoad}.`);
                     }
                 } catch (err) {
                     console.error("CreateShipment: Error loading draft in try/catch:", err, "Raw error object:", JSON.stringify(err));
 
                     // Check if this shipment exists before attempting to create a new one
-                    const existingShipment = await checkShipmentExists(urlDraftId);
+                    const existingShipment = await checkShipmentExists(draftIdToLoad);
 
                     // Construct a more informative error message
                     let displayError = err.message || 'Unknown error loading draft.';
@@ -457,28 +464,28 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                     if (existingShipment) {
                         // Shipment exists but we couldn't load it properly - show error without creating new one
                         if (existingShipment.status === 'processing' || existingShipment.status === 'completed') {
-                            setError(`Shipment ${urlDraftId} has already been processed and cannot be edited. Status: ${existingShipment.status}`);
+                            setError(`Shipment ${draftIdToLoad} has already been processed and cannot be edited. Status: ${existingShipment.status}`);
                         } else if (existingShipment.companyID !== companyIdForAddress) {
-                            setError(`Access denied: Shipment ${urlDraftId} belongs to a different company.`);
+                            setError(`Access denied: Shipment ${draftIdToLoad} belongs to a different company.`);
                         } else {
-                            setError(`Error loading shipment ${urlDraftId}: ${displayError}. Please try refreshing the page or contact support.`);
+                            setError(`Error loading shipment ${draftIdToLoad}: ${displayError}. Please try refreshing the page or contact support.`);
                         }
                         setIsDraftProcessing(false);
                         return; // Don't create a new shipment
                     } else {
                         // No existing shipment found - safe to create a new one
-                        console.log(`CreateShipment: No existing shipment found for ${urlDraftId}, creating new draft as fallback.`);
+                        console.log(`CreateShipment: No existing shipment found for ${draftIdToLoad}, creating new draft as fallback.`);
                         setError(`${displayError} Creating a new shipment instead.`);
                         clearFormData();
                         setActiveDraftId(null);
-                        await createNewDraftInternal();
+                        await createNewDraftInternal(prePopulatedData);
                     }
                 }
             } else {
                 if (!activeDraftId || !formData.draftFirestoreDocId) {
                     console.log("CreateShipment: No urlDraftId and no active/context draftId. Creating new draft.");
                     clearFormData();
-                    await createNewDraftInternal();
+                    await createNewDraftInternal(prePopulatedData);
                 } else {
                     console.log(`CreateShipment: No urlDraftId, but an active draft (ID: ${activeDraftId || formData.draftFirestoreDocId}) seems to exist. Ensuring URL reflects this for step 1.`);
                     if (activeDraftId || formData.draftFirestoreDocId) {
@@ -949,6 +956,21 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
         }
     }, [formData, isDraftProcessing, activeDraftId, validateDataCompleteness]);
 
+    // Effect to handle pre-populated data
+    useEffect(() => {
+        if (prePopulatedData && !activeDraftId && !isDraftProcessing) {
+            console.log('🔄 Pre-populated data received:', prePopulatedData);
+
+            // Apply pre-populated data to form context
+            Object.entries(prePopulatedData).forEach(([section, data]) => {
+                if (data && Object.keys(data).length > 0) {
+                    console.log(`Applying pre-populated data for section: ${section}`, data);
+                    updateFormSection(section, data);
+                }
+            });
+        }
+    }, [prePopulatedData, activeDraftId, isDraftProcessing, updateFormSection]);
+
     const renderStep = () => {
         console.log('Rendering step:', currentStep, 'with form data from context. Active draft:', activeDraftId);
         const safeApiKey = API_KEY || 'e61c3e150511db70aa0f2d2476ab8511';
@@ -1149,10 +1171,10 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
     );
 };
 
-const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false }) => {
+const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false, prePopulatedData = null }) => {
     return (
         <ShipmentFormProvider>
-            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} showCloseButton={showCloseButton} />
+            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} showCloseButton={showCloseButton} prePopulatedData={prePopulatedData} />
         </ShipmentFormProvider>
     );
 };

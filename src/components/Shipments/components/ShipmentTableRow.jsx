@@ -30,6 +30,7 @@ const ShipmentTableRow = ({
     showSnackbar,
     onOpenTrackingDrawer,
     onViewShipmentDetail,
+    onEditDraftShipment,
     visibleColumns = {},
     columnConfig = {}
 }) => {
@@ -146,16 +147,29 @@ const ShipmentTableRow = ({
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         {shipment.status === 'draft' ? (
-                            <Link
-                                to={`/create-shipment/shipment-info/${shipment.id}`}
-                                className="shipment-link"
-                                style={{ fontSize: '11px' }}
-                            >
-                                <span>{highlightSearchTerm(
-                                    shipment.shipmentID || shipment.id,
-                                    searchFields.shipmentId
-                                )}</span>
-                            </Link>
+                            onEditDraftShipment ? (
+                                <span
+                                    onClick={() => onEditDraftShipment(shipment.id)}
+                                    className="shipment-link"
+                                    style={{ cursor: 'pointer', fontSize: '11px' }}
+                                >
+                                    <span>{highlightSearchTerm(
+                                        shipment.shipmentID || shipment.id,
+                                        searchFields.shipmentId
+                                    )}</span>
+                                </span>
+                            ) : (
+                                <Link
+                                    to={`/create-shipment/shipment-info/${shipment.id}`}
+                                    className="shipment-link"
+                                    style={{ fontSize: '11px' }}
+                                >
+                                    <span>{highlightSearchTerm(
+                                        shipment.shipmentID || shipment.id,
+                                        searchFields.shipmentId
+                                    )}</span>
+                                </Link>
+                            )
                         ) : (
                             <span
                                 onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}

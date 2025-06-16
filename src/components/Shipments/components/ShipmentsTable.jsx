@@ -24,7 +24,8 @@ const ShipmentsTable = ({
     highlightSearchTerm,
     showSnackbar,
     onOpenTrackingDrawer,
-    onViewShipmentDetail
+    onViewShipmentDetail,
+    onEditDraftShipment
 }) => {
     const safeShipments = shipments || [];
     const safeSelected = selected || [];
@@ -210,6 +211,7 @@ const ShipmentsTable = ({
                                 showSnackbar={showSnackbar}
                                 onOpenTrackingDrawer={onOpenTrackingDrawer}
                                 onViewShipmentDetail={onViewShipmentDetail}
+                                onEditDraftShipment={onEditDraftShipment}
                                 columnConfig={columnConfig}
                             />
                         ))

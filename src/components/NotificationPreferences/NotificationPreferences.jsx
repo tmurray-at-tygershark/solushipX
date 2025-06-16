@@ -273,163 +273,149 @@ const NotificationPreferences = ({ isModal = false, onClose = null, showCloseBut
     }
 
     return (
-        <Box>
-            {/* Modal Header */}
-            {isModal && (
-                <ModalHeader
-                    title="Notifications"
-                    onClose={showCloseButton ? onClose : null}
-                    showCloseButton={showCloseButton}
-                />
-            )}
+        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
+            <Box sx={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                position: 'relative'
+            }}>
+                {/* Modal Header */}
+                {isModal && (
+                    <ModalHeader
+                        title="Notifications"
+                        onClose={showCloseButton ? onClose : null}
+                        showCloseButton={showCloseButton}
+                    />
+                )}
 
-            <Box sx={{ maxWidth: 1200, margin: '0 auto', padding: 3 }}>
-                {/* Breadcrumb - only show when not in modal */}
-                {!isModal && (
-                    <div className="breadcrumb-container" style={{
-                        marginBottom: '24px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        flexWrap: 'nowrap',
-                        width: '100%'
+                {/* Scrollable Content Area */}
+                <Box sx={{
+                    flex: 1,
+                    overflow: 'auto',
+                    minHeight: 0,
+                    position: 'relative'
+                }}>
+                    <Box sx={{
+                        p: 3,
+                        minHeight: '100%'
                     }}>
-                        <Link to="/dashboard" className="breadcrumb-link" style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            textDecoration: 'none',
-                            color: '#64748b',
-                            fontSize: '14px',
-                            whiteSpace: 'nowrap'
-                        }}>
-                            <HomeIcon sx={{ fontSize: 16 }} />
-                            <Typography variant="body2">Dashboard</Typography>
-                        </Link>
-                        <div className="breadcrumb-separator" style={{ margin: '0 8px', color: '#64748b' }}>
-                            <NavigateNextIcon sx={{ fontSize: 16 }} />
-                        </div>
-                        <Typography variant="body2" className="breadcrumb-current" sx={{
-                            color: '#1e293b',
-                            fontSize: '14px',
-                            whiteSpace: 'nowrap'
-                        }}>
-                            Notifications
-                        </Typography>
-                    </div>
-                )}
+                        {/* Breadcrumb - only show when not in modal */}
+                        {!isModal && (
+                            <div className="breadcrumb-container" style={{
+                                marginBottom: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                flexWrap: 'nowrap',
+                                width: '100%'
+                            }}>
+                                <Link to="/dashboard" className="breadcrumb-link" style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    textDecoration: 'none',
+                                    color: '#64748b',
+                                    fontSize: '12px',
+                                    whiteSpace: 'nowrap'
+                                }}>
+                                    <HomeIcon sx={{ fontSize: 16 }} />
+                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>Dashboard</Typography>
+                                </Link>
+                                <div className="breadcrumb-separator" style={{ margin: '0 8px', color: '#64748b' }}>
+                                    <NavigateNextIcon sx={{ fontSize: 16 }} />
+                                </div>
+                                <Typography variant="body2" className="breadcrumb-current" sx={{
+                                    color: '#1e293b',
+                                    fontSize: '12px',
+                                    whiteSpace: 'nowrap'
+                                }}>
+                                    Notifications
+                                </Typography>
+                            </div>
+                        )}
 
-                {/* Header */}
-                <Box sx={{ mb: 4 }}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Box display="flex" alignItems="center" gap={2}>
-                            {!isModal && <NotificationsIcon sx={{ fontSize: 32, color: theme.palette.primary.main }} />}
-                            <Typography variant={isModal ? "h5" : "h4"} component="h1">
-                                {isModal ? "Email Notification Preferences" : "Email Notification Preferences"}
-                            </Typography>
-                        </Box>
+                        {/* Header - only show when not in modal */}
+                        {!isModal && (
+                            <Box sx={{ mb: 4 }}>
+                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                                    <Box display="flex" alignItems="center" gap={2}>
+                                        <NotificationsIcon sx={{ fontSize: 32, color: theme.palette.primary.main }} />
+                                        <Typography variant="h4" component="h1">
+                                            Email Notification Preferences
+                                        </Typography>
+                                    </Box>
 
-                        <Box display="flex" gap={2} flexWrap="wrap">
-                            <Button
-                                variant="contained"
-                                startIcon={<SaveIcon />}
-                                onClick={savePreferences}
-                                disabled={saving}
-                                sx={{ minWidth: 120 }}
-                            >
-                                {saving ? <CircularProgress size={20} /> : 'Save Changes'}
-                            </Button>
-                        </Box>
-                    </Box>
-
-                    <Typography variant="body1" color="text.secondary" paragraph>
-                        Manage when and how you receive email notifications about your shipments.
-                        All notifications are sent to <strong>{user?.email}</strong>.
-                    </Typography>
-                </Box>
-
-                {/* Hawkeye Mode Alert */}
-                {preferences.hawkeye_mode && (
-                    <Alert
-                        severity="info"
-                        sx={{ mb: 3 }}
-                        icon={<VisibilityIcon />}
-                    >
-                        <strong>Hawkeye Mode is active!</strong> You will receive all notification types regardless of individual settings below.
-                    </Alert>
-                )}
-
-                {/* Notification Categories */}
-                <Grid container spacing={3}>
-                    {/* Master Controls */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" gutterBottom display="flex" alignItems="center" gap={1}>
-                            <SettingsIcon /> Master Controls
-                        </Typography>
-
-                        {notificationTypes
-                            .filter(type => type.isMaster)
-                            .map((type) => (
-                                <Card key={type.key} sx={{ mb: 2 }}>
-                                    <CardContent>
-                                        <Box display="flex" alignItems="center" justifyContent="space-between">
-                                            <Box display="flex" alignItems="center" gap={2}>
-                                                <Box
-                                                    sx={{
-                                                        color: type.color,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        fontSize: 28
-                                                    }}
-                                                >
-                                                    {type.icon}
-                                                </Box>
-                                                <Box>
-                                                    <Typography variant="h6" component="div">
-                                                        {type.title}
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {type.description}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-
-                                            <FormControlLabel
-                                                control={
-                                                    <Switch
-                                                        checked={preferences[type.key]}
-                                                        onChange={handlePreferenceChange(type.key)}
-                                                        color="primary"
-                                                        size="large"
-                                                    />
-                                                }
-                                                label=""
-                                            />
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                    </Grid>
-
-                    {/* Individual Notification Types */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" gutterBottom display="flex" alignItems="center" gap={1}>
-                            <EmailIcon /> Individual Notification Types
-                        </Typography>
-
-                        <Grid container spacing={2}>
-                            {notificationTypes
-                                .filter(type => !type.isMaster)
-                                .map((type) => (
-                                    <Grid item xs={12} md={6} key={type.key}>
-                                        <Card
-                                            sx={{
-                                                height: '100%',
-                                                opacity: preferences.hawkeye_mode ? 0.7 : 1,
-                                                transition: 'opacity 0.3s ease'
-                                            }}
+                                    <Box display="flex" gap={2} flexWrap="wrap">
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<SaveIcon />}
+                                            onClick={savePreferences}
+                                            disabled={saving}
+                                            sx={{ fontSize: '12px' }}
                                         >
-                                            <CardContent>
-                                                <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={2}>
+                                            {saving ? <CircularProgress size={20} /> : 'Save'}
+                                        </Button>
+                                    </Box>
+                                </Box>
+
+                                <Typography variant="body1" color="text.secondary" paragraph sx={{ fontSize: '12px' }}>
+                                    Manage when and how you receive email notifications about your shipments.
+                                    All notifications are sent to <strong>{user?.email}</strong>.
+                                </Typography>
+                            </Box>
+                        )}
+
+                        {/* Header for modal mode */}
+                        {isModal && (
+                            <Box sx={{ mb: 3 }}>
+                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                                    <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                        Manage when and how you receive email notifications about your shipments.
+                                        All notifications are sent to <strong>{user?.email}</strong>.
+                                    </Typography>
+
+                                    <Button
+                                        variant="contained"
+                                        startIcon={<SaveIcon />}
+                                        onClick={savePreferences}
+                                        disabled={saving}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        {saving ? <CircularProgress size={20} /> : 'Save'}
+                                    </Button>
+                                </Box>
+                            </Box>
+                        )}
+
+                        {/* Hawkeye Mode Alert */}
+                        {preferences.hawkeye_mode && (
+                            <Alert
+                                severity="info"
+                                sx={{ mb: 3 }}
+                                icon={<VisibilityIcon />}
+                            >
+                                <Typography sx={{ fontSize: '12px' }}>
+                                    <strong>Hawkeye Mode is active!</strong> You will receive all notification types regardless of individual settings below.
+                                </Typography>
+                            </Alert>
+                        )}
+
+                        {/* Notification Categories */}
+                        <Grid container spacing={3}>
+                            {/* Master Controls */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" gutterBottom sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                    Master Controls
+                                </Typography>
+
+                                {notificationTypes
+                                    .filter(type => type.isMaster)
+                                    .map((type) => (
+                                        <Card key={type.key} sx={{ mb: 2 }}>
+                                            <CardContent sx={{ p: 2 }}>
+                                                <Box display="flex" alignItems="center" justifyContent="space-between">
                                                     <Box display="flex" alignItems="center" gap={2}>
                                                         <Box
                                                             sx={{
@@ -442,103 +428,168 @@ const NotificationPreferences = ({ isModal = false, onClose = null, showCloseBut
                                                             {type.icon}
                                                         </Box>
                                                         <Box>
-                                                            <Typography variant="h6" component="div">
+                                                            <Typography variant="h6" component="div" sx={{ fontSize: '14px', fontWeight: 600 }}>
                                                                 {type.title}
                                                             </Typography>
-                                                            <Chip
-                                                                label={type.category}
-                                                                size="small"
-                                                                sx={{
-                                                                    backgroundColor: `${type.color}20`,
-                                                                    color: type.color,
-                                                                    fontWeight: 'bold'
-                                                                }}
-                                                            />
+                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                                {type.description}
+                                                            </Typography>
                                                         </Box>
                                                     </Box>
 
                                                     <FormControlLabel
                                                         control={
                                                             <Switch
-                                                                checked={getEffectiveStatus(type.key)}
+                                                                checked={preferences[type.key]}
                                                                 onChange={handlePreferenceChange(type.key)}
-                                                                disabled={preferences.hawkeye_mode}
                                                                 color="primary"
+                                                                size="medium"
                                                             />
                                                         }
                                                         label=""
                                                     />
                                                 </Box>
-
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {type.description}
-                                                </Typography>
-
-                                                <Box mt={2}>
-                                                    <Chip
-                                                        label={getEffectiveStatus(type.key) ? 'Enabled' : 'Disabled'}
-                                                        color={getEffectiveStatus(type.key) ? 'success' : 'default'}
-                                                        size="small"
-                                                        variant="outlined"
-                                                    />
-                                                </Box>
                                             </CardContent>
                                         </Card>
-                                    </Grid>
-                                ))}
-                        </Grid>
-                    </Grid>
+                                    ))}
+                            </Grid>
 
-                    {/* Email Settings Info */}
-                    <Grid item xs={12}>
-                        <Paper sx={{ p: 3, backgroundColor: '#f8f9fa' }}>
-                            <Typography variant="h6" gutterBottom display="flex" alignItems="center" gap={1}>
-                                <InfoIcon color="primary" /> Email Settings
-                            </Typography>
+                            {/* Individual Notification Types */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" gutterBottom sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                    Individual Notification Types
+                                </Typography>
 
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} md={4}>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="primary">From Address</Typography>
-                                        <Typography variant="body2">notifications@solushipx.com</Typography>
-                                    </Box>
-                                </Grid>
+                                <Grid container spacing={2}>
+                                    {notificationTypes
+                                        .filter(type => !type.isMaster)
+                                        .map((type) => (
+                                            <Grid item xs={12} md={6} key={type.key}>
+                                                <Card
+                                                    sx={{
+                                                        height: '100%',
+                                                        opacity: preferences.hawkeye_mode ? 0.7 : 1,
+                                                        transition: 'opacity 0.3s ease'
+                                                    }}
+                                                >
+                                                    <CardContent sx={{ p: 2 }}>
+                                                        <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={2}>
+                                                            <Box display="flex" alignItems="center" gap={2}>
+                                                                <Box
+                                                                    sx={{
+                                                                        color: type.color,
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        fontSize: 20
+                                                                    }}
+                                                                >
+                                                                    {type.icon}
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="h6" component="div" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                                                        {type.title}
+                                                                    </Typography>
+                                                                    <Chip
+                                                                        label={type.category}
+                                                                        size="small"
+                                                                        sx={{
+                                                                            backgroundColor: `${type.color}20`,
+                                                                            color: type.color,
+                                                                            fontWeight: 'bold',
+                                                                            fontSize: '10px',
+                                                                            height: '18px'
+                                                                        }}
+                                                                    />
+                                                                </Box>
+                                                            </Box>
 
-                                <Grid item xs={12} md={4}>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="primary">Your Email</Typography>
-                                        <Typography variant="body2">{user?.email}</Typography>
-                                    </Box>
-                                </Grid>
+                                                            <FormControlLabel
+                                                                control={
+                                                                    <Switch
+                                                                        checked={getEffectiveStatus(type.key)}
+                                                                        onChange={handlePreferenceChange(type.key)}
+                                                                        disabled={preferences.hawkeye_mode}
+                                                                        color="primary"
+                                                                        size="small"
+                                                                    />
+                                                                }
+                                                                label=""
+                                                            />
+                                                        </Box>
 
-                                <Grid item xs={12} md={4}>
-                                    <Box>
-                                        <Typography variant="subtitle2" color="primary">Delivery Method</Typography>
-                                        <Typography variant="body2">Real-time via SendGrid</Typography>
-                                    </Box>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                                                            {type.description}
+                                                        </Typography>
+
+                                                        <Box>
+                                                            <Chip
+                                                                label={getEffectiveStatus(type.key) ? 'Enabled' : 'Disabled'}
+                                                                color={getEffectiveStatus(type.key) ? 'success' : 'default'}
+                                                                size="small"
+                                                                variant="outlined"
+                                                                sx={{ fontSize: '10px', height: '20px' }}
+                                                            />
+                                                        </Box>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                        ))}
                                 </Grid>
                             </Grid>
-                        </Paper>
-                    </Grid>
-                </Grid>
 
-                {/* Snackbar for notifications */}
-                <Snackbar
-                    open={snackbar.open}
-                    autoHideDuration={6000}
-                    onClose={() => setSnackbar({ ...snackbar, open: false })}
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                >
-                    <Alert
-                        onClose={() => setSnackbar({ ...snackbar, open: false })}
-                        severity={snackbar.severity}
-                        variant="filled"
-                    >
-                        {snackbar.message}
-                    </Alert>
-                </Snackbar>
+                            {/* Email Settings Info */}
+                            <Grid item xs={12}>
+                                <Paper sx={{ p: 3, backgroundColor: '#f8f9fa' }}>
+                                    <Typography variant="h6" gutterBottom display="flex" alignItems="center" gap={1} sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                        <InfoIcon color="primary" sx={{ fontSize: '16px' }} /> Email Settings
+                                    </Typography>
+
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} md={4}>
+                                            <Box>
+                                                <Typography variant="subtitle2" color="primary" sx={{ fontSize: '12px', fontWeight: 600 }}>From Address</Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>notifications@solushipx.com</Typography>
+                                            </Box>
+                                        </Grid>
+
+                                        <Grid item xs={12} md={4}>
+                                            <Box>
+                                                <Typography variant="subtitle2" color="primary" sx={{ fontSize: '12px', fontWeight: 600 }}>Your Email</Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>{user?.email}</Typography>
+                                            </Box>
+                                        </Grid>
+
+                                        <Grid item xs={12} md={4}>
+                                            <Box>
+                                                <Typography variant="subtitle2" color="primary" sx={{ fontSize: '12px', fontWeight: 600 }}>Delivery Method</Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>Real-time via SendGrid</Typography>
+                                            </Box>
+                                        </Grid>
+                                    </Grid>
+                                </Paper>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                </Box>
             </Box>
-        </Box>
+
+            {/* Snackbar for notifications */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={6000}
+                onClose={() => setSnackbar({ ...snackbar, open: false })}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert
+                    onClose={() => setSnackbar({ ...snackbar, open: false })}
+                    severity={snackbar.severity}
+                    variant="filled"
+                    sx={{ fontSize: '12px' }}
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+        </div>
     );
 };
 

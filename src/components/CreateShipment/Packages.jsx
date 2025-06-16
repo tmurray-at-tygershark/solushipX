@@ -189,6 +189,7 @@ const Packages = ({ onNext, onPrevious }) => {
         const shipmentType = formData.shipmentInfo?.shipmentType;
 
         console.log("Packages: Context packages changed:", contextPackages);
+        console.log("Packages: Shipment type:", shipmentType);
 
         if (Array.isArray(contextPackages) && contextPackages.length > 0) {
             // Process existing packages to ensure they have all required fields
@@ -203,13 +204,17 @@ const Packages = ({ onNext, onPrevious }) => {
                 height: pkg.height || '',
                 width: pkg.width || '',
                 length: pkg.length || '',
-                freightClass: pkg.freightClass || (shipmentType === 'freight' ? "50" : "50"),
+                // Ensure freight class is properly set - use existing value or default to "50"
+                freightClass: pkg.freightClass || "50",
                 declaredValue: pkg.declaredValue || 0.00,
                 currency: pkg.currency || 'USD'
             }));
 
             console.log("Packages: Setting processed packages:", processedPackages);
             setPackages(processedPackages);
+
+            // Immediately update context with processed packages to ensure validation works
+            updateFormSection('packages', processedPackages);
         } else {
             // No packages in context or empty array - use default with appropriate values for shipment type
             const defaultWithShipmentType = {
@@ -219,9 +224,13 @@ const Packages = ({ onNext, onPrevious }) => {
                 freightClass: "50" // Use 50 as default for all shipment types
             };
             console.log("Packages: No packages in context, using default package with shipment type defaults");
-            setPackages([defaultWithShipmentType]);
+            const newPackages = [defaultWithShipmentType];
+            setPackages(newPackages);
+
+            // Immediately update context with default package
+            updateFormSection('packages', newPackages);
         }
-    }, [formData.packages, formData.shipmentInfo?.shipmentType]);
+    }, [formData.packages, formData.shipmentInfo?.shipmentType, updateFormSection]);
 
     const updateContext = (newPackages) => {
         updateFormSection('packages', newPackages);
@@ -230,6 +239,10 @@ const Packages = ({ onNext, onPrevious }) => {
     // Validation functions
     const validatePackage = (pkg, index, shipmentType) => {
         const packageErrors = {};
+
+        console.log(`Packages: Validating package ${index + 1}:`, pkg);
+        console.log(`Packages: Package freight class:`, pkg.freightClass);
+        console.log(`Packages: Shipment type:`, shipmentType);
 
         // Item Description validation
         if (!pkg.itemDescription || String(pkg.itemDescription).trim() === '') {
@@ -265,18 +278,34 @@ const Packages = ({ onNext, onPrevious }) => {
                 packageErrors.packagingType = 'Packaging type is required for freight shipments';
             }
 
-            if (!pkg.freightClass) {
+            // Enhanced freight class validation with explicit checks
+            if (!pkg.freightClass || String(pkg.freightClass).trim() === '') {
+                console.log(`Packages: Freight class validation failed for package ${index + 1} - no freight class value`);
                 packageErrors.freightClass = 'Freight class is required for freight shipments';
+            } else {
+                // Verify the freight class is a valid option
+                const isValidFreightClass = FREIGHT_CLASSES.some(fc => fc.class === String(pkg.freightClass));
+                if (!isValidFreightClass) {
+                    console.log(`Packages: Freight class validation failed for package ${index + 1} - invalid freight class: ${pkg.freightClass}`);
+                    packageErrors.freightClass = 'Please select a valid freight class';
+                } else {
+                    console.log(`Packages: Freight class validation passed for package ${index + 1} - class: ${pkg.freightClass}`);
+                }
             }
         }
 
+        console.log(`Packages: Validation errors for package ${index + 1}:`, packageErrors);
         return packageErrors;
     };
 
     const validateAllPackages = () => {
-        const currentPackages = formData.packages || [];
+        // Use current packages state instead of formData.packages to ensure we're validating the most current data
+        const currentPackages = packages || [];
         const shipmentType = formData.shipmentInfo?.shipmentType;
         const allErrors = {};
+
+        console.log("Packages: Validating packages:", currentPackages);
+        console.log("Packages: Shipment type for validation:", shipmentType);
 
         currentPackages.forEach((pkg, index) => {
             const packageErrors = validatePackage(pkg, index, shipmentType);
@@ -285,6 +314,7 @@ const Packages = ({ onNext, onPrevious }) => {
             }
         });
 
+        console.log("Packages: Validation errors found:", allErrors);
         return allErrors;
     };
 
