@@ -59,6 +59,19 @@ const { trackShipment } = require('./trackShipment');
 const { getRatesUniversal } = require('./getRatesUniversal');
 console.log('LOG-MAIN-INDEX: AI agent functions imported.');
 
+// Import report functions
+const { generateReport } = require('./generateReport');
+const { 
+    scheduleReport, 
+    updateReportSchedule, 
+    deleteReportSchedule, 
+    getCompanyReportSchedules, 
+    triggerScheduledReport 
+} = require('./scheduleReport');
+
+// Add test email function
+const { sendTestReportNotification } = require('./sendTestReportNotification');
+
 // Initialize Express app
 const app = express();
 app.use(cors({ origin: true }));
@@ -229,5 +242,27 @@ if (notificationFunctions && notificationFunctions.getNotificationPreferences) {
 } else {
     console.warn('LOG-MAIN-INDEX: getNotificationPreferences not found in notificationFunctions.');
 }
+
+// Export report functions
+exports.generateReport = generateReport;
+console.log('LOG-MAIN-INDEX: exports.generateReport defined.');
+
+exports.scheduleReport = scheduleReport;
+console.log('LOG-MAIN-INDEX: exports.scheduleReport defined.');
+
+exports.updateReportSchedule = updateReportSchedule;
+console.log('LOG-MAIN-INDEX: exports.updateReportSchedule defined.');
+
+exports.deleteReportSchedule = deleteReportSchedule;
+console.log('LOG-MAIN-INDEX: exports.deleteReportSchedule defined.');
+
+exports.getCompanyReportSchedules = getCompanyReportSchedules;
+console.log('LOG-MAIN-INDEX: exports.getCompanyReportSchedules defined.');
+
+exports.triggerScheduledReport = triggerScheduledReport;
+console.log('LOG-MAIN-INDEX: exports.triggerScheduledReport defined.');
+
+exports.sendTestReportNotification = sendTestReportNotification;
+console.log('LOG-MAIN-INDEX: exports.sendTestReportNotification defined.');
 
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

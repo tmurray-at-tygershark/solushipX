@@ -77,6 +77,17 @@ const { createCustomerDestination } = require('./src/createCustomerDestination')
 const { trackShipment } = require('./src/trackShipment');
 const { getRatesUniversal } = require('./src/getRatesUniversal');
 
+// Import report functions
+const { generateReport } = require('./src/generateReport');
+const { 
+    scheduleReport, 
+    updateReportSchedule, 
+    deleteReportSchedule, 
+    getCompanyReportSchedules, 
+    triggerScheduledReport 
+} = require('./src/scheduleReport');
+const { sendTestReportNotification } = require('./src/sendTestReportNotification');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -128,6 +139,15 @@ exports.createCustomer = createCustomer;
 exports.createCustomerDestination = createCustomerDestination;
 exports.trackShipment = trackShipment;
 exports.getRatesUniversal = getRatesUniversal;
+
+// Export report functions
+exports.generateReport = generateReport;
+exports.scheduleReport = scheduleReport;
+exports.updateReportSchedule = updateReportSchedule;
+exports.deleteReportSchedule = deleteReportSchedule;
+exports.getCompanyReportSchedules = getCompanyReportSchedules;
+exports.triggerScheduledReport = triggerScheduledReport;
+exports.sendTestReportNotification = sendTestReportNotification;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

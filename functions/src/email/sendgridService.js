@@ -1217,8 +1217,208 @@ async function getUserCompanyNotificationStatus(userId, companyId) {
     }
 }
 
+const getEmailTemplate = (templateType, data = {}) => {
+    const templates = {
+        report_generated: {
+            subject: `✅ Report Generated Successfully - ${data.reportType || 'Report'}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8fafc;">
+                    <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #1e293b; margin: 0; font-size: 24px;">Report Generated Successfully</h1>
+                            <p style="color: #64748b; margin: 10px 0 0 0;">Your ${data.reportType || 'report'} is ready for download</p>
+                        </div>
+                        
+                        <div style="background-color: #f1f5f9; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1e293b; margin: 0 0 15px 0; font-size: 16px;">Report Details</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td style="padding: 5px 0; color: #64748b;">Report Type:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.reportType || 'N/A'}</td></tr>
+                                <tr><td style="padding: 5px 0; color: #64748b;">Generated:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.generatedAt ? new Date(data.generatedAt).toLocaleString() : 'Just now'}</td></tr>
+                                <tr><td style="padding: 5px 0; color: #64748b;">Format:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.format || 'PDF'}</td></tr>
+                                ${data.recordCount ? `<tr><td style="padding: 5px 0; color: #64748b;">Records:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.recordCount}</td></tr>` : ''}
+                            </table>
+                        </div>
+                        
+                        ${data.downloadUrl ? `
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="${data.downloadUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
+                                    📥 Download Report
+                                </a>
+                            </div>
+                        ` : ''}
+                        
+                        <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 30px; text-align: center;">
+                            <p style="color: #64748b; font-size: 12px; margin: 0;">
+                                This is an automated notification from SolushipX Reports
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `
+        },
+        
+        report_failed: {
+            subject: `❌ Report Generation Failed - ${data.reportType || 'Report'}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8fafc;">
+                    <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #dc2626; margin: 0; font-size: 24px;">Report Generation Failed</h1>
+                            <p style="color: #64748b; margin: 10px 0 0 0;">There was an issue generating your ${data.reportType || 'report'}</p>
+                        </div>
+                        
+                        <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #dc2626; margin: 0 0 10px 0; font-size: 16px;">Error Details</h3>
+                            <p style="color: #991b1b; margin: 0; font-size: 14px;">${data.errorMessage || 'An unexpected error occurred during report generation.'}</p>
+                        </div>
+                        
+                        <div style="background-color: #f1f5f9; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1e293b; margin: 0 0 15px 0; font-size: 16px;">Report Details</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td style="padding: 5px 0; color: #64748b;">Report Type:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.reportType || 'N/A'}</td></tr>
+                                <tr><td style="padding: 5px 0; color: #64748b;">Attempted:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.attemptedAt ? new Date(data.attemptedAt).toLocaleString() : 'Just now'}</td></tr>
+                                <tr><td style="padding: 5px 0; color: #64748b;">Format:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.format || 'PDF'}</td></tr>
+                            </table>
+                        </div>
+                        
+                        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1d4ed8; margin: 0 0 10px 0; font-size: 16px;">Next Steps</h3>
+                            <ul style="color: #1e40af; margin: 0; padding-left: 20px;">
+                                <li>Check your report configuration for any missing data</li>
+                                <li>Verify that your date ranges and filters are valid</li>
+                                <li>Try generating the report again</li>
+                                <li>Contact support if the problem persists</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 30px; text-align: center;">
+                            <p style="color: #64748b; font-size: 12px; margin: 0;">
+                                This is an automated notification from SolushipX Reports
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `
+        },
+
+        schedule_reminder: {
+            subject: `⏰ Scheduled Report Reminder - ${data.reportName || 'Report'}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8fafc;">
+                    <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #1e293b; margin: 0; font-size: 24px;">Scheduled Report Reminder</h1>
+                            <p style="color: #64748b; margin: 10px 0 0 0;">Your report "${data.reportName}" is scheduled to run soon</p>
+                        </div>
+                        
+                        <div style="background-color: #fef3c7; border: 1px solid #fde68a; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">⏰ Upcoming Execution</h3>
+                            <p style="color: #78350f; margin: 0; font-size: 14px;">Next run: ${data.nextRun ? new Date(data.nextRun).toLocaleString() : 'Soon'}</p>
+                        </div>
+                        
+                        <div style="background-color: #f1f5f9; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1e293b; margin: 0 0 15px 0; font-size: 16px;">Schedule Details</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td style="padding: 5px 0; color: #64748b;">Report Name:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.reportName || 'N/A'}</td></tr>
+                                <tr><td style="padding: 5px 0; color: #64748b;">Frequency:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.frequency || 'N/A'}</td></tr>
+                                <tr><td style="padding: 5px 0; color: #64748b;">Recipients:</td><td style="padding: 5px 0; color: #1e293b; font-weight: 500;">${data.recipientCount || 0}</td></tr>
+                            </table>
+                        </div>
+                        
+                        <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 30px; text-align: center;">
+                            <p style="color: #64748b; font-size: 12px; margin: 0;">
+                                This is an automated reminder from SolushipX Reports
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `
+        },
+
+        test_notification: {
+            subject: data.subject || 'Test Notification from SolushipX Reports',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8fafc;">
+                    <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #1e293b; margin: 0; font-size: 24px;">🧪 Test Notification</h1>
+                            <p style="color: #64748b; margin: 10px 0 0 0;">This is a test email from SolushipX Reports</p>
+                        </div>
+                        
+                        <div style="background-color: #f1f5f9; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1e293b; margin: 0 0 15px 0; font-size: 16px;">Message</h3>
+                            <p style="color: #475569; margin: 0; line-height: 1.6;">${data.message || 'This is a test notification from the SolushipX Reports system.'}</p>
+                        </div>
+                        
+                        <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #065f46; margin: 0 0 10px 0; font-size: 16px;">✅ Email System Working</h3>
+                            <p style="color: #047857; margin: 0; font-size: 14px;">If you're reading this, your email notifications are configured correctly!</p>
+                        </div>
+                        
+                        <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 30px; text-align: center;">
+                            <p style="color: #64748b; font-size: 12px; margin: 0;">
+                                Sent at ${new Date().toLocaleString()} • SolushipX Reports System
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `
+        }
+    };
+
+    return templates[templateType] || {
+        subject: 'Notification from SolushipX',
+        html: `<p>${data.message || 'You have a new notification.'}</p>`
+    };
+};
+
+/**
+ * Send notification email using SendGrid
+ */
+async function sendNotificationEmail(templateType, userId, data = {}) {
+    try {
+        logger.info(`Sending ${templateType} notification email`, { userId, recipient: data.recipientEmail });
+
+        // Get the email template
+        const template = getEmailTemplate(templateType, data);
+        
+        const msg = {
+            to: data.recipientEmail || data.recipient,
+            from: {
+                email: 'tyler@tygershark.com',
+                name: 'SolushipX Reports'
+            },
+            subject: template.subject,
+            html: template.html
+        };
+
+        const response = await sgMail.send(msg);
+        logger.info(`Email sent successfully to ${msg.to}`, { 
+            messageId: response[0].headers['x-message-id'],
+            statusCode: response[0].statusCode 
+        });
+
+        return {
+            success: true,
+            messageId: response[0].headers['x-message-id'],
+            statusCode: response[0].statusCode
+        };
+    } catch (error) {
+        logger.error('Failed to send notification email:', {
+            error: error.message,
+            code: error.code,
+            response: error.response?.body,
+            templateType,
+            userId
+        });
+
+        throw new Error(`Failed to send ${templateType} notification: ${error.message}`);
+    }
+}
+
 module.exports = {
     sendNotificationEmail,
+    getEmailTemplate,
     // Legacy functions (for backward compatibility)
     getCompanyNotificationSubscribers,
     updateUserNotificationSubscriptions,
