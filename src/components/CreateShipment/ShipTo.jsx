@@ -99,15 +99,62 @@ const ShipTo = ({ onNext, onPrevious }) => {
         setLoading(true);
         try {
             setError(null);
-            const customersSnapshot = await getDocs(query(collection(db, 'customers'), where('companyID', '==', companyId)));
+
+            // Enhanced debugging
+            console.log('🔍 ShipTo fetchCustomers: Starting with companyId:', companyId);
+            console.log('🔍 ShipTo fetchCustomers: Type of companyId:', typeof companyId);
+            console.log('🔍 ShipTo fetchCustomers: currentUser:', currentUser);
+
+            // Try both field name variations to handle inconsistencies
+            const queries = [
+                query(collection(db, 'customers'), where('companyID', '==', companyId)),
+                query(collection(db, 'customers'), where('companyId', '==', companyId))
+            ];
+
             let customersData = [];
-            if (!customersSnapshot.empty) {
-                customersData = customersSnapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return { id: doc.id, customerID: data.customerID || doc.id, ...data };
-                });
+            let queryUsed = null;
+
+            for (let i = 0; i < queries.length; i++) {
+                const fieldName = i === 0 ? 'companyID' : 'companyId';
+                console.log(`🔍 ShipTo fetchCustomers: Trying query ${i + 1} with field '${fieldName}'`);
+
+                try {
+                    const customersSnapshot = await getDocs(queries[i]);
+                    console.log(`🔍 ShipTo fetchCustomers: Query ${i + 1} returned ${customersSnapshot.docs.length} results`);
+
+                    if (!customersSnapshot.empty) {
+                        customersData = customersSnapshot.docs.map(doc => {
+                            const data = doc.data();
+                            console.log(`🔍 ShipTo fetchCustomers: Customer doc data:`, { id: doc.id, companyID: data.companyID, companyId: data.companyId, name: data.name });
+                            return { id: doc.id, customerID: data.customerID || doc.id, ...data };
+                        });
+                        queryUsed = fieldName;
+                        console.log(`✅ ShipTo fetchCustomers: Found ${customersData.length} customers using field '${fieldName}'`);
+                        break;
+                    }
+                } catch (queryError) {
+                    console.error(`❌ ShipTo fetchCustomers: Query ${i + 1} with field '${fieldName}' failed:`, queryError);
+                }
             }
+
+            if (customersData.length === 0) {
+                console.warn('⚠️ ShipTo fetchCustomers: No customers found with either companyID or companyId fields');
+
+                // Additional debugging - check if ANY customers exist
+                const allCustomersSnapshot = await getDocs(collection(db, 'customers'));
+                console.log(`🔍 ShipTo fetchCustomers: Total customers in collection: ${allCustomersSnapshot.docs.length}`);
+
+                if (allCustomersSnapshot.docs.length > 0) {
+                    console.log('🔍 ShipTo fetchCustomers: Sample customer docs:');
+                    allCustomersSnapshot.docs.slice(0, 3).forEach(doc => {
+                        const data = doc.data();
+                        console.log(`  - ID: ${doc.id}, companyID: ${data.companyID}, companyId: ${data.companyId}, name: ${data.name}`);
+                    });
+                }
+            }
+
             setCustomers(customersData);
+            console.log(`✅ ShipTo fetchCustomers: Set ${customersData.length} customers in state using query field: ${queryUsed}`);
 
             // Handle existing customer selection from context
             if (formData.shipTo?.customerID && customersData.length > 0) {
@@ -118,7 +165,12 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 }
             }
         } catch (err) {
-            console.error('Error fetching customers:', err);
+            console.error('❌ ShipTo fetchCustomers: Error:', err);
+            console.error('❌ ShipTo fetchCustomers: Error details:', {
+                message: err.message,
+                code: err.code,
+                stack: err.stack
+            });
             setError('Failed to load customers.');
             setCustomers([]);
         } finally {
@@ -129,19 +181,57 @@ const ShipTo = ({ onNext, onPrevious }) => {
     useEffect(() => {
         const fetchCompanyId = async () => {
             if (!currentUser) {
+                console.log('🔍 ShipTo fetchCompanyId: No currentUser, stopping');
                 setLoading(false);
                 return;
             }
             setLoading(true);
             try {
+                console.log('🔍 ShipTo fetchCompanyId: Starting with user ID:', currentUser.uid);
+
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                if (!userDoc.exists()) throw new Error('User data not found.');
+                if (!userDoc.exists()) {
+                    console.error('❌ ShipTo fetchCompanyId: User document does not exist for UID:', currentUser.uid);
+                    throw new Error('User data not found.');
+                }
+
                 const userData = userDoc.data();
+                console.log('🔍 ShipTo fetchCompanyId: User document data:', {
+                    uid: currentUser.uid,
+                    email: currentUser.email,
+                    companyID: userData.companyID,
+                    companyId: userData.companyId,
+                    connectedCompanies: userData.connectedCompanies,
+                    companies: userData.companies,
+                    fullUserData: userData
+                });
+
                 const id = userData.companyID || userData.companyId || userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
-                if (!id) throw new Error('No company associated with this user.');
+                console.log('🔍 ShipTo fetchCompanyId: Resolved company ID:', id);
+                console.log('🔍 ShipTo fetchCompanyId: Company ID resolution breakdown:', {
+                    companyID: userData.companyID,
+                    companyId: userData.companyId,
+                    connectedCompaniesFirst: userData.connectedCompanies?.companies?.[0],
+                    companiesFirst: userData.companies?.[0],
+                    finalId: id
+                });
+
+                if (!id) {
+                    console.error('❌ ShipTo fetchCompanyId: No company ID found in any of the expected fields');
+                    throw new Error('No company associated with this user.');
+                }
+
+                console.log('🔍 ShipTo fetchCompanyId: About to fetch customers with company ID:', id);
                 await fetchCustomers(id);
             } catch (err) {
-                console.error('Error fetching company ID for ShipTo:', err);
+                console.error('❌ ShipTo fetchCompanyId: Error:', err);
+                console.error('❌ ShipTo fetchCompanyId: Error details:', {
+                    message: err.message,
+                    code: err.code,
+                    stack: err.stack,
+                    userUID: currentUser?.uid,
+                    userEmail: currentUser?.email
+                });
                 setError(err.message || 'Failed to load company data.');
             } finally {
                 setLoading(false);

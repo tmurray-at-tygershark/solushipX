@@ -277,36 +277,34 @@ async function checkCarrierStatus(shipment, carrierInfo) {
     const { carrier, trackingNumber, bookingReferenceNumber } = carrierInfo;
     
     try {
-        // Use the existing checkShipmentStatus cloud function
-        const checkStatusFunction = require('../checkShipmentStatus');
+        // Use the internal checkShipmentStatus function
+        const { checkShipmentStatusInternal } = require('../checkShipmentStatus');
         
-        const requestBody = {
+        const requestParams = {
             shipmentId: shipment.id,
             carrier: carrier
         };
         
         // Add appropriate tracking identifier
         if (carrier === 'eShipPlus' && bookingReferenceNumber) {
-            requestBody.bookingReferenceNumber = bookingReferenceNumber;
+            requestParams.bookingReferenceNumber = bookingReferenceNumber;
         } else if (trackingNumber) {
-            requestBody.trackingNumber = trackingNumber;
+            requestParams.trackingNumber = trackingNumber;
         }
         
         // Add carrierID for better carrier identification
         if (shipment.selectedRate?.displayCarrierId) {
-            requestBody.carrierID = shipment.selectedRate.displayCarrierId;
+            requestParams.carrierID = shipment.selectedRate.displayCarrierId;
         } else if (shipment.selectedRateRef?.displayCarrierId) {
-            requestBody.carrierID = shipment.selectedRateRef.displayCarrierId;
+            requestParams.carrierID = shipment.selectedRateRef.displayCarrierId;
         }
         
         console.log(`🔍 Checking status for ${shipment.shipmentID} with ${carrier}...`);
         
-        // Call the status check function
-        const result = await checkStatusFunction.checkShipmentStatus(requestBody, {
-            auth: { uid: 'system-polling' } // System context
-        });
+        // Call the internal status check function
+        const result = await checkShipmentStatusInternal(requestParams);
         
-        if (result.success) {
+        if (result.success !== false) {
             const statusChanged = shipment.status !== result.status;
             
             return {

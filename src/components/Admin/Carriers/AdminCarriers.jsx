@@ -51,7 +51,8 @@ import {
     Warning as WarningIcon,
     Block as BlockIcon,
     CloudUpload as CloudUploadIcon,
-    Save as SaveIcon
+    Save as SaveIcon,
+    Remove as RemoveIcon
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -68,6 +69,68 @@ const carrierTypes = [
     { value: 'hybrid', label: 'Hybrid' },
 ];
 
+const connectionTypes = [
+    { value: 'api', label: 'API Integration', description: 'Automatic rate fetching via carrier API' },
+    { value: 'manual', label: 'Manual Connection', description: 'Manual rate setting via phone/email contact' },
+];
+
+// Email Array Field Component for Manual Carriers
+const EmailArrayField = ({
+    label,
+    required = false,
+    emails,
+    section,
+    error,
+    onEmailChange,
+    onAddEmail,
+    onRemoveEmail
+}) => {
+    return (
+        <Box sx={{ mb: 2 }}>
+            <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: '#374151' }}>
+                {label} {required && <span style={{ color: '#dc2626' }}>*</span>}
+            </Typography>
+            {emails.map((email, index) => (
+                <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <TextField
+                        fullWidth
+                        size="small"
+                        type="email"
+                        value={email}
+                        onChange={(e) => onEmailChange(section, index, e.target.value)}
+                        placeholder="email@example.com"
+                        error={!!error}
+                        InputProps={{ sx: { fontSize: '12px' } }}
+                    />
+                    {emails.length > 1 && (
+                        <IconButton
+                            size="small"
+                            onClick={() => onRemoveEmail(section, index)}
+                            sx={{ color: '#dc2626' }}
+                        >
+                            <RemoveIcon sx={{ fontSize: '16px' }} />
+                        </IconButton>
+                    )}
+                </Box>
+            ))}
+            <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => onAddEmail(section)}
+                sx={{ fontSize: '11px', mt: 1 }}
+                variant="outlined"
+            >
+                Add Email
+            </Button>
+            {error && (
+                <Typography sx={{ fontSize: '11px', color: '#dc2626', mt: 1 }}>
+                    {error}
+                </Typography>
+            )}
+        </Box>
+    );
+};
+
 // Skeleton component for loading state
 const CarriersTableSkeleton = () => {
     return (
@@ -77,6 +140,7 @@ const CarriersTableSkeleton = () => {
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connection</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
@@ -95,6 +159,7 @@ const CarriersTableSkeleton = () => {
                             </Box>
                         </TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
                         <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
                         <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
@@ -243,6 +308,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
         carrierID: '',
         accountNumber: '',
         type: 'courier',
+        connectionType: 'api',
         enabled: true,
         hostURL: '',
         username: '',
@@ -250,6 +316,25 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
         secret: '',
         logoFileName: '',
         logoURL: '',
+        contactInfo: {
+            phone: '',
+            email: '',
+            contactPerson: '',
+            preferredContactMethod: 'email'
+        },
+        emailConfiguration: {
+            carrierConfirmationEmails: [''],
+            carrierNotificationEmails: [''],
+            preArrivalNotificationEmails: [''],
+            rateRequestEmails: [''],
+            billingEmails: ['']
+        },
+        services: [],
+        rateStructure: {
+            pricingModel: 'weight',
+            baseRates: {},
+            surcharges: []
+        }
     });
     const [endpoints, setEndpoints] = useState({
         rate: '',
@@ -428,6 +513,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                 carrierID: (carrier.carrierID || '').toUpperCase(),
                 accountNumber: carrier.apiCredentials?.accountNumber || carrier.accountNumber || '',
                 type: carrier.type || 'courier',
+                connectionType: carrier.connectionType || 'api',
                 enabled: carrier.enabled ?? true,
                 hostURL: carrier.apiCredentials?.hostURL || carrier.hostURL || '',
                 username: carrier.apiCredentials?.username || carrier.username || '',
@@ -435,6 +521,25 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                 secret: carrier.apiCredentials?.secret || carrier.secret || '',
                 logoFileName: carrier.logoFileName || '',
                 logoURL: carrier.logoURL || '',
+                contactInfo: {
+                    phone: carrier.contactInfo?.phone || '',
+                    email: carrier.contactInfo?.email || '',
+                    contactPerson: carrier.contactInfo?.contactPerson || '',
+                    preferredContactMethod: carrier.contactInfo?.preferredContactMethod || 'email'
+                },
+                emailConfiguration: {
+                    carrierConfirmationEmails: carrier.emailConfiguration?.carrierConfirmationEmails || [''],
+                    carrierNotificationEmails: carrier.emailConfiguration?.carrierNotificationEmails || [''],
+                    preArrivalNotificationEmails: carrier.emailConfiguration?.preArrivalNotificationEmails || [''],
+                    rateRequestEmails: carrier.emailConfiguration?.rateRequestEmails || [''],
+                    billingEmails: carrier.emailConfiguration?.billingEmails || ['']
+                },
+                services: carrier.services || [],
+                rateStructure: {
+                    pricingModel: carrier.rateStructure?.pricingModel || 'weight',
+                    baseRates: carrier.rateStructure?.baseRates || {},
+                    surcharges: carrier.rateStructure?.surcharges || []
+                }
             });
             setEndpoints({
                 rate: carrier.apiCredentials?.endpoints?.rate || '',
@@ -453,6 +558,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                 carrierID: '',
                 accountNumber: '',
                 type: 'courier',
+                connectionType: 'api',
                 enabled: true,
                 hostURL: '',
                 username: '',
@@ -460,6 +566,25 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                 secret: '',
                 logoFileName: '',
                 logoURL: '',
+                contactInfo: {
+                    phone: '',
+                    email: '',
+                    contactPerson: '',
+                    preferredContactMethod: 'email'
+                },
+                emailConfiguration: {
+                    carrierConfirmationEmails: [''],
+                    carrierNotificationEmails: [''],
+                    preArrivalNotificationEmails: [''],
+                    rateRequestEmails: [''],
+                    billingEmails: ['']
+                },
+                services: [],
+                rateStructure: {
+                    pricingModel: 'weight',
+                    baseRates: {},
+                    surcharges: []
+                }
             });
             setEndpoints({
                 rate: '',
@@ -511,6 +636,50 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
         if (name === 'carrierID') {
             checkCarrierIdUniqueness(newValue);
         }
+    };
+
+    // Handle nested object changes (for contactInfo, rateStructure, etc.)
+    const handleNestedFormChange = (section, field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            [section]: {
+                ...prev[section],
+                [field]: value
+            }
+        }));
+    };
+
+    // Handle email array changes for manual carriers
+    const handleEmailArrayChange = (section, index, value) => {
+        setFormData(prev => ({
+            ...prev,
+            emailConfiguration: {
+                ...prev.emailConfiguration,
+                [section]: prev.emailConfiguration[section].map((email, i) =>
+                    i === index ? value : email
+                )
+            }
+        }));
+    };
+
+    const addEmailToArray = (section) => {
+        setFormData(prev => ({
+            ...prev,
+            emailConfiguration: {
+                ...prev.emailConfiguration,
+                [section]: [...prev.emailConfiguration[section], '']
+            }
+        }));
+    };
+
+    const removeEmailFromArray = (section, index) => {
+        setFormData(prev => ({
+            ...prev,
+            emailConfiguration: {
+                ...prev.emailConfiguration,
+                [section]: prev.emailConfiguration[section].filter((_, i) => i !== index)
+            }
+        }));
     };
 
     const handleEndpointChange = (e) => {
@@ -568,10 +737,53 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
     const validateForm = () => {
         const errors = {};
 
+        // Common required fields for both connection types
         if (!formData.name.trim()) errors.name = 'Carrier name is required';
         if (!formData.carrierID.trim()) errors.carrierID = 'Carrier ID is required';
         if (!formData.accountNumber.trim()) errors.accountNumber = 'Account number is required';
-        if (!formData.hostURL.trim()) errors.hostURL = 'Host URL is required';
+        if (!formData.connectionType) errors.connectionType = 'Connection type is required';
+
+        // Connection type specific validation
+        if (formData.connectionType === 'api') {
+            // API connection requires host URL
+            if (!formData.hostURL.trim()) errors.hostURL = 'Host URL is required for API connections';
+        } else if (formData.connectionType === 'manual') {
+            // Manual connection should have at least one contact method
+            if (!formData.contactInfo.phone.trim() && !formData.contactInfo.email.trim()) {
+                errors.contactInfo = 'At least one contact method (phone or email) is required for manual connections';
+            }
+            // Validate email format if provided
+            if (formData.contactInfo.email.trim()) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(formData.contactInfo.email.trim())) {
+                    errors.contactEmail = 'Please enter a valid email address';
+                }
+            }
+
+            // Validate email configuration for manual carriers
+            const emailConfig = formData.emailConfiguration;
+
+            // Soluship Notification Emails is required and must have at least one valid email
+            const validSolushipEmails = emailConfig.carrierConfirmationEmails.filter(email =>
+                email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+            );
+            if (validSolushipEmails.length === 0) {
+                errors.carrierConfirmationEmails = 'At least one valid Carrier Confirmation Email is required for manual carriers';
+            }
+
+            // Validate other email arrays (if they have values, they must be valid)
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+            ['carrierNotificationEmails', 'preArrivalNotificationEmails', 'rateRequestEmails', 'billingEmails'].forEach(section => {
+                const emails = emailConfig[section];
+                const invalidEmails = emails.filter(email =>
+                    email.trim() && !emailRegex.test(email.trim())
+                );
+                if (invalidEmails.length > 0) {
+                    errors[section] = 'Please enter valid email addresses';
+                }
+            });
+        }
 
         setFormErrors(errors);
         return Object.keys(errors).length === 0 && !carrierIdError;
@@ -592,19 +804,45 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                 name: formData.name.trim(),
                 carrierID: formData.carrierID.trim().toUpperCase(),
                 type: formData.type,
+                connectionType: formData.connectionType,
                 enabled: formData.enabled,
                 logoFileName: formData.logoFileName,
                 logoURL: logoFile ? '' : formData.logoURL, // Will be updated if new logo uploaded
-                apiCredentials: {
+                updatedAt: serverTimestamp(),
+            };
+
+            // Add connection-specific data
+            if (formData.connectionType === 'api') {
+                carrierData.apiCredentials = {
                     accountNumber: formData.accountNumber.trim(),
                     hostURL: formData.hostURL.trim(),
                     username: formData.username.trim(),
                     password: formData.password,
                     secret: formData.secret,
                     endpoints: endpoints
-                },
-                updatedAt: serverTimestamp(),
-            };
+                };
+            } else if (formData.connectionType === 'manual') {
+                // For manual connections, store contact info and manual configuration
+                carrierData.accountNumber = formData.accountNumber.trim(); // Store account number at root level for manual
+                carrierData.contactInfo = {
+                    phone: formData.contactInfo.phone.trim(),
+                    email: formData.contactInfo.email.trim(),
+                    contactPerson: formData.contactInfo.contactPerson.trim(),
+                    preferredContactMethod: formData.contactInfo.preferredContactMethod
+                };
+
+                // Clean up email configuration - remove empty emails
+                const cleanEmailConfig = {};
+                Object.keys(formData.emailConfiguration).forEach(key => {
+                    cleanEmailConfig[key] = formData.emailConfiguration[key]
+                        .filter(email => email.trim() !== '')
+                        .map(email => email.trim());
+                });
+                carrierData.emailConfiguration = cleanEmailConfig;
+
+                carrierData.services = formData.services;
+                carrierData.rateStructure = formData.rateStructure;
+            }
 
             if (!isEditMode) {
                 carrierData.createdAt = serverTimestamp();
@@ -681,6 +919,18 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
             setOpenDeleteConfirm(false);
             setSelectedCarrier(null);
             setForceDelete(false);
+        }
+    };
+
+    // Get connection type chip color
+    const getConnectionTypeColor = (connectionType) => {
+        switch (connectionType) {
+            case 'api':
+                return { color: '#059669', bgcolor: '#ecfdf5' }; // Green for API
+            case 'manual':
+                return { color: '#7c3aed', bgcolor: '#f3e8ff' }; // Purple for Manual
+            default:
+                return { color: '#637381', bgcolor: '#f9fafb' };
         }
     };
 
@@ -850,6 +1100,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connection</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
@@ -917,6 +1168,19 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                                         </TableCell>
                                         <TableCell>
                                             <Chip
+                                                label={carrier.connectionType}
+                                                size="small"
+                                                sx={{
+                                                    backgroundColor: getConnectionTypeColor(carrier.connectionType).bgcolor,
+                                                    color: getConnectionTypeColor(carrier.connectionType).color,
+                                                    fontWeight: 500,
+                                                    fontSize: '11px',
+                                                    '& .MuiChip-label': { px: 1.5 }
+                                                }}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip
                                                 label={carrier.status || 'active'}
                                                 size="small"
                                                 sx={{
@@ -950,7 +1214,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                                 ))}
                                 {carriers.length === 0 && !loading && (
                                     <TableRow>
-                                        <TableCell colSpan={7} align="center">
+                                        <TableCell colSpan={8} align="center">
                                             <Box sx={{ py: 4 }}>
                                                 <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
                                                 <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
@@ -1166,6 +1430,25 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                                 </FormControl>
                             </Grid>
 
+                            <Grid item xs={12} sm={6}>
+                                <FormControl fullWidth size="small" required>
+                                    <InputLabel sx={{ fontSize: '12px' }}>Connection Type</InputLabel>
+                                    <Select
+                                        name="connectionType"
+                                        value={formData.connectionType}
+                                        label="Connection Type"
+                                        onChange={handleFormChange}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        {connectionTypes.map(opt => (
+                                            <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '12px' }}>
+                                                {opt.label}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+
                             {/* Logo Upload Section */}
                             <Grid item xs={12}>
                                 <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
@@ -1226,163 +1509,370 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                                 </Box>
                             </Grid>
 
-                            {/* API Configuration Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
-                                    API Configuration
-                                </Typography>
-                            </Grid>
+                            {/* Conditional Configuration Section Based on Connection Type */}
+                            {formData.connectionType === 'api' ? (
+                                // API Configuration Section
+                                <>
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
+                                            API Configuration
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                            Configure API settings for automatic rate fetching and booking
+                                        </Typography>
+                                    </Grid>
 
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Host URL"
-                                    name="hostURL"
-                                    value={formData.hostURL}
-                                    onChange={handleFormChange}
-                                    required
-                                    error={!!formErrors.hostURL}
-                                    helperText={formErrors.hostURL}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="https://api.carrier.com"
-                                />
-                            </Grid>
+                                    <Grid item xs={12}>
+                                        <TextField
+                                            fullWidth
+                                            label="Host URL"
+                                            name="hostURL"
+                                            value={formData.hostURL}
+                                            onChange={handleFormChange}
+                                            required
+                                            error={!!formErrors.hostURL}
+                                            helperText={formErrors.hostURL}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="https://api.carrier.com"
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Username"
-                                    name="username"
-                                    value={formData.username}
-                                    onChange={handleFormChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Username"
+                                            name="username"
+                                            value={formData.username}
+                                            onChange={handleFormChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Password"
-                                    name="password"
-                                    type="password"
-                                    value={formData.password}
-                                    onChange={handleFormChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Password"
+                                            name="password"
+                                            type="password"
+                                            value={formData.password}
+                                            onChange={handleFormChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="API Secret / Token"
-                                    name="secret"
-                                    value={formData.secret}
-                                    onChange={handleFormChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                />
-                            </Grid>
+                                    <Grid item xs={12}>
+                                        <TextField
+                                            fullWidth
+                                            label="API Secret / Token"
+                                            name="secret"
+                                            value={formData.secret}
+                                            onChange={handleFormChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                        />
+                                    </Grid>
 
-                            {/* API Endpoints Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
-                                    API Endpoints
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                                    Configure specific endpoint paths (will be appended to Host URL)
-                                </Typography>
-                            </Grid>
+                                    {/* API Endpoints Section */}
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
+                                            API Endpoints
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                                            Configure specific endpoint paths (will be appended to Host URL)
+                                        </Typography>
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Rate Endpoint"
-                                    name="rate"
-                                    value={endpoints.rate}
-                                    onChange={handleEndpointChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="/api/rates"
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Rate Endpoint"
+                                            name="rate"
+                                            value={endpoints.rate}
+                                            onChange={handleEndpointChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="/api/rates"
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Booking Endpoint"
-                                    name="booking"
-                                    value={endpoints.booking}
-                                    onChange={handleEndpointChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="/api/book"
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Booking Endpoint"
+                                            name="booking"
+                                            value={endpoints.booking}
+                                            onChange={handleEndpointChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="/api/book"
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Tracking Endpoint"
-                                    name="tracking"
-                                    value={endpoints.tracking}
-                                    onChange={handleEndpointChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="/api/track"
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Tracking Endpoint"
+                                            name="tracking"
+                                            value={endpoints.tracking}
+                                            onChange={handleEndpointChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="/api/track"
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Cancel Endpoint"
-                                    name="cancel"
-                                    value={endpoints.cancel}
-                                    onChange={handleEndpointChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="/api/cancel"
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Cancel Endpoint"
+                                            name="cancel"
+                                            value={endpoints.cancel}
+                                            onChange={handleEndpointChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="/api/cancel"
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6} sx={{ mb: 2 }}>
-                                <TextField
-                                    fullWidth
-                                    label="Labels Endpoint"
-                                    name="labels"
-                                    value={endpoints.labels}
-                                    onChange={handleEndpointChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="/api/labels"
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6} sx={{ mb: 2 }}>
+                                        <TextField
+                                            fullWidth
+                                            label="Labels Endpoint"
+                                            name="labels"
+                                            value={endpoints.labels}
+                                            onChange={handleEndpointChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="/api/labels"
+                                        />
+                                    </Grid>
 
-                            <Grid item xs={12} sm={6} sx={{ mb: 2 }}>
-                                <TextField
-                                    fullWidth
-                                    label="Status Endpoint"
-                                    name="status"
-                                    value={endpoints.status}
-                                    onChange={handleEndpointChange}
-                                    size="small"
-                                    InputProps={{ sx: { fontSize: '12px' } }}
-                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                    placeholder="/api/status"
-                                />
-                            </Grid>
+                                    <Grid item xs={12} sm={6} sx={{ mb: 2 }}>
+                                        <TextField
+                                            fullWidth
+                                            label="Status Endpoint"
+                                            name="status"
+                                            value={endpoints.status}
+                                            onChange={handleEndpointChange}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="/api/status"
+                                        />
+                                    </Grid>
+                                </>
+                            ) : (
+                                // Manual Configuration Section
+                                <>
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
+                                            Manual Connection Configuration
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                            Configure contact information and manual rate settings
+                                        </Typography>
+                                    </Grid>
+
+                                    {/* Contact Information Section */}
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '13px', fontWeight: 500, mb: 2, color: '#4b5563' }}>
+                                            Contact Information
+                                        </Typography>
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Contact Person"
+                                            value={formData.contactInfo.contactPerson}
+                                            onChange={(e) => handleNestedFormChange('contactInfo', 'contactPerson', e.target.value)}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Contact Phone"
+                                            value={formData.contactInfo.phone}
+                                            onChange={(e) => handleNestedFormChange('contactInfo', 'phone', e.target.value)}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="+1 (555) 123-4567"
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Contact Email"
+                                            type="email"
+                                            value={formData.contactInfo.email}
+                                            onChange={(e) => handleNestedFormChange('contactInfo', 'email', e.target.value)}
+                                            size="small"
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            placeholder="rates@carrier.com"
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Preferred Contact Method</InputLabel>
+                                            <Select
+                                                value={formData.contactInfo.preferredContactMethod}
+                                                label="Preferred Contact Method"
+                                                onChange={(e) => handleNestedFormChange('contactInfo', 'preferredContactMethod', e.target.value)}
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                <MenuItem value="email" sx={{ fontSize: '12px' }}>Email</MenuItem>
+                                                <MenuItem value="phone" sx={{ fontSize: '12px' }}>Phone</MenuItem>
+                                                <MenuItem value="both" sx={{ fontSize: '12px' }}>Both</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
+
+                                    {/* Services & Rates Section - Placeholder */}
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '13px', fontWeight: 500, mb: 2, mt: 2, color: '#4b5563' }}>
+                                            Email Configuration
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                            Configure email addresses for different types of notifications and communications
+                                        </Typography>
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <EmailArrayField
+                                            label="Carrier Confirmation Emails"
+                                            required={true}
+                                            emails={formData.emailConfiguration.carrierConfirmationEmails}
+                                            section="carrierConfirmationEmails"
+                                            error={formErrors.carrierConfirmationEmails}
+                                            onEmailChange={handleEmailArrayChange}
+                                            onAddEmail={addEmailToArray}
+                                            onRemoveEmail={removeEmailFromArray}
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <EmailArrayField
+                                            label="Carrier Notification Emails"
+                                            emails={formData.emailConfiguration.carrierNotificationEmails}
+                                            section="carrierNotificationEmails"
+                                            error={formErrors.carrierNotificationEmails}
+                                            onEmailChange={handleEmailArrayChange}
+                                            onAddEmail={addEmailToArray}
+                                            onRemoveEmail={removeEmailFromArray}
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <EmailArrayField
+                                            label="Pre-Arrival Notification Emails"
+                                            emails={formData.emailConfiguration.preArrivalNotificationEmails}
+                                            section="preArrivalNotificationEmails"
+                                            error={formErrors.preArrivalNotificationEmails}
+                                            onEmailChange={handleEmailArrayChange}
+                                            onAddEmail={addEmailToArray}
+                                            onRemoveEmail={removeEmailFromArray}
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <EmailArrayField
+                                            label="Rate Request Emails"
+                                            emails={formData.emailConfiguration.rateRequestEmails}
+                                            section="rateRequestEmails"
+                                            error={formErrors.rateRequestEmails}
+                                            onEmailChange={handleEmailArrayChange}
+                                            onAddEmail={addEmailToArray}
+                                            onRemoveEmail={removeEmailFromArray}
+                                        />
+                                    </Grid>
+
+                                    <Grid item xs={12} sm={6}>
+                                        <EmailArrayField
+                                            label="Billing Emails"
+                                            emails={formData.emailConfiguration.billingEmails}
+                                            section="billingEmails"
+                                            error={formErrors.billingEmails}
+                                            onEmailChange={handleEmailArrayChange}
+                                            onAddEmail={addEmailToArray}
+                                            onRemoveEmail={removeEmailFromArray}
+                                        />
+                                    </Grid>
+
+                                    {/* Services & Rate Structure Section - Placeholder */}
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '13px', fontWeight: 500, mb: 2, mt: 2, color: '#4b5563' }}>
+                                            Services & Rate Configuration
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                            Configure available services and pricing structure for this carrier
+                                        </Typography>
+                                    </Grid>
+
+                                    <Grid item xs={12}>
+                                        <Box sx={{
+                                            p: 3,
+                                            border: '2px dashed #d1d5db',
+                                            borderRadius: 2,
+                                            textAlign: 'center',
+                                            bgcolor: '#f8fafc'
+                                        }}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>
+                                                🚧 Services & Rate Management
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                                Coming soon: Configure services, pricing models, and rate structures
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+
+                                    {/* Eligibility Rules Section - Placeholder */}
+                                    <Grid item xs={12}>
+                                        <Typography variant="h6" sx={{ fontSize: '13px', fontWeight: 500, mb: 2, mt: 2, color: '#4b5563' }}>
+                                            Eligibility Rules
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                            Define when this carrier should be offered to customers
+                                        </Typography>
+                                    </Grid>
+
+                                    <Grid item xs={12} sx={{ mb: 2 }}>
+                                        <Box sx={{
+                                            p: 3,
+                                            border: '2px dashed #d1d5db',
+                                            borderRadius: 2,
+                                            textAlign: 'center',
+                                            bgcolor: '#f8fafc'
+                                        }}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>
+                                                📋 Eligibility Configuration
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                                Coming soon: Set weight limits, service areas, and availability rules
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+                                </>
+                            )}
                         </Grid>
                     </DialogContent>
 

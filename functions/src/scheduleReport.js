@@ -328,7 +328,7 @@ function calculateNextRun(schedule) {
  */
 async function sendScheduledReportNotification(schedule, result, status, errorMessage = null) {
     try {
-        const { sendNotificationEmail } = require('./email/sendgridService');
+        const { sendReportNotificationEmail } = require('./email/sendgridService');
 
         const emailData = {
             reportName: schedule.reportConfig.name || schedule.reportConfig.type,
@@ -343,7 +343,7 @@ async function sendScheduledReportNotification(schedule, result, status, errorMe
 
         // Send to each recipient
         for (const email of schedule.reportConfig.emailRecipients) {
-            await sendNotificationEmail('scheduled_report_executed', schedule.companyId, {
+            await sendReportNotificationEmail('scheduled_report_executed', schedule.companyId, {
                 ...emailData,
                 recipientEmail: email
             });

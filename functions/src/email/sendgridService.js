@@ -1373,11 +1373,11 @@ const getEmailTemplate = (templateType, data = {}) => {
 };
 
 /**
- * Send notification email using SendGrid
+ * Send report notification email using SendGrid
  */
-async function sendNotificationEmail(templateType, userId, data = {}) {
+async function sendReportNotificationEmail(templateType, userId, data = {}) {
     try {
-        logger.info(`Sending ${templateType} notification email`, { userId, recipient: data.recipientEmail });
+        logger.info(`Sending ${templateType} report notification email`, { userId, recipient: data.recipientEmail });
 
         // Get the email template
         const template = getEmailTemplate(templateType, data);
@@ -1404,7 +1404,7 @@ async function sendNotificationEmail(templateType, userId, data = {}) {
             statusCode: response[0].statusCode
         };
     } catch (error) {
-        logger.error('Failed to send notification email:', {
+        logger.error('Failed to send report notification email:', {
             error: error.message,
             code: error.code,
             response: error.response?.body,
@@ -1417,7 +1417,8 @@ async function sendNotificationEmail(templateType, userId, data = {}) {
 }
 
 module.exports = {
-    sendNotificationEmail,
+    sendNotificationEmail, // Main function for shipment notifications
+    sendReportNotificationEmail, // Function for report notifications
     getEmailTemplate,
     // Legacy functions (for backward compatibility)
     getCompanyNotificationSubscribers,

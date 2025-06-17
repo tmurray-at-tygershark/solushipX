@@ -1,7 +1,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const logger = require('firebase-functions/logger');
-const { sendNotificationEmail } = require('./email/sendgridService');
+const { sendReportNotificationEmail } = require('./email/sendgridService');
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -37,8 +37,8 @@ exports.sendTestReportNotification = onCall(
                 userId: request.auth?.uid
             });
 
-            // Use the enhanced sendNotificationEmail function
-            const result = await sendNotificationEmail('test_notification', request.auth?.uid, {
+                    // Use the enhanced sendReportNotificationEmail function
+        const result = await sendReportNotificationEmail('test_notification', request.auth?.uid, {
                 recipientEmail: recipient,
                 subject: subject,
                 message: message,

@@ -41,12 +41,13 @@ exports.onShipmentCreated = onDocumentWritten('shipments/{shipmentId}', async (e
         return;
     }
 
+    // Get company ID and shipment number first - check multiple possible fields (moved outside try block for error logging)
+    const companyId = shipmentData.companyID || shipmentData.companyId || shipmentData.userCompanyId;
+    
+    // Get shipment number - this should be the final carrier shipment ID after booking
+    const shipmentNumber = shipmentData.shipmentID || shipmentData.readableShipmentID || shipmentData.shipmentNumber;
+
     try {
-        // Get company ID and shipment number first - check multiple possible fields
-        const companyId = shipmentData.companyID || shipmentData.companyId || shipmentData.userCompanyId;
-        
-        // Get shipment number - this should be the final carrier shipment ID after booking
-        const shipmentNumber = shipmentData.shipmentID || shipmentData.readableShipmentID || shipmentData.shipmentNumber;
 
         logger.info(`Processing shipment creation notification for ${shipmentNumber}`, {
             isNewShipment,
@@ -227,15 +228,16 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
         return;
     }
 
+    // Get company ID and shipment number first - check multiple possible fields (moved outside try block for error logging)
+    const companyId = newData.companyID || newData.companyId || newData.userCompanyId;
+    
+    // Get shipment number (should now be the final ID after booking updates)
+    const shipmentNumber = newData.shipmentID || 
+                          newData.readableShipmentID || 
+                          newData.shipmentNumber ||
+                          newData.shipmentInfo?.shipperReferenceNumber;
+
     try {
-        // Get company ID and shipment number first - check multiple possible fields
-        const companyId = newData.companyID || newData.companyId || newData.userCompanyId;
-        
-        // Get shipment number (should now be the final ID after booking updates)
-        const shipmentNumber = newData.shipmentID || 
-                              newData.readableShipmentID || 
-                              newData.shipmentNumber ||
-                              newData.shipmentInfo?.shipperReferenceNumber;
 
         logger.info(`Processing status change notification: ${oldStatus} -> ${newStatus}`, {
             shipmentNumber: shipmentNumber
