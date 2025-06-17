@@ -4,59 +4,72 @@ import {
     Paper,
     Typography,
     Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField,
+    Switch,
+    IconButton,
+    Tooltip,
+    Chip,
+    CircularProgress,
+    InputLabel,
+    MenuItem,
+    Select,
+    FormControl,
+    InputAdornment,
     Table,
     TableBody,
     TableCell,
     TableHead,
     TableRow,
-    IconButton,
-    TextField,
-    Chip,
-    Tooltip,
-    Stack,
-    InputAdornment,
     Menu,
-    MenuItem,
     ListItemIcon,
     ListItemText,
-    CircularProgress,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogContentText,
-    DialogActions,
     Tabs,
     Tab,
     Badge,
     Collapse,
     Grid,
     Checkbox,
-    Avatar
+    Avatar,
+    Divider
 } from '@mui/material';
 import {
     Add as AddIcon,
-    Visibility as ViewIcon,
-    MoreVert as MoreVertIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    CloudUpload as CloudUploadIcon,
     Search as SearchIcon,
-    DeleteForever as DeleteForeverIcon,
-    Apartment as ApartmentIcon,
+    MoreVert as MoreVertIcon,
     FilterList as FilterListIcon,
     FileDownload as ExportIcon,
     Close as CloseIcon,
-    ContentCopy as ContentCopyIcon,
-    Edit as EditIcon
+    LocalShipping as CarrierIcon,
+    Visibility as ViewIcon,
+    ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
-import { collection, getDocs, query, orderBy, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { format } from 'date-fns';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { getApp } from 'firebase/app';
+import { getStorage } from 'firebase/storage';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
 
+const carrierTypes = [
+    { value: 'courier', label: 'Courier' },
+    { value: 'freight', label: 'Freight' },
+    { value: 'hybrid', label: 'Hybrid' },
+];
+
 // Skeleton component for loading state
-const OrganizationsTableSkeleton = () => {
+const CarriersTableSkeleton = () => {
     return (
         <Table>
             <TableHead>
@@ -64,14 +77,14 @@ const OrganizationsTableSkeleton = () => {
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Checkbox disabled />
-                            Organization
+                            Carrier
                         </Box>
                     </TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Org ID</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Companies</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Last Updated</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                 </TableRow>
             </TableHead>
@@ -82,15 +95,15 @@ const OrganizationsTableSkeleton = () => {
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Checkbox disabled />
                                 <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
-                                    <ApartmentIcon sx={{ fontSize: '14px' }} />
+                                    <CarrierIcon sx={{ fontSize: '14px' }} />
                                 </Avatar>
                                 <Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} />
                             </Box>
                         </TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
-                        <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
-                        <TableCell><Box sx={{ height: '16px', width: '60px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '90px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell>
                             <IconButton size="small" disabled>
@@ -105,7 +118,7 @@ const OrganizationsTableSkeleton = () => {
 };
 
 // Custom pagination component matching ShipmentsX
-const OrganizationsPagination = ({
+const CarriersPagination = ({
     totalCount,
     currentPage,
     rowsPerPage,
@@ -126,7 +139,7 @@ const OrganizationsPagination = ({
             bgcolor: '#fafafa'
         }}>
             <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                Showing {startItem.toLocaleString()}-{endItem.toLocaleString()} of {totalCount.toLocaleString()} organizations
+                Showing {startItem.toLocaleString()}-{endItem.toLocaleString()} of {totalCount.toLocaleString()} carriers
             </Typography>
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -134,16 +147,17 @@ const OrganizationsPagination = ({
                     <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
                         Rows per page:
                     </Typography>
-                    <select
+                    <Select
+                        size="small"
                         value={rowsPerPage}
                         onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
-                        style={{ fontSize: '12px', minWidth: '60px', padding: '4px', border: '1px solid #d1d5db', borderRadius: '4px' }}
+                        sx={{ fontSize: '12px', minWidth: '60px' }}
                     >
-                        <option value={10}>10</option>
-                        <option value={25}>25</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                    </select>
+                        <MenuItem value={10}>10</MenuItem>
+                        <MenuItem value={25}>25</MenuItem>
+                        <MenuItem value={50}>50</MenuItem>
+                        <MenuItem value={100}>100</MenuItem>
+                    </Select>
                 </Box>
 
                 <Box sx={{ display: 'flex', gap: 1 }}>
@@ -188,12 +202,10 @@ const OrganizationsPagination = ({
     );
 };
 
-const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = false }) => {
+const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
     // Main data states
-    const [organizations, setOrganizations] = useState([]);
-    const [allOrganizations, setAllOrganizations] = useState([]);
-    const [companyMap, setCompanyMap] = useState({});
-    const [ownerMap, setOwnerMap] = useState({});
+    const [carriers, setCarriers] = useState([]);
+    const [allCarriers, setAllCarriers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -206,12 +218,13 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
     // Filter states
     const [filters, setFilters] = useState({
         status: 'all',
-        hasCompanies: 'all'
+        type: 'all',
+        enabled: 'all'
     });
     const [searchFields, setSearchFields] = useState({
-        orgName: '',
-        orgId: '',
-        ownerName: ''
+        carrierName: '',
+        carrierId: '',
+        accountNumber: ''
     });
     const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -223,13 +236,43 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
     });
 
     // Dialog states
-    const [selectedOrg, setSelectedOrg] = useState(null);
+    const [selectedCarrier, setSelectedCarrier] = useState(null);
     const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
-    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-    const [orgToDelete, setOrgToDelete] = useState(null);
-    const [isDeleting, setIsDeleting] = useState(false);
+    const [openDialog, setOpenDialog] = useState(false);
+    const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
+    const [logoFile, setLogoFile] = useState(null);
+    const [logoPreview, setLogoPreview] = useState('');
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadError, setUploadError] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [carrierIdError, setCarrierIdError] = useState('');
+
+    // Form states
+    const [formData, setFormData] = useState({
+        name: '',
+        carrierID: '',
+        accountNumber: '',
+        type: 'courier',
+        enabled: true,
+        hostURL: '',
+        apiCredentials: {},
+        username: '',
+        password: '',
+        secret: '',
+        logoFileName: '',
+        logoURL: '',
+    });
+    const [endpoints, setEndpoints] = useState({
+        rate: '',
+        booking: '',
+        tracking: '',
+        cancel: '',
+        labels: '',
+        status: ''
+    });
 
     const navigate = useNavigate();
+    const { currentUser } = useAuth();
     const { enqueueSnackbar } = useSnackbar();
 
     // Helper function to show snackbar
@@ -243,20 +286,22 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
 
     // Calculate stats
     const stats = useMemo(() => {
-        const total = allOrganizations.length;
-        const active = allOrganizations.filter(o => o.status === 'active').length;
-        const inactive = allOrganizations.filter(o => o.status === 'inactive').length;
-        const withCompanies = allOrganizations.filter(o => o.connectedCompanies && o.connectedCompanies.length > 0).length;
-        const withoutCompanies = total - withCompanies;
+        const total = allCarriers.length;
+        const enabled = allCarriers.filter(c => c.enabled === true).length;
+        const disabled = allCarriers.filter(c => c.enabled === false).length;
+        const courier = allCarriers.filter(c => c.type === 'courier').length;
+        const freight = allCarriers.filter(c => c.type === 'freight').length;
+        const hybrid = allCarriers.filter(c => c.type === 'hybrid').length;
 
         return {
             total,
-            active,
-            inactive,
-            withCompanies,
-            withoutCompanies
+            enabled,
+            disabled,
+            courier,
+            freight,
+            hybrid
         };
-    }, [allOrganizations]);
+    }, [allCarriers]);
 
     // Tab change handler
     const handleTabChange = (event, newValue) => {
@@ -267,7 +312,7 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
     // Selection handlers
     const handleSelectAll = (event) => {
         if (event.target.checked) {
-            const newSelected = organizations.map(org => org.id);
+            const newSelected = carriers.map(carrier => carrier.id);
             setSelected(newSelected);
             return;
         }
@@ -295,13 +340,13 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
     };
 
     // Action menu handlers
-    const handleActionMenuOpen = (event, org) => {
-        setSelectedOrg(org);
+    const handleActionMenuOpen = (event, carrier) => {
+        setSelectedCarrier(carrier);
         setActionMenuAnchorEl(event.currentTarget);
     };
 
     const handleActionMenuClose = () => {
-        setSelectedOrg(null);
+        setSelectedCarrier(null);
         setActionMenuAnchorEl(null);
     };
 
@@ -315,158 +360,181 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
         }
     };
 
-    // Delete handlers
-    const openDeleteDialog = (org) => {
-        setOrgToDelete(org);
-        setShowDeleteDialog(true);
-        handleActionMenuClose();
-    };
-
-    const handleConfirmDelete = async () => {
-        if (!orgToDelete) return;
-        setIsDeleting(true);
-        try {
-            await setDoc(doc(db, 'organizations', orgToDelete.id), {
-                status: 'deleted',
-                updatedAt: serverTimestamp()
-            }, { merge: true });
-
-            enqueueSnackbar(`Organization '${orgToDelete.name}' deleted successfully.`, { variant: 'success' });
-            setShowDeleteDialog(false);
-            setOrgToDelete(null);
-            fetchOrganizations();
-        } catch (err) {
-            console.error('Error deleting organization:', err);
-            enqueueSnackbar(`Failed to delete organization: ${err.message}`, { variant: 'error' });
-        } finally {
-            setIsDeleting(false);
-        }
-    };
-
-    // Fetch data functions
-    const fetchCompaniesAndOwners = async () => {
-        try {
-            // Fetch companies
-            const companiesSnap = await getDocs(collection(db, 'companies'));
-            const newCompanyMap = {};
-            companiesSnap.forEach(doc => {
-                const companyData = doc.data();
-                if (companyData.companyID && companyData.name) {
-                    newCompanyMap[companyData.companyID] = companyData.name;
-                }
-            });
-            setCompanyMap(newCompanyMap);
-
-            // Fetch users for owner mapping
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const newOwnerMap = {};
-            usersSnap.forEach(doc => {
-                const userData = doc.data();
-                newOwnerMap[doc.id] = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
-            });
-            setOwnerMap(newOwnerMap);
-        } catch (err) {
-            console.error("Error fetching companies and owners:", err);
-        }
-    };
-
-    const fetchOrganizations = async () => {
+    // Fetch carriers data
+    const fetchCarriers = async () => {
         setLoading(true);
         try {
-            const orgsRef = collection(db, 'organizations');
-            const q = query(orgsRef, orderBy('name', 'asc'));
+            const carriersRef = collection(db, 'carriers');
+            const q = query(carriersRef, orderBy('name', 'asc'));
             const querySnapshot = await getDocs(q);
-            const orgsData = querySnapshot.docs.map(doc => ({
+            const carriersData = querySnapshot.docs.map(doc => ({
                 id: doc.id,
-                ...doc.data(),
+                ...doc.data()
             }));
 
-            // Filter out deleted organizations
-            const activeOrgs = orgsData.filter(org => org.status !== 'deleted');
-            setAllOrganizations(activeOrgs);
-            setTotalCount(activeOrgs.length);
+            // Filter out deleted carriers
+            const activeCarriers = carriersData.filter(carrier => carrier.status !== 'deleted');
+            setAllCarriers(activeCarriers);
+            setTotalCount(activeCarriers.length);
         } catch (error) {
-            console.error('Error loading organizations:', error);
-            showSnackbar('Failed to load organizations', 'error');
+            console.error('Error loading carriers:', error);
+            showSnackbar('Failed to load carriers', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    // Filter and paginate organizations
+    // Filter and paginate carriers
     useEffect(() => {
-        let filtered = [...allOrganizations];
+        let filtered = [...allCarriers];
 
         // Apply tab filter
         if (selectedTab !== 'all') {
             switch (selectedTab) {
-                case 'active':
-                    filtered = filtered.filter(o => o.status === 'active');
+                case 'enabled':
+                    filtered = filtered.filter(c => c.enabled === true);
                     break;
-                case 'inactive':
-                    filtered = filtered.filter(o => o.status === 'inactive');
+                case 'disabled':
+                    filtered = filtered.filter(c => c.enabled === false);
                     break;
-                case 'with-companies':
-                    filtered = filtered.filter(o => o.connectedCompanies && o.connectedCompanies.length > 0);
+                case 'courier':
+                    filtered = filtered.filter(c => c.type === 'courier');
                     break;
-                case 'without-companies':
-                    filtered = filtered.filter(o => !o.connectedCompanies || o.connectedCompanies.length === 0);
+                case 'freight':
+                    filtered = filtered.filter(c => c.type === 'freight');
+                    break;
+                case 'hybrid':
+                    filtered = filtered.filter(c => c.type === 'hybrid');
                     break;
             }
         }
 
         // Apply search filters
-        if (searchFields.orgName) {
-            filtered = filtered.filter(o =>
-                o.name.toLowerCase().includes(searchFields.orgName.toLowerCase())
+        if (searchFields.carrierName) {
+            filtered = filtered.filter(c =>
+                c.name.toLowerCase().includes(searchFields.carrierName.toLowerCase())
             );
         }
-        if (searchFields.orgId) {
-            filtered = filtered.filter(o =>
-                o.orgID && o.orgID.toLowerCase().includes(searchFields.orgId.toLowerCase())
+        if (searchFields.carrierId) {
+            filtered = filtered.filter(c =>
+                c.carrierID.toLowerCase().includes(searchFields.carrierId.toLowerCase())
             );
         }
-        if (searchFields.ownerName) {
-            filtered = filtered.filter(o => {
-                const ownerName = ownerMap[o.ownerID] || '';
-                return ownerName.toLowerCase().includes(searchFields.ownerName.toLowerCase());
+        if (searchFields.accountNumber) {
+            filtered = filtered.filter(c => {
+                const accountNumber = c.apiCredentials?.accountNumber || c.accountNumber || '';
+                return accountNumber.toLowerCase().includes(searchFields.accountNumber.toLowerCase());
             });
         }
 
         // Apply advanced filters
         if (filters.status !== 'all') {
-            filtered = filtered.filter(o => o.status === filters.status);
+            filtered = filtered.filter(c => c.status === filters.status);
         }
-        if (filters.hasCompanies !== 'all') {
-            const hasCompanies = filters.hasCompanies === 'yes';
-            filtered = filtered.filter(o => {
-                const hasConnectedCompanies = o.connectedCompanies && o.connectedCompanies.length > 0;
-                return hasCompanies ? hasConnectedCompanies : !hasConnectedCompanies;
-            });
+        if (filters.type !== 'all') {
+            filtered = filtered.filter(c => c.type === filters.type);
+        }
+        if (filters.enabled !== 'all') {
+            const isEnabled = filters.enabled === 'enabled';
+            filtered = filtered.filter(c => c.enabled === isEnabled);
         }
 
         // Paginate
         const startIndex = (page - 1) * rowsPerPage;
         const endIndex = startIndex + rowsPerPage;
-        const paginatedOrgs = filtered.slice(startIndex, endIndex);
+        const paginatedCarriers = filtered.slice(startIndex, endIndex);
 
-        setOrganizations(paginatedOrgs);
+        setCarriers(paginatedCarriers);
         setTotalCount(filtered.length);
-    }, [allOrganizations, selectedTab, searchFields, filters, page, rowsPerPage, ownerMap]);
+    }, [allCarriers, selectedTab, searchFields, filters, page, rowsPerPage]);
 
     // Load data on component mount
     useEffect(() => {
-        fetchCompaniesAndOwners();
-        fetchOrganizations();
+        fetchCarriers();
     }, []);
 
-    // Format date helper
-    const formatDate = (timestamp) => {
-        if (!timestamp || !timestamp.toDate) return 'N/A';
+    // Form handlers
+    const handleOpenDialog = (carrier = null) => {
+        if (carrier) {
+            setSelectedCarrier(carrier);
+            setFormData({
+                name: carrier.name || '',
+                carrierID: carrier.carrierID || '',
+                accountNumber: carrier.apiCredentials?.accountNumber || carrier.accountNumber || '',
+                type: carrier.type || 'courier',
+                enabled: carrier.enabled ?? true,
+                hostURL: carrier.apiCredentials?.hostURL || carrier.hostURL || '',
+                apiCredentials: carrier.apiCredentials || {},
+                username: carrier.apiCredentials?.username || carrier.username || '',
+                password: carrier.apiCredentials?.password || carrier.password || '',
+                secret: carrier.apiCredentials?.secret || carrier.secret || '',
+                logoFileName: carrier.logoFileName || '',
+                logoURL: carrier.logoURL || '',
+            });
+            setEndpoints({
+                rate: carrier.apiCredentials?.endpoints?.rate || '',
+                booking: carrier.apiCredentials?.endpoints?.booking || '',
+                tracking: carrier.apiCredentials?.endpoints?.tracking || '',
+                cancel: carrier.apiCredentials?.endpoints?.cancel || '',
+                labels: carrier.apiCredentials?.endpoints?.labels || '',
+                status: carrier.apiCredentials?.endpoints?.status || ''
+            });
+            setLogoPreview(carrier.logoURL || '');
+        } else {
+            setSelectedCarrier(null);
+            setFormData({
+                name: '',
+                carrierID: '',
+                accountNumber: '',
+                type: 'courier',
+                enabled: true,
+                hostURL: '',
+                apiCredentials: {},
+                username: '',
+                password: '',
+                secret: '',
+                logoFileName: '',
+                logoURL: '',
+            });
+            setEndpoints({
+                rate: '',
+                booking: '',
+                tracking: '',
+                cancel: '',
+                labels: '',
+                status: ''
+            });
+            setLogoPreview('');
+        }
+        setLogoFile(null);
+        setCarrierIdError('');
+        setOpenDialog(true);
+        handleActionMenuClose();
+    };
+
+    const handleCloseDialog = () => {
+        setOpenDialog(false);
+        setSelectedCarrier(null);
+        setLogoFile(null);
+        setLogoPreview('');
+        setUploadProgress(0);
+        setUploadError(null);
+        setCarrierIdError('');
+    };
+
+    const handleToggleEnabled = async (carrier) => {
         try {
-            return format(timestamp.toDate(), 'MMM d, yyyy');
-        } catch (e) {
-            return 'Invalid Date';
+            await updateDoc(doc(db, 'carriers', carrier.id), {
+                enabled: !carrier.enabled,
+                updatedAt: serverTimestamp()
+            });
+            // Update local state
+            setAllCarriers(prevCarriers => prevCarriers.map(c =>
+                c.id === carrier.id ? { ...c, enabled: !carrier.enabled } : c
+            ));
+            enqueueSnackbar(`Carrier ${carrier.name} has been ${carrier.enabled ? 'disabled' : 'enabled'}.`, { variant: 'success' });
+        } catch (err) {
+            showSnackbar('Error updating carrier status: ' + err.message, 'error');
         }
     };
 
@@ -477,6 +545,20 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                 return { color: '#0a875a', bgcolor: '#f1f8f5' };
             case 'inactive':
                 return { color: '#dc2626', bgcolor: '#fef2f2' };
+            default:
+                return { color: '#637381', bgcolor: '#f9fafb' };
+        }
+    };
+
+    // Get type chip color
+    const getTypeColor = (type) => {
+        switch (type) {
+            case 'courier':
+                return { color: '#3b82f6', bgcolor: '#eff6ff' };
+            case 'freight':
+                return { color: '#f59e0b', bgcolor: '#fffbeb' };
+            case 'hybrid':
+                return { color: '#8b5cf6', bgcolor: '#f5f3ff' };
             default:
                 return { color: '#637381', bgcolor: '#f9fafb' };
         }
@@ -495,10 +577,10 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
                         <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
-                            Organizations
+                            Carriers
                         </Typography>
                         <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            Manage organization structures and company relationships
+                            Manage carrier integrations and configurations
                         </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
@@ -514,10 +596,10 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                             variant="contained"
                             size="small"
                             startIcon={<AddIcon />}
-                            onClick={() => navigate('/admin/organizations/new')}
+                            onClick={() => handleOpenDialog()}
                             sx={{ fontSize: '12px' }}
                         >
-                            Add Organization
+                            Add Carrier
                         </Button>
                     </Box>
                 </Box>
@@ -539,17 +621,18 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                     >
                         <Tab label={`All (${stats.total})`} value="all" />
                         <Tab label={
-                            <Badge badgeContent={stats.active} color="success" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Active
+                            <Badge badgeContent={stats.enabled} color="success" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
+                                Enabled
                             </Badge>
-                        } value="active" />
+                        } value="enabled" />
                         <Tab label={
-                            <Badge badgeContent={stats.inactive} color="error" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Inactive
+                            <Badge badgeContent={stats.disabled} color="error" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
+                                Disabled
                             </Badge>
-                        } value="inactive" />
-                        <Tab label={`With Companies (${stats.withCompanies})`} value="with-companies" />
-                        <Tab label={`No Companies (${stats.withoutCompanies})`} value="without-companies" />
+                        } value="disabled" />
+                        <Tab label={`Courier (${stats.courier})`} value="courier" />
+                        <Tab label={`Freight (${stats.freight})`} value="freight" />
+                        <Tab label={`Hybrid (${stats.hybrid})`} value="hybrid" />
                     </Tabs>
 
                     <Button
@@ -571,9 +654,9 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                                 <TextField
                                     fullWidth
                                     size="small"
-                                    placeholder="Search organization name..."
-                                    value={searchFields.orgName}
-                                    onChange={(e) => setSearchFields(prev => ({ ...prev, orgName: e.target.value }))}
+                                    placeholder="Search carrier name..."
+                                    value={searchFields.carrierName}
+                                    onChange={(e) => setSearchFields(prev => ({ ...prev, carrierName: e.target.value }))}
                                     InputProps={{
                                         startAdornment: (
                                             <InputAdornment position="start">
@@ -588,9 +671,9 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                                 <TextField
                                     fullWidth
                                     size="small"
-                                    placeholder="Search org ID..."
-                                    value={searchFields.orgId}
-                                    onChange={(e) => setSearchFields(prev => ({ ...prev, orgId: e.target.value }))}
+                                    placeholder="Search carrier ID..."
+                                    value={searchFields.carrierId}
+                                    onChange={(e) => setSearchFields(prev => ({ ...prev, carrierId: e.target.value }))}
                                     InputProps={{
                                         sx: { fontSize: '12px' }
                                     }}
@@ -600,9 +683,9 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                                 <TextField
                                     fullWidth
                                     size="small"
-                                    placeholder="Search owner name..."
-                                    value={searchFields.ownerName}
-                                    onChange={(e) => setSearchFields(prev => ({ ...prev, ownerName: e.target.value }))}
+                                    placeholder="Search account number..."
+                                    value={searchFields.accountNumber}
+                                    onChange={(e) => setSearchFields(prev => ({ ...prev, accountNumber: e.target.value }))}
                                     InputProps={{
                                         sx: { fontSize: '12px' }
                                     }}
@@ -615,8 +698,8 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                                 size="small"
                                 startIcon={<CloseIcon />}
                                 onClick={() => {
-                                    setSearchFields({ orgName: '', orgId: '', ownerName: '' });
-                                    setFilters({ status: 'all', hasCompanies: 'all' });
+                                    setSearchFields({ carrierName: '', carrierId: '', accountNumber: '' });
+                                    setFilters({ status: 'all', type: 'all', enabled: 'all' });
                                 }}
                                 sx={{ fontSize: '12px' }}
                             >
@@ -631,7 +714,7 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                 <Box sx={{ width: '100%', px: 2 }}>
                     {loading ? (
-                        <OrganizationsTableSkeleton />
+                        <CarriersTableSkeleton />
                     ) : (
                         <Table sx={{ position: 'sticky', top: 0, zIndex: 100 }}>
                             <TableHead>
@@ -639,87 +722,80 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                             <Checkbox
-                                                indeterminate={selected.length > 0 && selected.length < organizations.length}
-                                                checked={organizations.length > 0 && selected.length === organizations.length}
+                                                indeterminate={selected.length > 0 && selected.length < carriers.length}
+                                                checked={carriers.length > 0 && selected.length === carriers.length}
                                                 onChange={handleSelectAll}
                                                 size="small"
                                             />
-                                            Organization
+                                            Carrier
                                         </Box>
                                     </TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Org ID</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Companies</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Last Updated</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {organizations.map((org) => (
-                                    <TableRow key={org.id} hover sx={{ verticalAlign: 'top' }}>
+                                {carriers.map((carrier) => (
+                                    <TableRow key={carrier.id} hover sx={{ verticalAlign: 'top' }}>
                                         <TableCell>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Checkbox
-                                                    checked={selected.indexOf(org.id) !== -1}
-                                                    onChange={() => handleSelect(org.id)}
+                                                    checked={selected.indexOf(carrier.id) !== -1}
+                                                    onChange={() => handleSelect(carrier.id)}
                                                     size="small"
                                                 />
-                                                <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
-                                                    <ApartmentIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                                <Avatar
+                                                    src={carrier.logoURL}
+                                                    sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}
+                                                >
+                                                    <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
                                                 </Avatar>
                                                 <Box>
-                                                    <Typography
-                                                        component={RouterLink}
-                                                        to={`/admin/organizations/${org.id}`}
-                                                        sx={{
-                                                            textDecoration: 'none',
-                                                            color: '#1f2937',
-                                                            fontWeight: 500,
-                                                            fontSize: '12px',
-                                                            '&:hover': {
-                                                                textDecoration: 'underline',
-                                                                color: '#3b82f6'
-                                                            }
-                                                        }}
-                                                    >
-                                                        {org.name}
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#1f2937' }}>
+                                                        {carrier.name}
                                                     </Typography>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                                        <Switch
+                                                            checked={carrier.enabled}
+                                                            onChange={() => handleToggleEnabled(carrier)}
+                                                            size="small"
+                                                        />
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            {carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                        </Typography>
+                                                    </Box>
                                                 </Box>
                                             </Box>
                                         </TableCell>
                                         <TableCell>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Typography sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
-                                                    {org.orgID || 'N/A'}
+                                                    {carrier.carrierID}
                                                 </Typography>
-                                                {org.orgID && (
-                                                    <Tooltip title="Copy Org ID">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleCopyToClipboard(org.orgID, 'Org ID');
-                                                            }}
-                                                        >
-                                                            <ContentCopyIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                )}
+                                                <Tooltip title="Copy Carrier ID">
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleCopyToClipboard(carrier.carrierID, 'Carrier ID');
+                                                        }}
+                                                    >
+                                                        <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         </TableCell>
                                         <TableCell>
-                                            <Typography sx={{ fontSize: '12px' }}>
-                                                {ownerMap[org.ownerID] || 'No owner assigned'}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>
                                             <Chip
-                                                label={org.status || 'unknown'}
+                                                label={carrier.type}
                                                 size="small"
                                                 sx={{
-                                                    backgroundColor: getStatusColor(org.status).bgcolor,
-                                                    color: getStatusColor(org.status).color,
+                                                    backgroundColor: getTypeColor(carrier.type).bgcolor,
+                                                    color: getTypeColor(carrier.type).color,
                                                     fontWeight: 500,
                                                     fontSize: '11px',
                                                     '& .MuiChip-label': { px: 1.5 }
@@ -727,43 +803,48 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                                             />
                                         </TableCell>
                                         <TableCell>
-                                            {org.connectedCompanies && org.connectedCompanies.length > 0 ? (
-                                                <Tooltip title={org.connectedCompanies.map(id => companyMap[id] || id).join(', ')}>
-                                                    <Chip
-                                                        label={`${org.connectedCompanies.length}`}
-                                                        size="small"
-                                                        sx={{ fontSize: '11px' }}
-                                                    />
-                                                </Tooltip>
-                                            ) : (
-                                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>0</Typography>
-                                            )}
+                                            <Chip
+                                                label={carrier.status || 'active'}
+                                                size="small"
+                                                sx={{
+                                                    backgroundColor: getStatusColor(carrier.status || 'active').bgcolor,
+                                                    color: getStatusColor(carrier.status || 'active').color,
+                                                    fontWeight: 500,
+                                                    fontSize: '11px',
+                                                    '& .MuiChip-label': { px: 1.5 }
+                                                }}
+                                            />
                                         </TableCell>
                                         <TableCell>
                                             <Typography sx={{ fontSize: '12px' }}>
-                                                {formatDate(org.updatedAt)}
+                                                {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography sx={{ fontSize: '12px' }}>
+                                                {carrier.createdAt ? new Date(carrier.createdAt.toDate()).toLocaleDateString() : 'N/A'}
                                             </Typography>
                                         </TableCell>
                                         <TableCell>
                                             <IconButton
                                                 size="small"
-                                                onClick={(e) => handleActionMenuOpen(e, org)}
+                                                onClick={(e) => handleActionMenuOpen(e, carrier)}
                                             >
                                                 <MoreVertIcon sx={{ fontSize: '16px' }} />
                                             </IconButton>
                                         </TableCell>
                                     </TableRow>
                                 ))}
-                                {organizations.length === 0 && !loading && (
+                                {carriers.length === 0 && !loading && (
                                     <TableRow>
                                         <TableCell colSpan={7} align="center">
                                             <Box sx={{ py: 4 }}>
-                                                <ApartmentIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                                                <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
                                                 <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
-                                                    No organizations found
+                                                    No carriers found
                                                 </Typography>
                                                 <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                                                    Try adjusting your search criteria or create a new organization
+                                                    Try adjusting your search criteria or create a new carrier
                                                 </Typography>
                                             </Box>
                                         </TableCell>
@@ -777,7 +858,7 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
 
             {/* Pagination Section */}
             <Box sx={{ flexShrink: 0 }}>
-                <OrganizationsPagination
+                <CarriersPagination
                     totalCount={totalCount}
                     currentPage={page}
                     rowsPerPage={rowsPerPage}
@@ -792,74 +873,26 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                 open={Boolean(actionMenuAnchorEl)}
                 onClose={handleActionMenuClose}
             >
-                <MenuItem onClick={() => {
-                    navigate(`/admin/organizations/${selectedOrg.id}`);
-                    handleActionMenuClose();
-                }}>
-                    <ListItemIcon>
-                        <ViewIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>View Details</Typography>
-                    </ListItemText>
-                </MenuItem>
-                <MenuItem onClick={() => {
-                    navigate(`/admin/organizations/${selectedOrg.id}/edit`);
-                    handleActionMenuClose();
-                }}>
+                <MenuItem onClick={() => handleOpenDialog(selectedCarrier)}>
                     <ListItemIcon>
                         <EditIcon fontSize="small" />
                     </ListItemIcon>
                     <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Edit Organization</Typography>
+                        <Typography sx={{ fontSize: '12px' }}>Edit Carrier</Typography>
                     </ListItemText>
                 </MenuItem>
-                <MenuItem onClick={() => selectedOrg && openDeleteDialog(selectedOrg)} sx={{ color: 'error.main' }}>
+                <MenuItem onClick={() => {
+                    setOpenDeleteConfirm(true);
+                    handleActionMenuClose();
+                }}>
                     <ListItemIcon>
-                        <DeleteForeverIcon fontSize="small" color="error" />
+                        <DeleteIcon fontSize="small" />
                     </ListItemIcon>
                     <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Delete Organization</Typography>
+                        <Typography sx={{ fontSize: '12px' }}>Delete Carrier</Typography>
                     </ListItemText>
                 </MenuItem>
             </Menu>
-
-            {/* Delete Confirmation Dialog */}
-            <Dialog
-                open={showDeleteDialog}
-                onClose={() => { setShowDeleteDialog(false); setOrgToDelete(null); }}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Confirm Deletion</DialogTitle>
-                <DialogContent>
-                    <DialogContentText sx={{ fontSize: '12px' }}>
-                        Are you sure you want to delete the organization
-                        <strong> "{orgToDelete?.name}"</strong>?
-                        This action cannot be undone.
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => { setShowDeleteDialog(false); setOrgToDelete(null); }}
-                        disabled={isDeleting}
-                        size="small"
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleConfirmDelete}
-                        color="error"
-                        variant="contained"
-                        disabled={isDeleting}
-                        size="small"
-                        sx={{ fontSize: '12px' }}
-                    >
-                        {isDeleting ? <CircularProgress size={16} color="inherit" /> : 'Confirm Delete'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
         </Box>
     );
 
@@ -873,7 +906,7 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
             {/* Modal Header */}
             {isModal && (
                 <ModalHeader
-                    title="Organizations"
+                    title="Carriers"
                     onClose={onClose}
                     showBackButton={false}
                     showCloseButton={showCloseButton}
@@ -889,8 +922,74 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
             }}>
                 {renderTableView()}
             </Box>
+
+            {/* Carrier Form Dialog - Simplified for now */}
+            <Dialog
+                open={openDialog}
+                onClose={handleCloseDialog}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>
+                    {selectedCarrier ? 'Edit Carrier' : 'Add New Carrier'}
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Carrier configuration dialog will be implemented with full form fields.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={handleCloseDialog}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={openDeleteConfirm}
+                onClose={() => setOpenDeleteConfirm(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Confirm Deletion</DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '12px' }}>
+                        Are you sure you want to delete carrier <strong>{selectedCarrier?.name}</strong>?
+                        This action cannot be undone.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setOpenDeleteConfirm(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Delete
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };
 
-export default OrganizationList; 
+export default AdminCarriers; 

@@ -18,9 +18,10 @@
 
 .nav-link {
     color: #64748b;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.8rem;
     text-decoration: none;
     font-weight: 500;
+    font-size: 12px !important;
     transition: color 0.2s ease-in-out;
 }
 
@@ -64,7 +65,50 @@
     color: #64748b;
 }
 
-@media (max-width: 960px) {
+/* Mobile toggle button styles */
+.navbar-toggler {
+    border: none !important;
+    background: none !important;
+    padding: 8px !important;
+    border-radius: 4px !important;
+    transition: background-color 0.2s ease !important;
+}
+
+.navbar-toggler:hover {
+    background-color: #f8fafc !important;
+}
+
+.navbar-toggler:focus {
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.1) !important;
+}
+
+/* Mobile menu collapsed by default */
+.navbar-collapse {
+    display: none;
+}
+
+/* Mobile menu when shown */
+.navbar-collapse.show {
+    display: block;
+}
+
+/* Tablet and larger screens - always show menu */
+@media (min-width: 1200px) {
+    .navbar-collapse {
+        display: flex !important;
+    }
+    
+    .navbar-toggler {
+        display: none !important;
+    }
+}
+
+/* Mobile and tablet responsive styles */
+@media (max-width: 1199px) {
+    .navbar {
+        padding: 0.75rem 1rem;
+    }
+    
     .navbar-collapse {
         background-color: #ffffff;
         position: absolute;
@@ -73,14 +117,74 @@
         right: 0;
         padding: 1rem;
         border-top: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        z-index: 1000;
     }
 
     .navbar-nav {
         padding: 0.5rem 0;
+        flex-direction: column;
+        width: 100%;
     }
 
     .nav-item {
         margin: 0.25rem 0;
+        width: 100%;
+    }
+    
+    .nav-link {
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        font-size: 12px !important;
+        display: block;
+        width: 100%;
+        text-align: left;
+    }
+    
+    .nav-link:hover {
+        background-color: #f8fafc;
+    }
+    
+    .nav-link.active {
+        background-color: #f1f5f9;
+        color: #0f172a;
+        font-weight: 600;
+    }
+    
+    /* Profile section in mobile */
+    .nav-item.ms-2 {
+        margin-left: 0 !important;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: center;
+    }
+}
+
+/* Extra small mobile devices */
+@media (max-width: 576px) {
+    .navbar {
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .navbar-brand img {
+        height: 26px !important;
+    }
+    
+    .navbar-collapse {
+        padding: 0.75rem;
+    }
+    
+    .nav-link {
+        padding: 0.625rem 0.875rem;
+        font-size: 12px !important;
+    }
+}
+
+/* Large screens - ensure consistent 12px font size */
+@media (min-width: 1200px) {
+    .nav-link {
+        font-size: 12px !important;
     }
 } 

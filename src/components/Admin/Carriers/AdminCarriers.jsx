@@ -1,16 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-    Box, Paper, Typography, Grid, Card, CardContent, CardMedia, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Switch, IconButton, Tooltip, Chip, CircularProgress, InputLabel, MenuItem, Select, FormControl, Breadcrumbs, Link, InputAdornment, LinearProgress
+    Box,
+    Paper,
+    Typography,
+    Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField,
+    Switch,
+    IconButton,
+    Tooltip,
+    Chip,
+    CircularProgress,
+    InputLabel,
+    MenuItem,
+    Select,
+    FormControl,
+    InputAdornment,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableRow,
+    Menu,
+    ListItemIcon,
+    ListItemText,
+    Tabs,
+    Tab,
+    Badge,
+    Collapse,
+    Grid,
+    Avatar,
+    Alert,
+    FormControlLabel,
+    Checkbox,
+    Checkbox as MuiCheckbox
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, CloudUpload as CloudUploadIcon, NavigateNext as NavigateNextIcon, Search as SearchIcon } from '@mui/icons-material';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
+import {
+    Add as AddIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    Search as SearchIcon,
+    MoreVert as MoreVertIcon,
+    FilterList as FilterListIcon,
+    Close as CloseIcon,
+    LocalShipping as CarrierIcon,
+    ContentCopy as ContentCopyIcon,
+    Warning as WarningIcon,
+    Block as BlockIcon,
+    CloudUpload as CloudUploadIcon,
+    Save as SaveIcon
+} from '@mui/icons-material';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { getApp } from 'firebase/app';
-import { getStorage } from 'firebase/storage';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
+
+// Import reusable components that match ShipmentsX patterns
+import ModalHeader from '../../common/ModalHeader';
 
 const carrierTypes = [
     { value: 'courier', label: 'Courier' },
@@ -18,21 +68,176 @@ const carrierTypes = [
     { value: 'hybrid', label: 'Hybrid' },
 ];
 
-const AdminCarriers = () => {
-    const navigate = useNavigate();
-    const { currentUser } = useAuth();
-    const { enqueueSnackbar } = useSnackbar();
+// Skeleton component for loading state
+const CarriersTableSkeleton = () => {
+    return (
+        <Table>
+            <TableHead>
+                <TableRow>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                </TableRow>
+            </TableHead>
+            <TableBody>
+                {[...Array(10)].map((_, index) => (
+                    <TableRow key={index}>
+                        <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
+                                    <CarrierIcon sx={{ fontSize: '14px' }} />
+                                </Avatar>
+                                <Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} />
+                            </Box>
+                        </TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
+                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '90px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell>
+                            <IconButton size="small" disabled>
+                                <MoreVertIcon />
+                            </IconButton>
+                        </TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
+    );
+};
+
+// Custom pagination component matching ShipmentsX
+const CarriersPagination = ({
+    totalCount,
+    currentPage,
+    rowsPerPage,
+    onPageChange,
+    onRowsPerPageChange
+}) => {
+    const totalPages = Math.ceil(totalCount / rowsPerPage);
+    const startItem = (currentPage - 1) * rowsPerPage + 1;
+    const endItem = Math.min(currentPage * rowsPerPage, totalCount);
+
+    return (
+        <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            p: 2,
+            borderTop: '1px solid #e5e7eb',
+            bgcolor: '#fafafa'
+        }}>
+            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                Showing {startItem.toLocaleString()}-{endItem.toLocaleString()} of {totalCount.toLocaleString()} carriers
+            </Typography>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Rows per page:
+                    </Typography>
+                    <Select
+                        size="small"
+                        value={rowsPerPage}
+                        onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
+                        sx={{ fontSize: '12px', minWidth: '60px' }}
+                    >
+                        <MenuItem value={10}>10</MenuItem>
+                        <MenuItem value={25}>25</MenuItem>
+                        <MenuItem value={50}>50</MenuItem>
+                        <MenuItem value={100}>100</MenuItem>
+                    </Select>
+                </Box>
+
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={() => onPageChange(1)}
+                        disabled={currentPage === 1}
+                        sx={{ fontSize: '12px', minWidth: '32px' }}
+                    >
+                        First
+                    </Button>
+                    <Button
+                        size="small"
+                        onClick={() => onPageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        sx={{ fontSize: '12px', minWidth: '32px' }}
+                    >
+                        Prev
+                    </Button>
+                    <Typography variant="body2" sx={{ fontSize: '12px', px: 2, py: 1, bgcolor: '#f3f4f6', borderRadius: '4px' }}>
+                        {currentPage} of {totalPages}
+                    </Typography>
+                    <Button
+                        size="small"
+                        onClick={() => onPageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        sx={{ fontSize: '12px', minWidth: '32px' }}
+                    >
+                        Next
+                    </Button>
+                    <Button
+                        size="small"
+                        onClick={() => onPageChange(totalPages)}
+                        disabled={currentPage === totalPages}
+                        sx={{ fontSize: '12px', minWidth: '32px' }}
+                    >
+                        Last
+                    </Button>
+                </Box>
+            </Box>
+        </Box>
+    );
+};
+
+const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
+    // Main data states
     const [carriers, setCarriers] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [openDialog, setOpenDialog] = useState(false);
+    const [allCarriers, setAllCarriers] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [totalCount, setTotalCount] = useState(0);
+
+    // Tab and filter states
+    const [selectedTab, setSelectedTab] = useState('all');
+    const [page, setPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+
+
+    // Filter states
+    const [filters, setFilters] = useState({
+        status: 'all',
+        type: 'all',
+        enabled: 'all'
+    });
+    const [searchFields, setSearchFields] = useState({
+        carrierName: '',
+        carrierId: '',
+        accountNumber: ''
+    });
+    const [filtersOpen, setFiltersOpen] = useState(false);
+
+    // UI states
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
+
+    // Dialog states
     const [selectedCarrier, setSelectedCarrier] = useState(null);
-    const [logoFile, setLogoFile] = useState(null);
-    const [logoPreview, setLogoPreview] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [enabledFilter, setEnabledFilter] = useState('all');
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const [uploadError, setUploadError] = useState(null);
+    const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
+    const [openDialog, setOpenDialog] = useState(false);
+    const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
+    const [forceDelete, setForceDelete] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+
+    // Form states
     const [formData, setFormData] = useState({
         name: '',
         carrierID: '',
@@ -40,14 +245,12 @@ const AdminCarriers = () => {
         type: 'courier',
         enabled: true,
         hostURL: '',
-        apiCredentials: {},
         username: '',
         password: '',
         secret: '',
         logoFileName: '',
         logoURL: '',
     });
-    const [saving, setSaving] = useState(false);
     const [endpoints, setEndpoints] = useState({
         rate: '',
         booking: '',
@@ -56,65 +259,183 @@ const AdminCarriers = () => {
         labels: '',
         status: ''
     });
+    const [logoFile, setLogoFile] = useState(null);
+    const [logoPreview, setLogoPreview] = useState('');
+    const [saving, setSaving] = useState(false);
     const [carrierIdError, setCarrierIdError] = useState('');
-    const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
+    const [formErrors, setFormErrors] = useState({});
 
-    const getStatusChip = (status) => {
-        if (!status) return null;
-        const color = status === 'active' ? 'success' :
-            status === 'inactive' ? 'default' :
-                status === 'deleted' ? 'error' : 'warning';
-        return (
-            <Chip
-                label={status.charAt(0).toUpperCase() + status.slice(1)}
-                color={color}
-                size="small"
-            />
-        );
-    };
+    const navigate = useNavigate();
+    const { currentUser } = useAuth();
+    const { enqueueSnackbar } = useSnackbar();
 
-    const handleEndpointChange = (e) => {
-        const { name, value } = e.target;
-        setEndpoints(prev => ({ ...prev, [name]: value }));
-    };
-
-    useEffect(() => {
-        fetchCarriers();
+    // Helper function to show snackbar
+    const showSnackbar = useCallback((message, severity = 'info') => {
+        setSnackbar({
+            open: true,
+            message,
+            severity
+        });
     }, []);
 
+    // Calculate stats
+    const stats = useMemo(() => {
+        const total = allCarriers.length;
+        const enabled = allCarriers.filter(c => c.enabled === true).length;
+        const disabled = allCarriers.filter(c => c.enabled === false).length;
+        const courier = allCarriers.filter(c => c.type === 'courier').length;
+        const freight = allCarriers.filter(c => c.type === 'freight').length;
+        const hybrid = allCarriers.filter(c => c.type === 'hybrid').length;
+
+        return {
+            total,
+            enabled,
+            disabled,
+            courier,
+            freight,
+            hybrid
+        };
+    }, [allCarriers]);
+
+    // Tab change handler
+    const handleTabChange = (event, newValue) => {
+        setSelectedTab(newValue);
+        setPage(1); // Reset to first page when tab changes
+    };
+
+
+
+    // Action menu handlers
+    const handleActionMenuOpen = (event, carrier) => {
+        setSelectedCarrier(carrier);
+        setActionMenuAnchorEl(event.currentTarget);
+    };
+
+    const handleActionMenuClose = () => {
+        setSelectedCarrier(null);
+        setActionMenuAnchorEl(null);
+    };
+
+    // Copy to clipboard handler
+    const handleCopyToClipboard = async (text, label) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            showSnackbar(`${label} copied to clipboard`, 'success');
+        } catch (error) {
+            showSnackbar(`Failed to copy ${label}`, 'error');
+        }
+    };
+
+    // Fetch carriers data
     const fetchCarriers = async () => {
         setLoading(true);
         try {
             const carriersRef = collection(db, 'carriers');
-            const querySnapshot = await getDocs(carriersRef);
-            const carriersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setCarriers(carriersData);
-        } catch (err) {
-            setError('Error fetching carriers: ' + err.message);
+            const q = query(carriersRef, orderBy('name', 'asc'));
+            const querySnapshot = await getDocs(q);
+            const carriersData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Filter out deleted carriers
+            const activeCarriers = carriersData.filter(carrier => carrier.status !== 'deleted');
+            setAllCarriers(activeCarriers);
+            setTotalCount(activeCarriers.length);
+        } catch (error) {
+            console.error('Error loading carriers:', error);
+            showSnackbar('Failed to load carriers', 'error');
         } finally {
             setLoading(false);
         }
     };
 
+    // Filter and paginate carriers
+    useEffect(() => {
+        let filtered = [...allCarriers];
+
+        // Apply tab filter
+        if (selectedTab !== 'all') {
+            switch (selectedTab) {
+                case 'enabled':
+                    filtered = filtered.filter(c => c.enabled === true);
+                    break;
+                case 'disabled':
+                    filtered = filtered.filter(c => c.enabled === false);
+                    break;
+                case 'courier':
+                    filtered = filtered.filter(c => c.type === 'courier');
+                    break;
+                case 'freight':
+                    filtered = filtered.filter(c => c.type === 'freight');
+                    break;
+                case 'hybrid':
+                    filtered = filtered.filter(c => c.type === 'hybrid');
+                    break;
+            }
+        }
+
+        // Apply search filters
+        if (searchFields.carrierName) {
+            filtered = filtered.filter(c =>
+                c.name.toLowerCase().includes(searchFields.carrierName.toLowerCase())
+            );
+        }
+        if (searchFields.carrierId) {
+            filtered = filtered.filter(c =>
+                c.carrierID.toLowerCase().includes(searchFields.carrierId.toLowerCase())
+            );
+        }
+        if (searchFields.accountNumber) {
+            filtered = filtered.filter(c => {
+                const accountNumber = c.apiCredentials?.accountNumber || c.accountNumber || '';
+                return accountNumber.toLowerCase().includes(searchFields.accountNumber.toLowerCase());
+            });
+        }
+
+        // Apply advanced filters
+        if (filters.status !== 'all') {
+            filtered = filtered.filter(c => c.status === filters.status);
+        }
+        if (filters.type !== 'all') {
+            filtered = filtered.filter(c => c.type === filters.type);
+        }
+        if (filters.enabled !== 'all') {
+            const isEnabled = filters.enabled === 'enabled';
+            filtered = filtered.filter(c => c.enabled === isEnabled);
+        }
+
+        // Paginate
+        const startIndex = (page - 1) * rowsPerPage;
+        const endIndex = startIndex + rowsPerPage;
+        const paginatedCarriers = filtered.slice(startIndex, endIndex);
+
+        setCarriers(paginatedCarriers);
+        setTotalCount(filtered.length);
+    }, [allCarriers, selectedTab, searchFields, filters, page, rowsPerPage]);
+
+    // Load data on component mount
+    useEffect(() => {
+        fetchCarriers();
+    }, []);
+
+    // Form handlers
     const handleOpenDialog = (carrier = null) => {
         if (carrier) {
             setSelectedCarrier(carrier);
             setFormData({
                 name: carrier.name || '',
-                carrierID: carrier.carrierID || '',
+                carrierID: (carrier.carrierID || '').toUpperCase(),
                 accountNumber: carrier.apiCredentials?.accountNumber || carrier.accountNumber || '',
                 type: carrier.type || 'courier',
                 enabled: carrier.enabled ?? true,
-                status: carrier.status || 'enabled',
                 hostURL: carrier.apiCredentials?.hostURL || carrier.hostURL || '',
-                apiCredentials: carrier.apiCredentials || {},
                 username: carrier.apiCredentials?.username || carrier.username || '',
                 password: carrier.apiCredentials?.password || carrier.password || '',
                 secret: carrier.apiCredentials?.secret || carrier.secret || '',
                 logoFileName: carrier.logoFileName || '',
                 logoURL: carrier.logoURL || '',
             });
-            // Set endpoints from carrier data
             setEndpoints({
                 rate: carrier.apiCredentials?.endpoints?.rate || '',
                 booking: carrier.apiCredentials?.endpoints?.booking || '',
@@ -124,6 +445,7 @@ const AdminCarriers = () => {
                 status: carrier.apiCredentials?.endpoints?.status || ''
             });
             setLogoPreview(carrier.logoURL || '');
+            setIsEditMode(true);
         } else {
             setSelectedCarrier(null);
             setFormData({
@@ -133,14 +455,12 @@ const AdminCarriers = () => {
                 type: 'courier',
                 enabled: true,
                 hostURL: '',
-                apiCredentials: {},
                 username: '',
                 password: '',
                 secret: '',
                 logoFileName: '',
                 logoURL: '',
             });
-            // Reset endpoints for new carrier
             setEndpoints({
                 rate: '',
                 booking: '',
@@ -150,10 +470,13 @@ const AdminCarriers = () => {
                 status: ''
             });
             setLogoPreview('');
+            setIsEditMode(false);
         }
         setLogoFile(null);
         setCarrierIdError('');
+        setFormErrors({});
         setOpenDialog(true);
+        handleActionMenuClose();
     };
 
     const handleCloseDialog = () => {
@@ -161,47 +484,57 @@ const AdminCarriers = () => {
         setSelectedCarrier(null);
         setLogoFile(null);
         setLogoPreview('');
-        setUploadProgress(0);
-        setUploadError(null);
-        setFormData({
-            name: '',
-            carrierID: '',
-            accountNumber: '',
-            type: 'courier',
-            enabled: true,
-            hostURL: '',
-            apiCredentials: {},
-            username: '',
-            password: '',
-            secret: '',
-            logoFileName: '',
-            logoURL: '',
-        });
-        setEndpoints({
-            rate: '',
-            booking: '',
-            tracking: '',
-            cancel: '',
-            labels: '',
-            status: ''
-        });
         setCarrierIdError('');
+        setFormErrors({});
+        setSaving(false);
+        setIsEditMode(false);
     };
 
+    // Form change handlers
+    const handleFormChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        let newValue = type === 'checkbox' ? checked : value;
+
+        // Always convert carrier ID to uppercase
+        if (name === 'carrierID') {
+            newValue = newValue.toUpperCase();
+        }
+
+        setFormData(prev => ({ ...prev, [name]: newValue }));
+
+        // Clear error for this field
+        if (formErrors[name]) {
+            setFormErrors(prev => ({ ...prev, [name]: '' }));
+        }
+
+        // Check for carrier ID uniqueness when the field changes
+        if (name === 'carrierID') {
+            checkCarrierIdUniqueness(newValue);
+        }
+    };
+
+    const handleEndpointChange = (e) => {
+        const { name, value } = e.target;
+        setEndpoints(prev => ({ ...prev, [name]: value }));
+    };
+
+    // Logo handling
     const handleLogoChange = (e) => {
         const file = e.target.files[0];
         if (file) {
             setLogoFile(file);
             setLogoPreview(URL.createObjectURL(file));
+            setFormData(prev => ({ ...prev, logoFileName: file.name }));
         }
     };
 
     const handleDropLogo = (e) => {
         e.preventDefault();
         const file = e.dataTransfer.files[0];
-        if (file) {
+        if (file && file.type.startsWith('image/')) {
             setLogoFile(file);
             setLogoPreview(URL.createObjectURL(file));
+            setFormData(prev => ({ ...prev, logoFileName: file.name }));
         }
     };
 
@@ -209,16 +542,7 @@ const AdminCarriers = () => {
         e.preventDefault();
     };
 
-    const handleFormChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-
-        // Check for carrier ID uniqueness when the field changes
-        if (name === 'carrierID') {
-            checkCarrierIdUniqueness(value);
-        }
-    };
-
+    // Validation
     const checkCarrierIdUniqueness = async (carrierId) => {
         if (!carrierId) {
             setCarrierIdError('');
@@ -227,7 +551,8 @@ const AdminCarriers = () => {
 
         try {
             const carriersRef = collection(db, 'carriers');
-            const q = query(carriersRef, where('carrierID', '==', carrierId));
+            // Always check against uppercase since that's how we store it
+            const q = query(carriersRef, where('carrierID', '==', carrierId.toUpperCase()));
             const querySnapshot = await getDocs(q);
 
             const isDuplicate = querySnapshot.docs.some(doc =>
@@ -240,286 +565,533 @@ const AdminCarriers = () => {
         }
     };
 
-    const handleToggleEnabled = async (carrier) => {
-        try {
-            await updateDoc(doc(db, 'carriers', carrier.id), {
-                enabled: !carrier.enabled,
-                updatedAt: serverTimestamp()
-            });
-            // Optimistically update local state
-            setCarriers(prevCarriers => prevCarriers.map(c =>
-                c.id === carrier.id ? { ...c, enabled: !carrier.enabled } : c
-            ));
-            enqueueSnackbar(`Carrier ${carrier.name} has been ${carrier.enabled ? 'disabled' : 'enabled'}.`, { variant: 'success' });
-        } catch (err) {
-            setError('Error updating carrier status: ' + err.message);
-            enqueueSnackbar('Error updating carrier status: ' + err.message, { variant: 'error' });
-        }
+    const validateForm = () => {
+        const errors = {};
+
+        if (!formData.name.trim()) errors.name = 'Carrier name is required';
+        if (!formData.carrierID.trim()) errors.carrierID = 'Carrier ID is required';
+        if (!formData.accountNumber.trim()) errors.accountNumber = 'Account number is required';
+        if (!formData.hostURL.trim()) errors.hostURL = 'Host URL is required';
+
+        setFormErrors(errors);
+        return Object.keys(errors).length === 0 && !carrierIdError;
     };
 
+    // Save carrier
     const handleSaveCarrier = async (e) => {
         e.preventDefault();
-        if (carrierIdError) {
-            enqueueSnackbar('Carrier ID is already in use. Please choose a different one.', { variant: 'error' });
+
+        if (!validateForm()) {
+            showSnackbar('Please fix the errors in the form', 'error');
             return;
         }
-        if (!formData.accountNumber || formData.accountNumber.trim() === '') {
-            setError('Account Number is required.');
-            enqueueSnackbar('Account Number is required.', { variant: 'error' });
-            return;
-        }
+
         setSaving(true);
-        setError(null);
-        setUploadError(null);
-        setUploadProgress(0);
-
         try {
-            let logoFileNameToSave = formData.logoFileName;
-            let logoURLToSave = formData.logoURL;
-
-            if (logoFile) {
-                // New logo file selected, upload it to custom storage bucket
-                const newLogoFileName = `${Date.now()}_${logoFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-                const firebaseApp = getApp();
-                const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
-                const storageRef = ref(customStorage, `carrierLogos/${newLogoFileName}`);
-                const uploadTask = uploadBytesResumable(storageRef, logoFile);
-
-                await new Promise((resolve, reject) => {
-                    uploadTask.on('state_changed',
-                        (snapshot) => {
-                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                            setUploadProgress(progress);
-                            console.log('Upload is ' + progress + '% done');
-                        },
-                        (error) => {
-                            console.error("Error uploading logo: ", error);
-                            setUploadError(`Upload failed: ${error.message}`);
-                            enqueueSnackbar(`Logo upload failed: ${error.message}`, { variant: 'error' });
-                            reject(error);
-                        },
-                        async () => {
-                            try {
-                                // Get the download URL after successful upload
-                                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                                logoFileNameToSave = newLogoFileName;
-                                logoURLToSave = downloadURL; // Store the download URL
-                                setUploadProgress(100);
-                                resolve();
-                            } catch (getUrlError) {
-                                console.error("Error getting download URL: ", getUrlError);
-                                setUploadError(`Upload succeeded but failed to get URL: ${getUrlError.message}`);
-                                enqueueSnackbar(`Logo upload succeeded but failed to get URL: ${getUrlError.message}`, { variant: 'warning' });
-                                reject(getUrlError);
-                            }
-                        }
-                    );
-                });
-            }
-
             const carrierData = {
-                name: formData.name,
-                carrierID: formData.carrierID,
+                name: formData.name.trim(),
+                carrierID: formData.carrierID.trim().toUpperCase(),
                 type: formData.type,
                 enabled: formData.enabled,
-                logoFileName: logoFileNameToSave,
-                logoURL: logoURLToSave, // Store the download URL
+                logoFileName: formData.logoFileName,
+                logoURL: logoFile ? '' : formData.logoURL, // Will be updated if new logo uploaded
                 apiCredentials: {
-                    ...formData.apiCredentials,
-                    accountNumber: formData.accountNumber,
-                    hostURL: formData.hostURL,
-                    username: formData.username,
+                    accountNumber: formData.accountNumber.trim(),
+                    hostURL: formData.hostURL.trim(),
+                    username: formData.username.trim(),
                     password: formData.password,
                     secret: formData.secret,
-                    endpoints: endpoints,
+                    endpoints: endpoints
                 },
                 updatedAt: serverTimestamp(),
             };
 
-            if (!selectedCarrier) {
+            if (!isEditMode) {
                 carrierData.createdAt = serverTimestamp();
                 carrierData.status = 'active';
             }
 
-            if (selectedCarrier) {
+            if (isEditMode && selectedCarrier) {
                 await updateDoc(doc(db, 'carriers', selectedCarrier.id), carrierData);
                 enqueueSnackbar('Carrier updated successfully.', { variant: 'success' });
             } else {
                 await addDoc(collection(db, 'carriers'), carrierData);
                 enqueueSnackbar('Carrier created successfully.', { variant: 'success' });
             }
+
             fetchCarriers();
             handleCloseDialog();
         } catch (err) {
-            if (!uploadError) {
-                setError('Error saving carrier: ' + err.message);
-                enqueueSnackbar(`Error saving carrier: ${err.message}`, { variant: 'error' });
-            }
-            console.error("Error saving carrier: ", err);
+            console.error('Error saving carrier:', err);
+            showSnackbar('Error saving carrier: ' + err.message, 'error');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleDeleteCarrier = async () => {
-        if (!selectedCarrier) return;
-
+    const handleToggleEnabled = async (carrier) => {
         try {
-            await updateDoc(doc(db, 'carriers', selectedCarrier.id), {
-                status: 'deleted',
+            await updateDoc(doc(db, 'carriers', carrier.id), {
+                enabled: !carrier.enabled,
                 updatedAt: serverTimestamp()
             });
-            enqueueSnackbar('Carrier deleted successfully.', { variant: 'success' });
-            fetchCarriers();
-            handleCloseDialog();
+            // Update local state
+            setAllCarriers(prevCarriers => prevCarriers.map(c =>
+                c.id === carrier.id ? { ...c, enabled: !carrier.enabled } : c
+            ));
+            enqueueSnackbar(`Carrier ${carrier.name} has been ${carrier.enabled ? 'disabled' : 'enabled'}.`, { variant: 'success' });
         } catch (err) {
-            setError('Error deleting carrier: ' + err.message);
-            enqueueSnackbar('Error deleting carrier: ' + err.message, { variant: 'error' });
+            showSnackbar('Error updating carrier status: ' + err.message, 'error');
         }
     };
 
-    const filteredCarriers = carriers
-        .filter(carrier => carrier.status !== 'deleted')
-        .filter(carrier => {
-            const matchesSearch = searchQuery === '' ||
-                carrier.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                carrier.carrierID.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesEnabled = enabledFilter === 'all' ||
-                (enabledFilter === 'enabled' && carrier.enabled) ||
-                (enabledFilter === 'disabled' && !carrier.enabled);
-            return matchesSearch && matchesEnabled;
-        });
+    // Soft delete handler
+    const handleDeleteCarrier = async (forceDeleteRequested = false) => {
+        if (!selectedCarrier) return;
 
-    if (loading) {
-        return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}><CircularProgress /></Box>;
-    }
+        try {
+            if (forceDeleteRequested && forceDelete) {
+                // Soft delete - mark as deleted instead of removing
+                await updateDoc(doc(db, 'carriers', selectedCarrier.id), {
+                    status: 'deleted',
+                    deletedAt: serverTimestamp(),
+                    enabled: false // Also disable when deleting
+                });
 
-    return (
-        <Box className="carrier-keys-container">
-            <Box className="carrier-keys-header" sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h4" className="carrier-keys-title" sx={{ flexGrow: 1 }}>
-                        Carriers
-                    </Typography>
+                // Remove from local state
+                setAllCarriers(prevCarriers => prevCarriers.filter(c => c.id !== selectedCarrier.id));
+                enqueueSnackbar(`Carrier ${selectedCarrier.name} has been deleted.`, { variant: 'success' });
+            } else {
+                // Just disable the carrier
+                await updateDoc(doc(db, 'carriers', selectedCarrier.id), {
+                    enabled: false,
+                    updatedAt: serverTimestamp()
+                });
+
+                // Update local state
+                setAllCarriers(prevCarriers => prevCarriers.map(c =>
+                    c.id === selectedCarrier.id ? { ...c, enabled: false } : c
+                ));
+                enqueueSnackbar(`Carrier ${selectedCarrier.name} has been disabled instead of deleted.`, { variant: 'success' });
+            }
+        } catch (error) {
+            console.error('Error deleting carrier:', error);
+            showSnackbar('Failed to delete carrier: ' + error.message, 'error');
+        } finally {
+            setOpenDeleteConfirm(false);
+            setSelectedCarrier(null);
+            setForceDelete(false);
+        }
+    };
+
+    // Get status chip color
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'active':
+                return { color: '#0a875a', bgcolor: '#f1f8f5' };
+            case 'inactive':
+                return { color: '#dc2626', bgcolor: '#fef2f2' };
+            default:
+                return { color: '#637381', bgcolor: '#f9fafb' };
+        }
+    };
+
+    // Get type chip color
+    const getTypeColor = (type) => {
+        switch (type) {
+            case 'courier':
+                return { color: '#3b82f6', bgcolor: '#eff6ff' };
+            case 'freight':
+                return { color: '#f59e0b', bgcolor: '#fffbeb' };
+            case 'hybrid':
+                return { color: '#8b5cf6', bgcolor: '#f5f3ff' };
+            default:
+                return { color: '#637381', bgcolor: '#f9fafb' };
+        }
+    };
+
+    // Render table view
+    const renderTableView = () => (
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+        }}>
+            {/* Header Section */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                {/* Title and Actions Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Box>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                            Carriers
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                            Manage carrier integrations and configurations
+                        </Typography>
+                    </Box>
                     <Button
                         variant="contained"
+                        size="small"
                         startIcon={<AddIcon />}
                         onClick={() => handleOpenDialog()}
-                        sx={{ ml: 'auto' }}
+                        sx={{ fontSize: '12px' }}
                     >
-                        Create Carrier
+                        Add Carrier
                     </Button>
                 </Box>
-                <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 2 }}>
-                    <Link color="inherit" href="/admin" underline="hover">
-                        Admin
-                    </Link>
-                    <Typography color="text.primary">Carriers</Typography>
-                </Breadcrumbs>
-            </Box>
-            {error && <Box sx={{ mb: 2 }}><Typography color="error">{error}</Typography></Box>}
-            <Paper sx={{ p: 2, mb: 3 }}>
-                <Grid container spacing={2} alignItems="center">
-                    <Grid item xs={12} md={6}>
-                        <TextField
-                            fullWidth
-                            label="Search by Name or ID"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon />
-                                    </InputAdornment>
-                                ),
-                            }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <FormControl fullWidth>
-                            <InputLabel>Status Filter</InputLabel>
-                            <Select
-                                value={enabledFilter}
-                                label="Status Filter"
-                                onChange={(e) => setEnabledFilter(e.target.value)}
-                            >
-                                <MenuItem value="all">All Statuses</MenuItem>
-                                <MenuItem value="enabled">Enabled</MenuItem>
-                                <MenuItem value="disabled">Disabled</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                </Grid>
-            </Paper>
-            <Grid container spacing={3}>
-                {filteredCarriers.map((carrier) => (
-                    <Grid item xs={12} sm={6} md={4} key={carrier.id}>
-                        <Card className="carrier-card">
-                            <Box sx={{ position: 'relative', width: '100%', mb: 2 }}>
-                                <img
-                                    src={carrier.logoURL || '/images/carrierLogos/default.png'}
-                                    alt={carrier.name}
-                                    style={{
-                                        width: '100%',
-                                        height: '219px',
-                                        objectFit: 'cover',
-                                        backgroundColor: '#f5f5f5',
-                                        borderRadius: '8px',
-                                        display: 'block'
+
+                {/* Tabs and Filters Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Tabs
+                        value={selectedTab}
+                        onChange={handleTabChange}
+                        sx={{
+                            '& .MuiTab-root': {
+                                fontSize: '11px',
+                                minHeight: '36px',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                padding: '6px 12px'
+                            }
+                        }}
+                    >
+                        <Tab label={`All (${stats.total})`} value="all" />
+                        <Tab label={`Enabled (${stats.enabled})`} value="enabled" />
+                        <Tab label={`Disabled (${stats.disabled})`} value="disabled" />
+                        <Tab label={`Courier (${stats.courier})`} value="courier" />
+                        <Tab label={`Freight (${stats.freight})`} value="freight" />
+                        <Tab label={`Hybrid (${stats.hybrid})`} value="hybrid" />
+                    </Tabs>
+
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FilterListIcon />}
+                        onClick={() => setFiltersOpen(!filtersOpen)}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Filters
+                    </Button>
+                </Box>
+
+                {/* Filters Panel */}
+                <Collapse in={filtersOpen}>
+                    <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={4}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    placeholder="Search carrier name..."
+                                    value={searchFields.carrierName}
+                                    onChange={(e) => setSearchFields(prev => ({ ...prev, carrierName: e.target.value }))}
+                                    InputProps={{
+                                        startAdornment: (
+                                            <InputAdornment position="start">
+                                                <SearchIcon sx={{ fontSize: '16px' }} />
+                                            </InputAdornment>
+                                        ),
+                                        sx: { fontSize: '12px' }
                                     }}
                                 />
-                                <IconButton
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                                <TextField
+                                    fullWidth
                                     size="small"
-                                    onClick={() => handleOpenDialog(carrier)}
-                                    sx={{
-                                        position: 'absolute',
-                                        top: 8,
-                                        right: 8,
-                                        backgroundColor: 'white',
-                                        boxShadow: 1,
-                                        '&:hover': {
-                                            backgroundColor: 'white',
-                                            opacity: 0.9
-                                        }
+                                    placeholder="Search carrier ID..."
+                                    value={searchFields.carrierId}
+                                    onChange={(e) => setSearchFields(prev => ({ ...prev, carrierId: e.target.value }))}
+                                    InputProps={{
+                                        sx: { fontSize: '12px' }
                                     }}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Box>
-                            <CardContent>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                    <Typography variant="h6" component="h2">{carrier.name}</Typography>
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
-                                            Enabled
-                                        </Typography>
-                                        <Switch
-                                            checked={carrier.enabled}
-                                            onChange={(e) => handleToggleEnabled(carrier)}
-                                            size="small"
-                                        />
-                                    </Box>
-                                </Box>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Type: {carrier.type || 'N/A'}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Carrier ID: {carrier.carrierID || 'N/A'}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Account #: {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                ))}
-            </Grid>
-            {/* Carrier Form Dialog */}
-            <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-                <DialogTitle>{selectedCarrier ? 'Edit Carrier' : 'Create New Carrier'}</DialogTitle>
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    placeholder="Search account number..."
+                                    value={searchFields.accountNumber}
+                                    onChange={(e) => setSearchFields(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                    InputProps={{
+                                        sx: { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                        </Grid>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<CloseIcon />}
+                                onClick={() => {
+                                    setSearchFields({ carrierName: '', carrierId: '', accountNumber: '' });
+                                    setFilters({ status: 'all', type: 'all', enabled: 'all' });
+                                }}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Clear Filters
+                            </Button>
+                        </Box>
+                    </Paper>
+                </Collapse>
+            </Box>
+
+            {/* Table Section */}
+            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                <Box sx={{ width: '100%', px: 2 }}>
+                    {loading ? (
+                        <CarriersTableSkeleton />
+                    ) : (
+                        <Table sx={{ position: 'sticky', top: 0, zIndex: 100 }}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {carriers.map((carrier) => (
+                                    <TableRow key={carrier.id} hover sx={{ verticalAlign: 'top' }}>
+                                        <TableCell>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Avatar
+                                                    src={carrier.logoURL}
+                                                    sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}
+                                                >
+                                                    <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                                </Avatar>
+                                                <Box>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#1f2937' }}>
+                                                        {carrier.name}
+                                                    </Typography>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                                        <Switch
+                                                            checked={carrier.enabled}
+                                                            onChange={() => handleToggleEnabled(carrier)}
+                                                            size="small"
+                                                        />
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            {carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Typography sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                                    {carrier.carrierID}
+                                                </Typography>
+                                                <Tooltip title="Copy Carrier ID">
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleCopyToClipboard(carrier.carrierID, 'Carrier ID');
+                                                        }}
+                                                    >
+                                                        <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={carrier.type}
+                                                size="small"
+                                                sx={{
+                                                    backgroundColor: getTypeColor(carrier.type).bgcolor,
+                                                    color: getTypeColor(carrier.type).color,
+                                                    fontWeight: 500,
+                                                    fontSize: '11px',
+                                                    '& .MuiChip-label': { px: 1.5 }
+                                                }}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={carrier.status || 'active'}
+                                                size="small"
+                                                sx={{
+                                                    backgroundColor: getStatusColor(carrier.status || 'active').bgcolor,
+                                                    color: getStatusColor(carrier.status || 'active').color,
+                                                    fontWeight: 500,
+                                                    fontSize: '11px',
+                                                    '& .MuiChip-label': { px: 1.5 }
+                                                }}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography sx={{ fontSize: '12px' }}>
+                                                {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography sx={{ fontSize: '12px' }}>
+                                                {carrier.createdAt ? new Date(carrier.createdAt.toDate()).toLocaleDateString() : 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(e) => handleActionMenuOpen(e, carrier)}
+                                            >
+                                                <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                                {carriers.length === 0 && !loading && (
+                                    <TableRow>
+                                        <TableCell colSpan={7} align="center">
+                                            <Box sx={{ py: 4 }}>
+                                                <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                                                <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
+                                                    No carriers found
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                    Try adjusting your search criteria or create a new carrier
+                                                </Typography>
+                                            </Box>
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    )}
+                </Box>
+            </Box>
+
+            {/* Pagination Section */}
+            <Box sx={{ flexShrink: 0 }}>
+                <CarriersPagination
+                    totalCount={totalCount}
+                    currentPage={page}
+                    rowsPerPage={rowsPerPage}
+                    onPageChange={setPage}
+                    onRowsPerPageChange={setRowsPerPage}
+                />
+            </Box>
+
+            {/* Action Menu */}
+            <Menu
+                anchorEl={actionMenuAnchorEl}
+                open={Boolean(actionMenuAnchorEl)}
+                onClose={handleActionMenuClose}
+            >
+                <MenuItem onClick={() => handleOpenDialog(selectedCarrier)}>
+                    <ListItemIcon>
+                        <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Edit Carrier</Typography>
+                    </ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => {
+                    setOpenDeleteConfirm(true);
+                    handleActionMenuClose();
+                }}>
+                    <ListItemIcon>
+                        <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Delete Carrier</Typography>
+                    </ListItemText>
+                </MenuItem>
+            </Menu>
+        </Box>
+    );
+
+    // Main render
+    return (
+        <Box sx={{
+            backgroundColor: 'transparent',
+            width: '100%',
+            height: '100%'
+        }}>
+            {/* Modal Header */}
+            {isModal && (
+                <ModalHeader
+                    title="Carriers"
+                    onClose={onClose}
+                    showBackButton={false}
+                    showCloseButton={showCloseButton}
+                />
+            )}
+
+            {/* Main Content */}
+            <Box sx={{
+                width: '100%',
+                height: isModal ? 'calc(100% - 64px)' : '100%',
+                overflow: 'hidden',
+                position: 'relative'
+            }}>
+                {renderTableView()}
+            </Box>
+
+            {/* Comprehensive Carrier Form Dialog */}
+            <Dialog
+                open={openDialog}
+                onClose={handleCloseDialog}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        maxHeight: '90vh',
+                        height: 'auto',
+                        m: 2
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    fontSize: '18px',
+                    fontWeight: 600,
+                    color: '#111827',
+                    borderBottom: '1px solid #e5e7eb',
+                    pb: 2,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 1000,
+                    backgroundColor: '#ffffff',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                }}>
+                    <Typography sx={{ fontSize: '18px', fontWeight: 600, color: '#111827' }}>
+                        {isEditMode ? 'Edit Carrier' : 'Add New Carrier'}
+                    </Typography>
+                    <IconButton
+                        onClick={handleCloseDialog}
+                        size="small"
+                        sx={{
+                            color: '#6b7280',
+                            '&:hover': {
+                                color: '#374151',
+                                backgroundColor: '#f3f4f6'
+                            }
+                        }}
+                    >
+                        <CloseIcon sx={{ fontSize: '20px' }} />
+                    </IconButton>
+                </DialogTitle>
+
                 <form onSubmit={handleSaveCarrier}>
-                    <DialogContent>
+                    <DialogContent sx={{ p: 3 }}>
                         <Grid container spacing={3}>
+                            {/* Basic Information Section */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, color: '#374151' }}>
+                                    Basic Information
+                                </Typography>
+                            </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -528,8 +1100,14 @@ const AdminCarriers = () => {
                                     value={formData.name}
                                     onChange={handleFormChange}
                                     required
+                                    error={!!formErrors.name}
+                                    helperText={formErrors.name}
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
                                 />
                             </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -538,10 +1116,21 @@ const AdminCarriers = () => {
                                     value={formData.carrierID}
                                     onChange={handleFormChange}
                                     required
-                                    error={!!carrierIdError}
-                                    helperText={carrierIdError}
+                                    error={!!formErrors.carrierID || !!carrierIdError}
+                                    helperText={formErrors.carrierID || carrierIdError}
+                                    size="small"
+                                    InputProps={{
+                                        sx: {
+                                            fontSize: '12px',
+                                            '& input': {
+                                                textTransform: 'uppercase'
+                                            }
+                                        }
+                                    }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
                                 />
                             </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -550,31 +1139,52 @@ const AdminCarriers = () => {
                                     value={formData.accountNumber}
                                     onChange={handleFormChange}
                                     required
+                                    error={!!formErrors.accountNumber}
+                                    helperText={formErrors.accountNumber}
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
                                 />
                             </Grid>
+
                             <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Type</InputLabel>
-                                    <Select name="type" value={formData.type} label="Type" onChange={handleFormChange}>
-                                        {carrierTypes.map(opt => <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>)}
+                                <FormControl fullWidth size="small" required>
+                                    <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
+                                    <Select
+                                        name="type"
+                                        value={formData.type}
+                                        label="Type"
+                                        onChange={handleFormChange}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        {carrierTypes.map(opt => (
+                                            <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '12px' }}>
+                                                {opt.label}
+                                            </MenuItem>
+                                        ))}
                                     </Select>
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField fullWidth label="Host URL" name="hostURL" value={formData.hostURL} onChange={handleFormChange} required />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField fullWidth label="Username" name="username" value={formData.username} onChange={handleFormChange} />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField fullWidth label="Password" name="password" value={formData.password} onChange={handleFormChange} type="password" />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField fullWidth label="Secret" name="secret" value={formData.secret} onChange={handleFormChange} />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
+
+                            {/* Logo Upload Section */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
+                                    Carrier Logo
+                                </Typography>
                                 <Box
-                                    sx={{ border: '2px dashed #1976d2', borderRadius: 2, p: 2, textAlign: 'center', cursor: 'pointer', bgcolor: '#f8fafc' }}
+                                    sx={{
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: 2,
+                                        p: 3,
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        bgcolor: '#f8fafc',
+                                        transition: 'all 0.2s',
+                                        '&:hover': {
+                                            borderColor: '#3b82f6',
+                                            bgcolor: '#eff6ff'
+                                        }
+                                    }}
                                     onDrop={handleDropLogo}
                                     onDragOver={handleDragOver}
                                     onClick={() => document.getElementById('carrier-logo-upload').click()}
@@ -587,37 +1197,109 @@ const AdminCarriers = () => {
                                         onChange={handleLogoChange}
                                     />
                                     {logoPreview ? (
-                                        <img src={logoPreview} alt="Logo Preview" style={{ maxHeight: 80, marginBottom: 8 }} />
+                                        <Box>
+                                            <img
+                                                src={logoPreview}
+                                                alt="Logo Preview"
+                                                style={{
+                                                    maxHeight: 80,
+                                                    maxWidth: 200,
+                                                    marginBottom: 12,
+                                                    borderRadius: 4
+                                                }}
+                                            />
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                Click to change logo
+                                            </Typography>
+                                        </Box>
                                     ) : (
-                                        <CloudUploadIcon sx={{ fontSize: 40, color: '#1976d2', mb: 1 }} />
-                                    )}
-                                    <Typography variant="body2" color="text.secondary">
-                                        {logoFile ? logoFile.name : 'Drag & drop or click to upload logo'}
-                                    </Typography>
-                                    {uploadProgress > 0 && uploadProgress < 100 && (
-                                        <Box sx={{ width: '100%', mt: 1 }}>
-                                            <LinearProgress variant="determinate" value={uploadProgress} />
-                                            <Typography variant="caption" display="block" gutterBottom sx={{ textAlign: 'center' }}>
-                                                {Math.round(uploadProgress)}%
+                                        <Box>
+                                            <CloudUploadIcon sx={{ fontSize: 40, color: '#6b7280', mb: 1 }} />
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                Drag & drop or click to upload carrier logo
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af', mt: 1 }}>
+                                                PNG, JPG up to 2MB
                                             </Typography>
                                         </Box>
                                     )}
-                                    {uploadError && (
-                                        <Typography variant="caption" color="error" sx={{ mt: 1 }}>
-                                            {uploadError}
-                                        </Typography>
-                                    )}
                                 </Box>
                             </Grid>
-                            {/* API Endpoints Section */}
+
+                            {/* API Configuration Section */}
                             <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ mt: 2, mb: 1, color: 'primary.main' }}>
-                                    API Endpoints
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                    Configure the API endpoints for this carrier. These will be appended to the Host URL.
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
+                                    API Configuration
                                 </Typography>
                             </Grid>
+
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    label="Host URL"
+                                    name="hostURL"
+                                    value={formData.hostURL}
+                                    onChange={handleFormChange}
+                                    required
+                                    error={!!formErrors.hostURL}
+                                    helperText={formErrors.hostURL}
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="https://api.carrier.com"
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Username"
+                                    name="username"
+                                    value={formData.username}
+                                    onChange={handleFormChange}
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Password"
+                                    name="password"
+                                    type="password"
+                                    value={formData.password}
+                                    onChange={handleFormChange}
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                            </Grid>
+
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    label="API Secret / Token"
+                                    name="secret"
+                                    value={formData.secret}
+                                    onChange={handleFormChange}
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                            </Grid>
+
+                            {/* API Endpoints Section */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, mt: 2, color: '#374151' }}>
+                                    API Endpoints
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                                    Configure specific endpoint paths (will be appended to Host URL)
+                                </Typography>
+                            </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -625,10 +1307,13 @@ const AdminCarriers = () => {
                                     name="rate"
                                     value={endpoints.rate}
                                     onChange={handleEndpointChange}
-                                    placeholder="e.g., RateShipment.aspx"
-                                    helperText="Endpoint for getting shipping rates"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="/api/rates"
                                 />
                             </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -636,10 +1321,13 @@ const AdminCarriers = () => {
                                     name="booking"
                                     value={endpoints.booking}
                                     onChange={handleEndpointChange}
-                                    placeholder="e.g., BookShipment.aspx"
-                                    helperText="Endpoint for booking shipments"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="/api/book"
                                 />
                             </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -647,10 +1335,13 @@ const AdminCarriers = () => {
                                     name="tracking"
                                     value={endpoints.tracking}
                                     onChange={handleEndpointChange}
-                                    placeholder="e.g., TrackShipment.aspx"
-                                    helperText="Endpoint for tracking shipments"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="/api/track"
                                 />
                             </Grid>
+
                             <Grid item xs={12} sm={6}>
                                 <TextField
                                     fullWidth
@@ -658,77 +1349,194 @@ const AdminCarriers = () => {
                                     name="cancel"
                                     value={endpoints.cancel}
                                     onChange={handleEndpointChange}
-                                    placeholder="e.g., CancelShipment.aspx"
-                                    helperText="Endpoint for canceling shipments"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="/api/cancel"
                                 />
                             </Grid>
-                            <Grid item xs={12} sm={6}>
+
+                            <Grid item xs={12} sm={6} sx={{ mb: 2 }}>
                                 <TextField
                                     fullWidth
                                     label="Labels Endpoint"
                                     name="labels"
                                     value={endpoints.labels}
                                     onChange={handleEndpointChange}
-                                    placeholder="e.g., GetLabels.aspx"
-                                    helperText="Endpoint for retrieving shipping labels"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="/api/labels"
                                 />
                             </Grid>
-                            <Grid item xs={12} sm={6}>
+
+                            <Grid item xs={12} sm={6} sx={{ mb: 2 }}>
                                 <TextField
                                     fullWidth
                                     label="Status Endpoint"
                                     name="status"
                                     value={endpoints.status}
                                     onChange={handleEndpointChange}
-                                    placeholder="e.g., GetStatus.aspx"
-                                    helperText="Endpoint for retrieving carrier status"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    placeholder="/api/status"
                                 />
                             </Grid>
                         </Grid>
                     </DialogContent>
-                    <DialogActions>
-                        {selectedCarrier && (
+
+                    {/* Moved Action Buttons and Enable Toggle to Bottom */}
+                    <DialogActions sx={{
+                        px: 3,
+                        pb: 3,
+                        borderTop: '1px solid #e5e7eb',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    name="enabled"
+                                    checked={formData.enabled}
+                                    onChange={handleFormChange}
+                                    size="small"
+                                    color="primary"
+                                />
+                            }
+                            label={
+                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                    Enable this carrier for rate quotes and bookings
+                                </Typography>
+                            }
+                        />
+                        <Box sx={{ display: 'flex', gap: 1 }}>
                             <Button
-                                variant="contained"
-                                color="error"
-                                onClick={() => setOpenDeleteConfirm(true)}
-                                sx={{ mr: 'auto' }}
+                                onClick={handleCloseDialog}
+                                size="small"
+                                sx={{ fontSize: '12px' }}
+                                disabled={saving}
                             >
-                                Delete
+                                Cancel
                             </Button>
-                        )}
-                        <Button variant="outlined" onClick={handleCloseDialog}>Cancel</Button>
-                        <Button
-                            type="submit"
-                            variant="contained"
-                            disabled={saving || !!carrierIdError}
-                        >
-                            {saving ? 'Saving...' : 'Save Carrier'}
-                        </Button>
+                            <Button
+                                type="submit"
+                                variant="contained"
+                                size="small"
+                                startIcon={saving ? <CircularProgress size={14} /> : <SaveIcon />}
+                                disabled={saving || !!carrierIdError}
+                                sx={{ fontSize: '12px', minWidth: '100px' }}
+                            >
+                                {saving ? 'Saving...' : (isEditMode ? 'Save' : 'Create Carrier')}
+                            </Button>
+                        </Box>
                     </DialogActions>
                 </form>
-                {/* Delete Confirmation Dialog */}
-                <Dialog open={openDeleteConfirm} onClose={() => setOpenDeleteConfirm(false)}>
-                    <DialogTitle>Confirm Delete</DialogTitle>
-                    <DialogContent>
-                        Are you sure you want to delete this carrier? This action cannot be undone.
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setOpenDeleteConfirm(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={async () => {
-                                setOpenDeleteConfirm(false);
-                                await handleDeleteCarrier();
-                            }}
-                            color="error"
-                            variant="contained"
-                        >
-                            Delete
-                        </Button>
-                    </DialogActions>
-                </Dialog>
+            </Dialog>
+
+            {/* Enhanced Delete Confirmation Dialog with High Side Effects Warning */}
+            <Dialog
+                open={openDeleteConfirm}
+                onClose={() => {
+                    setOpenDeleteConfirm(false);
+                    setForceDelete(false);
+                }}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{
+                    fontSize: '18px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    color: '#dc2626'
+                }}>
+                    <WarningIcon color="error" />
+                    Critical Action Required
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="error" sx={{ mb: 3 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
+                            High Side Effects Warning
+                        </Typography>
+                        <Typography sx={{ fontSize: '12px', mt: 1 }}>
+                            Deleting carrier <strong>{selectedCarrier?.name}</strong> will have significant consequences:
+                        </Typography>
+                        <ul style={{ fontSize: '12px', marginTop: '8px', marginBottom: '8px' }}>
+                            <li>All existing shipments using this carrier will lose carrier association</li>
+                            <li>Future rate quotes will no longer include this carrier</li>
+                            <li>API integrations and credentials will be permanently lost</li>
+                            <li>Historical billing and tracking data may become inaccessible</li>
+                            <li>Company carrier configurations will be broken</li>
+                        </ul>
+                    </Alert>
+
+                    <Alert severity="warning" sx={{ mb: 3 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
+                            Recommended Alternative
+                        </Typography>
+                        <Typography sx={{ fontSize: '12px', mt: 1 }}>
+                            Consider <strong>disabling</strong> the carrier instead of deleting it. This will:
+                        </Typography>
+                        <ul style={{ fontSize: '12px', marginTop: '8px' }}>
+                            <li>Preserve all historical data and associations</li>
+                            <li>Prevent new shipments from using this carrier</li>
+                            <li>Allow you to re-enable the carrier later if needed</li>
+                            <li>Maintain data integrity across the system</li>
+                        </ul>
+                    </Alert>
+
+                    <Box sx={{ p: 2, bgcolor: '#fef2f2', borderRadius: 1, border: '1px solid #fecaca' }}>
+                        <FormControlLabel
+                            control={
+                                <MuiCheckbox
+                                    checked={forceDelete}
+                                    onChange={(e) => setForceDelete(e.target.checked)}
+                                    color="error"
+                                />
+                            }
+                            label={
+                                <Typography sx={{ fontSize: '12px', color: '#dc2626' }}>
+                                    I understand the consequences and want to permanently delete this carrier
+                                </Typography>
+                            }
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 3 }}>
+                    <Button
+                        onClick={() => {
+                            setOpenDeleteConfirm(false);
+                            setForceDelete(false);
+                        }}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => handleDeleteCarrier(false)}
+                        startIcon={<BlockIcon />}
+                        variant="outlined"
+                        color="warning"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Disable Instead
+                    </Button>
+                    <Button
+                        onClick={() => handleDeleteCarrier(true)}
+                        startIcon={<DeleteIcon />}
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        disabled={!forceDelete}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Force Delete
+                    </Button>
+                </DialogActions>
             </Dialog>
         </Box>
     );

@@ -12,7 +12,10 @@ import {
 } from '@mui/icons-material';
 import './AdminBreadcrumb.css';
 
-const AdminBreadcrumb = ({ items }) => {
+const AdminBreadcrumb = ({ items, currentPage }) => {
+    // Handle both items array and currentPage string patterns
+    const breadcrumbItems = items || (currentPage ? [currentPage] : []);
+
     return (
         <Box className="admin-breadcrumb">
             <Breadcrumbs
@@ -29,10 +32,10 @@ const AdminBreadcrumb = ({ items }) => {
                     <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
                     Admin
                 </MuiLink>
-                {items.map((item, index) => (
+                {breadcrumbItems.map((item, index) => (
                     <Typography
                         key={index}
-                        color={index === items.length - 1 ? 'text.primary' : 'inherit'}
+                        color={index === breadcrumbItems.length - 1 ? 'text.primary' : 'inherit'}
                         className="breadcrumb-item"
                     >
                         {item}
