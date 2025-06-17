@@ -61,7 +61,7 @@ const OrganizationForm = lazy(() => import('./components/Admin/Organizations/Org
 const OrganizationDetail = lazy(() => import('./components/Admin/Organizations/OrganizationDetail'));
 
 // New Admin Carriers component
-const AdminCarriers = lazy(() => import('./components/Admin/Carriers/AdminCarriers'));
+const AdminCarriers = lazy(() => import('./components/Admin/Carriers/Carriers'));
 
 // Markups Page (New)
 const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'));

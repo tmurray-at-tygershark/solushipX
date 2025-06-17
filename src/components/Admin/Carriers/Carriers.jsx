@@ -63,6 +63,10 @@ import { useSnackbar } from 'notistack';
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
 
+// Import modular carrier components
+import AddCarrier from './AddCarrier';
+import EditCarrier from './EditCarrier';
+
 const carrierTypes = [
     { value: 'courier', label: 'Courier' },
     { value: 'freight', label: 'Freight' },
@@ -261,7 +265,7 @@ const CarriersPagination = ({
     );
 };
 
-const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
+const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
     // Main data states
     const [carriers, setCarriers] = useState([]);
     const [allCarriers, setAllCarriers] = useState([]);
@@ -301,6 +305,11 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
     const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
     const [forceDelete, setForceDelete] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
+
+    // Modular dialog states
+    const [showAddCarrier, setShowAddCarrier] = useState(false);
+    const [showEditCarrier, setShowEditCarrier] = useState(false);
+    const [editCarrierId, setEditCarrierId] = useState(null);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -363,6 +372,74 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
         });
     }, []);
 
+    // Fetch carriers data - moved up to avoid hoisting issues
+    const fetchCarriers = useCallback(async () => {
+        setLoading(true);
+        try {
+            const carriersRef = collection(db, 'carriers');
+            const q = query(carriersRef, orderBy('name', 'asc'));
+            const querySnapshot = await getDocs(q);
+            const carriersData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Filter out deleted carriers
+            const activeCarriers = carriersData.filter(carrier => carrier.status !== 'deleted');
+            setAllCarriers(activeCarriers);
+            setTotalCount(activeCarriers.length);
+        } catch (error) {
+            console.error('Error loading carriers:', error);
+            showSnackbar('Failed to load carriers', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [showSnackbar]);
+
+    // Action menu handlers - moved up to avoid hoisting issues
+    const handleActionMenuOpen = useCallback((event, carrier) => {
+        setSelectedCarrier(carrier);
+        setActionMenuAnchorEl(event.currentTarget);
+    }, []);
+
+    const handleActionMenuClose = useCallback(() => {
+        setSelectedCarrier(null);
+        setActionMenuAnchorEl(null);
+    }, []);
+
+    // Modular dialog handlers
+    const handleOpenAddCarrier = useCallback(() => {
+        setShowAddCarrier(true);
+    }, []);
+
+    const handleCloseAddCarrier = useCallback(() => {
+        setShowAddCarrier(false);
+    }, []);
+
+    const handleOpenEditCarrier = useCallback((carrierId) => {
+        setEditCarrierId(carrierId);
+        setShowEditCarrier(true);
+        handleActionMenuClose();
+    }, [handleActionMenuClose]);
+
+    const handleCloseEditCarrier = useCallback(() => {
+        setShowEditCarrier(false);
+        setEditCarrierId(null);
+    }, []);
+
+    const handleCarrierCreated = useCallback((carrierId, carrierData) => {
+        fetchCarriers(); // Refresh the carriers list
+        setShowAddCarrier(false);
+        showSnackbar('Carrier created successfully', 'success');
+    }, [fetchCarriers, showSnackbar]);
+
+    const handleCarrierUpdated = useCallback((carrierId, carrierData) => {
+        fetchCarriers(); // Refresh the carriers list
+        setShowEditCarrier(false);
+        setEditCarrierId(null);
+        showSnackbar('Carrier updated successfully', 'success');
+    }, [fetchCarriers, showSnackbar]);
+
     // Calculate stats
     const stats = useMemo(() => {
         const total = allCarriers.length;
@@ -390,16 +467,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
 
 
 
-    // Action menu handlers
-    const handleActionMenuOpen = (event, carrier) => {
-        setSelectedCarrier(carrier);
-        setActionMenuAnchorEl(event.currentTarget);
-    };
 
-    const handleActionMenuClose = () => {
-        setSelectedCarrier(null);
-        setActionMenuAnchorEl(null);
-    };
 
     // Copy to clipboard handler
     const handleCopyToClipboard = async (text, label) => {
@@ -411,29 +479,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
         }
     };
 
-    // Fetch carriers data
-    const fetchCarriers = async () => {
-        setLoading(true);
-        try {
-            const carriersRef = collection(db, 'carriers');
-            const q = query(carriersRef, orderBy('name', 'asc'));
-            const querySnapshot = await getDocs(q);
-            const carriersData = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
 
-            // Filter out deleted carriers
-            const activeCarriers = carriersData.filter(carrier => carrier.status !== 'deleted');
-            setAllCarriers(activeCarriers);
-            setTotalCount(activeCarriers.length);
-        } catch (error) {
-            console.error('Error loading carriers:', error);
-            showSnackbar('Failed to load carriers', 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     // Filter and paginate carriers
     useEffect(() => {
@@ -983,7 +1029,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                         variant="contained"
                         size="small"
                         startIcon={<AddIcon />}
-                        onClick={() => handleOpenDialog()}
+                        onClick={handleOpenAddCarrier}
                         sx={{ fontSize: '12px' }}
                     >
                         Add Carrier
@@ -1250,7 +1296,7 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                 open={Boolean(actionMenuAnchorEl)}
                 onClose={handleActionMenuClose}
             >
-                <MenuItem onClick={() => handleOpenDialog(selectedCarrier)}>
+                <MenuItem onClick={() => handleOpenEditCarrier(selectedCarrier?.id)}>
                     <ListItemIcon>
                         <EditIcon fontSize="small" />
                     </ListItemIcon>
@@ -2028,8 +2074,53 @@ const AdminCarriers = ({ isModal = false, onClose = null, showCloseButton = fals
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Modular Add Carrier Dialog */}
+            {showAddCarrier && (
+                <Dialog
+                    open={showAddCarrier}
+                    onClose={handleCloseAddCarrier}
+                    maxWidth={false}
+                    fullScreen
+                    PaperProps={{
+                        sx: {
+                            m: 0,
+                            borderRadius: 0
+                        }
+                    }}
+                >
+                    <AddCarrier
+                        isModal={true}
+                        onClose={handleCloseAddCarrier}
+                        onCarrierCreated={handleCarrierCreated}
+                    />
+                </Dialog>
+            )}
+
+            {/* Modular Edit Carrier Dialog */}
+            {showEditCarrier && editCarrierId && (
+                <Dialog
+                    open={showEditCarrier}
+                    onClose={handleCloseEditCarrier}
+                    maxWidth={false}
+                    fullScreen
+                    PaperProps={{
+                        sx: {
+                            m: 0,
+                            borderRadius: 0
+                        }
+                    }}
+                >
+                    <EditCarrier
+                        carrierId={editCarrierId}
+                        isModal={true}
+                        onClose={handleCloseEditCarrier}
+                        onCarrierUpdated={handleCarrierUpdated}
+                    />
+                </Dialog>
+            )}
         </Box>
     );
 };
 
-export default AdminCarriers; 
+export default Carriers; 
