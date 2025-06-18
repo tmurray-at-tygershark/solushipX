@@ -831,11 +831,7 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Created At</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {formatTimestamp(
-                                        shipment?.creationMethod === 'quickship'
-                                            ? (shipment?.bookedAt || shipment?.createdAt)
-                                            : shipment?.createdAt
-                                    )}
+                                    {formatTimestamp(shipment?.createdAt)}
                                 </Typography>
                             </Box>
                             <Box>
@@ -1118,10 +1114,7 @@ const ShipmentInformation = ({
                                                 sx={{
                                                     fontSize: '12px',
                                                     lineHeight: 1.3,
-                                                    color: 'primary.main',
-                                                    '&:hover': {
-                                                        textDecoration: 'underline'
-                                                    }
+                                                    color: 'primary.main'
                                                 }}
                                             >
                                                 {line}

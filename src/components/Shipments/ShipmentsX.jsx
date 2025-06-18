@@ -563,7 +563,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 ...doc.data()
             }));
 
-            console.log(`📊 Loaded ${shipmentsData.length} total shipments from database`);
+            console.log(`📊 Loaded ${shipmentsData.length} total shipments from database (sorted by createdAt)`);
 
             // Store all shipments for stats
             setAllShipments(shipmentsData);
@@ -761,25 +761,17 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 const endDate = dateRange[1].endOf('day').toDate();
 
                 filteredData = filteredData.filter(shipment => {
-                    // For QuickShip shipments, check bookedAt first, then fall back to createdAt
-                    const isQuickShip = shipment.creationMethod === 'quickship';
-
                     let shipmentDate;
 
-                    if (isQuickShip && shipment.bookedAt) {
-                        // QuickShip shipments store their timestamp in bookedAt
-                        shipmentDate = shipment.bookedAt?.toDate
-                            ? shipment.bookedAt.toDate()
-                            : new Date(shipment.bookedAt);
-                    } else if (shipment.createdAt?.toDate) {
-                        // Regular shipments use createdAt
+                    if (shipment.createdAt?.toDate) {
+                        // Standard Firestore timestamp
                         shipmentDate = shipment.createdAt.toDate();
-                    } else if (shipment.date) {
-                        // Fallback to date field
-                        shipmentDate = new Date(shipment.date);
                     } else if (shipment.createdAt) {
-                        // Final fallback for createdAt as plain value
+                        // Fallback for createdAt as plain value
                         shipmentDate = new Date(shipment.createdAt);
+                    } else if (shipment.date) {
+                        // Final fallback to date field
+                        shipmentDate = new Date(shipment.date);
                     } else {
                         // No date available, exclude from filter
                         return false;

@@ -222,25 +222,24 @@ const ShipmentTableRow = ({
                     padding: '8px 12px'
                 }}>
                     {(() => {
-                        // For QuickShip shipments, check bookedAt first, then fall back to createdAt
-                        const isQuickShip = shipment.creationMethod === 'quickship';
-
                         let dateTime = null;
 
-                        if (isQuickShip && shipment.bookedAt) {
-                            // QuickShip shipments store their timestamp in bookedAt
-                            dateTime = shipment.bookedAt?.toDate
-                                ? formatDateTime(shipment.bookedAt)
-                                : formatDateTime(shipment.bookedAt);
-                        } else if (shipment.createdAt?.toDate) {
-                            // Regular shipments use createdAt
+                        if (shipment.createdAt?.toDate) {
+                            // Firestore timestamp
                             dateTime = formatDateTime(shipment.createdAt);
-                        } else if (shipment.date) {
-                            // Fallback to date field
-                            dateTime = formatDateTime(shipment.date);
+                        } else if (shipment.createdAt) {
+                            // Regular date
+                            dateTime = formatDateTime(shipment.createdAt);
                         }
 
-                        if (!dateTime) return 'N/A';
+                        // If formatDateTime returns null (invalid timestamp) or no dateTime, show N/A
+                        if (!dateTime || !dateTime.date || !dateTime.time) {
+                            return (
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                    N/A
+                                </Typography>
+                            );
+                        }
 
                         return (
                             <Box>

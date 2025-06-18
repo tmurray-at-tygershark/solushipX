@@ -36,7 +36,6 @@ const bookQuickShipment = onCall(async (request) => {
         const completeShipmentData = {
             ...shipmentData,
             firestoreDocId: firestoreDocId,
-            bookedAt: admin.firestore.FieldValue.serverTimestamp(),
             bookingMethod: 'quickship_manual',
             carrierType: 'manual',
             

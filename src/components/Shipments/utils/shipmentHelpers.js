@@ -64,25 +64,48 @@ export const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermD
 
 // Helper function to format date and time
 export const formatDateTime = (timestamp) => {
-    if (!timestamp) return 'N/A';
+    if (!timestamp) return null;
 
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    try {
+        let date;
+        
+        // Handle Firestore Timestamp objects
+        if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+            date = timestamp.toDate();
+        } else if (timestamp.seconds !== undefined) {
+            // Handle timestamp objects with seconds (and optional nanoseconds)
+            const milliseconds = timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000;
+            date = new Date(milliseconds);
+        } else {
+            // Handle regular date strings/objects
+            date = new Date(timestamp);
+        }
 
-    // Format date as MM/DD/YY
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
-    const formattedDate = `${month}/${day}/${year}`;
+        // Check if the date is valid
+        if (isNaN(date.getTime())) {
+            console.warn('Invalid timestamp encountered:', timestamp);
+            return null;
+        }
 
-    // Format time
-    const timeFormatter = new Intl.DateTimeFormat('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-    });
-    const formattedTime = timeFormatter.format(date);
+        // Format date as MM/DD/YY
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        const formattedDate = `${month}/${day}/${year}`;
 
-    return { date: formattedDate, time: formattedTime };
+        // Format time
+        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
+        const formattedTime = timeFormatter.format(date);
+
+        return { date: formattedDate, time: formattedTime };
+    } catch (error) {
+        console.warn('Error formatting timestamp:', timestamp, error);
+        return null;
+    }
 };
 
 // Helper function to get shipment status group using enhanced status model

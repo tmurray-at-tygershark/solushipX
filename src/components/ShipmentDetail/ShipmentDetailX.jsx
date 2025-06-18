@@ -655,6 +655,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                     onPrintShipment={handlePrintShipment}
                     fetchShipmentDocuments={fetchShipmentDocuments}
                     onBackToTable={onBackToTable}
+
                     onCancelShipment={() => setCancelModalOpen(true)}
                     onShowSnackbar={showSnackbar}
                 />
