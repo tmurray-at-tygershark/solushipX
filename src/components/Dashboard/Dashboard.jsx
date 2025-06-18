@@ -36,6 +36,7 @@ import {
     Close as CloseIcon,
     QrCode2 as BarcodeIcon,
     Add as AddIcon,
+    ContactMail as ContactMailIcon,
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
@@ -79,6 +80,9 @@ const ProfileComponent = lazy(() => import('../Profile/Profile'));
 
 // Lazy load the Company component for the modal
 const CompanyComponent = lazy(() => import('../Company/Company'));
+
+// Lazy load the AddressBook component for the modal
+const AddressBookComponent = lazy(() => import('../AddressBook/AddressBook'));
 
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
@@ -315,6 +319,7 @@ const Dashboard = () => {
     const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
+    const [isAddressBookModalOpen, setIsAddressBookModalOpen] = useState(false);
     const [isQuickShipModalOpen, setIsQuickShipModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
@@ -677,6 +682,7 @@ const Dashboard = () => {
         { text: 'New Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
         { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
+        { text: 'Address Book', icon: <ContactMailIcon />, action: () => setIsAddressBookModalOpen(true) },
         { text: 'Carriers', icon: <BusinessIcon />, action: () => setIsCarriersModalOpen(true) },
         { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
         { text: 'Notifications', icon: <NotificationsIcon />, action: () => setIsNotificationsModalOpen(true) },
@@ -1414,6 +1420,49 @@ const Dashboard = () => {
                         <CompanyComponent
                             isModal={true}
                             onClose={() => setIsCompanyModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Address Book Fullscreen Modal */}
+            <Dialog
+                open={isAddressBookModalOpen}
+                onClose={() => setIsAddressBookModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <AddressBookComponent
+                            isModal={true}
+                            onClose={() => setIsAddressBookModalOpen(false)}
                             showCloseButton={true}
                         />
                     </LazyComponentWrapper>
