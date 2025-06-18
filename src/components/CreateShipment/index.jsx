@@ -586,10 +586,9 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                 });
 
                 try {
-                    // Generate new short, airline-style shipment ID
+                    // Generate new short, airline-style shipment ID using new company-only format
                     const newShipmentID = await generateShipmentId(
-                        companyIdForAddress,
-                        formData.shipTo.customerID
+                        companyIdForAddress
                     );
 
                     // Check if we need to set the reference number fallback
@@ -633,7 +632,8 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                     console.warn("CreateShipment: Falling back to timestamp-based ID generation");
                     const now = new Date();
                     const timestamp = now.getTime().toString().slice(-8); // Last 8 digits
-                    const fallbackId = `${companyIdForAddress}-${formData.shipTo.customerID}-${timestamp}`;
+                    const randomSuffix = Math.random().toString(36).substr(2, 6).toUpperCase();
+                    const fallbackId = `${companyIdForAddress}-${randomSuffix}`;
 
                     try {
                         // Check if we need to set the reference number fallback

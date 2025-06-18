@@ -215,6 +215,26 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     }, [deepLinkParams]);
 
+    // Handle opening shipment detail directly via deep link
+    useEffect(() => {
+        if (deepLinkParams?.openDetail && deepLinkParams?.shipmentId && shipments.length > 0) {
+            console.log('🚀 Auto-opening shipment detail for:', deepLinkParams.shipmentId);
+
+            // Find the shipment by shipmentID field (not document ID)
+            const shipment = shipments.find(s =>
+                s.shipmentID === deepLinkParams.shipmentId ||
+                s.id === deepLinkParams.shipmentId
+            );
+
+            if (shipment) {
+                // Use the document ID to open the detail view
+                handleViewShipmentDetail(shipment.id);
+            } else {
+                console.warn('Shipment not found for auto-detail open:', deepLinkParams.shipmentId);
+            }
+        }
+    }, [deepLinkParams, shipments, handleViewShipmentDetail]); // Include shipments dependency to wait for data to load
+
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
         // Handle deep link parameters
@@ -1061,7 +1081,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
                                         <Tab label={`Delayed (${stats.delayed})`} value="Delayed" />
                                         <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
-                                        <Tab label={`Drafts (${stats.drafts})`} value="draft" />
+                                        <Tab label={`Ship Later (${stats.drafts})`} value="draft" />
                                     </Tabs>
 
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>

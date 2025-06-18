@@ -20,6 +20,16 @@ import {
     LinearProgress,
     Fade,
     Button,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Chip,
+    Stack,
+    Card,
+    CardContent,
+    CardActions,
+    Grid,
+    Tooltip,
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -37,13 +47,15 @@ import {
     QrCode2 as BarcodeIcon,
     Add as AddIcon,
     ContactMail as ContactMailIcon,
+    FlightTakeoff as TrackingIcon,
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
 import { ShipmentFormProvider } from '../../contexts/ShipmentFormContext';
+import { motion as framerMotion } from 'framer-motion';
 
 // Import responsive CSS
 import './Dashboard.css';
@@ -302,10 +314,20 @@ const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
-    const { companyIdForAddress, companyData, loading: companyLoading } = useCompany();
+    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin } = useCompany();
     const navigate = useNavigate();
     const location = useLocation();
-    const { logout } = useAuth();
+    const { logout, userRole } = useAuth();
+
+    // Redirect admin users to admin panel
+    useEffect(() => {
+        const ADMIN_ROLES = ['super_admin', 'admin', 'business_admin'];
+        if (userRole && ADMIN_ROLES.includes(userRole)) {
+            console.log('Admin user detected, redirecting to admin panel');
+            navigate('/admin', { replace: true });
+            return;
+        }
+    }, [userRole, navigate]);
 
     // State for new UI elements
     const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
@@ -623,9 +645,10 @@ const Dashboard = () => {
         // Close QuickShip modal
         setIsQuickShipModalOpen(false);
 
-        // Set up deep link parameters for the specific shipment
+        // Set up deep link parameters to open shipment detail directly
         setShipmentsDeepLinkParams({
-            shipmentId: shipmentId
+            shipmentId: shipmentId,
+            openDetail: true // Flag to indicate we want to open detail view immediately
         });
 
         // Open Shipments modal after a brief delay
@@ -692,6 +715,11 @@ const Dashboard = () => {
         { text: 'My Company', icon: <BusinessIcon />, action: () => setIsCompanyModalOpen(true) },
         { text: 'Profile', icon: <AccountCircleIcon />, action: () => setIsProfileModalOpen(true) },
     ];
+
+    // Early return for admin users (after all hooks are called)
+    if (isAdmin) {
+        return null; // Will redirect to admin panel above
+    }
 
     return (
         <Box className="dashboard-container" sx={{

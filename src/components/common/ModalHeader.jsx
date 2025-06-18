@@ -115,15 +115,21 @@ const ModalHeader = ({
                         </Button>
                     )}
 
-                    {/* SolushipX Logo */}
+                    {/* SolushipX Logo - clickable to close modal */}
                     <Box
                         component="img"
                         src="/images/SolushipX_black.png"
                         alt="SolushipX"
+                        onClick={onClose}
                         sx={{
                             height: 32,
                             width: 'auto',
-                            objectFit: 'contain'
+                            objectFit: 'contain',
+                            cursor: onClose ? 'pointer' : 'default',
+                            transition: 'opacity 0.2s ease-in-out',
+                            '&:hover': onClose ? {
+                                opacity: 0.8
+                            } : {}
                         }}
                     />
 

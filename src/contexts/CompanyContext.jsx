@@ -7,8 +7,10 @@ const CompanyContext = createContext(null);
 
 export const useCompany = () => useContext(CompanyContext);
 
+const ADMIN_ROLES = ['super_admin', 'admin', 'business_admin'];
+
 export const CompanyProvider = ({ children }) => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const [companyData, setCompanyData] = useState(null);
     const [companyIdForAddress, setCompanyIdForAddress] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -36,6 +38,15 @@ export const CompanyProvider = ({ children }) => {
             setError(null);
 
             try {
+                // For admin users, don't require company data
+                if (ADMIN_ROLES.includes(userRole)) {
+                    console.log('Admin user detected, skipping company data requirement');
+                    setCompanyData(null);
+                    setCompanyIdForAddress(null);
+                    setLoading(false);
+                    return;
+                }
+
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
 
                 if (!userDoc.exists()) {
@@ -84,13 +95,23 @@ export const CompanyProvider = ({ children }) => {
 
             } catch (err) {
                 console.error('Error fetching company data:', err);
-                setError(err.message || 'Failed to fetch company data.');
+
+                // For admin users, don't treat missing company as an error
+                if (ADMIN_ROLES.includes(userRole)) {
+                    console.log('Admin user - treating missing company as normal');
+                    setCompanyData(null);
+                    setCompanyIdForAddress(null);
+                    setError(null);
+                } else {
+                    setError(err.message || 'Failed to fetch company data.');
+                }
+
                 setLoading(false);
             }
         };
 
         fetchCompanyData();
-    }, [currentUser]);
+    }, [currentUser, userRole]);
 
     // Function to clear company data on logout
     const clearCompanyData = () => {
@@ -137,7 +158,8 @@ export const CompanyProvider = ({ children }) => {
         loading,
         error,
         clearCompanyData,
-        refreshCompanyData
+        refreshCompanyData,
+        isAdmin: ADMIN_ROLES.includes(userRole)
     };
 
     return (

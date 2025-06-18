@@ -1540,44 +1540,9 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                                             <CardHeader
                                                 avatar={getUserAvatar(note.createdByUID)}
                                                 title={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                            {note.createdBy}
-                                                        </Typography>
-                                                        <Chip
-                                                            icon={<span>{NOTE_TYPES[note.type]?.icon || '📝'}</span>}
-                                                            label={NOTE_TYPES[note.type]?.label || 'General'}
-                                                            size="small"
-                                                            sx={{
-                                                                fontSize: '10px',
-                                                                height: '20px',
-                                                                bgcolor: NOTE_TYPES[note.type]?.bgColor,
-                                                                color: NOTE_TYPES[note.type]?.color
-                                                            }}
-                                                        />
-                                                        <Chip
-                                                            icon={<span>{PRIORITY_LEVELS[note.priority]?.icon || '➡️'}</span>}
-                                                            label={PRIORITY_LEVELS[note.priority]?.label || 'Medium'}
-                                                            size="small"
-                                                            sx={{
-                                                                fontSize: '10px',
-                                                                height: '20px',
-                                                                bgcolor: PRIORITY_LEVELS[note.priority]?.bgColor,
-                                                                color: PRIORITY_LEVELS[note.priority]?.color
-                                                            }}
-                                                        />
-                                                        <Chip
-                                                            icon={<span>{NOTE_STATUS[note.status]?.icon || '🔵'}</span>}
-                                                            label={NOTE_STATUS[note.status]?.label || 'Open'}
-                                                            size="small"
-                                                            sx={{
-                                                                fontSize: '10px',
-                                                                height: '20px',
-                                                                bgcolor: NOTE_STATUS[note.status]?.bgColor,
-                                                                color: NOTE_STATUS[note.status]?.color
-                                                            }}
-                                                        />
-                                                    </Box>
+                                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                        {note.createdBy}
+                                                    </Typography>
                                                 }
                                                 subheader={
                                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>
