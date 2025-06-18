@@ -616,7 +616,7 @@ const Packages = ({ onNext, onPrevious }) => {
                                             '& .MuiInputLabel-root': { fontSize: '12px' }
                                         }}
                                     >
-                                        {[...Array(20)].map((_, i) => (
+                                        {[...Array(30)].map((_, i) => (
                                             <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '12px' }}>
                                                 {i + 1}
                                             </MenuItem>

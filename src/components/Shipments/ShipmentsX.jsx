@@ -52,10 +52,10 @@ import {
 import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
-import { collection, getDocs, query, where, orderBy, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
 import './Shipments.css';
@@ -99,8 +99,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const { user, loading: authLoading } = useAuth();
     const { companyIdForAddress, loading: companyCtxLoading, companyData } = useCompany();
 
-    // URL parameter handling for deep linking
-    const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
 
     // Modal navigation system
@@ -186,15 +184,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [slideDirection, setSlideDirection] = useState('forward'); // 'forward' or 'backward'
     const [mountedViews, setMountedViews] = useState(['table']);
 
-    // Initialize state from URL parameters
+    // Initialize state from deep link parameters only
     useEffect(() => {
-        const urlCustomerId = searchParams.get('customerId');
-        const urlShipmentId = searchParams.get('shipmentId');
-        const urlTrackingNumber = searchParams.get('trackingNumber');
-        const urlStatus = searchParams.get('status');
-        const urlCarrier = searchParams.get('carrier');
-        const urlTab = searchParams.get('tab');
-
         // Handle deep link parameters from modal navigation
         if (deepLinkParams) {
             console.log('Applying deep link parameters:', deepLinkParams);
@@ -221,51 +212,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             if (deepLinkParams.tab) {
                 setSelectedTab(deepLinkParams.tab);
             }
-        } else {
-            // Set filters from URL parameters (existing functionality)
-            if (urlCustomerId) {
-                setSelectedCustomer(urlCustomerId);
-                setFiltersOpen(true); // Open filters when URL has parameters
-                // Note: customerName will be resolved after customers are loaded
-            }
-            if (urlShipmentId) {
-                setSearchFields(prev => ({ ...prev, shipmentId: urlShipmentId }));
-                setFiltersOpen(true);
-            }
-            if (urlTrackingNumber) {
-                setSearchFields(prev => ({ ...prev, trackingNumber: urlTrackingNumber }));
-                setFiltersOpen(true);
-            }
-            if (urlStatus && urlStatus !== 'all') {
-                setFilters(prev => ({ ...prev, status: urlStatus }));
-                setFiltersOpen(true);
-            }
-            if (urlCarrier && urlCarrier !== 'all') {
-                setFilters(prev => ({ ...prev, carrier: urlCarrier }));
-                setFiltersOpen(true);
-            }
-            if (urlTab) {
-                setSelectedTab(urlTab);
-            }
         }
-    }, [searchParams, deepLinkParams]);
+    }, [deepLinkParams]);
 
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
-        // Handle URL parameters
-        const urlCustomerId = searchParams.get('customerId');
-        if (urlCustomerId && Object.keys(customers).length > 0) {
-            const customerName = customers[urlCustomerId];
-            if (customerName) {
-                setSearchFields(prev => ({ ...prev, customerName: customerName }));
-                console.log('Resolved customer ID to name:', { urlCustomerId, customerName });
-            } else {
-                console.log('Could not resolve customer ID:', { urlCustomerId, availableCustomers: Object.keys(customers) });
-                // If we can't find the customer name, keep the ID in selectedCustomer for direct matching
-                // This ensures we can still filter by customer ID even if the name mapping fails
-            }
-        }
-
         // Handle deep link parameters
         if (deepLinkParams && deepLinkParams.customerId && Object.keys(customers).length > 0) {
             const customerName = customers[deepLinkParams.customerId];
@@ -276,7 +227,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log('Could not resolve deep link customer ID:', { customerId: deepLinkParams.customerId, availableCustomers: Object.keys(customers) });
             }
         }
-    }, [customers, searchParams, deepLinkParams]);
+    }, [customers, deepLinkParams]);
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -287,47 +238,70 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         });
     }, []);
 
-    // Function to update URL parameters when filters change
-    const updateURLParams = useCallback((newParams) => {
-        const currentParams = new URLSearchParams(searchParams);
 
-        // Update or remove parameters
-        Object.entries(newParams).forEach(([key, value]) => {
-            if (value && value !== 'all' && value !== '') {
-                currentParams.set(key, value);
+
+    // Calculate stats using consistent direct status matching
+    const stats = useMemo(() => {
+        if (!allShipments.length) {
+            return {
+                total: 0,
+                awaitingShipment: 0,
+                inTransit: 0,
+                delivered: 0,
+                delayed: 0,
+                cancelled: 0,
+                drafts: 0
+            };
+        }
+
+        let awaitingShipment = 0;
+        let inTransit = 0;
+        let delivered = 0;
+        let delayed = 0;
+        let cancelled = 0;
+        let drafts = 0;
+
+        // Single pass through the array with direct status matching (same as filtering logic)
+        allShipments.forEach(s => {
+            const status = s.status?.toLowerCase()?.trim();
+
+            if (status === 'draft') {
+                drafts++;
+            } else if (status === 'pending' || status === 'scheduled' || status === 'booked' ||
+                status === 'awaiting_shipment' || status === 'ready_to_ship' || status === 'label_created') {
+                awaitingShipment++;
+            } else if (status === 'in_transit' || status === 'in transit' || status === 'picked_up' ||
+                status === 'on_route' || status === 'out_for_delivery') {
+                inTransit++;
+            } else if (status === 'delivered' || status === 'completed') {
+                delivered++;
+            } else if (status === 'delayed' || status === 'on_hold' || status === 'exception' ||
+                status === 'returned' || status === 'damaged') {
+                delayed++;
+            } else if (status === 'cancelled' || status === 'canceled' || status === 'void' || status === 'voided') {
+                cancelled++;
             } else {
-                currentParams.delete(key);
+                // Default: treat unknown statuses as awaiting shipment (non-terminal states)
+                console.warn(`Unknown shipment status: ${status}, treating as awaiting shipment`, s);
+                awaitingShipment++;
             }
         });
 
-        // Update URL without causing navigation
-        setSearchParams(currentParams, { replace: true });
-    }, [searchParams, setSearchParams]);
+        const nonDraftTotal = allShipments.length - drafts;
 
-    // Calculate stats
-    const stats = useMemo(() => {
-        const total = allShipments.length;
-        const awaitingShipment = allShipments.filter(s =>
-            ['booked', 'scheduled', 'pending'].includes(s.status?.toLowerCase())
-        ).length;
-        const inTransit = allShipments.filter(s =>
-            s.status?.toLowerCase() === 'in_transit'
-        ).length;
-        const delivered = allShipments.filter(s =>
-            s.status?.toLowerCase() === 'delivered'
-        ).length;
-        const delayed = allShipments.filter(s =>
-            ['delayed'].includes(s.status?.toLowerCase())
-        ).length;
-        const cancelled = allShipments.filter(s =>
-            ['cancelled', 'void'].includes(s.status?.toLowerCase())
-        ).length;
-        const drafts = allShipments.filter(s =>
-            s.status?.toLowerCase() === 'draft'
-        ).length;
+        console.log(`📊 Stats calculated:`, {
+            total: allShipments.length,
+            nonDraftTotal,
+            awaitingShipment,
+            inTransit,
+            delivered,
+            delayed,
+            cancelled,
+            drafts
+        });
 
         return {
-            total,
+            total: nonDraftTotal, // Total excludes drafts for the "All" tab
             awaitingShipment,
             inTransit,
             delivered,
@@ -337,26 +311,17 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         };
     }, [allShipments]);
 
-    // Tab change handler
-    const handleTabChange = (event, newValue) => {
-        setSelectedTab(newValue);
-        setPage(0); // Reset to first page when tab changes
-
-        // Update URL parameter for tab
-        updateURLParams({ tab: newValue });
-    };
-
-    // Selection handlers
-    const handleSelectAll = (event) => {
+    // Selection handlers - memoized for performance
+    const handleSelectAll = useCallback((event) => {
         if (event.target.checked) {
             const newSelected = shipments.map(shipment => shipment.id);
             setSelected(newSelected);
             return;
         }
         setSelected([]);
-    };
+    }, [shipments]);
 
-    const handleSelect = (id) => {
+    const handleSelect = useCallback((id) => {
         const selectedIndex = selected.indexOf(id);
         let newSelected = [];
 
@@ -374,7 +339,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
 
         setSelected(newSelected);
-    };
+    }, [selected]);
 
     // Highlight search term helper
     const highlightSearchTerm = useCallback((text, searchTerm) => {
@@ -501,31 +466,37 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }, 1000);
     };
 
-    // Fetch customers for name lookup
-    const fetchCustomers = async () => {
+    // Fetch customers for name lookup - optimized
+    const fetchCustomers = useCallback(async () => {
+        if (!companyIdForAddress) return;
+
         try {
             const customersRef = collection(db, 'customers');
-            const querySnapshot = await getDocs(customersRef);
+            const q = query(customersRef, where('companyID', '==', companyIdForAddress));
+            const querySnapshot = await getDocs(q);
             const customersMap = {};
             querySnapshot.forEach(doc => {
                 const customer = doc.data();
-                customersMap[customer.customerID] = customer.name;
+                if (customer.customerID && customer.name) {
+                    customersMap[customer.customerID] = customer.name;
+                }
             });
             setCustomers(customersMap);
         } catch (error) {
             console.error('Error fetching customers:', error);
         }
-    };
+    }, [companyIdForAddress]); // Stable function
 
-    // Fetch carrier information from shipmentRates collection
-    const fetchCarrierData = async (shipmentIds) => {
+    // Fetch carrier information from shipmentRates collection - optimized
+    const fetchCarrierData = useCallback(async (shipmentIds) => {
         if (!shipmentIds || shipmentIds.length === 0) return;
 
         try {
             const carrierMap = {};
 
-            for (const shipmentId of shipmentIds) {
-                const shipmentRatesRef = collection(db, 'shipmentRates');
+            // Batch process carrier data instead of individual queries
+            const shipmentRatesRef = collection(db, 'shipmentRates');
+            const promises = shipmentIds.map(async (shipmentId) => {
                 const q = query(shipmentRatesRef, where('shipmentId', '==', shipmentId));
                 const querySnapshot = await getDocs(q);
 
@@ -534,60 +505,48 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     const selectedRate = rates.find(rate => rate.status === 'selected_in_ui' || rate.status === 'booked') || rates[0];
 
                     if (selectedRate) {
-                        carrierMap[shipmentId] = {
-                            // Basic carrier information
-                            carrier: selectedRate.carrier,
-                            service: selectedRate.service,
-                            totalCharges: selectedRate.totalCharges,
-                            transitDays: selectedRate.transitDays,
-
-                            // Critical fields for eShip Plus detection and carrier display
-                            displayCarrierId: selectedRate.displayCarrierId,
-                            sourceCarrierName: selectedRate.sourceCarrierName,
-                            displayCarrier: selectedRate.displayCarrier,
-                            sourceCarrier: selectedRate.sourceCarrier,
-                            carrierKey: selectedRate.carrierKey,
-                            carrierId: selectedRate.carrierId,
-                            carrierScac: selectedRate.carrierScac,
-
-                            // Service information
-                            serviceCode: selectedRate.serviceCode,
-                            serviceType: selectedRate.serviceType,
-                            serviceMode: selectedRate.serviceMode,
-
-                            // Pricing breakdown
-                            freightCharges: selectedRate.freightCharges,
-                            fuelCharges: selectedRate.fuelCharges,
-                            accessorialCharges: selectedRate.accessorialCharges,
-
-                            // Transit information
-                            estimatedDeliveryDate: selectedRate.estimatedDeliveryDate,
-                            guaranteed: selectedRate.guaranteed,
-
-                            // Rate metadata
-                            rateId: selectedRate.rateId,
-                            quoteId: selectedRate.quoteId,
-                            status: selectedRate.status
+                        return {
+                            shipmentId,
+                            data: {
+                                // Only essential fields for table display
+                                carrier: selectedRate.carrier,
+                                service: selectedRate.service,
+                                displayCarrierId: selectedRate.displayCarrierId,
+                                sourceCarrierName: selectedRate.sourceCarrierName,
+                                totalCharges: selectedRate.totalCharges,
+                                transitDays: selectedRate.transitDays
+                            }
                         };
                     }
                 }
-            }
+                return null;
+            });
 
-            setCarrierData(carrierMap);
+            const results = await Promise.all(promises);
+            results.forEach(result => {
+                if (result) {
+                    carrierMap[result.shipmentId] = result.data;
+                }
+            });
+
+            setCarrierData(prev => ({ ...prev, ...carrierMap }));
         } catch (error) {
             console.error('Error fetching carrier data:', error);
         }
-    };
+    }, []);
 
-    // Load shipments
-    const loadShipments = async () => {
+    // Load shipments - optimized for performance
+    const loadShipments = useCallback(async (currentTab = null) => {
         if (!companyIdForAddress) {
-            setLoading(false);
             setShipments([]);
             setAllShipments([]);
             setTotalCount(0);
             return;
         }
+
+        // Use provided tab or current selectedTab
+        const activeTab = currentTab || selectedTab;
+        console.log(`🏷️ Loading shipments for tab: ${activeTab}`);
 
         setLoading(true);
         try {
@@ -604,53 +563,76 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 ...doc.data()
             }));
 
+            console.log(`📊 Loaded ${shipmentsData.length} total shipments from database`);
+
             // Store all shipments for stats
             setAllShipments(shipmentsData);
 
-            // Apply tab filter
-            if (selectedTab === 'all') {
-                // "All" tab should exclude drafts
+            // Apply tab filter with simple, direct status matching
+            console.log(`🏷️ Filtering for tab: ${activeTab}`);
+
+            if (activeTab === 'all') {
+                // "All" tab excludes drafts only
                 shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return group !== 'DRAFTS';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status !== 'draft';
                 });
-            } else if (selectedTab === 'draft') {
-                // Handle draft tab - only show drafts
+            } else if (activeTab === 'draft') {
+                // Draft tab includes only drafts
                 shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return group === 'DRAFTS';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'draft';
                 });
-            } else if (selectedTab === 'Awaiting Shipment') {
-                // Include all pre-shipment and booking phases, exclude drafts
+            } else if (activeTab === 'Awaiting Shipment') {
+                // Pre-shipment statuses: pending, scheduled, booked, awaiting_shipment
                 shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return (group === 'PRE_SHIPMENT' || group === 'BOOKING') && group !== 'DRAFTS';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'pending' ||
+                        status === 'scheduled' ||
+                        status === 'booked' ||
+                        status === 'awaiting_shipment' ||
+                        status === 'ready_to_ship' ||
+                        status === 'label_created';
                 });
-            } else if (selectedTab === 'In Transit') {
-                // Include transit and delivery phases, exclude drafts
+            } else if (activeTab === 'In Transit') {
+                // Transit statuses: in_transit, picked_up, on_route
                 shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return (group === 'TRANSIT' || group === 'DELIVERY') && group !== 'DRAFTS';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'in_transit' ||
+                        status === 'in transit' ||
+                        status === 'picked_up' ||
+                        status === 'on_route' ||
+                        status === 'out_for_delivery';
                 });
-            } else if (selectedTab === 'Delivered') {
-                // Include completed phase, exclude drafts
+            } else if (activeTab === 'Delivered') {
+                // Delivered statuses
                 shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return group === 'COMPLETED' && group !== 'DRAFTS';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'delivered' ||
+                        status === 'completed';
                 });
-            } else if (selectedTab === 'Cancelled') {
-                // Include cancelled and void phases, exclude drafts
+            } else if (activeTab === 'Cancelled') {
+                // Cancelled statuses
                 shipmentsData = shipmentsData.filter(s => {
-                    const group = getShipmentStatusGroup(s);
-                    return (group === 'CANCELLED' || s.status === 'void') && group !== 'DRAFTS';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'cancelled' ||
+                        status === 'canceled' ||
+                        status === 'void' ||
+                        status === 'voided';
                 });
-            } else if (selectedTab === 'Delayed') {
-                // Include only delayed shipments, exclude drafts
+            } else if (activeTab === 'Delayed') {
+                // Delayed/exception statuses
                 shipmentsData = shipmentsData.filter(s => {
-                    const status = s.status?.toLowerCase();
-                    return status === 'delayed' && status !== 'draft';
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'delayed' ||
+                        status === 'on_hold' ||
+                        status === 'exception' ||
+                        status === 'returned' ||
+                        status === 'damaged';
                 });
             }
+
+            console.log(`🔍 After tab filter: ${shipmentsData.length} shipments remaining`)
 
             // Apply search filters
             let filteredData = [...shipmentsData];
@@ -779,11 +761,30 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 const endDate = dateRange[1].endOf('day').toDate();
 
                 filteredData = filteredData.filter(shipment => {
-                    const shipmentDate = shipment.createdAt?.toDate
-                        ? shipment.createdAt.toDate()
-                        : shipment.date
-                            ? new Date(shipment.date)
-                            : new Date(shipment.createdAt);
+                    // For QuickShip shipments, check bookedAt first, then fall back to createdAt
+                    const isQuickShip = shipment.creationMethod === 'quickship';
+
+                    let shipmentDate;
+
+                    if (isQuickShip && shipment.bookedAt) {
+                        // QuickShip shipments store their timestamp in bookedAt
+                        shipmentDate = shipment.bookedAt?.toDate
+                            ? shipment.bookedAt.toDate()
+                            : new Date(shipment.bookedAt);
+                    } else if (shipment.createdAt?.toDate) {
+                        // Regular shipments use createdAt
+                        shipmentDate = shipment.createdAt.toDate();
+                    } else if (shipment.date) {
+                        // Fallback to date field
+                        shipmentDate = new Date(shipment.date);
+                    } else if (shipment.createdAt) {
+                        // Final fallback for createdAt as plain value
+                        shipmentDate = new Date(shipment.createdAt);
+                    } else {
+                        // No date available, exclude from filter
+                        return false;
+                    }
+
                     return shipmentDate >= startDate && shipmentDate <= endDate;
                 });
             }
@@ -809,35 +810,109 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         } finally {
             setLoading(false);
         }
-    };
+    }, [companyIdForAddress, selectedTab, fetchCarrierData]); // Minimal dependencies with tab parameter approach
+
+    // Create a stable reload function that can be called when needed
+    const reloadShipments = useCallback(() => {
+        // Don't reload shipments when in detail view to prevent race conditions
+        if (navigationStack.length > 1 && navigationStack[navigationStack.length - 1].component === 'shipment-detail') {
+            console.log('🚫 Skipping reload - in detail view');
+            return;
+        }
+
+        // Skip if not ready
+        if (authLoading || companyCtxLoading || !companyIdForAddress) {
+            console.log('🚫 Skipping reload - not ready', { authLoading, companyCtxLoading, companyIdForAddress });
+            return;
+        }
+
+        console.log('🔄 Manual reload triggered');
+        loadShipments();
+    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress]); // Removed navigationStack to prevent loops
+
+    // Debounced version for search inputs
+    const debounceTimeoutRef = useRef(null);
+    const debouncedReload = useCallback(() => {
+        if (debounceTimeoutRef.current) {
+            clearTimeout(debounceTimeoutRef.current);
+        }
+        debounceTimeoutRef.current = setTimeout(() => {
+            // Check if we're still in the table view
+            if (navigationStack.length === 1) {
+                reloadShipments();
+            }
+        }, 500);
+    }, [reloadShipments, navigationStack]);
+
+    // Tab change handler - memoized for performance
+    const handleTabChange = useCallback((event, newValue) => {
+        console.log(`🏷️ Tab changed to: ${newValue}`);
+        setSelectedTab(newValue);
+        setPage(0); // Reset to first page when tab changes
+
+        // Trigger reload for new tab with explicit tab value
+        setTimeout(() => loadShipments(newValue), 50);
+    }, [loadShipments]);
 
     // Initialize
     useEffect(() => {
         window.scrollTo(0, 0);
     }, []);
 
+    // Add a direct reset function for external calls
+    const resetToDefaults = useCallback(() => {
+        console.log('🔄 Resetting ShipmentsX to default state');
+        setSelectedTab('all');
+        setPage(0);
+        setSelected([]);
+        setFilters({
+            status: 'all',
+            carrier: 'all',
+            dateRange: [null, null],
+            shipmentType: 'all',
+            enhancedStatus: ''
+        });
+        setSearchFields({
+            shipmentId: '',
+            referenceNumber: '',
+            trackingNumber: '',
+            customerName: '',
+            origin: '',
+            destination: ''
+        });
+        setDateRange([null, null]);
+        setSelectedCustomer('');
+        setFiltersOpen(false);
+        setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
+        setMountedViews(['table']);
+    }, []);
+
+    // Expose reset function via useEffect for external calls
+    useEffect(() => {
+        if (isModal) {
+            // Store reset function for external access
+            if (window.shipmentsXReset) {
+                window.shipmentsXReset = resetToDefaults;
+            }
+        }
+    }, [isModal, resetToDefaults]);
+
+
+
     // Load data when auth and company are ready
     useEffect(() => {
         if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-            fetchCustomers();
-            loadShipments();
+            console.log('🔄 Initial data load triggered');
+            // Load customers and shipments in parallel for faster initial load
+            Promise.all([
+                fetchCustomers(),
+                loadShipments()
+            ]).catch(error => {
+                console.error('Error loading initial data:', error);
+                setLoading(false);
+            });
         }
-    }, [authLoading, companyCtxLoading, companyIdForAddress]);
-
-    // Reload when filters change
-    useEffect(() => {
-        // Don't reload shipments when in detail view to prevent race conditions
-        if (navigationStack.length > 1 && navigationStack[navigationStack.length - 1].component === 'shipment-detail') {
-            return;
-        }
-
-        if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-            const timeoutId = setTimeout(() => {
-                loadShipments();
-            }, 300); // Debounce for 300ms
-            return () => clearTimeout(timeoutId);
-        }
-    }, [page, rowsPerPage, selectedTab, filters, dateRange, searchFields, selectedCustomer, authLoading, companyCtxLoading, companyIdForAddress]);
+    }, [authLoading, companyCtxLoading, companyIdForAddress, fetchCustomers, loadShipments]);
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -988,7 +1063,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             }
                                         }}
                                     >
-                                        <Tab label={`All (${stats.total - stats.drafts})`} value="all" />
+                                        <Tab label={`All (${stats.total})`} value="all" />
                                         <Tab label={`Ready To Ship (${stats.awaitingShipment})`} value="Awaiting Shipment" />
                                         <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
                                         <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
@@ -1054,7 +1129,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     label="Shipment ID"
                                                     placeholder="Search by Shipment ID (e.g. SH-12345)"
                                                     value={searchFields.shipmentId}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }))}
+                                                    onChange={(e) => {
+                                                        setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }));
+                                                        debouncedReload();
+                                                    }}
                                                     size="small"
                                                     sx={{
                                                         '& .MuiInputBase-input': { fontSize: '12px' },
@@ -1087,7 +1165,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     label="Reference Number"
                                                     placeholder="Search by reference number"
                                                     value={searchFields.referenceNumber}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                                                    onChange={(e) => {
+                                                        setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }));
+                                                        debouncedReload();
+                                                    }}
                                                     size="small"
                                                     sx={{
                                                         '& .MuiInputBase-input': { fontSize: '12px' },
@@ -1120,7 +1201,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     label="Tracking / PRO Number"
                                                     placeholder="Search by tracking number"
                                                     value={searchFields.trackingNumber}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }))}
+                                                    onChange={(e) => {
+                                                        setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }));
+                                                        debouncedReload();
+                                                    }}
                                                     size="small"
                                                     sx={{
                                                         '& .MuiInputBase-input': { fontSize: '12px' },
@@ -1151,7 +1235,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                 <LocalizationProvider dateAdapter={AdapterDayjs}>
                                                     <DateRangePicker
                                                         value={dateRange}
-                                                        onChange={(newValue) => setDateRange(newValue)}
+                                                        onChange={(newValue) => {
+                                                            setDateRange(newValue);
+                                                            setTimeout(() => reloadShipments(), 100);
+                                                        }}
                                                         label="Date Range"
                                                         slotProps={{
                                                             textField: {
@@ -1194,7 +1281,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     options={Object.entries(customers).map(([id, name]) => ({ id, name }))}
                                                     getOptionLabel={(option) => option.name}
                                                     value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
-                                                    onChange={(event, newValue) => setSelectedCustomer(newValue?.id || '')}
+                                                    onChange={(event, newValue) => {
+                                                        setSelectedCustomer(newValue?.id || '');
+                                                        setTimeout(() => reloadShipments(), 100);
+                                                    }}
                                                     renderInput={(params) => (
                                                         <TextField
                                                             {...params}
@@ -1240,10 +1330,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
                                                     <Select
                                                         value={filters.carrier}
-                                                        onChange={(e) => setFilters(prev => ({
-                                                            ...prev,
-                                                            carrier: e.target.value
-                                                        }))}
+                                                        onChange={(e) => {
+                                                            setFilters(prev => ({
+                                                                ...prev,
+                                                                carrier: e.target.value
+                                                            }));
+                                                            setTimeout(() => reloadShipments(), 100);
+                                                        }}
                                                         label="Carrier"
                                                         sx={{ fontSize: '12px' }}
                                                         MenuProps={{
@@ -1271,10 +1364,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
                                                     <Select
                                                         value={filters.shipmentType}
-                                                        onChange={(e) => setFilters(prev => ({
-                                                            ...prev,
-                                                            shipmentType: e.target.value
-                                                        }))}
+                                                        onChange={(e) => {
+                                                            setFilters(prev => ({
+                                                                ...prev,
+                                                                shipmentType: e.target.value
+                                                            }));
+                                                            setTimeout(() => reloadShipments(), 100);
+                                                        }}
                                                         label="Type"
                                                         sx={{ fontSize: '12px' }}
                                                         MenuProps={{
@@ -1294,12 +1390,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             <Grid item xs={12} sm={6} md={3}>
                                                 <EnhancedStatusFilter
                                                     value={filters.enhancedStatus || ''}
-                                                    onChange={(value) => setFilters(prev => ({
-                                                        ...prev,
-                                                        enhancedStatus: value,
-                                                        // Keep legacy status for backward compatibility
-                                                        status: value ? enhancedToLegacy(value) : 'all'
-                                                    }))}
+                                                    onChange={(value) => {
+                                                        setFilters(prev => ({
+                                                            ...prev,
+                                                            enhancedStatus: value,
+                                                            // Keep legacy status for backward compatibility
+                                                            status: value ? enhancedToLegacy(value) : 'all'
+                                                        }));
+                                                        setTimeout(() => reloadShipments(), 100);
+                                                    }}
                                                     label="Shipment Status"
                                                     showGroups={true}
                                                     showSearch={true}
@@ -1456,6 +1555,19 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     };
 
+    // Handle close button click specifically
+    const handleCloseClick = () => {
+        console.log('❌ Close button clicked - resetting state');
+
+        // Reset to defaults
+        resetToDefaults();
+
+        // Then call the onClose handler
+        if (onClose) {
+            onClose();
+        }
+    };
+
     // Add missing handler functions
     const handleClearFilters = useCallback(() => {
         setSearchFields({
@@ -1475,7 +1587,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         });
         setDateRange([null, null]);
         setSelectedCustomer('');
-    }, []);
+
+        // Reload with cleared filters
+        setTimeout(() => reloadShipments(), 100);
+    }, [reloadShipments]);
 
     const handleBatchRefreshStatus = useCallback(async () => {
         if (selected.length === 0) return;
@@ -1527,19 +1642,46 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     }, [selected, shipments, showSnackbar, loadShipments]);
 
     // Handle editing a draft shipment
-    const handleEditDraftShipment = useCallback((draftId) => {
+    const handleEditDraftShipment = useCallback(async (draftId) => {
         console.log('📝 handleEditDraftShipment called with draftId:', draftId);
 
-        if (isModal && onOpenCreateShipment) {
-            console.log('🔀 Modal mode: Using onOpenCreateShipment callback to edit draft');
-            // In modal mode, use the callback to open CreateShipment with the draft
-            onOpenCreateShipment(null, draftId); // null for prePopulatedData, draftId for editing existing draft
-        } else {
-            console.log('🔀 Non-modal mode: Navigating to create-shipment URL');
-            // Fallback to navigation for non-modal mode
-            navigate(`/create-shipment/shipment-info/${draftId}`);
+        try {
+            // First, check what type of draft this is by examining the creationMethod
+            const draftDoc = await getDoc(doc(db, 'shipments', draftId));
+            if (!draftDoc.exists()) {
+                showSnackbar('Draft shipment not found', 'error');
+                return;
+            }
+
+            const draftData = draftDoc.data();
+            const creationMethod = draftData.creationMethod;
+
+            console.log('🔍 Draft creation method:', creationMethod);
+
+            if (creationMethod === 'quickship') {
+                console.log('🚀 Opening QuickShip for quickship draft');
+                // For QuickShip drafts, open in QuickShip mode
+                if (isModal && onOpenCreateShipment) {
+                    // Use special callback for QuickShip drafts
+                    onOpenCreateShipment(null, null, draftId, 'quickship');
+                } else {
+                    // Fallback to navigation (you might want to create a QuickShip route)
+                    navigate(`/quickship/${draftId}`);
+                }
+            } else {
+                console.log('🔧 Opening advanced CreateShipment for advanced/legacy draft');
+                // For advanced drafts or legacy drafts without creationMethod, use the advanced flow
+                if (isModal && onOpenCreateShipment) {
+                    onOpenCreateShipment(null, draftId); // null for prePopulatedData, draftId for editing existing draft
+                } else {
+                    navigate(`/create-shipment/shipment-info/${draftId}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking draft type:', error);
+            showSnackbar('Error loading draft shipment', 'error');
         }
-    }, [isModal, onOpenCreateShipment, navigate]);
+    }, [isModal, onOpenCreateShipment, navigate, showSnackbar]);
 
     // Handle repeating a shipment (creating a new draft with pre-populated data)
     const handleRepeatShipment = useCallback(async (shipment) => {
@@ -1668,7 +1810,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         navigation={getNavigationObject()}
                         onBack={handleBackClick}
                         showBackButton={true}
-                        onClose={showCloseButton ? onClose : null}
+                        onClose={showCloseButton ? handleCloseClick : null}
                         showCloseButton={showCloseButton}
                     />
                 )}
@@ -1711,10 +1853,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         totalCount={totalCount}
                                         page={page}
                                         rowsPerPage={rowsPerPage}
-                                        onPageChange={(event, newPage) => setPage(newPage)}
+                                        onPageChange={(event, newPage) => {
+                                            setPage(newPage);
+                                            setTimeout(() => reloadShipments(), 50);
+                                        }}
                                         onRowsPerPageChange={(event) => {
                                             setRowsPerPage(parseInt(event.target.value, 10));
                                             setPage(0);
+                                            setTimeout(() => reloadShipments(), 50);
                                         }}
                                     />
                                 </Box>

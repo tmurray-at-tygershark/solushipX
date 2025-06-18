@@ -144,7 +144,7 @@ const generateUniqueCustomerID = async (companyName, companyID, excludeId = null
     return candidateID;
 };
 
-const AddCustomer = ({ isModal = false, onBackToTable = null, onCustomerCreated = null }) => {
+const AddCustomer = ({ isModal = false, hideModalHeader = false, onBackToTable = null, onCustomerCreated = null }) => {
     const navigate = useNavigate();
     const { enqueueSnackbar } = useSnackbar();
     const { companyIdForAddress } = useCompany();
@@ -497,8 +497,8 @@ const AddCustomer = ({ isModal = false, onBackToTable = null, onCustomerCreated 
             flexDirection: 'column',
             backgroundColor: 'white'
         }}>
-            {/* Modal Header - show when used as standalone modal */}
-            {isModal && (
+            {/* Modal Header - show when used as standalone modal (but not when hideModalHeader is true) */}
+            {isModal && !hideModalHeader && (
                 <ModalHeader
                     title="Create New Customer"
                     onBack={onBackToTable || (() => navigate('/customers'))}

@@ -42,6 +42,7 @@ import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/f
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { ShipmentFormProvider } from '../../contexts/ShipmentFormContext';
 
 // Import responsive CSS
 import './Dashboard.css';
@@ -57,6 +58,9 @@ const ShipmentsComponent = lazy(() => import('../Shipments/ShipmentsX'));
 
 // Lazy load the CreateShipment component for the modal
 const CreateShipmentComponent = lazy(() => import('../CreateShipment'));
+
+// Lazy load the QuickShip component for the modal
+const QuickShipComponent = lazy(() => import('../CreateShipment/QuickShip'));
 
 // Lazy load the Customers component for the modal
 const CustomersComponent = lazy(() => import('../Customers/Customers'));
@@ -311,6 +315,7 @@ const Dashboard = () => {
     const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
+    const [isQuickShipModalOpen, setIsQuickShipModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
 
@@ -532,32 +537,52 @@ const Dashboard = () => {
         }
     };
 
-    const handleOpenCreateShipmentModal = (prePopulatedData = null, draftId = null) => {
-        console.log('🚀 Opening CreateShipment modal with:', { prePopulatedData, draftId });
+    const handleOpenCreateShipmentModal = (prePopulatedData = null, draftId = null, quickshipDraftId = null, mode = 'advanced') => {
+        console.log('🚀 Opening modal with:', { prePopulatedData, draftId, quickshipDraftId, mode });
 
-        // Set pre-populated data if provided
-        setCreateShipmentPrePopulatedData(prePopulatedData);
+        if (mode === 'quickship' && quickshipDraftId) {
+            console.log('🚀 Opening QuickShip modal for draft:', quickshipDraftId);
 
-        // Set draft ID for editing existing drafts
-        if (draftId) {
-            console.log('📝 Opening CreateShipment modal to edit draft:', draftId);
-            // We can use the prePopulatedData state to also pass the draft ID
-            // The CreateShipment component will handle this appropriately
-            setCreateShipmentPrePopulatedData(prev => ({
-                ...prev,
-                editDraftId: draftId
-            }));
-        }
+            // Close other modals first if open
+            if (isShipmentsModalOpen) {
+                setIsShipmentsModalOpen(false);
+                setTimeout(() => {
+                    setIsQuickShipModalOpen(true);
+                }, 300);
+            } else {
+                setIsQuickShipModalOpen(true);
+            }
 
-        // Close other modals first if open
-        if (isShipmentsModalOpen) {
-            setIsShipmentsModalOpen(false);
-            // Add a small delay to allow the first modal to close before opening the new one
-            setTimeout(() => {
-                setIsCreateShipmentModalOpen(true);
-            }, 300);
+            // Store the draft ID for QuickShip
+            setCreateShipmentPrePopulatedData({ quickshipDraftId });
+
         } else {
-            setIsCreateShipmentModalOpen(true);
+            console.log('🔧 Opening CreateShipment modal (advanced mode)');
+
+            // Set pre-populated data if provided
+            setCreateShipmentPrePopulatedData(prePopulatedData);
+
+            // Set draft ID for editing existing drafts
+            if (draftId) {
+                console.log('📝 Opening CreateShipment modal to edit draft:', draftId);
+                // We can use the prePopulatedData state to also pass the draft ID
+                // The CreateShipment component will handle this appropriately
+                setCreateShipmentPrePopulatedData(prev => ({
+                    ...prev,
+                    editDraftId: draftId
+                }));
+            }
+
+            // Close other modals first if open
+            if (isShipmentsModalOpen) {
+                setIsShipmentsModalOpen(false);
+                // Add a small delay to allow the first modal to close before opening the new one
+                setTimeout(() => {
+                    setIsCreateShipmentModalOpen(true);
+                }, 300);
+            } else {
+                setIsCreateShipmentModalOpen(true);
+            }
         }
     };
 
@@ -567,24 +592,41 @@ const Dashboard = () => {
         setIsTrackingDrawerOpen(true);
     };
 
-    // Handler for intelligent return to shipments from CreateShipment modal
-    const handleReturnToShipmentsFromCreateShipment = () => {
-        console.log('handleReturnToShipmentsFromCreateShipment called');
-        console.log('Current modal states:', { isShipmentsModalOpen, isCreateShipmentModalOpen });
+    // Handler for opening QuickShip modal (from CreateShipment)
+    const handleOpenQuickShipModal = () => {
+        console.log('Opening QuickShip modal, closing CreateShipment modal');
+        // Close CreateShipment modal first
+        setIsCreateShipmentModalOpen(false);
+        // Small delay to allow modal to close before opening new one
+        setTimeout(() => {
+            setIsQuickShipModalOpen(true);
+        }, 300);
+    };
 
-        if (isShipmentsModalOpen) {
-            // Case 1: Shipments modal is already open, just close CreateShipment modal
-            console.log('Shipments modal is open, closing CreateShipment modal');
-            setIsCreateShipmentModalOpen(false);
-        } else {
-            // Case 2: Shipments modal is not open, close CreateShipment and open Shipments
-            console.log('Shipments modal is not open, closing CreateShipment and opening Shipments');
-            setIsCreateShipmentModalOpen(false);
-            // Small delay to allow CreateShipment modal to close before opening Shipments
-            setTimeout(() => {
-                setIsShipmentsModalOpen(true);
-            }, 300);
-        }
+    // Handler for returning to shipments from CreateShipment
+    const handleReturnToShipmentsFromCreateShipment = () => {
+        setIsCreateShipmentModalOpen(false);
+        setTimeout(() => {
+            setIsShipmentsModalOpen(true);
+        }, 300);
+    };
+
+    // Handler for viewing a specific shipment from QuickShip
+    const handleViewShipment = (shipmentId) => {
+        console.log('Viewing shipment from QuickShip:', shipmentId);
+
+        // Close QuickShip modal
+        setIsQuickShipModalOpen(false);
+
+        // Set up deep link parameters for the specific shipment
+        setShipmentsDeepLinkParams({
+            shipmentId: shipmentId
+        });
+
+        // Open Shipments modal after a brief delay
+        setTimeout(() => {
+            setIsShipmentsModalOpen(true);
+        }, 300);
     };
 
     // Handler for navigating from Customers to Shipments with deep linking
@@ -1107,6 +1149,7 @@ const Dashboard = () => {
                                 setCreateShipmentPrePopulatedData(null);
                             }}
                             onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                            onOpenQuickShip={handleOpenQuickShipModal}
                             showCloseButton={true}
                             prePopulatedData={createShipmentPrePopulatedData}
                         />
@@ -1373,6 +1416,58 @@ const Dashboard = () => {
                             onClose={() => setIsCompanyModalOpen(false)}
                             showCloseButton={true}
                         />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* QuickShip Fullscreen Modal */}
+            <Dialog
+                open={isQuickShipModalOpen}
+                onClose={() => setIsQuickShipModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <ShipmentFormProvider>
+                            <QuickShipComponent
+                                isModal={true}
+                                onClose={() => {
+                                    setIsQuickShipModalOpen(false);
+                                    // Clear pre-populated data when modal closes
+                                    setCreateShipmentPrePopulatedData(null);
+                                }}
+                                onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                                onViewShipment={handleViewShipment}
+                                draftId={createShipmentPrePopulatedData?.quickshipDraftId || null}
+                                showCloseButton={true}
+                            />
+                        </ShipmentFormProvider>
                     </LazyComponentWrapper>
                 </Box>
             </Dialog>

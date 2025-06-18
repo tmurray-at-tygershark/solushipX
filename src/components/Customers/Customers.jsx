@@ -676,7 +676,13 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
 
     return (
         <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
-            <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+            <Box sx={{
+                width: '100%',
+                height: '100%',
+                overflow: isModal ? 'auto' : 'hidden',
+                position: 'relative',
+                maxHeight: isModal ? '100vh' : 'none'
+            }}>
                 {/* Modal Header - show when in table, detail, or add view */}
                 {isModal && (currentView === 'table' || currentView === 'detail' || currentView === 'add') && (
                     <ModalHeader
@@ -701,6 +707,8 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                     <Box sx={{
                         width: '33.33%',
                         minHeight: '100%',
+                        height: isModal ? '100%' : 'auto',
+                        overflow: isModal ? 'auto' : 'visible',
                         '& .customers-container': {
                             maxWidth: 'none !important',
                             width: '100% !important',
@@ -1008,10 +1016,15 @@ const Customers = ({ isModal = false, onClose = null, showCloseButton = false, o
                                     <Box sx={{
                                         display: 'flex',
                                         flexDirection: 'column',
-                                        height: '100%'
+                                        height: isModal ? 'calc(100vh - 200px)' : '100%'
                                     }}>
                                         {/* Scrollable table area */}
-                                        <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                                        <Box sx={{
+                                            flex: 1,
+                                            overflow: 'auto',
+                                            minHeight: 0,
+                                            maxHeight: isModal ? 'calc(100vh - 300px)' : 'none'
+                                        }}>
                                             <Box sx={{ width: '100%', px: 2 }}>
                                                 <Table sx={{
                                                     width: '100%',

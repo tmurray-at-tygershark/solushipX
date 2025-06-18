@@ -173,7 +173,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, [shipment?.id, shipment?.shipmentID, carrierData, shipmentDocuments, setActionLoading, showSnackbar, multiplyPdfLabels, viewPdfInModal]);
 
-    // Enhanced BOL handler
+    // Enhanced BOL handler - for QuickShip, BOL should already exist from booking process
     const handlePrintBOL = useCallback(async () => {
         try {
             setActionLoading('printBOL', true);
@@ -238,15 +238,13 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                     );
                 }
             } else {
-                // No BOL documents exist - offer to generate one
-                const shouldGenerate = window.confirm(
-                    'No BOL document found. Would you like to generate a professional BOL document?'
-                );
-
-                if (shouldGenerate) {
-                    showSnackbar('BOL generation feature coming soon', 'info');
+                // For QuickShip, BOL should have been generated during booking
+                // If no BOL exists, something went wrong during the booking process
+                if (shipment?.creationMethod === 'quickship') {
+                    showSnackbar('BOL document not found. The BOL should have been generated during booking. Please contact support.', 'error');
                 } else {
-                    showSnackbar('BOL generation cancelled', 'info');
+                    // For regular shipments, offer to generate BOL
+                    showSnackbar('No BOL document found for this shipment', 'warning');
                 }
             }
 
@@ -256,7 +254,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         } finally {
             setActionLoading('printBOL', false);
         }
-    }, [shipment?.id, shipment?.shipmentID, shipmentDocuments, setActionLoading, showSnackbar, viewPdfInModal]);
+    }, [shipment?.id, shipment?.shipmentID, shipment?.creationMethod, shipmentDocuments, setActionLoading, showSnackbar, viewPdfInModal]);
 
     // Enhanced shipment print handler
     const handlePrintShipment = useCallback(async () => {

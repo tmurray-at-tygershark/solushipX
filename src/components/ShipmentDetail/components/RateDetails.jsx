@@ -44,6 +44,50 @@ const RateDetails = ({
         return isNaN(parseFloat(value)) ? 0 : parseFloat(value);
     };
 
+    // Add thousands separator formatting for currency
+    const formatCurrency = (amount) => {
+        const num = safeNumber(amount);
+        return num.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    };
+
+    // Check if this is a QuickShip shipment
+    const isQuickShip = shipment?.creationMethod === 'quickship';
+
+    // For QuickShip, use manual rates data
+    const getQuickShipRateData = () => {
+        if (!isQuickShip || !shipment?.manualRates) return null;
+
+        const rates = shipment.manualRates;
+        const rateData = {
+            carrier: shipment?.selectedCarrier || shipment?.carrier || 'N/A',
+            service: null, // Hidden for QuickShip
+            transitDays: null, // Hidden for QuickShip
+            estimatedDeliveryDate: null, // Hidden for QuickShip
+            charges: [],
+            total: 0,
+            currency: 'CAD'
+        };
+
+        // Process manual rate line items
+        rates.forEach(rate => {
+            if (rate.chargeName && rate.charge) {
+                const amount = safeNumber(rate.charge);
+                rateData.charges.push({
+                    name: rate.chargeName,
+                    amount: amount
+                });
+                rateData.total += amount;
+            }
+        });
+
+        return rateData;
+    };
+
+    const quickShipData = isQuickShip ? getQuickShipRateData() : null;
+
     return (
         <Grid item xs={12} sx={{ mb: 1 }}>
             <Paper>
@@ -65,16 +109,16 @@ const RateDetails = ({
                             <Box sx={{ display: 'grid', gap: 2 }}>
                                 <Box>
                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                        Carrier & Service
+                                        {isQuickShip ? 'Carrier' : 'Carrier & Service'}
                                     </Typography>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                                         <CarrierDisplay
-                                            carrierName={getBestRateInfo?.carrier}
+                                            carrierName={isQuickShip ? quickShipData?.carrier : getBestRateInfo?.carrier}
                                             carrierData={carrierData}
                                             size="small"
-                                            isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                            isIntegrationCarrier={!isQuickShip && (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus')}
                                         />
-                                        {getBestRateInfo?.service && (
+                                        {!isQuickShip && getBestRateInfo?.service && (
                                             <>
                                                 <Typography variant="body2" color="text.secondary">-</Typography>
                                                 <Typography variant="body1" sx={{ fontWeight: 500, fontSize: '12px' }}>
@@ -84,49 +128,74 @@ const RateDetails = ({
                                         )}
                                     </Box>
                                 </Box>
-                                <Box>
-                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                        Transit Time
-                                    </Typography>
-                                    <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                        {getBestRateInfo?.transitDays || 0} {getBestRateInfo?.transitDays === 1 ? 'day' : 'days'}
-                                    </Typography>
-                                </Box>
-                                <Box>
-                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                        Estimated Delivery Date
-                                    </Typography>
-                                    <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                        {(() => {
-                                            const deliveryDate =
-                                                shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                                getBestRateInfo?.transit?.estimatedDelivery ||
-                                                getBestRateInfo?.estimatedDeliveryDate;
+                                {/* Hide Transit Time for QuickShip */}
+                                {!isQuickShip && (
+                                    <Box>
+                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                            Transit Time
+                                        </Typography>
+                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                            {getBestRateInfo?.transitDays || 0} {getBestRateInfo?.transitDays === 1 ? 'day' : 'days'}
+                                        </Typography>
+                                    </Box>
+                                )}
+                                {/* Hide Estimated Delivery Date for QuickShip */}
+                                {!isQuickShip && (
+                                    <Box>
+                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                            Estimated Delivery Date
+                                        </Typography>
+                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                            {(() => {
+                                                const deliveryDate =
+                                                    shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                    getBestRateInfo?.transit?.estimatedDelivery ||
+                                                    getBestRateInfo?.estimatedDeliveryDate;
 
-                                            if (deliveryDate) {
-                                                try {
-                                                    const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
-                                                    return date.toLocaleDateString('en-US', {
-                                                        weekday: 'short',
-                                                        year: 'numeric',
-                                                        month: 'short',
-                                                        day: 'numeric'
-                                                    });
-                                                } catch (error) {
-                                                    console.error('Error formatting delivery date:', error);
-                                                    return 'Invalid Date';
+                                                if (deliveryDate) {
+                                                    try {
+                                                        const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                                                        return date.toLocaleDateString('en-US', {
+                                                            weekday: 'short',
+                                                            year: 'numeric',
+                                                            month: 'short',
+                                                            day: 'numeric'
+                                                        });
+                                                    } catch (error) {
+                                                        console.error('Error formatting delivery date:', error);
+                                                        return 'Invalid Date';
+                                                    }
                                                 }
-                                            }
-                                            return 'N/A';
-                                        })()}
-                                    </Typography>
-                                </Box>
+                                                return 'N/A';
+                                            })()}
+                                        </Typography>
+                                    </Box>
+                                )}
                             </Box>
                         </Grid>
 
                         {/* Middle Column - Charges */}
                         <Grid item xs={12} md={4}>
                             {(() => {
+                                // For QuickShip, use manual rates data
+                                if (isQuickShip && quickShipData?.charges?.length > 0) {
+                                    return (
+                                        <Box sx={{ display: 'grid', gap: 2 }}>
+                                            {quickShipData.charges.map((charge, index) => (
+                                                <Box key={index}>
+                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                        {charge.name}
+                                                    </Typography>
+                                                    <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                        ${formatCurrency(charge.amount)}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    );
+                                }
+
+                                // Regular shipment logic
                                 if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
                                     const validDetails = getBestRateInfo.billingDetails.filter(detail =>
                                         detail &&
@@ -143,7 +212,7 @@ const RateDetails = ({
                                                             {detail.name}
                                                         </Typography>
                                                         <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                            ${safeNumber(detail.amount).toFixed(2)}
+                                                            ${formatCurrency(detail.amount)}
                                                         </Typography>
                                                     </Box>
                                                 ))}
@@ -189,7 +258,7 @@ const RateDetails = ({
                                                         {item.name}
                                                     </Typography>
                                                     <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                        ${item.amount.toFixed(2)}
+                                                        ${formatCurrency(item.amount)}
                                                     </Typography>
                                                 </Box>
                                             ))}
@@ -204,9 +273,9 @@ const RateDetails = ({
                                                 Freight Charges
                                             </Typography>
                                             <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                ${(getBestRateInfo?.pricing?.freight ||
+                                                ${formatCurrency(getBestRateInfo?.pricing?.freight ||
                                                     getBestRateInfo?.freightCharge ||
-                                                    getBestRateInfo?.freightCharges || 0).toFixed(2)}
+                                                    getBestRateInfo?.freightCharges || 0)}
                                             </Typography>
                                         </Box>
                                         <Box>
@@ -214,9 +283,9 @@ const RateDetails = ({
                                                 Fuel Charges
                                             </Typography>
                                             <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                ${(getBestRateInfo?.pricing?.fuel ||
+                                                ${formatCurrency(getBestRateInfo?.pricing?.fuel ||
                                                     getBestRateInfo?.fuelCharge ||
-                                                    getBestRateInfo?.fuelCharges || 0).toFixed(2)}
+                                                    getBestRateInfo?.fuelCharges || 0)}
                                             </Typography>
                                         </Box>
                                         <Box>
@@ -224,8 +293,8 @@ const RateDetails = ({
                                                 Service Charges
                                             </Typography>
                                             <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                ${(getBestRateInfo?.pricing?.service ||
-                                                    getBestRateInfo?.serviceCharges || 0).toFixed(2)}
+                                                ${formatCurrency(getBestRateInfo?.pricing?.service ||
+                                                    getBestRateInfo?.serviceCharges || 0)}
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -253,25 +322,31 @@ const RateDetails = ({
                                 </Typography>
                                 <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
                                     ${(() => {
+                                        // For QuickShip, use the calculated total from manual rates
+                                        if (isQuickShip && quickShipData) {
+                                            return formatCurrency(quickShipData.total);
+                                        }
+
+                                        // Regular shipment logic
                                         if (getBestRateInfo?.pricing?.total !== undefined) {
-                                            return safeNumber(getBestRateInfo.pricing.total).toFixed(2);
+                                            return formatCurrency(safeNumber(getBestRateInfo.pricing.total));
                                         }
                                         if (getBestRateInfo?.totalCharges !== undefined) {
-                                            return safeNumber(getBestRateInfo.totalCharges).toFixed(2);
+                                            return formatCurrency(safeNumber(getBestRateInfo.totalCharges));
                                         }
                                         if (getBestRateInfo?.total !== undefined) {
-                                            return safeNumber(getBestRateInfo.total).toFixed(2);
+                                            return formatCurrency(safeNumber(getBestRateInfo.total));
                                         }
                                         const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
                                         const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
                                         const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
                                         const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
                                         const guarantee = getBestRateInfo?.guaranteed ? safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge) : 0;
-                                        return (freight + fuel + service + accessorial + guarantee).toFixed(2);
+                                        return formatCurrency(freight + fuel + service + accessorial + guarantee);
                                     })()}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '12px' }}>
-                                    {getBestRateInfo?.currency || 'USD'}
+                                    {isQuickShip ? quickShipData?.currency || 'CAD' : getBestRateInfo?.currency || 'USD'}
                                 </Typography>
                             </Paper>
                         </Grid>
@@ -326,7 +401,7 @@ const RateDetails = ({
                                 return total + (parseFloat(pkg.declaredValue) || 0);
                             }, 0);
                             if (totalDeclaredValue > 0) {
-                                additionalServices.push(`Insurance Coverage ($${totalDeclaredValue.toFixed(2)})`);
+                                additionalServices.push(`Insurance Coverage ($${formatCurrency(totalDeclaredValue)})`);
                             }
                         }
 
@@ -379,7 +454,7 @@ const RateDetails = ({
                                             </Typography>
                                             {option.price && (
                                                 <Typography variant="body1" sx={{ mt: 1, fontWeight: 500, fontSize: '12px' }}>
-                                                    ${safeNumber(option.price).toFixed(2)}
+                                                    ${formatCurrency(option.price)}
                                                 </Typography>
                                             )}
                                         </Box>

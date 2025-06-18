@@ -98,6 +98,11 @@ const {
     carrierHealthCheck 
 } = require('./src/keepAlive');
 
+// Import QuickShip functions
+const { bookQuickShipment } = require('./src/carrier-api/generic/bookQuickShipment');
+const { generateGenericBOL } = require('./src/carrier-api/generic/generateGenericBOL');
+const { generateCarrierConfirmation } = require('./src/carrier-api/generic/generateCarrierConfirmation');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -166,6 +171,11 @@ exports.keepAlivePolaris = keepAlivePolaris;
 exports.keepAliveAllCarriers = keepAliveAllCarriers;
 exports.warmupCarriersNow = warmupCarriersNow;
 exports.carrierHealthCheck = carrierHealthCheck;
+
+// Export QuickShip functions
+exports.bookQuickShipment = bookQuickShipment;
+exports.generateGenericBOL = generateGenericBOL;
+exports.generateCarrierConfirmation = generateCarrierConfirmation;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

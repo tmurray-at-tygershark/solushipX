@@ -27,9 +27,28 @@ import {
 // Consistent helper functions (can be moved to a utils file later)
 const formatTimestamp = (timestamp) => {
     if (!timestamp) return 'N/A';
+
     try {
-        const date = new Date(timestamp);
-        if (isNaN(date.getTime())) return 'Invalid Date';
+        let date;
+
+        // Handle Firestore Timestamp
+        if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+            date = timestamp.toDate();
+        }
+        // Handle timestamp objects with seconds
+        else if (timestamp.seconds) {
+            date = new Date(timestamp.seconds * 1000);
+        }
+        // Handle regular Date objects or strings
+        else {
+            date = new Date(timestamp);
+        }
+
+        if (isNaN(date.getTime())) {
+            console.warn('Invalid timestamp:', timestamp);
+            return 'Invalid Date';
+        }
+
         return date.toLocaleString('en-US', {
             month: 'short',
             day: 'numeric',
@@ -39,7 +58,7 @@ const formatTimestamp = (timestamp) => {
             hour12: true
         });
     } catch (error) {
-        console.error('Error formatting timestamp:', error);
+        console.error('Error formatting timestamp:', error, timestamp);
         return 'Invalid Date';
     }
 };
@@ -102,8 +121,29 @@ const ShipmentTimeline = ({ events }) => {
 
     // Ensure events are sorted by timestamp, latest first
     const sortedEvents = [...events].sort((a, b) => {
-        const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
-        const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
+        const getDateFromTimestamp = (timestamp) => {
+            if (!timestamp) return new Date(0);
+
+            try {
+                // Handle Firestore Timestamp
+                if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+                    return timestamp.toDate();
+                }
+                // Handle timestamp objects with seconds
+                if (timestamp.seconds) {
+                    return new Date(timestamp.seconds * 1000);
+                }
+                // Handle regular Date objects or strings
+                const date = new Date(timestamp);
+                return isNaN(date.getTime()) ? new Date(0) : date;
+            } catch (error) {
+                console.warn('Error parsing timestamp for sorting:', timestamp, error);
+                return new Date(0);
+            }
+        };
+
+        const dateA = getDateFromTimestamp(a.timestamp);
+        const dateB = getDateFromTimestamp(b.timestamp);
         return dateB - dateA;
     });
 

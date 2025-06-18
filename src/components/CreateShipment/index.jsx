@@ -129,7 +129,7 @@ const emptyAddress = () => ({
 });
 
 // Component that uses the context
-const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false, prePopulatedData = null }) => {
+const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShipments = null, onOpenQuickShip = null, showCloseButton = false, prePopulatedData = null }) => {
     const { step: stepSlug, draftId: urlDraftId } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -985,7 +985,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
         };
 
         switch (currentStep) {
-            case 1: return <ShipmentInfo key={`shipment-info-${activeDraftId || 'new'}`} {...stepProps} />;
+            case 1: return <ShipmentInfo key={`shipment-info-${activeDraftId || 'new'}`} {...stepProps} onOpenQuickShip={onOpenQuickShip} />;
             case 2: return <ShipFrom key={`ship-from-${activeDraftId || 'new'}`} {...stepProps} />;
             case 3: return <ShipTo key={`ship-to-${activeDraftId || 'new'}`} {...stepProps} />;
             case 4: return <Packages key={`packages-${activeDraftId || 'new'}`} {...stepProps} />;
@@ -1171,10 +1171,10 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
     );
 };
 
-const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null, showCloseButton = false, prePopulatedData = null }) => {
+const CreateShipment = ({ isModal = false, onClose = null, onReturnToShipments = null, onOpenQuickShip = null, showCloseButton = false, prePopulatedData = null }) => {
     return (
         <ShipmentFormProvider>
-            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} showCloseButton={showCloseButton} prePopulatedData={prePopulatedData} />
+            <CreateShipmentContent isModal={isModal} onClose={onClose} onReturnToShipments={onReturnToShipments} onOpenQuickShip={onOpenQuickShip} showCloseButton={showCloseButton} prePopulatedData={prePopulatedData} />
         </ShipmentFormProvider>
     );
 };

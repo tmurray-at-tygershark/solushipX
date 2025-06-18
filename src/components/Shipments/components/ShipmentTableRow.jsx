@@ -66,9 +66,27 @@ const ShipmentTableRow = ({
             shipment.selectedRate?.carrier ||
             shipment.carrier || 'N/A';
 
+        // For QuickShip drafts, respect the manually selected carrier
+        // and don't apply eShip Plus logic unless explicitly detected
+        if (shipment.creationMethod === 'quickship') {
+            // Only check for explicit eShip Plus indicators for QuickShip drafts
+            const isExplicitEShipPlus =
+                shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
+                shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+                carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
+                carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus';
 
+            return {
+                name: isExplicitEShipPlus && carrierName !== 'N/A' ?
+                    `${carrierName} via Eship Plus` :
+                    carrierName,
+                isEShipPlus: isExplicitEShipPlus
+            };
+        }
 
-        // Enhanced eShipPlus detection
+        // For non-QuickShip shipments, use the enhanced eShipPlus detection
         const isEShipPlus =
             shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
             shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
@@ -76,7 +94,7 @@ const ShipmentTableRow = ({
             shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
             carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
             carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
-            (carrierName && (
+            (carrierName && carrierName !== 'N/A' && (
                 carrierName.toLowerCase().includes('ward trucking') ||
                 carrierName.toLowerCase().includes('fedex freight') ||
                 carrierName.toLowerCase().includes('road runner') ||
@@ -87,9 +105,7 @@ const ShipmentTableRow = ({
                 carrierName.toLowerCase().includes('saia') ||
                 carrierName.toLowerCase().includes('averitt') ||
                 carrierName.toLowerCase().includes('southeastern freight')
-            )) ||
-            (shipment.shipmentInfo?.shipmentType?.toLowerCase().includes('freight') ||
-                shipment.shipmentType?.toLowerCase().includes('freight'));
+            ));
 
         return {
             name: isEShipPlus && carrierName !== 'N/A' ?
@@ -206,11 +222,23 @@ const ShipmentTableRow = ({
                     padding: '8px 12px'
                 }}>
                     {(() => {
-                        const dateTime = shipment.createdAt?.toDate
-                            ? formatDateTime(shipment.createdAt)
-                            : shipment.date
-                                ? formatDateTime(shipment.date)
-                                : null;
+                        // For QuickShip shipments, check bookedAt first, then fall back to createdAt
+                        const isQuickShip = shipment.creationMethod === 'quickship';
+
+                        let dateTime = null;
+
+                        if (isQuickShip && shipment.bookedAt) {
+                            // QuickShip shipments store their timestamp in bookedAt
+                            dateTime = shipment.bookedAt?.toDate
+                                ? formatDateTime(shipment.bookedAt)
+                                : formatDateTime(shipment.bookedAt);
+                        } else if (shipment.createdAt?.toDate) {
+                            // Regular shipments use createdAt
+                            dateTime = formatDateTime(shipment.createdAt);
+                        } else if (shipment.date) {
+                            // Fallback to date field
+                            dateTime = formatDateTime(shipment.date);
+                        }
 
                         if (!dateTime) return 'N/A';
 

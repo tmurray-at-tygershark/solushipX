@@ -10,6 +10,40 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 /**
+ * Helper function to safely convert date fields to JavaScript Date objects
+ * Handles Firestore Timestamps, JavaScript Dates, strings, and other formats
+ */
+function safeToDate(dateField) {
+    if (!dateField) {
+        return null;
+    }
+    
+    // If it's already a Date object
+    if (dateField instanceof Date) {
+        return dateField;
+    }
+    
+    // If it's a Firestore Timestamp with toDate method
+    if (typeof dateField.toDate === 'function') {
+        return dateField.toDate();
+    }
+    
+    // If it's a string or number, try to parse it
+    if (typeof dateField === 'string' || typeof dateField === 'number') {
+        const parsed = new Date(dateField);
+        return isNaN(parsed.getTime()) ? null : parsed;
+    }
+    
+    // If it has seconds and nanoseconds (Firestore Timestamp-like object)
+    if (dateField.seconds !== undefined) {
+        return new Date(dateField.seconds * 1000 + (dateField.nanoseconds || 0) / 1000000);
+    }
+    
+    console.warn('Unable to convert date field to Date object:', dateField);
+    return null;
+}
+
+/**
  * Core smart status update logic shared between regular and force updates
  */
 async function performSmartStatusUpdate(shipmentId, force = false, userId) {
@@ -34,7 +68,7 @@ async function performSmartStatusUpdate(shipmentId, force = false, userId) {
                 success: true,
                 skipped: true,
                 reason: shouldUpdate.reason,
-                lastChecked: shipment.statusLastChecked?.toDate()?.toISOString(),
+                lastChecked: safeToDate(shipment.statusLastChecked)?.toISOString(),
                 currentStatus: shipment.status
             };
         }
@@ -124,7 +158,7 @@ async function shouldPerformStatusUpdate(shipment, force = false) {
     }
 
     // Don't update if shipment is too new (less than 2 minutes old)
-    const createdAt = shipment.createdAt?.toDate() || new Date();
+    const createdAt = safeToDate(shipment.createdAt) || new Date();
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
     
     if (createdAt > twoMinutesAgo) {
@@ -135,7 +169,7 @@ async function shouldPerformStatusUpdate(shipment, force = false) {
     }
 
     // Check last status check time
-    const lastChecked = shipment.statusLastChecked?.toDate();
+    const lastChecked = safeToDate(shipment.statusLastChecked);
     const minimumInterval = 5 * 60 * 1000; // 5 minutes minimum between checks
     
     if (lastChecked && (Date.now() - lastChecked.getTime()) < minimumInterval) {

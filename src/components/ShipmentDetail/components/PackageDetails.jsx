@@ -67,7 +67,7 @@ const PackageDetails = ({ packages = [] }) => {
     // Format value display
     const formatValue = useCallback((value) => {
         const valueNum = parseFloat(value) || 0;
-        return `$${valueNum.toFixed(2)}`;
+        return valueNum > 0 ? `$${valueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
     }, []);
 
     // Get freight class chip color
@@ -138,7 +138,7 @@ const PackageDetails = ({ packages = [] }) => {
                                 sx={{ fontSize: '11px', height: '24px' }}
                             />
                             <Chip
-                                label={formatValue(totals.totalValue)}
+                                label={totals.totalValue > 0 ? formatValue(totals.totalValue) : 'N/A'}
                                 size="small"
                                 variant="outlined"
                                 sx={{ fontSize: '11px', height: '24px' }}

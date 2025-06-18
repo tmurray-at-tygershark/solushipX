@@ -1625,7 +1625,8 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                             })()}
                                         </Typography>
                                     </Box>
-                                    <Box>
+                                    {/* Pickup Window - Hidden but data preserved */}
+                                    <Box sx={{ display: 'none' }}>
                                         <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
                                         <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                             {(() => {
@@ -1646,7 +1647,8 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                             })()}
                                         </Typography>
                                     </Box>
-                                    <Box>
+                                    {/* Dropoff Window - Hidden but data preserved */}
+                                    <Box sx={{ display: 'none' }}>
                                         <Typography variant="caption" color="text.secondary">Dropoff Window</Typography>
                                         <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                             {(() => {
@@ -2166,23 +2168,23 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                         }
                                     }
 
-                                    // Check for special delivery times (using correct field names from ShipmentInfo)
-                                    if (formData.shipmentInfo?.earliestDelivery && formData.shipmentInfo?.latestDelivery) {
-                                        const earliestTime = formData.shipmentInfo.earliestDelivery;
-                                        const latestTime = formData.shipmentInfo.latestDelivery;
-                                        if (earliestTime !== '09:00' || latestTime !== '17:00') {
-                                            additionalServices.push(`Delivery Window (${earliestTime} - ${latestTime})`);
-                                        }
-                                    }
+                                    // Check for special delivery times - Hidden but data preserved
+                                    // if (formData.shipmentInfo?.earliestDelivery && formData.shipmentInfo?.latestDelivery) {
+                                    //     const earliestTime = formData.shipmentInfo.earliestDelivery;
+                                    //     const latestTime = formData.shipmentInfo.latestDelivery;
+                                    //     if (earliestTime !== '09:00' || latestTime !== '17:00') {
+                                    //         additionalServices.push(`Delivery Window (${earliestTime} - ${latestTime})`);
+                                    //     }
+                                    // }
 
-                                    // Check for special pickup times (using correct field names from ShipmentInfo)
-                                    if (formData.shipmentInfo?.earliestPickup && formData.shipmentInfo?.latestPickup) {
-                                        const earliestTime = formData.shipmentInfo.earliestPickup;
-                                        const latestTime = formData.shipmentInfo.latestPickup;
-                                        if (earliestTime !== '09:00' || latestTime !== '17:00') {
-                                            additionalServices.push(`Pickup Window (${earliestTime} - ${latestTime})`);
-                                        }
-                                    }
+                                    // Check for special pickup times - Hidden but data preserved
+                                    // if (formData.shipmentInfo?.earliestPickup && formData.shipmentInfo?.latestPickup) {
+                                    //     const earliestTime = formData.shipmentInfo.earliestPickup;
+                                    //     const latestTime = formData.shipmentInfo.latestPickup;
+                                    //     if (earliestTime !== '09:00' || latestTime !== '17:00') {
+                                    //         additionalServices.push(`Pickup Window (${earliestTime} - ${latestTime})`);
+                                    //     }
+                                    // }
 
                                     return additionalServices.length > 0 ? (
                                         <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid #e0e0e0' }}>

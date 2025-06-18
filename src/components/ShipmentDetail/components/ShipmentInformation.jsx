@@ -569,14 +569,41 @@ const ShipmentInformation = ({
         );
     };
 
+    // Helper function to format bill type for display
+    const formatBillType = (billType) => {
+        if (!billType) return 'N/A';
+
+        const billTypeMap = {
+            'prepaid': 'Prepaid',
+            'collect': 'Collect',
+            'third_party': 'Third Party'
+        };
+
+        return billTypeMap[billType.toLowerCase()] || billType;
+    };
+
     const formatTimestamp = (timestamp) => {
-        if (!timestamp) return 'Unknown time';
+        if (!timestamp) return 'N/A';
 
         try {
-            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            // Handle Firestore Timestamp
+            if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+                return timestamp.toDate().toLocaleString();
+            }
+            // Handle timestamp objects with seconds (and optional nanoseconds)
+            if (timestamp.seconds !== undefined) {
+                const milliseconds = timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000;
+                return new Date(milliseconds).toLocaleString();
+            }
+            // Handle regular date strings/objects
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                return 'N/A';
+            }
             return date.toLocaleString();
         } catch (error) {
-            return 'Unknown time';
+            console.error('Error formatting timestamp:', error, timestamp);
+            return 'N/A';
         }
     };
 
@@ -589,6 +616,11 @@ const ShipmentInformation = ({
             timestamps.push(shipment.updatedAt);
         }
 
+        // For QuickShip, also include bookedAt timestamp
+        if (shipment?.creationMethod === 'quickship' && shipment?.bookedAt) {
+            timestamps.push(shipment.bookedAt);
+        }
+
         if (mergedEvents && Array.isArray(mergedEvents)) {
             mergedEvents.forEach(event => {
                 if (event.timestamp) timestamps.push(event.timestamp);
@@ -599,9 +631,32 @@ const ShipmentInformation = ({
         if (timestamps.length === 0) return null;
 
         return timestamps.reduce((latest, current) => {
-            const currentTime = current?.toDate ? current.toDate() : new Date(current);
-            const latestTime = latest?.toDate ? latest.toDate() : new Date(latest);
-            return currentTime > latestTime ? current : latest;
+            try {
+                let currentTime, latestTime;
+
+                // Handle current timestamp
+                if (current?.toDate) {
+                    currentTime = current.toDate();
+                } else if (current?.seconds) {
+                    currentTime = new Date(current.seconds * 1000 + (current.nanoseconds || 0) / 1000000);
+                } else {
+                    currentTime = new Date(current);
+                }
+
+                // Handle latest timestamp
+                if (latest?.toDate) {
+                    latestTime = latest.toDate();
+                } else if (latest?.seconds) {
+                    latestTime = new Date(latest.seconds * 1000 + (latest.nanoseconds || 0) / 1000000);
+                } else {
+                    latestTime = new Date(latest);
+                }
+
+                return currentTime > latestTime ? current : latest;
+            } catch (error) {
+                console.error('Error comparing timestamps:', error);
+                return latest;
+            }
         });
     };
 
@@ -614,6 +669,14 @@ const ShipmentInformation = ({
 
     const handleCopyTracking = () => {
         const trackingNum = (() => {
+            // For QuickShip, use the carrier tracking number entered in the form first
+            if (shipment?.creationMethod === 'quickship') {
+                return shipment?.shipmentInfo?.carrierTrackingNumber ||
+                    shipment?.trackingNumber ||
+                    shipment?.shipmentID ||
+                    shipment?.id;
+            }
+
             const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
                 carrierData?.name?.toLowerCase().includes('canpar') ||
                 carrierData?.carrierID === 'CANPAR';
@@ -640,6 +703,15 @@ const ShipmentInformation = ({
     };
 
     const getTrackingNumber = () => {
+        // For QuickShip, use the carrier tracking number entered in the form first
+        if (shipment?.creationMethod === 'quickship') {
+            return shipment?.shipmentInfo?.carrierTrackingNumber ||
+                shipment?.trackingNumber ||
+                shipment?.shipmentID ||
+                shipment?.id ||
+                'N/A';
+        }
+
         const isCanparShipment = getBestRateInfo?.carrier?.toLowerCase().includes('canpar') ||
             carrierData?.name?.toLowerCase().includes('canpar') ||
             carrierData?.carrierID === 'CANPAR';
@@ -734,8 +806,8 @@ const ShipmentInformation = ({
                             </Box>
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Bill Type</Typography>
-                                <Typography variant="body2" sx={{ textTransform: 'capitalize', fontSize: '12px' }}>
-                                    {shipment?.shipmentInfo?.shipmentBillType?.toLowerCase() || 'N/A'}
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                    {formatBillType(shipment?.shipmentInfo?.shipmentBillType || shipment?.shipmentInfo?.billType)}
                                 </Typography>
                             </Box>
                         </Stack>
@@ -759,10 +831,11 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Created At</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {shipment?.createdAt?.toDate ?
-                                        shipment.createdAt.toDate().toLocaleString() :
-                                        (shipment?.createdAt ? new Date(shipment.createdAt).toLocaleString() : 'N/A')
-                                    }
+                                    {formatTimestamp(
+                                        shipment?.creationMethod === 'quickship'
+                                            ? (shipment?.bookedAt || shipment?.createdAt)
+                                            : shipment?.createdAt
+                                    )}
                                 </Typography>
                             </Box>
                             <Box>
@@ -771,35 +844,38 @@ const ShipmentInformation = ({
                                     {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
                                 </Typography>
                             </Box>
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">Estimated Delivery</Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '0.9rem' }} />
-                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px' }}>
-                                        {(() => {
-                                            const deliveryDate =
-                                                shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                                getBestRateInfo?.transit?.estimatedDelivery ||
-                                                getBestRateInfo?.estimatedDeliveryDate;
+                            {/* Hide Estimated Delivery for QuickShip */}
+                            {shipment?.creationMethod !== 'quickship' && (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Estimated Delivery</Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '0.9rem' }} />
+                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px' }}>
+                                            {(() => {
+                                                const deliveryDate =
+                                                    shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                                    getBestRateInfo?.transit?.estimatedDelivery ||
+                                                    getBestRateInfo?.estimatedDeliveryDate;
 
-                                            if (deliveryDate) {
-                                                try {
-                                                    const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
-                                                    return date.toLocaleDateString('en-US', {
-                                                        weekday: 'short',
-                                                        month: 'short',
-                                                        day: 'numeric',
-                                                        year: 'numeric'
-                                                    });
-                                                } catch (error) {
-                                                    return 'Invalid Date';
+                                                if (deliveryDate) {
+                                                    try {
+                                                        const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                                                        return date.toLocaleDateString('en-US', {
+                                                            weekday: 'short',
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            year: 'numeric'
+                                                        });
+                                                    } catch (error) {
+                                                        return 'Invalid Date';
+                                                    }
                                                 }
-                                            }
-                                            return 'N/A';
-                                        })()}
-                                    </Typography>
+                                                return 'N/A';
+                                            })()}
+                                        </Typography>
+                                    </Box>
                                 </Box>
-                            </Box>
+                            )}
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
@@ -858,18 +934,24 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Carrier</Typography>
                                 <CarrierDisplay
-                                    carrierName={getBestRateInfo?.carrier}
+                                    carrierName={shipment?.creationMethod === 'quickship' ?
+                                        (shipment?.selectedCarrier || shipment?.carrier) :
+                                        getBestRateInfo?.carrier
+                                    }
                                     carrierData={carrierData}
                                     size="small"
-                                    isIntegrationCarrier={getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus'}
+                                    isIntegrationCarrier={shipment?.creationMethod !== 'quickship' && (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus')}
                                 />
                             </Box>
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">Service</Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {getBestRateInfo?.service || 'N/A'}
-                                </Typography>
-                            </Box>
+                            {/* Hide Service for QuickShip */}
+                            {shipment?.creationMethod !== 'quickship' && (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Service</Typography>
+                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                        {getBestRateInfo?.service || 'N/A'}
+                                    </Typography>
+                                </Box>
+                            )}
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -990,10 +1072,7 @@ const ShipmentInformation = ({
                                                 sx={{
                                                     fontSize: '12px',
                                                     lineHeight: 1.3,
-                                                    color: 'primary.main',
-                                                    '&:hover': {
-                                                        textDecoration: 'underline'
-                                                    }
+                                                    color: 'primary.main'
                                                 }}
                                             >
                                                 {line}

@@ -1,6 +1,7 @@
 const sgMail = require('@sendgrid/mail');
 const { getFirestore } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
+const fetch = require('node-fetch'); // Add fetch for downloading attachments
 
 // Get SendGrid API key from environment variables
 const sendgridApiKey = process.env.SENDGRID_API_KEY;
@@ -566,6 +567,395 @@ ${data.attachments.map(attachment => {
 View customer details and collaborate: ${data.noteUrl}
 
 Need help? Contact us at tyler@tygershark.com
+        `
+    },
+
+    quickship_customer_confirmation: {
+        subject: (data) => `QuickShip Confirmation - ${data.shipmentId}`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">QuickShip Booking Confirmed!</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Your manual freight shipment has been successfully booked</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Shipment Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">QuickShip Summary</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment ID:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentId}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${data.carrier}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service Type:</strong></td><td style="padding: 8px 0;">QuickShip Manual Entry</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${data.shipDate}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${data.referenceNumber || 'N/A'}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${data.trackingNumber}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Address Information -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Address Information</h2>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px; margin-right: 20px;">
+                                <h4 style="color: #000; margin: 0 0 10px 0;">Ship From:</h4>
+                                <p style="margin: 0; line-height: 1.5;">
+                                    <strong>${data.shipFromCompany}</strong><br>
+                                    ${data.shipFromAddress}
+                                </p>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <h4 style="color: #000; margin: 0 0 10px 0;">Ship To:</h4>
+                                <p style="margin: 0; line-height: 1.5;">
+                                    <strong>${data.shipToCompany}</strong><br>
+                                    ${data.shipToAddress}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Package Information -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Package Information</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Total Pieces:</strong></td><td style="padding: 8px 0;">${data.totalPieces} pieces</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total Weight:</strong></td><td style="padding: 8px 0;">${data.totalWeight} lbs</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Rate Information - Enhanced for QuickShip -->
+                    ${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Manual Rate Breakdown</h2>
+                        <p style="margin: 0 0 15px 0; font-size: 12px; color: #666;">Manually entered freight charges</p>
+                        ${data.rateBreakdown.map(rate => `
+                            <div style="border-bottom: 1px solid #eee; padding: 8px 0; display: flex; justify-content: space-between;">
+                                <span style="font-weight: 500;">${rate.description}</span>
+                                <span style="font-weight: bold;">${rate.currency} $${rate.amount}</span>
+                            </div>
+                        `).join('')}
+                        <div style="border-top: 2px solid #1c277d; padding: 12px 0; display: flex; justify-content: space-between; font-weight: bold; background: #f8f9fa; margin: 10px -10px 0 -10px; padding-left: 10px; padding-right: 10px;">
+                            <span style="font-size: 16px;">Total Charges:</span>
+                            <span style="color: #1c277d; font-size: 18px;">${data.currency} $${data.totalCharges}</span>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- QuickShip Information Notice -->
+                    <div style="background: #e8f4fd; padding: 20px; border-radius: 0; border-left: 4px solid #1c277d; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0; font-size: 16px;">QuickShip Information</h3>
+                        <p style="margin: 0; color: #1e40af; font-size: 14px;">This shipment was booked using QuickShip manual entry. All rates have been manually calculated and entered. Documents including Bill of Lading and carrier confirmation have been generated and attached to this email.</p>
+                    </div>
+
+                    <!-- Tracking Section -->
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
+                        <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold; color: #1c277d;">${data.trackingNumber}</p>
+                        <a href="https://solushipx.web.app/tracking/${data.trackingNumber}" 
+                           style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
+                           Track Shipment
+                        </a>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Thank you for choosing SolushipX QuickShip!</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+QuickShip Booking Confirmed!
+
+QUICKSHIP SUMMARY
+- Shipment ID: ${data.shipmentId}
+- Carrier: ${data.carrier}
+- Service Type: QuickShip Manual Entry
+- Ship Date: ${data.shipDate}
+- Reference #: ${data.referenceNumber || 'N/A'}
+- Tracking #: ${data.trackingNumber}
+
+ADDRESSES
+Ship From: ${data.shipFromCompany}
+${data.shipFromAddress}
+
+Ship To: ${data.shipToCompany}
+${data.shipToAddress}
+
+PACKAGE INFORMATION
+- Total Pieces: ${data.totalPieces} pieces
+- Total Weight: ${data.totalWeight} lbs
+
+${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `MANUAL RATE BREAKDOWN
+${data.rateBreakdown.map(rate => `${rate.description}: ${rate.currency} $${rate.amount}`).join('\n')}
+Total Charges: ${data.currency} $${data.totalCharges}` : ''}
+
+QUICKSHIP INFORMATION
+This shipment was booked using QuickShip manual entry. All rates have been manually calculated and entered. Documents including Bill of Lading and carrier confirmation have been generated and attached to this email.
+
+Track your shipment: https://solushipx.web.app/tracking/${data.trackingNumber}
+
+Thank you for choosing SolushipX QuickShip!
+        `
+    },
+
+    quickship_carrier_notification: {
+        subject: (data) => `QuickShip Pickup Assignment - Order ${data.orderNumber}`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1976d2; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">QuickShip Pickup Assignment</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">New manual freight pickup order for ${data.carrierName}</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Carrier Information -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Carrier Assignment</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.carrierName}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Contact:</strong></td><td style="padding: 8px 0;">${data.contactName}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Order #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.orderNumber}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Confirmation #:</strong></td><td style="padding: 8px 0;">${data.confirmationNumber}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service Type:</strong></td><td style="padding: 8px 0; color: #1976d2; font-weight: bold;">${data.serviceType || 'QuickShip Manual Entry'}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Pickup Information -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Pickup Details</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Company:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.pickupCompany}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Contact:</strong></td><td style="padding: 8px 0;">${data.pickupContact}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Phone:</strong></td><td style="padding: 8px 0;">${data.pickupPhone}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.pickupDate}</td></tr>
+                        </table>
+                        <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-left: 4px solid #1976d2;">
+                            <strong>Address:</strong><br>
+                            ${data.pickupAddress}
+                        </div>
+                    </div>
+
+                    <!-- Delivery Information -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Delivery Details</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Company:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.deliveryCompany}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Contact:</strong></td><td style="padding: 8px 0;">${data.deliveryContact}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Phone:</strong></td><td style="padding: 8px 0;">${data.deliveryPhone}</td></tr>
+                        </table>
+                        <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-left: 4px solid #1976d2;">
+                            <strong>Address:</strong><br>
+                            ${data.deliveryAddress}
+                        </div>
+                    </div>
+
+                    <!-- Shipment Details -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Shipment Details</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Total Pieces:</strong></td><td style="padding: 8px 0;">${data.totalPieces} pieces</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total Weight:</strong></td><td style="padding: 8px 0;">${data.totalWeight} lbs</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${data.referenceNumber || 'N/A'}</td></tr>
+                            ${data.totalCharges ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Total Value:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1976d2;">${data.currency} $${data.totalCharges}</td></tr>` : ''}
+                        </table>
+                    </div>
+
+                    <!-- Package Details -->
+                    ${(data.packages && data.packages.length > 0) ? `
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Package Details</h2>
+                        ${data.packages.map((pkg, index) => `
+                            <div style="border-bottom: 1px solid #eee; padding: 10px 0;">
+                                <strong>Package ${index + 1}:</strong> ${pkg.description} ${pkg.packagingType ? `(${pkg.packagingType})` : ''}<br>
+                                <span style="color: #666;">Pieces: ${pkg.pieces}, Weight: ${pkg.weight} lbs, Dimensions: ${pkg.dimensions}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ` : ''}
+
+                    <!-- Special Instructions -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Special Instructions</h2>
+                        <div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #1976d2;">
+                            ${data.specialInstructions}
+                        </div>
+                    </div>
+
+                    <!-- QuickShip Notice -->
+                    <div style="background: #e3f2fd; padding: 20px; border-radius: 0; border-left: 4px solid #1976d2; margin-bottom: 20px;">
+                        <h3 style="color: #1976d2; margin: 0 0 10px 0;">QuickShip Information</h3>
+                        <p style="margin: 0; color: #1565c0;">This is a QuickShip manual booking with pre-negotiated rates. All pricing has been confirmed. Carrier confirmation document is attached to this email.</p>
+                    </div>
+
+                    <!-- Action Required -->
+                    <div style="background: #fff3cd; padding: 20px; border-radius: 0; border-left: 4px solid #ffc107; margin-bottom: 20px;">
+                        <h3 style="color: #856404; margin: 0 0 10px 0;">Action Required</h3>
+                        <p style="margin: 0; color: #856404;">Please confirm receipt of this pickup assignment and provide expected pickup time within 2 hours.</p>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Questions about this pickup? Reply to this email or contact SolushipX</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+QuickShip Pickup Assignment - Order ${data.orderNumber}
+
+CARRIER ASSIGNMENT
+- Carrier: ${data.carrierName}
+- Contact: ${data.contactName}
+- Order #: ${data.orderNumber}
+- Confirmation #: ${data.confirmationNumber}
+- Service Type: ${data.serviceType || 'QuickShip Manual Entry'}
+
+PICKUP DETAILS
+- Company: ${data.pickupCompany}
+- Contact: ${data.pickupContact}
+- Phone: ${data.pickupPhone}
+- Date: ${data.pickupDate}
+- Address: ${data.pickupAddress}
+
+DELIVERY DETAILS
+- Company: ${data.deliveryCompany}
+- Contact: ${data.deliveryContact}
+- Phone: ${data.deliveryPhone}
+- Address: ${data.deliveryAddress}
+
+SHIPMENT DETAILS
+- Total Pieces: ${data.totalPieces} pieces
+- Total Weight: ${data.totalWeight} lbs
+- Reference #: ${data.referenceNumber || 'N/A'}
+${data.totalCharges ? `- Total Value: ${data.currency} $${data.totalCharges}` : ''}
+
+${(data.packages && data.packages.length > 0) ? `PACKAGE DETAILS
+${data.packages.map((pkg, index) => `Package ${index + 1}: ${pkg.description} ${pkg.packagingType ? `(${pkg.packagingType})` : ''}\nPieces: ${pkg.pieces}, Weight: ${pkg.weight} lbs, Dimensions: ${pkg.dimensions}`).join('\n\n')}` : ''}
+
+SPECIAL INSTRUCTIONS
+${data.specialInstructions}
+
+QUICKSHIP INFORMATION
+This is a QuickShip manual booking with pre-negotiated rates. All pricing has been confirmed. Carrier confirmation document is attached to this email.
+
+ACTION REQUIRED: Please confirm receipt of this pickup assignment and provide expected pickup time within 2 hours.
+
+Questions? Reply to this email or contact SolushipX.
+        `
+    },
+
+    quickship_internal_notification: {
+        subject: (data) => `QuickShip Booked - ${data.shipmentId}`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">QuickShip Booking Alert</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">A new QuickShip order has been booked</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Booking Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Booking Summary</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment ID:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentId}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${data.carrier}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Booked By:</strong></td><td style="padding: 8px 0;">${data.bookedBy}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total Charges:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${data.currency} $${data.totalCharges}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Route Information -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Route Information</h2>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px; margin-right: 20px;">
+                                <h4 style="color: #000; margin: 0 0 10px 0;">From:</h4>
+                                <p style="margin: 0; line-height: 1.5;">
+                                    <strong>${data.shipFromCompany}</strong><br>
+                                    ${data.shipFromAddress}
+                                </p>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <h4 style="color: #000; margin: 0 0 10px 0;">To:</h4>
+                                <p style="margin: 0; line-height: 1.5;">
+                                    <strong>${data.shipToCompany}</strong><br>
+                                    ${data.shipToAddress}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Package Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Package Summary</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Total Pieces:</strong></td><td style="padding: 8px 0;">${data.totalPieces}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total Weight:</strong></td><td style="padding: 8px 0;">${data.totalWeight} lbs</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Financial Breakdown -->
+                    ${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Financial Breakdown</h2>
+                        ${data.rateBreakdown.map(rate => `
+                            <div style="border-bottom: 1px solid #eee; padding: 8px 0; display: flex; justify-content: space-between;">
+                                <span>${rate.description}</span>
+                                <div style="text-align: right;">
+                                    <span style="color: #28a745; margin-right: 10px;">Cost: ${rate.currency} $${rate.cost}</span>
+                                    <span style="color: #1c277d; font-weight: bold;">Charge: ${rate.currency} $${rate.charge}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                        <div style="border-top: 2px solid #1c277d; padding: 12px 0; display: flex; justify-content: space-between; font-weight: bold;">
+                            <span>Total Revenue:</span>
+                            <span style="color: #1c277d; font-size: 18px;">${data.currency} $${data.totalCharges}</span>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <div style="background: #e8f4fd; padding: 20px; border-radius: 0; border-left: 4px solid #1c277d; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Internal Note</h3>
+                        <p style="margin: 0; color: #000;">This is an automatically generated internal notification for QuickShip booking. Please follow up with carrier coordination and customer service as needed.</p>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Internal SolushipX Notification</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+QuickShip Booking Alert
+
+BOOKING SUMMARY
+- Shipment ID: ${data.shipmentId}
+- Carrier: ${data.carrier}
+- Booked By: ${data.bookedBy}
+- Total Charges: ${data.currency} $${data.totalCharges}
+
+ROUTE INFORMATION
+From: ${data.shipFromCompany}
+${data.shipFromAddress}
+
+To: ${data.shipToCompany}
+${data.shipToAddress}
+
+PACKAGE SUMMARY
+- Total Pieces: ${data.totalPieces}
+- Total Weight: ${data.totalWeight} lbs
+
+${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `FINANCIAL BREAKDOWN
+${data.rateBreakdown.map(rate => `${rate.description}: Cost ${rate.currency} $${rate.cost} | Charge ${rate.currency} $${rate.charge}`).join('\n')}
+Total Revenue: ${data.currency} $${data.totalCharges}` : ''}
+
+Internal Note: This is an automatically generated internal notification for QuickShip booking. Please follow up with carrier coordination and customer service as needed.
         `
     }
 };
@@ -1416,7 +1806,136 @@ async function sendReportNotificationEmail(templateType, userId, data = {}) {
     }
 }
 
+// Add the missing sendEmail function before the module exports
+async function sendEmail(emailData) {
+    try {
+        logger.info('Sending email with sendEmail function', { 
+            to: emailData.to, 
+            subject: emailData.subject,
+            hasAttachments: !!(emailData.attachments && emailData.attachments.length > 0)
+        });
+
+        if (!sendgridApiKey) {
+            throw new Error('SendGrid API key not configured');
+        }
+
+        // Prepare the email message
+        const msg = {
+            to: emailData.to,
+            from: {
+                email: 'tyler@tygershark.com',
+                name: 'SolushipX'
+            },
+            replyTo: {
+                email: 'tyler@tygershark.com',
+                name: 'Tyler from SolushipX'
+            },
+            subject: emailData.subject,
+            trackingSettings: {
+                clickTracking: { enable: true },
+                openTracking: { enable: true }
+            }
+        };
+
+        // Handle template-based emails
+        if (emailData.templateId && emailData.dynamicTemplateData) {
+            // For dynamic templates, we'll generate HTML using our internal templates
+            const templateKey = emailData.templateId;
+            const templateData = emailData.dynamicTemplateData;
+            
+            if (EMAIL_TEMPLATES[templateKey]) {
+                const template = EMAIL_TEMPLATES[templateKey];
+                msg.html = template.html(templateData);
+                msg.text = template.text(templateData);
+                
+                // Update subject if template provides one
+                if (template.subject) {
+                    msg.subject = template.subject(templateData);
+                }
+            } else {
+                throw new Error(`Unknown email template: ${templateKey}`);
+            }
+        } else if (emailData.html || emailData.text) {
+            // Direct HTML/text content
+            if (emailData.html) msg.html = emailData.html;
+            if (emailData.text) msg.text = emailData.text;
+        } else {
+            throw new Error('Email must include either templateId with dynamicTemplateData, or html/text content');
+        }
+
+        // Handle attachments
+        if (emailData.attachments && emailData.attachments.length > 0) {
+            msg.attachments = [];
+            
+            for (const attachment of emailData.attachments) {
+                try {
+                    if (attachment.url) {
+                        // Download file from URL and attach
+                        const response = await fetch(attachment.url);
+                        if (!response.ok) {
+                            logger.warn(`Failed to download attachment from ${attachment.url}:`, response.statusText);
+                            continue;
+                        }
+                        
+                        const buffer = await response.buffer();
+                        const base64Content = buffer.toString('base64');
+                        
+                        msg.attachments.push({
+                            filename: attachment.filename || 'document.pdf',
+                            type: attachment.type || 'application/pdf',
+                            disposition: attachment.disposition || 'attachment',
+                            content: base64Content
+                        });
+                        
+                        logger.info(`Successfully attached document: ${attachment.filename}`);
+                    } else if (attachment.content) {
+                        // Direct content attachment
+                        msg.attachments.push({
+                            filename: attachment.filename || 'document.pdf',
+                            type: attachment.type || 'application/pdf',
+                            disposition: attachment.disposition || 'attachment',
+                            content: attachment.content
+                        });
+                    }
+                } catch (attachmentError) {
+                    logger.error(`Error processing attachment ${attachment.filename}:`, attachmentError);
+                    // Continue with other attachments
+                }
+            }
+            
+            logger.info(`Prepared ${msg.attachments.length} attachments for email`);
+        }
+
+        // Send the email
+        const response = await sgMail.send(msg);
+        
+        logger.info(`Email sent successfully to ${msg.to}`, { 
+            messageId: response[0].headers['x-message-id'],
+            statusCode: response[0].statusCode,
+            attachmentCount: msg.attachments ? msg.attachments.length : 0
+        });
+
+        return {
+            success: true,
+            messageId: response[0].headers['x-message-id'],
+            statusCode: response[0].statusCode
+        };
+
+    } catch (error) {
+        logger.error('Failed to send email:', {
+            error: error.message,
+            code: error.code,
+            response: error.response?.body,
+            to: emailData.to,
+            subject: emailData.subject
+        });
+
+        throw new Error(`Failed to send email: ${error.message}`);
+    }
+}
+
 module.exports = {
+    sendEmail, // Add the missing sendEmail function
     sendNotificationEmail, // Main function for shipment notifications
     sendReportNotificationEmail, // Function for report notifications
     getEmailTemplate,
