@@ -43,7 +43,6 @@ import {
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion, arrayRemove, FieldValue } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
-import './CompanyForm.css';
 import { useSnackbar } from 'notistack';
 
 const CompanyForm = () => {
@@ -613,348 +612,826 @@ const CompanyForm = () => {
     }
 
     return (
-        <Box sx={{ p: { xs: 2, sm: 3 } }}>
-            {/* Combined Title, Breadcrumbs, and Actions Row */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
-                {/* Left side: Title and Breadcrumbs */}
-                <Box>
-                    <Typography variant="h4" component="h1" gutterBottom>
-                        {isEditMode ? `Edit: ${formData.name || 'Company'}` : 'Add New Company'}
-                    </Typography>
-                    <Breadcrumbs aria-label="breadcrumb">
-                        <RouterLink component={MuiLink} to="/admin" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
-                            Admin
-                        </RouterLink>
-                        <RouterLink component={MuiLink} to="/admin/companies" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
-                            Companies
-                        </RouterLink>
-                        {isEditMode && formData.name ? (
-                            <RouterLink component={MuiLink} to={`/admin/companies/${companyFirestoreId}`} sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
-                                {formData.name}
-                            </RouterLink>
-                        ) : null}
-                        <Typography color="text.primary">
-                            {isEditMode ? 'Edit' : 'New Company'}
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+        }}>
+            {/* Header Section */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                {/* Title and Actions Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Box>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                            {isEditMode ? `Edit Company: ${formData.name || 'Loading...'}` : 'Add New Company'}
                         </Typography>
-                    </Breadcrumbs>
-                </Box>
-
-                {/* Right side: Form Actions (Save/Cancel Buttons) */}
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: { xs: 2, sm: 0 } /* Add some top margin on small screens if buttons wrap */ }}>
-                    <Button
-                        onClick={() => navigate(isEditMode && companyFirestoreId ? `/admin/companies/${companyFirestoreId}` : '/admin/companies')}
-                        variant="outlined"
-                        color="inherit"
-                        startIcon={<CloseIcon />}
-                        disabled={saveLoading || pageLoading}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        type="submit"
-                        variant="contained"
-                        startIcon={<SaveIcon />}
-                        disabled={saveLoading || pageLoading}
-                        form="company-form-id" // Associate with the form
-                    >
-                        {saveLoading ? <CircularProgress size={20} color="inherit" /> : (isEditMode ? 'Save Changes' : 'Create Company')}
-                    </Button>
+                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                            {isEditMode ? 'Update company information and settings' : 'Create a new company profile'}
+                        </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            onClick={() => navigate(isEditMode && companyFirestoreId ? `/admin/companies/${companyFirestoreId}` : '/admin/companies')}
+                            variant="outlined"
+                            size="small"
+                            startIcon={<CloseIcon />}
+                            disabled={saveLoading || pageLoading}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            size="small"
+                            startIcon={<SaveIcon />}
+                            disabled={saveLoading || pageLoading}
+                            form="company-form-id"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {saveLoading ? <CircularProgress size={16} color="inherit" /> : (isEditMode ? 'Save Changes' : 'Create Company')}
+                        </Button>
+                    </Box>
                 </Box>
             </Box>
 
-            <Paper component="form" id="company-form-id" onSubmit={handleSubmit} elevation={2} sx={{ p: { xs: 2, sm: 3 } }}>
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            {/* Form Section */}
+            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                <Box sx={{ width: '100%', px: 3, py: 3 }}>
+                    <Paper
+                        component="form"
+                        id="company-form-id"
+                        onSubmit={handleSubmit}
+                        elevation={0}
+                        sx={{
+                            p: 3,
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            bgcolor: '#ffffff'
+                        }}
+                    >
+                        {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-                <Grid container spacing={3}>
-                    <Grid item xs={12}>
-                        <Typography variant="h6">Company Information</Typography>
-                        <Divider sx={{ my: 1 }} />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <TextField fullWidth label="Company Name" name="name" value={formData.name} onChange={handleCompanyDataChange} required />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <TextField
-                            fullWidth
-                            label="Company ID (Human-readable, e.g., COMPANY-NAME)"
-                            name="companyID"
-                            value={formData.companyID}
-                            onChange={handleCompanyDataChange}
-                            required
-                            disabled={isEditMode && formData.companyID !== ''}
-                            error={Boolean(companyIdError)}
-                            helperText={companyIdError || (isCheckingCompanyId ? 'Checking availability...' : '')}
-                        />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <TextField
-                            fullWidth
-                            label="Website URL"
-                            name="website"
-                            type="url"
-                            value={formData.website}
-                            onChange={handleCompanyDataChange}
-                            placeholder="https://www.example.com"
-                            helperText="Company website (optional)"
-                        />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <FormControl fullWidth required>
-                            <InputLabel>Status</InputLabel>
-                            <Select name="status" value={formData.status} label="Status" onChange={handleCompanyDataChange}>
-                                <MenuItem value="active">Active</MenuItem>
-                                <MenuItem value="inactive">Inactive</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <Autocomplete
-                            options={allUsers}
-                            getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
-                            value={allUsers.find(u => u.id === formData.ownerID) || null}
-                            onChange={(event, newValue) => handleAutocompleteChange('ownerID', newValue)}
-                            isOptionEqualToValue={(option, value) => option.id === value.id}
-                            renderInput={(params) => <TextField {...params} label="Company Owner" required />}
-                        />
-                    </Grid>
-                    <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ mt: 2 }}>Company Admins</Typography>
-                        <Divider sx={{ my: 1 }} />
-                        <Autocomplete
-                            multiple
-                            id="company-adminUserIds-autocomplete"
-                            options={allUsers}
-                            getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
-                            value={allUsers.filter(u => formData.adminUserIdsForForm.includes(u.id))}
-                            onChange={(event, newValue) => handleAutocompleteChange('adminUserIdsForForm', newValue)}
-                            filterSelectedOptions
-                            renderInput={(params) => (
+                        <Grid container spacing={3}>
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
+                                    Company Information
+                                </Typography>
+                                <Divider sx={{ mb: 3 }} />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
                                 <TextField
-                                    {...params}
-                                    variant="outlined"
-                                    label="Select Company Admins"
-                                    placeholder="Users who can manage this company's settings/users"
-                                />
-                            )}
-                            isOptionEqualToValue={(option, value) => option.id === value.id}
-                        />
-                    </Grid>
-
-                    {/* Main Contact Fields */}
-                    <Grid item xs={12}><Typography variant="h6" sx={{ mt: 2 }}>Main Contact</Typography><Divider sx={{ my: 1 }} /></Grid>
-                    <Grid item xs={12} md={6}><TextField fullWidth label="Contact First Name" name="firstName" value={formData.mainContact.firstName || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={6}><TextField fullWidth label="Contact Last Name" name="lastName" value={formData.mainContact.lastName || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={6}><TextField fullWidth label="Contact Email" name="email" type="email" value={formData.mainContact.email || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={6}><TextField fullWidth label="Contact Phone" name="phone" value={formData.mainContact.phone || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12}><TextField fullWidth label="Address Line 1" name="address1" value={formData.mainContact.address1 || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12}><TextField fullWidth label="Address Line 2" name="address2" value={formData.mainContact.address2 || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={4}><TextField fullWidth label="City" name="city" value={formData.mainContact.city || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={3}><TextField fullWidth label="State/Province" name="stateProv" value={formData.mainContact.stateProv || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={3}><TextField fullWidth label="Zip/Postal Code" name="zipPostal" value={formData.mainContact.zipPostal || ''} onChange={handleMainContactChange} /></Grid>
-                    <Grid item xs={12} md={2}>
-                        <FormControl fullWidth>
-                            <InputLabel>Country</InputLabel>
-                            <Select name="country" value={formData.mainContact.country || 'CA'} label="Country" onChange={handleMainContactChange}>
-                                <MenuItem value="CA">Canada</MenuItem>
-                                <MenuItem value="US">United States</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Grid>
-
-                    {/* Billing Address Section */}
-                    <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ mt: 2 }}>Billing Address</Typography>
-                        <Divider sx={{ my: 1 }} />
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={sameAsMainContact}
-                                    onChange={e => {
-                                        setSameAsMainContact(e.target.checked);
-                                        if (e.target.checked) {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                billingAddress: Object.fromEntries(Object.entries(prev.mainContact).filter(([key]) => key !== 'id'))
-                                            }));
-                                        }
+                                    fullWidth
+                                    size="small"
+                                    label="Company Name"
+                                    name="name"
+                                    value={formData.name}
+                                    onChange={handleCompanyDataChange}
+                                    required
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
                                     }}
                                 />
-                            }
-                            label="Same as Main Contact"
-                        />
-                    </Grid>
-                    {!sameAsMainContact && (
-                        <>
-                            <Grid item xs={12} md={6}><TextField fullWidth label="Billing First Name" name="firstName" value={formData.billingAddress.firstName || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={6}><TextField fullWidth label="Billing Last Name" name="lastName" value={formData.billingAddress.lastName || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={6}><TextField fullWidth label="Billing Email" name="email" type="email" value={formData.billingAddress.email || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={6}><TextField fullWidth label="Billing Phone" name="phone" value={formData.billingAddress.phone || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12}><TextField fullWidth label="Billing Address Line 1" name="address1" value={formData.billingAddress.address1 || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12}><TextField fullWidth label="Billing Address Line 2" name="address2" value={formData.billingAddress.address2 || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={4}><TextField fullWidth label="Billing City" name="city" value={formData.billingAddress.city || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={3}><TextField fullWidth label="Billing State/Province" name="stateProv" value={formData.billingAddress.stateProv || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={3}><TextField fullWidth label="Billing Zip/Postal Code" name="zipPostal" value={formData.billingAddress.zipPostal || ''} onChange={handleBillingAddressChange} /></Grid>
-                            <Grid item xs={12} md={2}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Billing Country</InputLabel>
-                                    <Select name="country" value={formData.billingAddress.country || 'CA'} label="Billing Country" onChange={handleBillingAddressChange}>
-                                        <MenuItem value="CA">Canada</MenuItem>
-                                        <MenuItem value="US">United States</MenuItem>
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Company ID"
+                                    name="companyID"
+                                    value={formData.companyID}
+                                    onChange={handleCompanyDataChange}
+                                    required
+                                    disabled={isEditMode && formData.companyID !== ''}
+                                    error={Boolean(companyIdError)}
+                                    helperText={companyIdError || (isCheckingCompanyId ? 'Checking availability...' : 'Human-readable ID (e.g., COMPANY-NAME)')}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Website URL"
+                                    name="website"
+                                    type="url"
+                                    value={formData.website}
+                                    onChange={handleCompanyDataChange}
+                                    placeholder="https://www.example.com"
+                                    helperText="Company website (optional)"
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <FormControl fullWidth size="small" required>
+                                    <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                                    <Select
+                                        name="status"
+                                        value={formData.status}
+                                        label="Status"
+                                        onChange={handleCompanyDataChange}
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    >
+                                        <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
+                                        <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
                                     </Select>
                                 </FormControl>
                             </Grid>
-                        </>
-                    )}
-
-                    {/* Origin Addresses Section - Table with Add button */}
-                    <Grid item xs={12} sx={{ mt: 2 }}>
-                        <Typography variant="h6" component="div" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            Origin Addresses
-                            <Button
-                                variant="outlined"
-                                startIcon={<AddIcon />}
-                                onClick={() => handleOpenOriginFormDialog()} // Opens dialog for new origin
-                            >
-                                Add New Origin
-                            </Button>
-                        </Typography>
-                        <Divider sx={{ my: 1 }} />
-                        <TableContainer component={Paper} elevation={0} variant="outlined">
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>Nickname</TableCell>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>Contact</TableCell>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>Address</TableCell>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>City</TableCell>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>State/Prov</TableCell>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>Zip/Postal</TableCell>
-                                        <TableCell sx={{ fontWeight: 'medium' }}>Country</TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 'medium' }}>Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {formData.originAddresses && formData.originAddresses.length > 0 ? (
-                                        formData.originAddresses.map((origin, index) => (
-                                            <TableRow key={origin.id || `origin-${index}`} hover>
-                                                <TableCell>{origin.nickname || '-'}</TableCell>
-                                                <TableCell>{origin.contactName || `${origin.firstName || ''} ${origin.lastName || ''}`.trim() || '-'}</TableCell>
-                                                <TableCell>{origin.address1 || '-'}</TableCell>
-                                                <TableCell>{origin.city || '-'}</TableCell>
-                                                <TableCell>{origin.stateProv || '-'}</TableCell>
-                                                <TableCell>{origin.zipPostal || '-'}</TableCell>
-                                                <TableCell>{origin.country || '-'}</TableCell>
-                                                <TableCell align="right">
-                                                    <IconButton size="small" onClick={() => handleOpenOriginFormDialog(origin, index)} aria-label="edit origin">
-                                                        <EditIcon fontSize="inherit" />
-                                                    </IconButton>
-                                                    <IconButton size="small" onClick={() => requestDeleteOrigin(index)} aria-label="delete origin" sx={{ ml: 1 }}>
-                                                        <DeleteOutlineIcon fontSize="inherit" />
-                                                    </IconButton>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={8} align="center" sx={{ fontStyle: 'italic', color: 'text.secondary', py: 3 }}>
-                                                No origin addresses defined. Click 'Add New Origin' to add one.
-                                            </TableCell>
-                                        </TableRow>
+                            <Grid item xs={12} md={6}>
+                                <Autocomplete
+                                    size="small"
+                                    options={allUsers}
+                                    getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
+                                    value={allUsers.find(u => u.id === formData.ownerID) || null}
+                                    onChange={(event, newValue) => handleAutocompleteChange('ownerID', newValue)}
+                                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            label="Company Owner"
+                                            required
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
                                     )}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Grid>
-                </Grid>
-            </Paper>
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
+                                    Company Admins
+                                </Typography>
+                                <Divider sx={{ mb: 3 }} />
+                                <Autocomplete
+                                    multiple
+                                    size="small"
+                                    id="company-adminUserIds-autocomplete"
+                                    options={allUsers}
+                                    getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
+                                    value={allUsers.filter(u => formData.adminUserIdsForForm.includes(u.id))}
+                                    onChange={(event, newValue) => handleAutocompleteChange('adminUserIdsForForm', newValue)}
+                                    filterSelectedOptions
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            variant="outlined"
+                                            label="Select Company Admins"
+                                            placeholder="Users who can manage this company's settings/users"
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    )}
+                                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                                />
+                            </Grid>
+
+                            {/* Main Contact Fields */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
+                                    Main Contact
+                                </Typography>
+                                <Divider sx={{ mb: 3 }} />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact First Name"
+                                    name="firstName"
+                                    value={formData.mainContact.firstName || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Last Name"
+                                    name="lastName"
+                                    value={formData.mainContact.lastName || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Email"
+                                    name="email"
+                                    type="email"
+                                    value={formData.mainContact.email || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Phone"
+                                    name="phone"
+                                    value={formData.mainContact.phone || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Address Line 1"
+                                    name="address1"
+                                    value={formData.mainContact.address1 || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Address Line 2"
+                                    name="address2"
+                                    value={formData.mainContact.address2 || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={4}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="City"
+                                    name="city"
+                                    value={formData.mainContact.city || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="State/Province"
+                                    name="stateProv"
+                                    value={formData.mainContact.stateProv || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Zip/Postal Code"
+                                    name="zipPostal"
+                                    value={formData.mainContact.zipPostal || ''}
+                                    onChange={handleMainContactChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={2}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                    <Select
+                                        name="country"
+                                        value={formData.mainContact.country || 'CA'}
+                                        label="Country"
+                                        onChange={handleMainContactChange}
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    >
+                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
+                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+
+                            {/* Billing Address Section */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
+                                    Billing Address
+                                </Typography>
+                                <Divider sx={{ mb: 3 }} />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            size="small"
+                                            checked={sameAsMainContact}
+                                            onChange={e => {
+                                                setSameAsMainContact(e.target.checked);
+                                                if (e.target.checked) {
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        billingAddress: Object.fromEntries(Object.entries(prev.mainContact).filter(([key]) => key !== 'id'))
+                                                    }));
+                                                }
+                                            }}
+                                        />
+                                    }
+                                    label={<Typography sx={{ fontSize: '12px' }}>Same as Main Contact</Typography>}
+                                />
+                            </Grid>
+                            {!sameAsMainContact && (
+                                <>
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing First Name"
+                                            name="firstName"
+                                            value={formData.billingAddress.firstName || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Last Name"
+                                            name="lastName"
+                                            value={formData.billingAddress.lastName || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Email"
+                                            name="email"
+                                            type="email"
+                                            value={formData.billingAddress.email || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Phone"
+                                            name="phone"
+                                            value={formData.billingAddress.phone || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Address Line 1"
+                                            name="address1"
+                                            value={formData.billingAddress.address1 || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Address Line 2"
+                                            name="address2"
+                                            value={formData.billingAddress.address2 || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={4}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing City"
+                                            name="city"
+                                            value={formData.billingAddress.city || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing State/Province"
+                                            name="stateProv"
+                                            value={formData.billingAddress.stateProv || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Zip/Postal Code"
+                                            name="zipPostal"
+                                            value={formData.billingAddress.zipPostal || ''}
+                                            onChange={handleBillingAddressChange}
+                                            sx={{
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={2}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Billing Country</InputLabel>
+                                            <Select
+                                                name="country"
+                                                value={formData.billingAddress.country || 'CA'}
+                                                label="Billing Country"
+                                                onChange={handleBillingAddressChange}
+                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                            >
+                                                <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
+                                                <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
+                                </>
+                            )}
+
+                            {/* Origin Addresses Section - Table with Add button */}
+                            <Grid item xs={12} sx={{ mt: 2 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
+                                        Origin Addresses
+                                    </Typography>
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => handleOpenOriginFormDialog()}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        Add New Origin
+                                    </Button>
+                                </Box>
+                                <Divider sx={{ mb: 3 }} />
+                                <TableContainer
+                                    component={Paper}
+                                    elevation={0}
+                                    sx={{
+                                        border: '1px solid #e5e7eb',
+                                        borderRadius: '8px'
+                                    }}
+                                >
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Nickname</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Contact</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Address</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>City</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>State/Prov</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zip/Postal</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Country</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {formData.originAddresses && formData.originAddresses.length > 0 ? (
+                                                formData.originAddresses.map((origin, index) => (
+                                                    <TableRow key={origin.id || `origin-${index}`} hover>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.nickname || '-'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.contactName || `${origin.firstName || ''} ${origin.lastName || ''}`.trim() || '-'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.address1 || '-'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.city || '-'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.stateProv || '-'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.zipPostal || '-'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.country || '-'}</TableCell>
+                                                        <TableCell align="right">
+                                                            <IconButton size="small" onClick={() => handleOpenOriginFormDialog(origin, index)} aria-label="edit origin">
+                                                                <EditIcon fontSize="small" />
+                                                            </IconButton>
+                                                            <IconButton size="small" onClick={() => requestDeleteOrigin(index)} aria-label="delete origin" sx={{ ml: 1 }}>
+                                                                <DeleteOutlineIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            ) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={8} align="center" sx={{ fontStyle: 'italic', color: '#6b7280', py: 3, fontSize: '12px' }}>
+                                                        No origin addresses defined. Click 'Add New Origin' to add one.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </Grid>
+                        </Grid>
+                    </Paper>
+                </Box>
+            </Box>
 
             {/* Dialog for Adding/Editing a Single Origin Address */}
             {editingOriginData && (
                 <Dialog open={isOriginFormDialogOpen} onClose={handleCloseOriginFormDialog} fullWidth maxWidth="md">
-                    <DialogTitle>{editingOriginIndex !== null && editingOriginIndex >= 0 ? 'Edit Origin Address' : 'Add New Origin Address'}</DialogTitle>
+                    <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                        {editingOriginIndex !== null && editingOriginIndex >= 0 ? 'Edit Origin Address' : 'Add New Origin Address'}
+                    </DialogTitle>
                     <DialogContent dividers>
                         <Grid container spacing={2} sx={{ pt: 1 }}>
-                            <Grid item xs={12} sm={6}><TextField fullWidth label="Nickname" name="nickname" value={editingOriginData.nickname || ''} onChange={handleOriginFormFieldChange} helperText="e.g., Main Warehouse, Downtown Branch" /></Grid>
-                            <Grid item xs={12} sm={6}><TextField fullWidth label="Contact Name" name="contactName" value={editingOriginData.contactName || ''} onChange={handleOriginFormFieldChange} helperText="Full name of contact person" /></Grid>
-                            <Grid item xs={12} sm={6}><TextField fullWidth label="Contact Email" name="email" type="email" value={editingOriginData.email || ''} onChange={handleOriginFormFieldChange} /></Grid>
-                            <Grid item xs={12} sm={6}><TextField fullWidth label="Contact Phone" name="phone" value={editingOriginData.phone || ''} onChange={handleOriginFormFieldChange} /></Grid>
-                            <Grid item xs={12}><TextField fullWidth label="Address Line 1" name="address1" value={editingOriginData.address1 || ''} onChange={handleOriginFormFieldChange} required error={!editingOriginData.address1?.trim()} /></Grid>
-                            <Grid item xs={12}><TextField fullWidth label="Address Line 2" name="address2" value={editingOriginData.address2 || ''} onChange={handleOriginFormFieldChange} /></Grid>
-                            <Grid item xs={12} sm={4}><TextField fullWidth label="City" name="city" value={editingOriginData.city || ''} onChange={handleOriginFormFieldChange} required error={!editingOriginData.city?.trim()} /></Grid>
-                            <Grid item xs={12} sm={4}><TextField fullWidth label="State/Province" name="stateProv" value={editingOriginData.stateProv || ''} onChange={handleOriginFormFieldChange} /></Grid>
-                            <Grid item xs={12} sm={4}><TextField fullWidth label="Zip/Postal Code" name="zipPostal" value={editingOriginData.zipPostal || ''} onChange={handleOriginFormFieldChange} required error={!editingOriginData.zipPostal?.trim()} /></Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Nickname"
+                                    name="nickname"
+                                    value={editingOriginData.nickname || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    helperText="e.g., Main Warehouse, Downtown Branch"
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Name"
+                                    name="contactName"
+                                    value={editingOriginData.contactName || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    helperText="Full name of contact person"
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Email"
+                                    name="email"
+                                    type="email"
+                                    value={editingOriginData.email || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Phone"
+                                    name="phone"
+                                    value={editingOriginData.phone || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
                             <Grid item xs={12}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Country</InputLabel>
-                                    <Select name="country" value={editingOriginData.country || 'CA'} label="Country" onChange={handleOriginFormFieldChange}>
-                                        <MenuItem value="US">United States</MenuItem>
-                                        <MenuItem value="CA">Canada</MenuItem>
-                                        {/* Add more common countries or use an Autocomplete with a larger list */}
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Address Line 1"
+                                    name="address1"
+                                    value={editingOriginData.address1 || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    required
+                                    error={!editingOriginData.address1?.trim()}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Address Line 2"
+                                    name="address2"
+                                    value={editingOriginData.address2 || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="City"
+                                    name="city"
+                                    value={editingOriginData.city || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    required
+                                    error={!editingOriginData.city?.trim()}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="State/Province"
+                                    name="stateProv"
+                                    value={editingOriginData.stateProv || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Zip/Postal Code"
+                                    name="zipPostal"
+                                    value={editingOriginData.zipPostal || ''}
+                                    onChange={handleOriginFormFieldChange}
+                                    required
+                                    error={!editingOriginData.zipPostal?.trim()}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                    <Select
+                                        name="country"
+                                        value={editingOriginData.country || 'CA'}
+                                        label="Country"
+                                        onChange={handleOriginFormFieldChange}
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    >
+                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
                                     </Select>
                                 </FormControl>
                             </Grid>
                         </Grid>
                     </DialogContent>
                     <DialogActions>
-                        <Button onClick={handleCloseOriginFormDialog}>Cancel</Button>
-                        <Button onClick={handleSaveOrigin} variant="contained" startIcon={<SaveIcon />}>Save Origin</Button>
+                        <Button
+                            onClick={handleCloseOriginFormDialog}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSaveOrigin}
+                            variant="contained"
+                            size="small"
+                            startIcon={<SaveIcon />}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Save Origin
+                        </Button>
                     </DialogActions>
                 </Dialog>
             )}
 
             {/* Confirmation Dialog for Deleting Origin */}
             <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} maxWidth="xs">
-                <DialogTitle>Confirm Delete</DialogTitle>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Confirm Delete
+                </DialogTitle>
                 <DialogContent>
-                    <DialogContentText>
+                    <DialogContentText sx={{ fontSize: '12px' }}>
                         Are you sure you want to remove this origin address from the list? Changes will apply when you save the company.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-                    <Button onClick={confirmDeleteOrigin} color="error">Delete from List</Button>
+                    <Button
+                        onClick={() => setDeleteConfirmOpen(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={confirmDeleteOrigin}
+                        color="error"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Delete from List
+                    </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* Confirmation Dialog for Deleting the Company */}
+            {/* Delete Company Section for Edit Mode */}
             {isEditMode && (
-                <Box sx={{ mt: 6, display: 'flex', justifyContent: 'flex-end' }}>
-                    <Button
-                        variant="outlined"
-                        color="error"
-                        startIcon={<DeleteOutlineIcon />}
-                        onClick={() => setDeleteConfirmOpen(true)}
-                        disabled={saveLoading || pageLoading}
-                    >
-                        Delete Company
-                    </Button>
+                <Box sx={{ p: 3, borderTop: '1px solid #e5e7eb', mt: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box>
+                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 1 }}>
+                                Delete Company
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                Permanently delete this company and all associated data
+                            </Typography>
+                        </Box>
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            size="small"
+                            startIcon={<DeleteOutlineIcon />}
+                            onClick={handleDeleteCompany}
+                            disabled={saveLoading || pageLoading}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Delete Company
+                        </Button>
+                    </Box>
                 </Box>
             )}
-
-            <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} maxWidth="xs">
-                <DialogTitle>Delete Company</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        Are you sure you want to mark this company as deleted? This will set its status to 'deleted' but will not remove any records. This action can be undone by changing the status later.
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteConfirmOpen(false)} disabled={saveLoading}>Cancel</Button>
-                    <Button onClick={async () => {
-                        setSaveLoading(true);
-                        try {
-                            await updateDoc(doc(db, 'companies', companyFirestoreId), { status: 'deleted' });
-                            enqueueSnackbar('Company marked as deleted.', { variant: 'success' });
-                            navigate(`/admin/companies/${companyFirestoreId}`);
-                        } catch (err) {
-                            enqueueSnackbar('Error marking company as deleted: ' + err.message, { variant: 'error' });
-                        } finally {
-                            setSaveLoading(false);
-                            setDeleteConfirmOpen(false);
-                        }
-                    }} color="error" disabled={saveLoading}>Mark as Deleted</Button>
-                </DialogActions>
-            </Dialog>
 
         </Box>
     );
