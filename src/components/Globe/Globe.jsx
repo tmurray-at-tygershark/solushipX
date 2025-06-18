@@ -1443,8 +1443,8 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
             {showOverlays && (
                 <Box sx={{
                     position: 'absolute',
-                    top: { xs: '56px', sm: '64px', md: '72px', lg: '80px' }, // Adaptive top spacing
-                    left: { xs: 8, sm: 12, md: 16, lg: 20 },
+                    top: { xs: '206px', sm: '214px', md: '222px', lg: '230px' }, // Moved down 150px from original values
+                    right: { xs: 8, sm: 12, md: 16, lg: 20 }, // Changed from left to right
                     display: 'flex',
                     flexDirection: 'column',
                     gap: { xs: 0.5, sm: 0.6, md: 0.8 },

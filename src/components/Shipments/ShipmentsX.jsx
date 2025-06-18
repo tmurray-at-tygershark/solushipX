@@ -215,12 +215,107 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     }, [deepLinkParams]);
 
-    // Handle opening shipment detail directly via deep link
-    useEffect(() => {
-        if (deepLinkParams?.openDetail && deepLinkParams?.shipmentId && shipments.length > 0) {
-            console.log('🚀 Auto-opening shipment detail for:', deepLinkParams.shipmentId);
+    // Helper function to show snackbar
+    const showSnackbar = useCallback((message, severity = 'info') => {
+        setSnackbar({
+            open: true,
+            message,
+            severity
+        });
+    }, []);
 
-            // Find the shipment by shipmentID field (not document ID)
+    // Generic navigation push
+    const pushView = useCallback((view) => {
+        console.log('➡️ pushView called with:', view.key);
+
+        setSlideDirection('forward');
+        setSliding(true);
+
+        // Add the new view to mounted views immediately
+        setMountedViews((prev) => {
+            const newMounted = Array.from(new Set([...prev, view.key]));
+            console.log('🏠 Updated mounted views:', newMounted);
+            return newMounted;
+        });
+
+        console.log('🎬 Starting forward slide animation');
+
+        // Update navigation stack after a brief delay to allow state to settle
+        setTimeout(() => {
+            setNavigationStack((prev) => {
+                const newStack = [...prev, view];
+                console.log('📚 Updated navigation stack:', newStack.map(v => v.key));
+                return newStack;
+            });
+
+            // End sliding animation
+            setTimeout(() => {
+                setSliding(false);
+                console.log('✅ pushView complete');
+            }, 300); // Match CSS transition duration
+        }, 10);
+    }, []);
+
+    // Generic navigation pop
+    const popView = useCallback(() => {
+        console.log('🔙 popView called, current stack:', navigationStack.length);
+
+        if (navigationStack.length <= 1) {
+            console.log('⚠️ Cannot pop - only one view in stack');
+            return;
+        }
+
+        // Set sliding state and direction
+        setSlideDirection('backward');
+        setSliding(true);
+
+        console.log('🎬 Starting backward slide animation');
+
+        // After animation completes, update the navigation stack and mounted views
+        setTimeout(() => {
+            console.log('🔄 Animation complete, updating navigation stack');
+
+            setNavigationStack((prevStack) => {
+                const newStack = prevStack.slice(0, -1);
+                console.log('📚 New navigation stack:', newStack.map(v => v.key));
+                return newStack;
+            });
+
+            setMountedViews((prevMounted) => {
+                const newMounted = prevMounted.slice(0, -1);
+                console.log('🏠 New mounted views:', newMounted);
+                return newMounted;
+            });
+
+            setSliding(false);
+            console.log('✅ popView complete');
+        }, 300); // Match CSS transition duration
+    }, [navigationStack.length]);
+
+    // Add handler for viewing shipment detail - moved before useEffect that uses it
+    const handleViewShipmentDetail = useCallback((shipmentId) => {
+        // Find the shipment to get its details for the title
+        const shipment = shipments.find(s => s.id === shipmentId) || { shipmentID: shipmentId };
+
+        // Create the shipment detail view and push it to navigation stack
+        pushView({
+            key: `shipment-detail-${shipmentId}`,
+            component: 'shipment-detail',
+            props: { shipmentId }
+        });
+
+        // Update modal navigation for proper back button handling
+        modalNavigation.navigateTo({
+            title: `${shipment.shipmentID || shipmentId}`,
+            shortTitle: shipment.shipmentID || shipmentId,
+            component: 'shipment-detail',
+            data: { shipmentId }
+        });
+    }, [shipments, pushView, modalNavigation]);
+
+    // Auto-open shipment detail if specified in deep link params
+    useEffect(() => {
+        if (deepLinkParams && deepLinkParams.shipmentId && shipments.length > 0) {
             const shipment = shipments.find(s =>
                 s.shipmentID === deepLinkParams.shipmentId ||
                 s.id === deepLinkParams.shipmentId
@@ -248,17 +343,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             }
         }
     }, [customers, deepLinkParams]);
-
-    // Helper function to show snackbar
-    const showSnackbar = useCallback((message, severity = 'info') => {
-        setSnackbar({
-            open: true,
-            message,
-            severity
-        });
-    }, []);
-
-
 
     // Calculate stats using consistent direct status matching
     const stats = useMemo(() => {
@@ -939,95 +1023,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             current: navigationStack[len - 1],
             prev: navigationStack[len - 2] || null
         };
-    };
-
-    // Generic navigation push
-    const pushView = (view) => {
-        console.log('➡️ pushView called with:', view.key);
-
-        setSlideDirection('forward');
-        setSliding(true);
-
-        // Add the new view to mounted views immediately
-        setMountedViews((prev) => {
-            const newMounted = Array.from(new Set([...prev, view.key]));
-            console.log('🏠 Updated mounted views:', newMounted);
-            return newMounted;
-        });
-
-        console.log('🎬 Starting forward slide animation');
-
-        // Update navigation stack after a brief delay to allow state to settle
-        setTimeout(() => {
-            setNavigationStack((prev) => {
-                const newStack = [...prev, view];
-                console.log('📚 Updated navigation stack:', newStack.map(v => v.key));
-                return newStack;
-            });
-
-            // End sliding animation
-            setTimeout(() => {
-                setSliding(false);
-                console.log('✅ pushView complete');
-            }, 300); // Match CSS transition duration
-        }, 10);
-    };
-
-    // Generic navigation pop
-    const popView = () => {
-        console.log('🔙 popView called, current stack:', navigationStack.length);
-
-        if (navigationStack.length <= 1) {
-            console.log('⚠️ Cannot pop - only one view in stack');
-            return;
-        }
-
-        // Set sliding state and direction
-        setSlideDirection('backward');
-        setSliding(true);
-
-        console.log('🎬 Starting backward slide animation');
-
-        // After animation completes, update the navigation stack and mounted views
-        setTimeout(() => {
-            console.log('🔄 Animation complete, updating navigation stack');
-
-            setNavigationStack((prevStack) => {
-                const newStack = prevStack.slice(0, -1);
-                console.log('📚 New navigation stack:', newStack.map(v => v.key));
-                return newStack;
-            });
-
-            setMountedViews((prevMounted) => {
-                const newMounted = prevMounted.slice(0, -1);
-                console.log('🏠 New mounted views:', newMounted);
-                return newMounted;
-            });
-
-            setSliding(false);
-            console.log('✅ popView complete');
-        }, 300); // Match CSS transition duration
-    };
-
-    // Add handler for viewing shipment detail
-    const handleViewShipmentDetail = (shipmentId) => {
-        // Find the shipment to get its details for the title
-        const shipment = shipments.find(s => s.id === shipmentId) || { shipmentID: shipmentId };
-
-        // Create the shipment detail view and push it to navigation stack
-        pushView({
-            key: `shipment-detail-${shipmentId}`,
-            component: 'shipment-detail',
-            props: { shipmentId }
-        });
-
-        // Update modal navigation for proper back button handling
-        modalNavigation.navigateTo({
-            title: `${shipment.shipmentID || shipmentId}`,
-            shortTitle: shipment.shipmentID || shipmentId,
-            component: 'shipment-detail',
-            data: { shipmentId }
-        });
     };
 
     // Render view based on component type

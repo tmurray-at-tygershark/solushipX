@@ -30,6 +30,10 @@ import {
     CardActions,
     Grid,
     Tooltip,
+    Avatar,
+    Menu,
+    MenuItem,
+    Divider,
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -50,7 +54,7 @@ import {
     FlightTakeoff as TrackingIcon,
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -317,20 +321,9 @@ const Dashboard = () => {
     const { companyIdForAddress, companyData, loading: companyLoading, isAdmin } = useCompany();
     const navigate = useNavigate();
     const location = useLocation();
-    const { logout, userRole } = useAuth();
-
-    // Redirect admin users to admin panel
-    useEffect(() => {
-        const ADMIN_ROLES = ['super_admin', 'admin', 'business_admin'];
-        if (userRole && ADMIN_ROLES.includes(userRole)) {
-            console.log('Admin user detected, redirecting to admin panel');
-            navigate('/admin', { replace: true });
-            return;
-        }
-    }, [userRole, navigate]);
+    const { logout, userRole, currentUser } = useAuth();
 
     // State for new UI elements
-    const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
     const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
     const [trackingNumber, setTrackingNumber] = useState('');
     const [isShipmentsModalOpen, setIsShipmentsModalOpen] = useState(false);
@@ -345,6 +338,21 @@ const Dashboard = () => {
     const [isQuickShipModalOpen, setIsQuickShipModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
+
+    // Profile menu state
+    const [profileMenuAnchor, setProfileMenuAnchor] = useState(null);
+    const isProfileMenuOpen = Boolean(profileMenuAnchor);
+
+    // Settings menu state
+    const [settingsMenuAnchor, setSettingsMenuAnchor] = useState(null);
+    const isSettingsMenuOpen = Boolean(settingsMenuAnchor);
+
+    // User profile data state
+    const [userProfileData, setUserProfileData] = useState({
+        photoURL: null,
+        firstName: '',
+        lastName: ''
+    });
 
     // Modal navigation stack for chaining modals (e.g., Customers -> Shipments)
     const [modalStack, setModalStack] = useState([]);
@@ -479,6 +487,42 @@ const Dashboard = () => {
         return () => unsubscribe();
     }, [companyIdForAddress, companyLoading, customers, thirtyDaysAgo]);
 
+    // Load user profile data
+    useEffect(() => {
+        const loadUserProfileData = async () => {
+            if (!currentUser) return;
+
+            try {
+                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    setUserProfileData({
+                        photoURL: userData.photoURL || currentUser.photoURL || null,
+                        firstName: userData.firstName || '',
+                        lastName: userData.lastName || ''
+                    });
+                } else {
+                    // Fallback to Firebase Auth data
+                    setUserProfileData({
+                        photoURL: currentUser.photoURL || null,
+                        firstName: currentUser.displayName?.split(' ')[0] || '',
+                        lastName: currentUser.displayName?.split(' ')[1] || ''
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading user profile data:', error);
+                // Fallback to Firebase Auth data
+                setUserProfileData({
+                    photoURL: currentUser.photoURL || null,
+                    firstName: currentUser.displayName?.split(' ')[0] || '',
+                    lastName: currentUser.displayName?.split(' ')[1] || ''
+                });
+            }
+        };
+
+        loadUserProfileData();
+    }, [currentUser]);
+
     // Handle deep link navigation from email notifications
     useEffect(() => {
         const urlParams = new URLSearchParams(location.search);
@@ -561,6 +605,63 @@ const Dashboard = () => {
             navigate('/');
         } catch (error) {
             console.error("Failed to log out", error);
+        }
+    };
+
+    // Profile menu handlers
+    const handleProfileMenuOpen = (event) => {
+        setProfileMenuAnchor(event.currentTarget);
+    };
+
+    const handleProfileMenuClose = () => {
+        setProfileMenuAnchor(null);
+    };
+
+    const handleProfileMenuAction = (action) => {
+        handleProfileMenuClose();
+        if (action === 'profile') {
+            setIsProfileModalOpen(true);
+        } else if (action === 'company') {
+            setIsCompanyModalOpen(true);
+        } else if (action === 'logout') {
+            handleLogout();
+        }
+    };
+
+    // Settings menu handlers
+    const handleSettingsMenuOpen = (event) => {
+        setSettingsMenuAnchor(event.currentTarget);
+    };
+
+    const handleSettingsMenuClose = () => {
+        setSettingsMenuAnchor(null);
+    };
+
+    const handleSettingsMenuAction = (action) => {
+        handleSettingsMenuClose();
+        if (action === 'notifications') {
+            setIsNotificationsModalOpen(true);
+        } else if (action === 'carriers') {
+            setIsCarriersModalOpen(true);
+        }
+    };
+
+    // Function to refresh user profile data (called when profile modal closes)
+    const refreshUserProfileData = async () => {
+        if (!currentUser) return;
+
+        try {
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                setUserProfileData({
+                    photoURL: userData.photoURL || currentUser.photoURL || null,
+                    firstName: userData.firstName || '',
+                    lastName: userData.lastName || ''
+                });
+            }
+        } catch (error) {
+            console.error('Error refreshing user profile data:', error);
         }
     };
 
@@ -706,20 +807,12 @@ const Dashboard = () => {
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
         { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
         { text: 'Address Book', icon: <ContactMailIcon />, action: () => setIsAddressBookModalOpen(true) },
-        { text: 'Carriers', icon: <BusinessIcon />, action: () => setIsCarriersModalOpen(true) },
         { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
-        { text: 'Notifications', icon: <NotificationsIcon />, action: () => setIsNotificationsModalOpen(true) },
     ];
 
     const profileMenuItems = [
-        { text: 'My Company', icon: <BusinessIcon />, action: () => setIsCompanyModalOpen(true) },
-        { text: 'Profile', icon: <AccountCircleIcon />, action: () => setIsProfileModalOpen(true) },
+        // Empty array since My Company moved to profile dropdown
     ];
-
-    // Early return for admin users (after all hooks are called)
-    if (isAdmin) {
-        return null; // Will redirect to admin panel above
-    }
 
     return (
         <Box className="dashboard-container" sx={{
@@ -743,47 +836,13 @@ const Dashboard = () => {
                 // Completely transparent header with no background
                 transition: 'all 0.3s ease'
             }}>
-                {/* Left Section - Menu & Logo */}
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: { xs: 0.5, sm: 1 },
-                    flex: { xs: '0 0 auto', sm: '0 0 auto' }
-                }}>
-                    <IconButton
-                        onClick={() => setIsNavDrawerOpen(true)}
-                        sx={{
-                            color: 'white',
-                            p: { xs: 1, sm: 1.5 },
-                            '&:hover': {
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                transform: 'scale(1.05)'
-                            },
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <MenuIcon sx={{ fontSize: { xs: '1.5rem', sm: '1.8rem', md: '2rem' } }} />
-                    </IconButton>
-                    <img
-                        src="/images/solushipx_logo_white.png"
-                        alt="SoluShipX"
-                        style={{
-                            height: window.innerWidth < 600 ? 24 : 28,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                        }}
-                        onClick={() => navigate('/dashboard')}
-                    />
-                </Box>
-
-                {/* Right Section - Adaptive Search */}
+                {/* Right Section - Adaptive Search - Now takes full width */}
                 <Box sx={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
-                    flex: { xs: '1 1 auto', sm: '0 0 auto' },
                     justifyContent: 'flex-end',
-                    ml: { xs: 1, sm: 0 }
+                    width: '100%'
                 }}>
                     <TextField
                         variant="standard"
@@ -842,197 +901,322 @@ const Dashboard = () => {
                             transition: 'all 0.2s ease'
                         }}
                     />
+
+                    {/* Profile Avatar */}
+                    <IconButton
+                        onClick={handleProfileMenuOpen}
+                        sx={{
+                            p: 0.5,
+                            ml: 1,
+                            '&:hover': {
+                                transform: 'scale(1.05)'
+                            },
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <Avatar
+                            src={userProfileData.photoURL}
+                            sx={{
+                                width: { xs: 32, sm: 36, md: 40 },
+                                height: { xs: 32, sm: 36, md: 40 },
+                                bgcolor: 'rgba(255, 255, 255, 0.1)',
+                                border: '2px solid rgba(255, 255, 255, 0.2)',
+                                color: 'white',
+                                fontSize: { xs: '1rem', sm: '1.1rem', md: '1.2rem' },
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    bgcolor: 'rgba(255, 255, 255, 0.15)',
+                                    borderColor: 'rgba(255, 255, 255, 0.4)'
+                                }
+                            }}
+                        >
+                            {!userProfileData.photoURL && (
+                                userProfileData.firstName && userProfileData.lastName
+                                    ? `${userProfileData.firstName[0]}${userProfileData.lastName[0]}`
+                                    : currentUser?.displayName?.[0] || currentUser?.email?.[0] || '?'
+                            )}
+                        </Avatar>
+                    </IconButton>
+
+                    {/* Settings Gear Icon */}
+                    <IconButton
+                        onClick={handleSettingsMenuOpen}
+                        sx={{
+                            color: '#666666',
+                            p: 0.5,
+                            ml: 0.5,
+                            '&:hover': {
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                transform: 'scale(1.05)'
+                            },
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <SettingsIcon sx={{
+                            fontSize: { xs: '1.5rem', sm: '1.6rem', md: '1.8rem' }
+                        }} />
+                    </IconButton>
                 </Box>
             </Box>
 
-            {/* Enhanced Navigation Drawer (Left) */}
-            <Drawer
-                anchor="left"
-                open={isNavDrawerOpen}
-                onClose={() => setIsNavDrawerOpen(false)}
+            {/* Profile Menu Dropdown */}
+            <Menu
+                anchorEl={profileMenuAnchor}
+                open={isProfileMenuOpen}
+                onClose={handleProfileMenuClose}
+                onClick={handleProfileMenuClose}
                 PaperProps={{
+                    elevation: 3,
                     sx: {
-                        width: { xs: '280px', sm: '300px', md: '320px' },
-                        maxWidth: '85vw'
-                    }
+                        overflow: 'visible',
+                        filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
+                        mt: 1.5,
+                        minWidth: 180,
+                        '&:before': {
+                            content: '""',
+                            display: 'block',
+                            position: 'absolute',
+                            top: 0,
+                            right: 14,
+                            width: 10,
+                            height: 10,
+                            bgcolor: 'background.paper',
+                            transform: 'translateY(-50%) rotate(45deg)',
+                            zIndex: 0,
+                        },
+                    },
                 }}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
+                <MenuItem
+                    onClick={() => handleProfileMenuAction('profile')}
+                    sx={{
+                        py: 1.5,
+                        px: 2,
+                        '&:hover': {
+                            bgcolor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                    }}
+                >
+                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                        <AccountCircleIcon fontSize="small" />
+                    </ListItemIcon>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Profile
+                    </Typography>
+                </MenuItem>
+
+                <MenuItem
+                    onClick={() => handleProfileMenuAction('company')}
+                    sx={{
+                        py: 1.5,
+                        px: 2,
+                        '&:hover': {
+                            bgcolor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                    }}
+                >
+                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                        <BusinessIcon fontSize="small" />
+                    </ListItemIcon>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Company
+                    </Typography>
+                </MenuItem>
+
+                <Divider />
+
+                <MenuItem
+                    onClick={() => handleProfileMenuAction('logout')}
+                    sx={{
+                        py: 1.5,
+                        px: 2,
+                        '&:hover': {
+                            bgcolor: 'rgba(244, 67, 54, 0.04)'
+                        }
+                    }}
+                >
+                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                        <LogoutIcon fontSize="small" sx={{ color: '#f44336' }} />
+                    </ListItemIcon>
+                    <Typography variant="body2" sx={{ fontWeight: 500, color: '#f44336' }}>
+                        Sign Out
+                    </Typography>
+                </MenuItem>
+            </Menu>
+
+            {/* Settings Menu Dropdown */}
+            <Menu
+                anchorEl={settingsMenuAnchor}
+                open={isSettingsMenuOpen}
+                onClose={handleSettingsMenuClose}
+                onClick={handleSettingsMenuClose}
+                PaperProps={{
+                    elevation: 3,
+                    sx: {
+                        overflow: 'visible',
+                        filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
+                        mt: 1.5,
+                        minWidth: 180,
+                        '&:before': {
+                            content: '""',
+                            display: 'block',
+                            position: 'absolute',
+                            top: 0,
+                            right: 14,
+                            width: 10,
+                            height: 10,
+                            bgcolor: 'background.paper',
+                            transform: 'translateY(-50%) rotate(45deg)',
+                            zIndex: 0,
+                        },
+                    },
+                }}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+                <MenuItem
+                    onClick={() => handleSettingsMenuAction('notifications')}
+                    sx={{
+                        py: 1.5,
+                        px: 2,
+                        '&:hover': {
+                            bgcolor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                    }}
+                >
+                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                        <NotificationsIcon fontSize="small" />
+                    </ListItemIcon>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Notifications
+                    </Typography>
+                </MenuItem>
+
+                <MenuItem
+                    onClick={() => handleSettingsMenuAction('carriers')}
+                    sx={{
+                        py: 1.5,
+                        px: 2,
+                        '&:hover': {
+                            bgcolor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                    }}
+                >
+                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                        <BusinessIcon fontSize="small" />
+                    </ListItemIcon>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Carriers
+                    </Typography>
+                </MenuItem>
+            </Menu>
+
+            {/* Left Side Navigation Panel */}
+            <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: { xs: '280px', sm: '300px', md: '320px' },
+                height: '100vh',
+                color: 'white',
+                display: 'flex',
+                flexDirection: 'column',
+                background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)',
+                zIndex: 5,
+                overflow: 'hidden'
+            }}>
+                {/* Animated background particles */}
                 <Box sx={{
-                    width: '100%',
-                    height: '100%',
-                    color: 'white',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: `
+                        radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
+                    `,
+                    animation: 'float 6s ease-in-out infinite'
+                }} />
+
+                {/* Header with Logo */}
+                <Box sx={{
+                    p: { xs: 2, sm: 2.5 },
                     display: 'flex',
-                    flexDirection: 'column',
-                    background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)',
+                    justifyContent: 'flex-start',
                     position: 'relative',
-                    overflow: 'hidden'
-                }} role="presentation">
-                    {/* Animated background particles */}
-                    <Box sx={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: `
-                            radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
-                            radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-                            radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
-                        `,
-                        animation: 'float 6s ease-in-out infinite'
-                    }} />
-
-                    {/* Header with Logo */}
-                    <Box sx={{
-                        p: { xs: 2, sm: 2.5 },
-                        display: 'flex',
-                        justifyContent: 'flex-start',
-                        position: 'relative',
-                        zIndex: 1,
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                    }}>
-                        <img
-                            src="/images/solushipx_logo_white.png"
-                            alt="SoluShipX"
-                            style={{ height: 32 }}
-                        />
-                    </Box>
-
-                    {/* Enhanced Menu Items */}
-                    <List sx={{
-                        flexGrow: 1,
-                        position: 'relative',
-                        zIndex: 1,
-                        px: { xs: 1, sm: 1.5 },
-                        py: 2
-                    }}>
-                        {menuItems.map((item, index) => (
-                            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-                                <ListItemButton
-                                    onClick={() => { item.action(); setIsNavDrawerOpen(false); }}
-                                    sx={{
-                                        borderRadius: '12px',
-                                        py: { xs: 1.5, sm: 2 },
-                                        px: { xs: 2, sm: 2.5 },
-                                        '&:hover': {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            transform: 'translateX(4px)',
-                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
-                                        },
-                                        transition: 'all 0.3s ease'
-                                    }}
-                                >
-                                    <ListItemIcon sx={{
-                                        color: 'rgba(255,255,255,0.8) !important',
-                                        minWidth: { xs: 40, sm: 44, md: 44 },
-                                        '& .MuiSvgIcon-root': {
-                                            fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.4rem' }
-                                        }
-                                    }}>
-                                        {item.icon}
-                                    </ListItemIcon>
-                                    <ListItemText
-                                        primary={item.text}
-                                        primaryTypographyProps={{
-                                            fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
-                                            fontWeight: 500,
-                                            color: 'white'
-                                        }}
-                                    />
-                                </ListItemButton>
-                            </ListItem>
-                        ))}
-                    </List>
-
-                    {/* Enhanced Footer Section */}
-                    <Box sx={{
-                        px: { xs: 2, sm: 2.5 },
-                        pb: { xs: 2, sm: 2.5 },
-                        position: 'relative',
-                        zIndex: 1,
-                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                        pt: 2
-                    }}>
-                        <List>
-                            {profileMenuItems.map((item) => (
-                                <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
-                                    <ListItemButton
-                                        onClick={() => {
-                                            if (item.action) {
-                                                item.action();
-                                            } else if (item.path) {
-                                                navigate(item.path);
-                                            }
-                                            setIsNavDrawerOpen(false);
-                                        }}
-                                        sx={{
-                                            borderRadius: '12px',
-                                            py: { xs: 1.5, sm: 2 },
-                                            px: { xs: 2, sm: 2.5 },
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                                transform: 'translateX(4px)'
-                                            },
-                                            transition: 'all 0.3s ease'
-                                        }}
-                                    >
-                                        <ListItemIcon sx={{
-                                            color: 'rgba(255,255,255,0.8) !important',
-                                            minWidth: { xs: 40, sm: 44, md: 44 },
-                                            '& .MuiSvgIcon-root': {
-                                                fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.4rem' }
-                                            }
-                                        }}>
-                                            {item.icon}
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={item.text}
-                                            primaryTypographyProps={{
-                                                fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
-                                                fontWeight: 500,
-                                                color: 'white'
-                                            }}
-                                        />
-                                    </ListItemButton>
-                                </ListItem>
-                            ))}
-                        </List>
-
-                        <ListItemButton
-                            onClick={handleLogout}
-                            sx={{
-                                mt: 2,
-                                borderRadius: '12px',
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                py: { xs: 1.5, sm: 2 },
-                                px: { xs: 2, sm: 2.5 },
-                                '&:hover': {
-                                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                                    transform: 'scale(1.02)'
-                                },
-                                justifyContent: 'center',
-                                transition: 'all 0.3s ease'
-                            }}
-                        >
-                            <ListItemIcon sx={{
-                                color: 'rgba(255,255,255,0.8) !important',
-                                minWidth: 'auto',
-                                mr: 1.5
-                            }}>
-                                <LogoutIcon />
-                            </ListItemIcon>
-                            <ListItemText
-                                primary="Logout"
-                                primaryTypographyProps={{
-                                    fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
-                                    fontWeight: 600,
-                                    color: 'white'
-                                }}
-                            />
-                        </ListItemButton>
-                    </Box>
+                    zIndex: 1,
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                    <img
+                        src="/images/solushipx_logo_white.png"
+                        alt="SoluShipX"
+                        style={{ height: 32 }}
+                    />
                 </Box>
-            </Drawer>
+
+                {/* Enhanced Menu Items */}
+                <List sx={{
+                    flexGrow: 1,
+                    position: 'relative',
+                    zIndex: 1,
+                    px: { xs: 1, sm: 1.5 },
+                    py: 2
+                }}>
+                    {menuItems.map((item, index) => (
+                        <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+                            <ListItemButton
+                                onClick={item.action}
+                                sx={{
+                                    borderRadius: '12px',
+                                    py: { xs: 1.5, sm: 2 },
+                                    px: { xs: 2, sm: 2.5 },
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                        transform: 'translateX(4px)',
+                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                    },
+                                    transition: 'all 0.3s ease'
+                                }}
+                            >
+                                <ListItemIcon sx={{
+                                    color: 'rgba(255,255,255,0.8) !important',
+                                    minWidth: { xs: 40, sm: 44, md: 44 },
+                                    '& .MuiSvgIcon-root': {
+                                        fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.4rem' }
+                                    }
+                                }}>
+                                    {item.icon}
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary={item.text}
+                                    primaryTypographyProps={{
+                                        fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
+                                        fontWeight: 500,
+                                        color: 'white'
+                                    }}
+                                />
+                            </ListItemButton>
+                        </ListItem>
+                    ))}
+                </List>
+
+                {/* Footer Section */}
+                <Box sx={{
+                    px: { xs: 2, sm: 2.5 },
+                    pb: { xs: 2, sm: 2.5 },
+                    position: 'relative',
+                    zIndex: 1,
+                    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                    pt: 2
+                }}>
+                    {/* Footer section is empty since items moved to profile/settings dropdowns */}
+                </Box>
+            </Box>
 
             {/* Enhanced Tracking Drawer (Right) */}
             {isTrackingDrawerOpen && (
@@ -1371,7 +1555,10 @@ const Dashboard = () => {
             {/* Profile Fullscreen Modal */}
             <Dialog
                 open={isProfileModalOpen}
-                onClose={() => setIsProfileModalOpen(false)}
+                onClose={() => {
+                    setIsProfileModalOpen(false);
+                    refreshUserProfileData(); // Refresh profile data when modal closes
+                }}
                 TransitionComponent={Transition}
                 fullScreen
                 sx={{
@@ -1404,7 +1591,10 @@ const Dashboard = () => {
                     }>
                         <ProfileComponent
                             isModal={true}
-                            onClose={() => setIsProfileModalOpen(false)}
+                            onClose={() => {
+                                setIsProfileModalOpen(false);
+                                refreshUserProfileData(); // Refresh profile data when modal closes
+                            }}
                             showCloseButton={true}
                         />
                     </LazyComponentWrapper>
@@ -1567,8 +1757,14 @@ const Dashboard = () => {
             <Box sx={{
                 position: 'absolute',
                 top: 0,
-                left: 0,
-                width: '100%',
+                left: { xs: '280px', sm: '300px', md: '320px' }, // Start after the left navigation panel
+                width: 'calc(100% - 280px)', // Adjust width for xs
+                '@media (min-width: 600px)': {
+                    width: 'calc(100% - 300px)' // Adjust width for sm
+                },
+                '@media (min-width: 960px)': {
+                    width: 'calc(100% - 320px)' // Adjust width for md and up
+                },
                 height: '100%',
                 opacity: showLoadingScreen ? 0 : 1,
                 transition: 'opacity 1s ease-in-out',
@@ -1591,8 +1787,14 @@ const Dashboard = () => {
                 <Box sx={{
                     position: 'absolute',
                     top: 0,
-                    left: 0,
-                    width: '100%',
+                    left: { xs: '280px', sm: '300px', md: '320px' }, // Start after the left navigation panel
+                    width: 'calc(100% - 280px)', // Adjust width for xs
+                    '@media (min-width: 600px)': {
+                        width: 'calc(100% - 300px)' // Adjust width for sm
+                    },
+                    '@media (min-width: 960px)': {
+                        width: 'calc(100% - 320px)' // Adjust width for md and up
+                    },
                     height: '100%',
                     zIndex: 2, // Lower z-index so UI elements appear above it
                     pointerEvents: 'none' // Allow interaction with UI elements above

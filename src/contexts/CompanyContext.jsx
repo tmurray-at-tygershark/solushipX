@@ -38,15 +38,6 @@ export const CompanyProvider = ({ children }) => {
             setError(null);
 
             try {
-                // For admin users, don't require company data
-                if (ADMIN_ROLES.includes(userRole)) {
-                    console.log('Admin user detected, skipping company data requirement');
-                    setCompanyData(null);
-                    setCompanyIdForAddress(null);
-                    setLoading(false);
-                    return;
-                }
-
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
 
                 if (!userDoc.exists()) {
@@ -58,6 +49,14 @@ export const CompanyProvider = ({ children }) => {
                 const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
 
                 if (!companyIdValue) {
+                    // For admin users, missing company data is OK
+                    if (ADMIN_ROLES.includes(userRole)) {
+                        console.log('Admin user with no company data - this is normal');
+                        setCompanyData(null);
+                        setCompanyIdForAddress(null);
+                        setLoading(false);
+                        return;
+                    }
                     throw new Error('No company ID found.');
                 }
 

@@ -13,7 +13,6 @@ import {
     Stack,
     IconButton,
     Tooltip,
-    Divider,
     Alert,
     CircularProgress,
     Autocomplete,
@@ -71,8 +70,7 @@ const CompanyForm = () => {
             firstName: '', lastName: '', email: '', phone: '',
             address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA',
             nickname: 'Head Office', isDefault: true,
-        },
-        originAddresses: [],
+        }
     });
     const [originalAdminUserIds, setOriginalAdminUserIds] = useState([]);
     const [companyIdError, setCompanyIdError] = useState('');
@@ -81,14 +79,8 @@ const CompanyForm = () => {
     const [allUsers, setAllUsers] = useState([]);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
-    // State for the single origin add/edit dialog
-    const [isOriginFormDialogOpen, setIsOriginFormDialogOpen] = useState(false);
-    const [editingOriginData, setEditingOriginData] = useState(null); // Holds the origin object for the dialog form
-    const [editingOriginIndex, setEditingOriginIndex] = useState(null); // null for new, index for edit
-
-    // State for delete confirmation dialog (can be a separate small dialog)
+    // State for delete confirmation dialog
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [originToDeleteIndex, setOriginToDeleteIndex] = useState(null);
 
     const [sameAsMainContact, setSameAsMainContact] = useState(false);
 
@@ -120,7 +112,6 @@ const CompanyForm = () => {
 
                 let fetchedMainContact = { firstName: '', lastName: '', email: '', phone: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA', nickname: 'Head Office', isDefault: true };
                 let fetchedBillingAddress = { firstName: '', lastName: '', email: '', phone: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA', nickname: 'Head Office', isDefault: true };
-                let fetchedOriginAddresses = [];
                 let currentCompanyAdminIds = [];
 
                 if (companyDataFromDb.companyID) {
@@ -146,17 +137,6 @@ const CompanyForm = () => {
                     }
                     console.log("[fetchData] Fetched billingAddress:", fetchedBillingAddress);
 
-                    // Fetch origins
-                    const originsQuery = query(
-                        addressBookRef,
-                        where('addressClass', '==', 'company'),
-                        where('addressClassID', '==', companyDataFromDb.companyID),
-                        where('addressType', '==', 'origin')
-                    );
-                    const originsSnapshot = await getDocs(originsQuery);
-                    fetchedOriginAddresses = originsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    console.log("[fetchData] Fetched originAddresses from addressBook:", fetchedOriginAddresses);
-
                     // Fetch users currently connected to this company via their connectedCompanies field
                     const usersAdminingCompanyQuery = query(
                         collection(db, 'users'),
@@ -177,7 +157,6 @@ const CompanyForm = () => {
                     adminUserIdsForForm: currentCompanyAdminIds, // Set directly
                     mainContact: fetchedMainContact, // Set directly
                     billingAddress: fetchedBillingAddress,
-                    originAddresses: fetchedOriginAddresses.length > 0 ? fetchedOriginAddresses : [], // Set directly
                 }));
                 setOriginalAdminUserIds(currentCompanyAdminIds); // Keep this separate as it's for comparison on save
 
@@ -192,7 +171,6 @@ const CompanyForm = () => {
                     adminUserIdsForForm: [],
                     mainContact: { firstName: '', lastName: '', email: '', phone: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA', nickname: 'Head Office', isDefault: true },
                     billingAddress: { firstName: '', lastName: '', email: '', phone: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA', nickname: 'Head Office', isDefault: true },
-                    originAddresses: []
                 });
                 setOriginalAdminUserIds([]);
             }
@@ -217,7 +195,6 @@ const CompanyForm = () => {
     }, [fetchData]);
 
     // LOGGING ON RENDER
-    console.log("[CompanyForm Render] Current formData.originAddresses:", formData.originAddresses);
     console.log("[CompanyForm Render] Current formData.mainContact:", formData.mainContact);
     console.log("[CompanyForm Render] Current formData.billingAddress:", formData.billingAddress);
     console.log("[CompanyForm Render] Current formData general:", { name: formData.name, companyID: formData.companyID });
@@ -260,42 +237,6 @@ const CompanyForm = () => {
         setFormData(prev => ({
             ...prev,
             billingAddress: { ...prev.billingAddress, [name]: value }
-        }));
-    };
-
-    const handleOriginChange = (index, field, value) => {
-        setFormData(prev => ({
-            ...prev,
-            originAddresses: prev.originAddresses.map((origin, i) =>
-                i === index ? { ...origin, [field]: value } : origin
-            )
-        }));
-    };
-
-    const addOrigin = () => {
-        setFormData(prev => ({
-            ...prev,
-            originAddresses: [...prev.originAddresses, {
-                firstName: '',
-                lastName: '',
-                email: '',
-                phone: '',
-                address1: '',
-                address2: '',
-                city: '',
-                stateProv: '',
-                zipPostal: '',
-                country: 'CA',
-                nickname: '',
-                isDefault: false,
-            }]
-        }));
-    };
-
-    const removeOrigin = (index) => {
-        setFormData(prev => ({
-            ...prev,
-            originAddresses: prev.originAddresses.filter((_, i) => i !== index)
         }));
     };
 
@@ -416,46 +357,6 @@ const CompanyForm = () => {
                 batch.set(billingRef, billingDataToSave, { merge: Boolean(billingId) });
             }
 
-            // Save origin addresses to addressBook (from formData.originAddresses)
-            // First, get existing origin IDs for this company from addressBook to handle deletes
-            let existingOriginIdsInDb = [];
-            if (isEditMode && humanReadableCompanyID) {
-                const originsQuery = query(collection(db, 'addressBook'), where('addressClass', '==', 'company'), where('addressClassID', '==', humanReadableCompanyID), where('addressType', '==', 'origin'));
-                const originsSnapshot = await getDocs(originsQuery);
-                existingOriginIdsInDb = originsSnapshot.docs.map(d => d.id);
-            }
-
-            const currentOriginIdsInForm = formData.originAddresses.map(o => o.id).filter(id => !!id);
-
-            // Delete origins from DB that are no longer in the form
-            existingOriginIdsInDb.forEach(dbOriginId => {
-                if (!currentOriginIdsInForm.includes(dbOriginId)) {
-                    batch.delete(doc(db, 'addressBook', dbOriginId));
-                }
-            });
-
-            for (const origin of formData.originAddresses) {
-                if (origin.nickname.trim() || origin.address1.trim()) { // Only save if it has some data
-                    const originDataForSave = {
-                        ...origin,
-                        addressClass: 'company',
-                        addressClassID: humanReadableCompanyID,
-                        addressType: 'origin',
-                        companyName: formData.name.trim(),
-                        updatedAt: now
-                    };
-                    let originDocRef;
-                    if (origin.id) { // Existing origin being updated
-                        originDocRef = doc(db, 'addressBook', origin.id);
-                        batch.set(originDocRef, originDataForSave, { merge: true });
-                    } else { // New origin being added
-                        originDataForSave.createdAt = now;
-                        originDocRef = doc(collection(db, 'addressBook'));
-                        batch.set(originDocRef, originDataForSave);
-                    }
-                }
-            }
-
             await batch.commit();
             setOriginalAdminUserIds(newAdminSelections);
 
@@ -471,84 +372,13 @@ const CompanyForm = () => {
         }
     };
 
-    const handleOpenOriginFormDialog = (originData = null, index = null) => {
-        if (originData) {
-            setEditingOriginData({ ...originData }); // Edit existing: pass a copy
-            setEditingOriginIndex(index);
-        } else {
-            // Add new: set default structure
-            setEditingOriginData({
-                id: `temp-${Date.now()}`, // Temporary ID for new, will be replaced on save if saved to DB separately or handled by main form submit
-                nickname: '',
-                contactName: '', // Or separate firstName/lastName if preferred for origin contact
-                email: '',
-                phone: '',
-                address1: '',
-                address2: '',
-                city: '',
-                stateProv: '',
-                zipPostal: '',
-                country: 'CA', // Default country
-            });
-            setEditingOriginIndex(null); // Indicate it's a new one
-        }
-        setIsOriginFormDialogOpen(true);
-    };
-
-    const handleCloseOriginFormDialog = () => {
-        setIsOriginFormDialogOpen(false);
-        setEditingOriginData(null);
-        setEditingOriginIndex(null);
-    };
-
-    const handleSaveOrigin = () => {
-        if (!editingOriginData) return;
-
-        // Basic Validation for the origin form dialog
-        if (!editingOriginData.address1?.trim() || !editingOriginData.city?.trim() || !editingOriginData.zipPostal?.trim()) {
-            enqueueSnackbar('For an origin, Address Line 1, City, and Zip/Postal Code are required.', { variant: 'warning' });
-            return;
-        }
-
-        let updatedOrigins = [...(formData.originAddresses || [])];
-        if (editingOriginIndex !== null && editingOriginIndex >= 0) { // Editing existing
-            updatedOrigins[editingOriginIndex] = editingOriginData;
-        } else { // Adding new
-            updatedOrigins.push(editingOriginData);
-        }
-        setFormData(prev => ({ ...prev, originAddresses: updatedOrigins }));
-        handleCloseOriginFormDialog();
-        enqueueSnackbar(`Origin ${editingOriginIndex !== null && editingOriginIndex >= 0 ? 'updated' : 'added'} to list. Save company to persist.`, { variant: 'success' });
-    };
-
-    const handleOriginFormFieldChange = (e) => {
-        if (!editingOriginData) return;
-        const { name, value } = e.target;
-        setEditingOriginData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const requestDeleteOrigin = (index) => {
-        setOriginToDeleteIndex(index);
-        setDeleteConfirmOpen(true);
-    };
-
-    const confirmDeleteOrigin = () => {
-        if (originToDeleteIndex !== null) {
-            const updatedOrigins = formData.originAddresses.filter((_, i) => i !== originToDeleteIndex);
-            setFormData(prev => ({ ...prev, originAddresses: updatedOrigins }));
-        }
-        setDeleteConfirmOpen(false);
-        setOriginToDeleteIndex(null);
-        enqueueSnackbar('Origin removed from list. Save company to persist changes.', { variant: 'info' });
-    };
-
     const handleDeleteCompany = async () => {
         if (!companyFirestoreId || !formData.companyID) return;
         setSaveLoading(true);
         try {
             // 1. Delete company doc
             await deleteDoc(doc(db, 'companies', companyFirestoreId));
-            // 2. Delete all addressBook records for this company (main contact, billing, origins)
+            // 2. Delete all addressBook records for this company (main contact, billing)
             const addressBookRef = collection(db, 'addressBook');
             const q = query(addressBookRef, where('addressClass', '==', 'company'), where('addressClassID', '==', formData.companyID));
             const snap = await getDocs(q);
@@ -618,9 +448,9 @@ const CompanyForm = () => {
             height: '100%'
         }}>
             {/* Header Section */}
-            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+            <Box sx={{ p: 3 }}>
                 {/* Title and Actions Row */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Box>
                         <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
                             {isEditMode ? `Edit Company: ${formData.name || 'Loading...'}` : 'Add New Company'}
@@ -677,7 +507,6 @@ const CompanyForm = () => {
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
                                     Company Information
                                 </Typography>
-                                <Divider sx={{ mb: 3 }} />
                             </Grid>
                             <Grid item xs={12} md={6}>
                                 <TextField
@@ -771,7 +600,6 @@ const CompanyForm = () => {
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
                                     Company Admins
                                 </Typography>
-                                <Divider sx={{ mb: 3 }} />
                                 <Autocomplete
                                     multiple
                                     size="small"
@@ -802,7 +630,6 @@ const CompanyForm = () => {
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
                                     Main Contact
                                 </Typography>
-                                <Divider sx={{ mb: 3 }} />
                             </Grid>
                             <Grid item xs={12} md={6}>
                                 <TextField
@@ -952,7 +779,6 @@ const CompanyForm = () => {
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
                                     Billing Address
                                 </Typography>
-                                <Divider sx={{ mb: 3 }} />
                                 <FormControlLabel
                                     control={
                                         <Checkbox
@@ -1118,293 +944,10 @@ const CompanyForm = () => {
                                     </Grid>
                                 </>
                             )}
-
-                            {/* Origin Addresses Section - Table with Add button */}
-                            <Grid item xs={12} sx={{ mt: 2 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
-                                        Origin Addresses
-                                    </Typography>
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        startIcon={<AddIcon />}
-                                        onClick={() => handleOpenOriginFormDialog()}
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Add New Origin
-                                    </Button>
-                                </Box>
-                                <Divider sx={{ mb: 3 }} />
-                                <TableContainer
-                                    component={Paper}
-                                    elevation={0}
-                                    sx={{
-                                        border: '1px solid #e5e7eb',
-                                        borderRadius: '8px'
-                                    }}
-                                >
-                                    <Table size="small">
-                                        <TableHead>
-                                            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Nickname</TableCell>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Contact</TableCell>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Address</TableCell>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>City</TableCell>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>State/Prov</TableCell>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zip/Postal</TableCell>
-                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Country</TableCell>
-                                                <TableCell align="right" sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
-                                            </TableRow>
-                                        </TableHead>
-                                        <TableBody>
-                                            {formData.originAddresses && formData.originAddresses.length > 0 ? (
-                                                formData.originAddresses.map((origin, index) => (
-                                                    <TableRow key={origin.id || `origin-${index}`} hover>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.nickname || '-'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.contactName || `${origin.firstName || ''} ${origin.lastName || ''}`.trim() || '-'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.address1 || '-'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.city || '-'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.stateProv || '-'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.zipPostal || '-'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{origin.country || '-'}</TableCell>
-                                                        <TableCell align="right">
-                                                            <IconButton size="small" onClick={() => handleOpenOriginFormDialog(origin, index)} aria-label="edit origin">
-                                                                <EditIcon fontSize="small" />
-                                                            </IconButton>
-                                                            <IconButton size="small" onClick={() => requestDeleteOrigin(index)} aria-label="delete origin" sx={{ ml: 1 }}>
-                                                                <DeleteOutlineIcon fontSize="small" />
-                                                            </IconButton>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))
-                                            ) : (
-                                                <TableRow>
-                                                    <TableCell colSpan={8} align="center" sx={{ fontStyle: 'italic', color: '#6b7280', py: 3, fontSize: '12px' }}>
-                                                        No origin addresses defined. Click 'Add New Origin' to add one.
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </TableContainer>
-                            </Grid>
                         </Grid>
                     </Paper>
                 </Box>
             </Box>
-
-            {/* Dialog for Adding/Editing a Single Origin Address */}
-            {editingOriginData && (
-                <Dialog open={isOriginFormDialogOpen} onClose={handleCloseOriginFormDialog} fullWidth maxWidth="md">
-                    <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                        {editingOriginIndex !== null && editingOriginIndex >= 0 ? 'Edit Origin Address' : 'Add New Origin Address'}
-                    </DialogTitle>
-                    <DialogContent dividers>
-                        <Grid container spacing={2} sx={{ pt: 1 }}>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Nickname"
-                                    name="nickname"
-                                    value={editingOriginData.nickname || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    helperText="e.g., Main Warehouse, Downtown Branch"
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact Name"
-                                    name="contactName"
-                                    value={editingOriginData.contactName || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    helperText="Full name of contact person"
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact Email"
-                                    name="email"
-                                    type="email"
-                                    value={editingOriginData.email || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact Phone"
-                                    name="phone"
-                                    value={editingOriginData.phone || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Address Line 1"
-                                    name="address1"
-                                    value={editingOriginData.address1 || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    required
-                                    error={!editingOriginData.address1?.trim()}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Address Line 2"
-                                    name="address2"
-                                    value={editingOriginData.address2 || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={4}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="City"
-                                    name="city"
-                                    value={editingOriginData.city || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    required
-                                    error={!editingOriginData.city?.trim()}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={4}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="State/Province"
-                                    name="stateProv"
-                                    value={editingOriginData.stateProv || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={4}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Zip/Postal Code"
-                                    name="zipPostal"
-                                    value={editingOriginData.zipPostal || ''}
-                                    onChange={handleOriginFormFieldChange}
-                                    required
-                                    error={!editingOriginData.zipPostal?.trim()}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
-                                    <Select
-                                        name="country"
-                                        value={editingOriginData.country || 'CA'}
-                                        label="Country"
-                                        onChange={handleOriginFormFieldChange}
-                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                    >
-                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
-                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                        </Grid>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button
-                            onClick={handleCloseOriginFormDialog}
-                            size="small"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSaveOrigin}
-                            variant="contained"
-                            size="small"
-                            startIcon={<SaveIcon />}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Save Origin
-                        </Button>
-                    </DialogActions>
-                </Dialog>
-            )}
-
-            {/* Confirmation Dialog for Deleting Origin */}
-            <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} maxWidth="xs">
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                    Confirm Delete
-                </DialogTitle>
-                <DialogContent>
-                    <DialogContentText sx={{ fontSize: '12px' }}>
-                        Are you sure you want to remove this origin address from the list? Changes will apply when you save the company.
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => setDeleteConfirmOpen(false)}
-                        size="small"
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={confirmDeleteOrigin}
-                        color="error"
-                        size="small"
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Delete from List
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {/* Delete Company Section for Edit Mode */}
             {isEditMode && (

@@ -3,638 +3,113 @@ import {
     Box,
     Paper,
     Typography,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    TablePagination,
-    TextField,
-    InputAdornment,
-    IconButton,
     Button,
-    Chip,
-    Toolbar,
-    Menu,
-    MenuItem,
-    FormControl,
-    InputLabel,
-    Select,
-    Stack,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    InputBase,
-    Tabs,
-    Tab,
-    Checkbox,
     CircularProgress,
-    ListItemIcon,
+    Alert
 } from '@mui/material';
 import {
-    Search as SearchIcon,
-    FilterList as FilterIcon,
     GetApp as ExportIcon,
-    Clear as ClearIcon,
-    Sort as SortIcon,
-    Add as AddIcon,
-    CalendarToday as CalendarIcon,
-    MoreVert as MoreVertIcon,
-    Visibility as VisibilityIcon,
-    Print as PrintIcon,
-    Home as HomeIcon,
-    NavigateNext as NavigateNextIcon,
+    Refresh as RefreshIcon
 } from '@mui/icons-material';
-import { Link, useNavigate } from 'react-router-dom';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import dayjs from 'dayjs';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
-import './Shipments.css';
+import { useCompany } from '../../../contexts/CompanyContext';
 
-const formatAddress = (address, label = '') => {
-    if (!address || typeof address !== 'object') {
-        if (label) {
-            console.warn(`No valid address object for ${label}:`, address);
-        }
-        return <div>N/A</div>;
-    }
-    return (
-        <>
-            {address.company && <div>{address.company}</div>}
-            {address.attentionName && <div>{address.attentionName}</div>}
-            {address.street && <div>{address.street}</div>}
-            {address.street2 && address.street2 !== '' && <div>{address.street2}</div>}
-            <div>
-                {[address.city, address.state, address.postalCode].filter(Boolean).join(', ')}
-            </div>
-            {address.country && <div>{address.country}</div>}
-        </>
-    );
-};
+// Import the reusable ShipmentsX component
+import ShipmentsX from '../../Shipments/ShipmentsX';
 
 const GlobalShipmentList = () => {
     const { user, loading: authLoading } = useAuth();
-    const [shipments, setShipments] = useState([]);
-    const [customers, setCustomers] = useState({});
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(50);
-    const [totalCount, setTotalCount] = useState(0);
-    const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [filterAnchorEl, setFilterAnchorEl] = useState(null);
-    const [sortAnchorEl, setSortAnchorEl] = useState(null);
-    const [selectedTab, setSelectedTab] = useState('all');
-    const [filters, setFilters] = useState({
-        status: 'all',
-        carrier: 'all',
-        dateRange: [null, null],
-        shipmentType: 'all'
-    });
-    const [sortBy, setSortBy] = useState({
-        field: 'date',
-        direction: 'desc'
-    });
-    const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-    const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
-    const [dateRange, setDateRange] = useState([null, null]);
-    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-    const [selected, setSelected] = useState([]);
-    const [selectedShipment, setSelectedShipment] = useState(null);
-    const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
-    const navigate = useNavigate();
+    const { companyIdForAddress, loading: companyLoading } = useCompany();
 
-    // Calculate stats from filtered data
-    const stats = {
-        total: totalCount,
-        inTransit: shipments.filter(s => s.status === 'In Transit').length,
-        delivered: shipments.filter(s => s.status === 'Delivered').length,
-        awaitingShipment: shipments.filter(s => s.status === 'Awaiting Shipment').length
-    };
-
-    // Add function to fetch customers
-    const fetchCustomers = async () => {
-        try {
-            const customersRef = collection(db, 'customers');
-            const querySnapshot = await getDocs(customersRef);
-            const customersMap = {};
-            querySnapshot.forEach(doc => {
-                const customer = doc.data();
-                customersMap[customer.customerID] = customer.name;
-            });
-            setCustomers(customersMap);
-        } catch (error) {
-            console.error('Error fetching customers:', error);
-        }
-    };
-
-    // Update useEffect to fetch customers
-    useEffect(() => {
-        if (!authLoading) {
-            fetchCustomers();
-            loadShipments();
-        }
-    }, [user, authLoading]);
-
-    // Update when filters change
-    useEffect(() => {
-        if (!authLoading) {
-            loadShipments();
-        }
-    }, [page, rowsPerPage, searchTerm, filters, sortBy, selectedTab, dateRange]);
-
-    // Load shipments with filters and pagination
-    const loadShipments = async () => {
-        setLoading(true);
-        try {
-            const shipmentsRef = collection(db, 'shipments');
-            let q = query(shipmentsRef, orderBy('createdAt', 'desc'));
-
-            // Apply filters
-            if (filters.status !== 'all') {
-                q = query(q, where('status', '==', filters.status));
-            }
-            if (filters.carrier !== 'all') {
-                q = query(q, where('carrier', '==', filters.carrier));
-            }
-            if (filters.shipmentType !== 'all') {
-                q = query(q, where('shipmentType', '==', filters.shipmentType));
-            }
-
-            const querySnapshot = await getDocs(q);
-            let shipmentsData = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-
-            // Apply date range filter
-            if (dateRange[0] && dateRange[1]) {
-                shipmentsData = shipmentsData.filter(shipment => {
-                    const shipmentDate = new Date(shipment.createdAt.toDate());
-                    return shipmentDate >= dateRange[0].toDate() && shipmentDate <= dateRange[1].toDate();
-                });
-            }
-
-            // Apply search filter
-            if (searchTerm) {
-                const searchableFields = ['shipmentId', 'id', 'companyName', 'shippingAddress', 'deliveryAddress', 'carrier', 'shipmentType', 'status'];
-                shipmentsData = shipmentsData.filter(shipment =>
-                    searchableFields.some(field => {
-                        const value = shipment[field];
-                        if (!value) return false;
-                        if (typeof value === 'string' || typeof value === 'number') {
-                            return String(value).toLowerCase().includes(searchTerm.toLowerCase());
-                        }
-                        // For address objects
-                        if ((field === 'shippingAddress' || field === 'deliveryAddress') && typeof value === 'object') {
-                            return formatAddress(value).toLowerCase().includes(searchTerm.toLowerCase());
-                        }
-                        return false;
-                    })
-                );
-            }
-
-            // Apply tab filter
-            if (selectedTab !== 'all') {
-                shipmentsData = shipmentsData.filter(s => s.status === selectedTab);
-            }
-
-            // Apply sorting
-            shipmentsData.sort((a, b) => {
-                const aValue = a[sortBy.field];
-                const bValue = b[sortBy.field];
-                const direction = sortBy.direction === 'asc' ? 1 : -1;
-
-                if (sortBy.field === 'date') {
-                    return direction * (new Date(aValue) - new Date(bValue));
-                }
-
-                if (typeof aValue === 'string') {
-                    return direction * aValue.localeCompare(bValue);
-                }
-
-                return direction * (aValue - bValue);
-            });
-
-            setTotalCount(shipmentsData.length);
-
-            // Calculate pagination
-            const startIndex = page * rowsPerPage;
-            const endIndex = startIndex + rowsPerPage;
-            const paginatedData = shipmentsData.slice(startIndex, endIndex);
-
-            setShipments(paginatedData);
-        } catch (error) {
-            console.error('Error loading shipments:', error);
-            setShipments([]);
-            setTotalCount(0);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleTabChange = (event, newValue) => {
-        setSelectedTab(newValue);
-    };
-
-    const handleSelectAll = (event) => {
-        if (event.target.checked) {
-            const newSelected = shipments.map(shipment => shipment.id);
-            setSelected(newSelected);
-            return;
-        }
-        setSelected([]);
-    };
-
-    const handleSelect = (id) => {
-        const selectedIndex = selected.indexOf(id);
-        let newSelected = [];
-
-        if (selectedIndex === -1) {
-            newSelected = newSelected.concat(selected, id);
-        } else if (selectedIndex === 0) {
-            newSelected = newSelected.concat(selected.slice(1));
-        } else if (selectedIndex === selected.length - 1) {
-            newSelected = newSelected.concat(selected.slice(0, -1));
-        } else if (selectedIndex > 0) {
-            newSelected = newSelected.concat(
-                selected.slice(0, selectedIndex),
-                selected.slice(selectedIndex + 1),
-            );
-        }
-
-        setSelected(newSelected);
-    };
-
-    const handleShipmentClick = (shipment) => {
-        const shipmentId = shipment.shipmentID || shipment.id;
-        navigate(`/admin/shipment/${shipmentId}`);
-    };
-
-    const handleActionMenuOpen = (event, shipment) => {
-        setSelectedShipment(shipment);
-        setActionMenuAnchorEl(event.currentTarget);
-    };
-
-    const handleActionMenuClose = () => {
-        setSelectedShipment(null);
-        setActionMenuAnchorEl(null);
-    };
-
-    const handleSelectClick = (event, id) => {
-        event.stopPropagation();
-        handleSelect(id);
-    };
-
-    const handleExport = () => {
-        const data = shipments.map(shipment => ({
-            'Shipment ID': shipment.shipmentId || shipment.id,
-            'Date': shipment.createdAt && shipment.createdAt.toDate ?
-                new Date(shipment.createdAt.toDate()).toLocaleDateString() : 'N/A',
-            'Customer': shipment.companyName,
-            'Origin': formatAddress(shipment.shipFrom || shipment.shipfrom, 'Origin'),
-            'Destination': formatAddress(shipment.shipTo || shipment.shipto, 'Destination'),
-            'Status': shipment.status,
-            'Carrier': shipment.carrier,
-            'Items': Array.isArray(shipment.items)
-                ? shipment.items.map(item => item.name || '').join('; ')
-                : (shipment.items || ''),
-            'Cost': `$${shipment.cost?.toFixed(2) || '0.00'}`
-        }));
-
-        if (selectedExportFormat === 'csv') {
-            const csvContent = [
-                Object.keys(data[0]).join(','),
-                ...data.map(row => Object.values(row).join(','))
-            ].join('\n');
-
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `shipments_export_${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-            window.URL.revokeObjectURL(url);
-        }
-
-        setIsExportDialogOpen(false);
-    };
+    // Loading state for the component
+    if (authLoading || companyLoading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
-        <div className="shipments-container">
-            <Paper className="shipments-paper">
-                <Box sx={{ width: '100%', bgcolor: '#f8fafc', minHeight: '100vh', p: 3 }}>
-                    <Box sx={{ maxWidth: '1200px', margin: '0 auto' }}>
-                        {/* Header Section */}
-                        <Box sx={{ display: 'flex', flexDirection: 'column', mb: 3 }}>
-                            <Typography variant="h5" component="h1" sx={{ fontWeight: 600, color: '#1e293b', mb: 1 }}>
-                                Global Shipments
-                            </Typography>
-                            <div className="breadcrumb-container" style={{ marginBottom: 8 }}>
-                                <Link to="/admin" className="breadcrumb-link">
-                                    <HomeIcon />
-                                    <Typography variant="body2">Admin</Typography>
-                                </Link>
-                                <div className="breadcrumb-separator">
-                                    <NavigateNextIcon />
-                                </div>
-                                <Typography variant="body2" className="breadcrumb-current">
-                                    Shipments
-                                </Typography>
-                            </div>
-                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 1 }}>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<ExportIcon />}
-                                    onClick={() => setIsExportDialogOpen(true)}
-                                    sx={{ color: '#64748b', borderColor: '#e2e8f0' }}
-                                >
-                                    Export
-                                </Button>
-                            </Box>
-                        </Box>
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+        }}>
+            {/* Header Section */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                {/* Title and Actions Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Box>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 0.5 }}>
+                            Global Shipments
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                            View and manage all shipments across all companies in the system
+                        </Typography>
+                    </Box>
 
-                        {/* Main Content */}
-                        <Paper sx={{ bgcolor: '#ffffff', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                            <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0' }}>
-                                <Tabs value={selectedTab} onChange={handleTabChange}>
-                                    <Tab label={`All (${stats.total})`} value="all" />
-                                    <Tab label={`In Transit (${stats.inTransit})`} value="In Transit" />
-                                    <Tab label={`Delivered (${stats.delivered})`} value="Delivered" />
-                                    <Tab label={`Awaiting Shipment (${stats.awaitingShipment})`} value="Awaiting Shipment" />
-                                </Tabs>
-                                <Box sx={{ flexGrow: 1 }} />
-                                {/* Search Section */}
-                                <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
-                                    <Paper
-                                        component="div"
-                                        sx={{
-                                            p: '2px 4px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            width: '300px',
-                                            boxShadow: 'none',
-                                            border: '1px solid #e2e8f0',
-                                            bgcolor: '#f8fafc'
-                                        }}
-                                    >
-                                        <SearchIcon sx={{ p: 1, color: '#64748b' }} />
-                                        <InputBase
-                                            sx={{ ml: 1, flex: 1 }}
-                                            placeholder="Search shipments..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
-                                    </Paper>
-                                </Box>
-                            </Toolbar>
-
-                            {/* Smart Filters */}
-                            <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <FormControl sx={{ minWidth: 200 }}>
-                                    <InputLabel>Carrier</InputLabel>
-                                    <Select
-                                        value={filters.carrier}
-                                        onChange={(e) => setFilters(prev => ({
-                                            ...prev,
-                                            carrier: e.target.value
-                                        }))}
-                                        label="Carrier"
-                                    >
-                                        <MenuItem value="all">All Carriers</MenuItem>
-                                        <MenuItem value="FedEx">FedEx</MenuItem>
-                                        <MenuItem value="UPS">UPS</MenuItem>
-                                        <MenuItem value="DHL">DHL</MenuItem>
-                                        <MenuItem value="USPS">USPS</MenuItem>
-                                        <MenuItem value="Canada Post">Canada Post</MenuItem>
-                                        <MenuItem value="Purolator">Purolator</MenuItem>
-                                    </Select>
-                                </FormControl>
-
-                                <FormControl sx={{ minWidth: 200 }}>
-                                    <InputLabel>Shipment Type</InputLabel>
-                                    <Select
-                                        value={filters.shipmentType}
-                                        onChange={(e) => setFilters(prev => ({
-                                            ...prev,
-                                            shipmentType: e.target.value
-                                        }))}
-                                        label="Shipment Type"
-                                    >
-                                        <MenuItem value="all">All Types</MenuItem>
-                                        <MenuItem value="Courier">Courier</MenuItem>
-                                        <MenuItem value="Freight">Freight</MenuItem>
-                                    </Select>
-                                </FormControl>
-
-                                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                    <DatePicker
-                                        label="From Date"
-                                        value={dateRange[0]}
-                                        onChange={(newValue) => setDateRange([newValue, dateRange[1]])}
-                                        renderInput={(params) => <TextField {...params} />}
-                                        sx={{ minWidth: 200 }}
-                                    />
-                                    <DatePicker
-                                        label="To Date"
-                                        value={dateRange[1]}
-                                        onChange={(newValue) => setDateRange([dateRange[0], newValue])}
-                                        renderInput={(params) => <TextField {...params} />}
-                                        sx={{ minWidth: 200 }}
-                                    />
-                                </LocalizationProvider>
-
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => {
-                                        setDateRange([null, null]);
-                                        setFilters(prev => ({
-                                            ...prev,
-                                            carrier: 'all',
-                                            shipmentType: 'all'
-                                        }));
-                                    }}
-                                    startIcon={<ClearIcon />}
-                                >
-                                    Clear Filters
-                                </Button>
-                            </Box>
-
-                            {/* Shipments Table */}
-                            <TableContainer>
-                                <Table>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell padding="checkbox">
-                                                <Checkbox
-                                                    indeterminate={selected.length > 0 && selected.length < shipments.length}
-                                                    checked={shipments.length > 0 && selected.length === shipments.length}
-                                                    onChange={handleSelectAll}
-                                                />
-                                            </TableCell>
-                                            <TableCell>ID</TableCell>
-                                            <TableCell>CUSTOMER</TableCell>
-                                            <TableCell>ORIGIN</TableCell>
-                                            <TableCell>DESTINATION</TableCell>
-                                            <TableCell sx={{ minWidth: 120 }}>CARRIER</TableCell>
-                                            <TableCell>TYPE</TableCell>
-                                            <TableCell>STATUS</TableCell>
-                                            <TableCell align="right">ACTIONS</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {loading ? (
-                                            <TableRow>
-                                                <TableCell colSpan={9} align="center">
-                                                    <CircularProgress />
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : shipments.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={9} align="center">
-                                                    No shipments found
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : (
-                                            shipments.map((shipment) => {
-                                                // Debug log for each shipment row
-                                                console.log('Rendering shipment row:', shipment);
-                                                return (
-                                                    <TableRow
-                                                        hover
-                                                        key={shipment.id}
-                                                        onClick={() => handleShipmentClick(shipment)}
-                                                        selected={selected.indexOf(shipment.id) !== -1}
-                                                        sx={{ cursor: 'pointer' }}
-                                                    >
-                                                        <TableCell padding="checkbox" sx={{ verticalAlign: 'top' }}>
-                                                            <Checkbox
-                                                                checked={selected.indexOf(shipment.id) !== -1}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                onChange={(e) => handleSelectClick(e, shipment.id)}
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            <Link to={`/admin/shipment/${shipment.shipmentID || shipment.id}`} className="shipment-link">
-                                                                {shipment.shipmentID || shipment.id}
-                                                            </Link>
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            {customers[shipment.customerId] || shipment.companyName || 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>{formatAddress(shipment.shipFrom || shipment.shipfrom, 'Origin')}</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>{formatAddress(shipment.shipTo || shipment.shipto, 'Destination')}</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>{shipment.carrier}</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>{shipment.shipmentType}</TableCell>
-                                                        <TableCell sx={{ verticalAlign: 'top' }}>
-                                                            <Chip
-                                                                label={shipment.status}
-                                                                color={
-                                                                    shipment.status === 'Delivered' ? 'success' :
-                                                                        shipment.status === 'In Transit' ? 'primary' :
-                                                                            'default'
-                                                                }
-                                                                size="small"
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell align="right" sx={{ verticalAlign: 'top' }}>
-                                                            <IconButton
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleActionMenuOpen(e, shipment);
-                                                                }}
-                                                                size="small"
-                                                            >
-                                                                <MoreVertIcon />
-                                                            </IconButton>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                );
-                                            })
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-
-                            {/* Pagination */}
-                            <TablePagination
-                                component="div"
-                                count={totalCount}
-                                page={page}
-                                onPageChange={(event, newPage) => setPage(newPage)}
-                                rowsPerPage={rowsPerPage}
-                                onRowsPerPageChange={(event) => {
-                                    setRowsPerPage(parseInt(event.target.value, 10));
-                                    setPage(0);
-                                }}
-                                rowsPerPageOptions={[10, 25, 50, 100]}
-                            />
-                        </Paper>
-
-                        {/* Export Dialog */}
-                        <Dialog open={isExportDialogOpen} onClose={() => setIsExportDialogOpen(false)}>
-                            <DialogTitle>Export Shipments</DialogTitle>
-                            <DialogContent>
-                                <FormControl fullWidth sx={{ mt: 2 }}>
-                                    <InputLabel>Format</InputLabel>
-                                    <Select
-                                        value={selectedExportFormat}
-                                        onChange={(e) => setSelectedExportFormat(e.target.value)}
-                                        label="Format"
-                                    >
-                                        <MenuItem value="csv">CSV</MenuItem>
-                                        <MenuItem value="excel">Excel</MenuItem>
-                                        <MenuItem value="pdf">PDF</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </DialogContent>
-                            <DialogActions>
-                                <Button onClick={() => setIsExportDialogOpen(false)}>Cancel</Button>
-                                <Button onClick={handleExport} variant="contained">
-                                    Export
-                                </Button>
-                            </DialogActions>
-                        </Dialog>
-
-                        {/* Action Menu */}
-                        <Menu
-                            anchorEl={actionMenuAnchorEl}
-                            open={Boolean(actionMenuAnchorEl)}
-                            onClose={handleActionMenuClose}
-                        >
-                            <MenuItem onClick={() => {
-                                handleActionMenuClose();
-                                if (selectedShipment) {
-                                    const shipmentId = selectedShipment.shipmentID || selectedShipment.id;
-                                    navigate(`/admin/shipment/${shipmentId}`);
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<RefreshIcon />}
+                            onClick={() => window.location.reload()}
+                            sx={{
+                                fontSize: '12px',
+                                textTransform: 'none',
+                                borderColor: '#e5e7eb',
+                                color: '#6b7280',
+                                '&:hover': {
+                                    borderColor: '#d1d5db',
+                                    bgcolor: '#f9fafb'
                                 }
-                            }}>
-                                <ListItemIcon>
-                                    <VisibilityIcon fontSize="small" />
-                                </ListItemIcon>
-                                View Details
-                            </MenuItem>
-                            <MenuItem onClick={() => {
-                                handleActionMenuClose();
-                                // Handle print label
-                                console.log('Print label for:', selectedShipment?.id);
-                            }}>
-                                <ListItemIcon>
-                                    <PrintIcon fontSize="small" />
-                                </ListItemIcon>
-                                Print Label
-                            </MenuItem>
-                        </Menu>
+                            }}
+                        >
+                            Refresh
+                        </Button>
+
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<ExportIcon />}
+                            sx={{
+                                fontSize: '12px',
+                                textTransform: 'none',
+                                borderColor: '#e5e7eb',
+                                color: '#6b7280',
+                                '&:hover': {
+                                    borderColor: '#d1d5db',
+                                    bgcolor: '#f9fafb'
+                                }
+                            }}
+                        >
+                            Export
+                        </Button>
                     </Box>
                 </Box>
-            </Paper>
-            <style>{`.MuiTableCell-root { vertical-align: top !important; }`}</style>
-        </div>
+            </Box>
+
+            {/* Main Content Area */}
+            <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                <Paper sx={{
+                    height: '100%',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    boxShadow: 'none'
+                }}>
+                    <ShipmentsX
+                        isModal={false}
+                        onClose={null}
+                        showCloseButton={false}
+                        onModalBack={null}
+                        deepLinkParams={null}
+                        onOpenCreateShipment={null}
+                    />
+                </Paper>
+            </Box>
+        </Box>
     );
 };
 

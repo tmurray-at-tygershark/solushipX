@@ -40,12 +40,16 @@ const Login = () => {
         setError('');
 
         try {
-            await login(email, password);
-            // Check user role and redirect accordingly
-            const redirectPath = ['admin', 'super_admin', 'business_admin'].includes(userRole)
+            const user = await login(email, password);
+
+            // Get user role from the user object that login returns
+            const userRole = user.role;
+
+            // Check user role and redirect accordingly - only redirect admins to admin on initial login
+            const redirectPath = ['admin', 'super_admin'].includes(userRole)
                 ? '/admin'
                 : '/dashboard';
-            console.log('Login successful, redirecting to:', redirectPath);
+            console.log('Login successful, user role:', userRole, 'redirecting to:', redirectPath);
             setTimeout(() => {
                 navigate(redirectPath);
             }, 100);
@@ -62,12 +66,16 @@ const Login = () => {
         setError('');
 
         try {
-            await signInWithGoogle();
-            // Check user role and redirect accordingly
-            const redirectPath = ['admin', 'super_admin', 'business_admin'].includes(userRole)
+            const user = await signInWithGoogle();
+
+            // Get user role from the user object that signInWithGoogle returns
+            const userRole = user.role;
+
+            // Check user role and redirect accordingly - only redirect admins to admin on initial login
+            const redirectPath = ['admin', 'super_admin'].includes(userRole)
                 ? '/admin'
                 : '/dashboard';
-            console.log('Google login successful, redirecting to:', redirectPath);
+            console.log('Google login successful, user role:', userRole, 'redirecting to:', redirectPath);
             navigate(redirectPath);
         } catch (err) {
             console.error('Google login error:', err);

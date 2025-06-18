@@ -28,7 +28,7 @@ import {
     CircularProgress,
     Tabs,
     Tab,
-    Badge,
+
     Collapse,
     Grid,
     FormControl,
@@ -259,16 +259,12 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
         const superAdmins = allUsers.filter(u => u.role === 'super_admin').length;
         const admins = allUsers.filter(u => u.role === 'admin').length;
         const businessAdmins = allUsers.filter(u => u.role === 'business_admin').length;
-        const withCompanies = allUsers.filter(u => u.companiesForDisplay && u.companiesForDisplay.length > 0).length;
-        const withoutCompanies = total - withCompanies;
 
         return {
             total,
             superAdmins,
             admins,
-            businessAdmins,
-            withCompanies,
-            withoutCompanies
+            businessAdmins
         };
     }, [allUsers]);
 
@@ -445,12 +441,6 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 case 'business-admins':
                     filtered = filtered.filter(u => u.role === 'business_admin');
                     break;
-                case 'with-companies':
-                    filtered = filtered.filter(u => u.companiesForDisplay && u.companiesForDisplay.length > 0);
-                    break;
-                case 'without-companies':
-                    filtered = filtered.filter(u => !u.companiesForDisplay || u.companiesForDisplay.length === 0);
-                    break;
             }
         }
 
@@ -519,6 +509,20 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
         }
     };
 
+    // Get role display name
+    const getRoleDisplayName = (role) => {
+        switch (role) {
+            case 'super_admin':
+                return 'Super Admin';
+            case 'admin':
+                return 'Admin';
+            case 'business_admin':
+                return 'Company Admin';
+            default:
+                return role;
+        }
+    };
+
     // Render table view
     const renderTableView = () => (
         <Box sx={{
@@ -575,23 +579,9 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         }}
                     >
                         <Tab label={`All (${stats.total})`} value="all" />
-                        <Tab label={
-                            <Badge badgeContent={stats.superAdmins} color="error" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Super Admins
-                            </Badge>
-                        } value="super-admins" />
-                        <Tab label={
-                            <Badge badgeContent={stats.admins} color="primary" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Admins
-                            </Badge>
-                        } value="admins" />
-                        <Tab label={
-                            <Badge badgeContent={stats.businessAdmins} color="success" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Business Admins
-                            </Badge>
-                        } value="business-admins" />
-                        <Tab label={`With Companies (${stats.withCompanies})`} value="with-companies" />
-                        <Tab label={`No Companies (${stats.withoutCompanies})`} value="without-companies" />
+                        <Tab label="Super Admins" value="super-admins" />
+                        <Tab label="Admins" value="admins" />
+                        <Tab label="Company Admins" value="business-admins" />
                     </Tabs>
 
                     <Button
@@ -757,7 +747,7 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                             </TableCell>
                                             <TableCell>
                                                 <Chip
-                                                    label={user.role}
+                                                    label={getRoleDisplayName(user.role)}
                                                     size="small"
                                                     color={getRoleColor(user.role)}
                                                     sx={{ fontSize: '11px' }}
