@@ -257,13 +257,28 @@ const ShipmentTableRow = ({
                 }}>
                     {(() => {
                         let dateTime = null;
+                        let dateToFormat = null;
 
-                        if (shipment.createdAt?.toDate) {
-                            // Firestore timestamp
-                            dateTime = formatDateTime(shipment.createdAt);
+                        // Priority order for date fields: shipment date (preferred) > bookedAt (QuickShip) > createdAt (fallback)
+                        if (shipment.shipmentInfo?.shipmentDate) {
+                            // Preferred ship date from shipment info
+                            dateToFormat = shipment.shipmentInfo.shipmentDate;
+                        } else if (shipment.shipmentDate) {
+                            // Direct shipment date field
+                            dateToFormat = shipment.shipmentDate;
+                        } else if (shipment.scheduledDate) {
+                            // Scheduled date field
+                            dateToFormat = shipment.scheduledDate;
+                        } else if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
+                            // For QuickShip records, use bookedAt when shipmentDate is not available
+                            dateToFormat = shipment.bookedAt;
                         } else if (shipment.createdAt) {
-                            // Regular date
-                            dateTime = formatDateTime(shipment.createdAt);
+                            // Final fallback to creation date
+                            dateToFormat = shipment.createdAt;
+                        }
+
+                        if (dateToFormat) {
+                            dateTime = formatDateTime(dateToFormat);
                         }
 
                         // If formatDateTime returns null (invalid timestamp) or no dateTime, show N/A
@@ -313,7 +328,7 @@ const ShipmentTableRow = ({
                 </TableCell>
             )}
 
-            {/* Company */}
+            {/* Customer */}
             {visibleColumns.customer !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
@@ -323,7 +338,15 @@ const ShipmentTableRow = ({
                     wordBreak: 'break-word',
                     lineHeight: 1.3
                 }}>
-                    {companyData?.name || 'N/A'}
+                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                        {highlightSearchTerm(
+                            shipment.shipTo?.companyName ||
+                            shipment.shipTo?.company ||
+                            customers[shipment.shipTo?.customerID] ||
+                            'N/A',
+                            searchFields.customerName
+                        )}
+                    </Typography>
                 </TableCell>
             )}
 

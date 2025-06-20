@@ -129,7 +129,7 @@ const ShipmentsTable = ({
                             maxWidth: 100,
                             backgroundColor: '#f8fafc !important'
                         }}>
-                            DATE
+                            SHIP DATE
                         </TableCell>
                         <TableCell sx={{
                             width: 120,
