@@ -89,13 +89,14 @@ const {
 const { sendTestReportNotification } = require('./src/sendTestReportNotification');
 
 // Import keep-alive functions for preventing cold starts
-const { 
-    keepAliveEShipPlus, 
-    keepAliveCanpar, 
-    keepAlivePolaris, 
+const {
+    keepAliveEShipPlus,
+    keepAliveCanpar,
+    keepAlivePolaris,
+    keepAliveQuickShip,
     keepAliveAllCarriers,
     warmupCarriersNow,
-    carrierHealthCheck 
+    carrierHealthCheck
 } = require('./src/keepAlive');
 
 // Import QuickShip functions
@@ -168,6 +169,7 @@ exports.sendTestReportNotification = sendTestReportNotification;
 exports.keepAliveEShipPlus = keepAliveEShipPlus;
 exports.keepAliveCanpar = keepAliveCanpar;
 exports.keepAlivePolaris = keepAlivePolaris;
+exports.keepAliveQuickShip = keepAliveQuickShip;
 exports.keepAliveAllCarriers = keepAliveAllCarriers;
 exports.warmupCarriersNow = warmupCarriersNow;
 exports.carrierHealthCheck = carrierHealthCheck;

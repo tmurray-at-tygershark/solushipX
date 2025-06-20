@@ -38,250 +38,8 @@ import {
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 
-const originalMockInvoices = [
-    {
-        id: 'INV-2024-001',
-        date: '2024-03-15',
-        amount: 2450.75,
-        status: 'Unpaid',
-        dueDate: '2024-04-15',
-        shipments: [
-            {
-                id: 'SHP-001',
-                date: '2024-03-10',
-                carrier: 'FedEx',
-                service: 'Express',
-                cost: 850.25,
-                from: {
-                    name: 'John Smith',
-                    company: 'SolushipX Inc.',
-                    address: '123 Business Ave, Suite 100',
-                    city: 'New York',
-                    state: 'NY',
-                    postalCode: '10001',
-                    country: 'US'
-                },
-                to: {
-                    name: 'Jane Doe',
-                    company: 'Acme Corp',
-                    address: '456 Enterprise Blvd',
-                    city: 'Los Angeles',
-                    state: 'CA',
-                    postalCode: '90001',
-                    country: 'US'
-                },
-                packages: [
-                    {
-                        weight: '5.5 lbs',
-                        dimensions: '12" x 8" x 6"',
-                        declaredValue: 500,
-                        description: 'Electronics Equipment'
-                    }
-                ],
-                charges: {
-                    freight: 750.00,
-                    fuel: 50.25,
-                    residentialDelivery: 25.00,
-                    insurance: 25.00,
-                    total: 850.25
-                },
-                trackingNumber: 'FDX1234567890'
-            },
-            {
-                id: 'SHP-002',
-                date: '2024-03-12',
-                carrier: 'UPS',
-                service: 'Ground',
-                cost: 1600.50,
-                from: {
-                    name: 'Mike Johnson',
-                    company: 'SolushipX Inc.',
-                    address: '789 Industrial Park',
-                    city: 'Chicago',
-                    state: 'IL',
-                    postalCode: '60601',
-                    country: 'US'
-                },
-                to: {
-                    name: 'Sarah Wilson',
-                    company: 'Global Industries',
-                    address: '321 Business Center',
-                    city: 'Miami',
-                    state: 'FL',
-                    postalCode: '33101',
-                    country: 'US'
-                },
-                packages: [
-                    {
-                        weight: '15.2 lbs',
-                        dimensions: '24" x 18" x 12"',
-                        declaredValue: 1500,
-                        description: 'Industrial Parts'
-                    },
-                    {
-                        weight: '8.5 lbs',
-                        dimensions: '16" x 12" x 8"',
-                        declaredValue: 800,
-                        description: 'Spare Components'
-                    }
-                ],
-                charges: {
-                    freight: 1400.00,
-                    fuel: 150.50,
-                    liftgate: 50.00,
-                    total: 1600.50
-                },
-                trackingNumber: 'UPS9876543210'
-            }
-        ]
-    },
-    {
-        id: 'INV-2024-002',
-        date: '2024-03-10',
-        amount: 1875.50,
-        status: 'Paid',
-        dueDate: '2024-04-10',
-        shipments: [
-            {
-                id: 'SHP-003',
-                date: '2024-03-05',
-                carrier: 'DHL',
-                service: 'International',
-                cost: 1875.50,
-                from: 'New York, NY',
-                to: 'London, UK'
-            }
-        ]
-    },
-    // Add 8 more mock invoices with similar structure
-    {
-        id: 'INV-2024-003',
-        date: '2024-03-08',
-        amount: 950.25,
-        status: 'Unpaid',
-        dueDate: '2024-04-08',
-        shipments: [
-            {
-                id: 'SHP-004',
-                date: '2024-03-03',
-                carrier: 'USPS',
-                service: 'Priority',
-                cost: 950.25,
-                from: 'Boston, MA',
-                to: 'Seattle, WA'
-            }
-        ]
-    },
-    {
-        id: 'INV-2024-004',
-        date: '2024-03-05',
-        amount: 3200.00,
-        status: 'Paid',
-        dueDate: '2024-04-05',
-        shipments: [
-            {
-                id: 'SHP-005',
-                date: '2024-02-28',
-                carrier: 'FedEx',
-                service: 'Overnight',
-                cost: 1600.00,
-                from: 'Dallas, TX',
-                to: 'San Francisco, CA'
-            },
-            {
-                id: 'SHP-006',
-                date: '2024-03-01',
-                carrier: 'UPS',
-                service: '2-Day',
-                cost: 1600.00,
-                from: 'Houston, TX',
-                to: 'Denver, CO'
-            }
-        ]
-    },
-    {
-        id: 'INV-2024-005',
-        date: '2024-03-03',
-        amount: 1250.75,
-        status: 'Paid',
-        dueDate: '2024-04-03',
-        shipments: [
-            {
-                id: 'SHP-007',
-                date: '2024-02-25',
-                carrier: 'DHL',
-                service: 'Express',
-                cost: 1250.75,
-                from: 'Miami, FL',
-                to: 'Toronto, CA'
-            }
-        ]
-    }
-];
-
-// Add more mock invoices
-const additionalMockInvoices = Array.from({ length: 20 }, (_, index) => {
-    const id = index + 6; // Start from 6 since we already have 5 invoices
-    const randomAmount = (Math.random() * 5000 + 500).toFixed(2);
-    const randomStatus = ['Paid', 'Unpaid', 'Processing'][Math.floor(Math.random() * 3)];
-    const date = new Date(2024, 2, Math.floor(Math.random() * 30) + 1); // Random date in March 2024
-    const dueDate = new Date(date);
-    dueDate.setDate(date.getDate() + 30); // Due date is 30 days after invoice date
-
-    return {
-        id: `INV-2024-${id.toString().padStart(3, '0')}`,
-        date: date.toISOString().split('T')[0],
-        amount: parseFloat(randomAmount),
-        status: randomStatus,
-        dueDate: dueDate.toISOString().split('T')[0],
-        shipments: [
-            {
-                id: `SHP-${(id * 2).toString().padStart(3, '0')}`,
-                date: date.toISOString().split('T')[0],
-                carrier: ['FedEx', 'UPS', 'DHL', 'USPS'][Math.floor(Math.random() * 4)],
-                service: ['Express', 'Ground', 'Priority', '2-Day', 'Overnight'][Math.floor(Math.random() * 5)],
-                cost: parseFloat(randomAmount),
-                from: {
-                    name: 'John Smith',
-                    company: 'SolushipX Inc.',
-                    address: '123 Business Ave, Suite 100',
-                    city: 'New York',
-                    state: 'NY',
-                    postalCode: '10001',
-                    country: 'US'
-                },
-                to: {
-                    name: ['Sarah Wilson', 'Mike Brown', 'Emily Davis', 'David Lee'][Math.floor(Math.random() * 4)],
-                    company: ['Tech Corp', 'Global Industries', 'Acme Inc.', 'Enterprise LLC'][Math.floor(Math.random() * 4)],
-                    address: ['789 Market St', '456 Park Ave', '321 Main St', '654 Business Blvd'][Math.floor(Math.random() * 4)],
-                    city: ['San Francisco', 'Chicago', 'Boston', 'Miami', 'Seattle'][Math.floor(Math.random() * 5)],
-                    state: ['CA', 'IL', 'MA', 'FL', 'WA'][Math.floor(Math.random() * 5)],
-                    postalCode: ['94105', '60601', '02110', '33101', '98101'][Math.floor(Math.random() * 5)],
-                    country: 'US'
-                },
-                packages: [
-                    {
-                        weight: `${(Math.random() * 50 + 1).toFixed(1)} lbs`,
-                        dimensions: `${Math.floor(Math.random() * 24 + 6)}" x ${Math.floor(Math.random() * 18 + 6)}" x ${Math.floor(Math.random() * 12 + 4)}"`,
-                        declaredValue: Math.floor(Math.random() * 2000 + 100),
-                        description: ['Electronics', 'Office Supplies', 'Medical Equipment', 'Industrial Parts'][Math.floor(Math.random() * 4)]
-                    }
-                ],
-                charges: {
-                    freight: parseFloat((randomAmount * 0.8).toFixed(2)),
-                    fuel: parseFloat((randomAmount * 0.1).toFixed(2)),
-                    residentialDelivery: Math.random() > 0.5 ? parseFloat((randomAmount * 0.05).toFixed(2)) : null,
-                    insurance: Math.random() > 0.5 ? parseFloat((randomAmount * 0.03).toFixed(2)) : null,
-                    liftgate: Math.random() > 0.7 ? parseFloat((randomAmount * 0.02).toFixed(2)) : null,
-                    total: parseFloat(randomAmount)
-                },
-                trackingNumber: `${['FDX', 'UPS', 'DHL', 'USPS'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 1000000000)}`
-            }
-        ]
-    };
-});
-
-const mockInvoices = [...originalMockInvoices, ...additionalMockInvoices];
+// Empty invoices array - no placeholder data
+const mockInvoices = [];
 
 const Invoices = () => {
     const [page, setPage] = useState(0);
@@ -363,23 +121,27 @@ const Invoices = () => {
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                     Invoices
                 </Typography>
                 <Stack direction="row" spacing={2}>
                     <Button
                         variant="outlined"
+                        size="small"
                         startIcon={<FilterIcon />}
                         onClick={handleFilterClick}
+                        sx={{ fontSize: '12px' }}
                     >
                         Filter
                     </Button>
                     <Button
                         variant="contained"
+                        size="small"
                         startIcon={<DownloadIcon />}
                         sx={{
-                            bgcolor: '#000',
-                            '&:hover': { bgcolor: '#333' }
+                            fontSize: '12px',
+                            bgcolor: '#6b46c1',
+                            '&:hover': { bgcolor: '#553c9a' }
                         }}
                     >
                         Export
@@ -390,29 +152,34 @@ const Invoices = () => {
             <Paper
                 elevation={0}
                 sx={{
-                    border: '1px solid #eee',
-                    borderRadius: 2,
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
                     mb: 3
                 }}
             >
                 <TextField
                     fullWidth
+                    size="small"
                     placeholder="Search invoices..."
                     value={searchQuery}
                     onChange={handleSearchChange}
                     InputProps={{
                         startAdornment: (
                             <InputAdornment position="start">
-                                <SearchIcon />
+                                <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
                             </InputAdornment>
                         ),
                         endAdornment: searchQuery && (
                             <InputAdornment position="end">
                                 <IconButton size="small" onClick={handleClearSearch}>
-                                    <ClearIcon />
+                                    <ClearIcon sx={{ fontSize: '18px' }} />
                                 </IconButton>
                             </InputAdornment>
                         ),
+                        sx: { fontSize: '12px' }
+                    }}
+                    sx={{
+                        '& .MuiInputBase-input': { fontSize: '12px' }
                     }}
                 />
             </Paper>
@@ -421,52 +188,62 @@ const Invoices = () => {
                 component={Paper}
                 elevation={0}
                 sx={{
-                    border: '1px solid #eee',
-                    borderRadius: 2
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px'
                 }}
             >
-                <Table>
+                <Table size="small">
                     <TableHead>
-                        <TableRow>
-                            <TableCell>Invoice #</TableCell>
-                            <TableCell>Date</TableCell>
-                            <TableCell>Amount</TableCell>
-                            <TableCell>Status</TableCell>
-                            <TableCell>Due Date</TableCell>
-                            <TableCell align="right">Actions</TableCell>
+                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice #</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Date</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Amount</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Status</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Due Date</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {filteredInvoices
-                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                            .map((invoice) => (
-                                <TableRow
-                                    key={invoice.id}
-                                    hover
-                                    sx={{ cursor: 'pointer' }}
-                                    onClick={() => handleInvoiceClick(invoice)}
-                                >
-                                    <TableCell>{invoice.id}</TableCell>
-                                    <TableCell>{invoice.date}</TableCell>
-                                    <TableCell>${invoice.amount.toFixed(2)}</TableCell>
-                                    <TableCell>
-                                        <Chip
-                                            label={invoice.status}
-                                            size="small"
-                                            sx={{
-                                                bgcolor: getStatusColor(invoice.status).bgcolor,
-                                                color: getStatusColor(invoice.status).color
-                                            }}
-                                        />
-                                    </TableCell>
-                                    <TableCell>{invoice.dueDate}</TableCell>
-                                    <TableCell align="right">
-                                        <IconButton size="small">
-                                            <MoreVertIcon />
-                                        </IconButton>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                        {filteredInvoices.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={6} align="center" sx={{ py: 4, color: '#6b7280' }}>
+                                    No invoices found
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            filteredInvoices
+                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                .map((invoice) => (
+                                    <TableRow
+                                        key={invoice.id}
+                                        hover
+                                        sx={{ cursor: 'pointer' }}
+                                        onClick={() => handleInvoiceClick(invoice)}
+                                    >
+                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.id}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.date}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>${invoice.amount.toFixed(2)}</TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={invoice.status}
+                                                size="small"
+                                                sx={{
+                                                    fontSize: '11px',
+                                                    height: '22px',
+                                                    bgcolor: getStatusColor(invoice.status).bgcolor,
+                                                    color: getStatusColor(invoice.status).color
+                                                }}
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.dueDate}</TableCell>
+                                        <TableCell align="right">
+                                            <IconButton size="small">
+                                                <MoreVertIcon sx={{ fontSize: '18px' }} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                        )}
                     </TableBody>
                 </Table>
             </TableContainer>

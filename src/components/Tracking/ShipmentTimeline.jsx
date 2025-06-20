@@ -29,6 +29,12 @@ const formatTimestamp = (timestamp) => {
     if (!timestamp) return 'N/A';
 
     try {
+        // Handle serverTimestamp placeholders
+        if (timestamp._methodName === 'serverTimestamp') {
+            console.warn('Encountered serverTimestamp placeholder, returning pending');
+            return 'Pending...';
+        }
+
         let date;
 
         // Handle Firestore Timestamp
@@ -125,6 +131,11 @@ const ShipmentTimeline = ({ events }) => {
             if (!timestamp) return new Date(0);
 
             try {
+                // Handle serverTimestamp placeholders
+                if (timestamp._methodName === 'serverTimestamp') {
+                    return new Date(); // Use current date for pending timestamps
+                }
+
                 // Handle Firestore Timestamp
                 if (timestamp.toDate && typeof timestamp.toDate === 'function') {
                     return timestamp.toDate();

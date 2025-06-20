@@ -243,6 +243,13 @@ if (notificationFunctions && notificationFunctions.getNotificationPreferences) {
     console.warn('LOG-MAIN-INDEX: getNotificationPreferences not found in notificationFunctions.');
 }
 
+if (notificationFunctions && notificationFunctions.setupAdminNotifications) {
+    exports.setupAdminNotifications = notificationFunctions.setupAdminNotifications;
+    console.log('LOG-MAIN-INDEX: exports.setupAdminNotifications defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: setupAdminNotifications not found in notificationFunctions.');
+}
+
 // Export report functions
 exports.generateReport = generateReport;
 console.log('LOG-MAIN-INDEX: exports.generateReport defined.');

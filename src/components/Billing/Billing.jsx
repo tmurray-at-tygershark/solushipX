@@ -5,20 +5,16 @@ import {
     Paper,
     Typography,
     Tabs,
-    Tab,
-    useTheme,
-    Link
+    Tab
 } from '@mui/material';
 import { motion } from 'framer-motion';
-import { Link as RouterLink } from 'react-router-dom';
-import { Home as HomeIcon, NavigateNext as NavigateNextIcon } from '@mui/icons-material';
 import BillingProfiles from './BillingProfiles';
 import Invoices from './Invoices';
 import PaymentMethods from './PaymentMethods';
+import ModalHeader from '../common/ModalHeader';
 import './Billing.css';
 
-const Billing = () => {
-    const theme = useTheme();
+const Billing = ({ isModal = false, onClose, showCloseButton = false }) => {
     const [activeTab, setActiveTab] = useState(0);
 
     const handleTabChange = (event, newValue) => {
@@ -26,55 +22,89 @@ const Billing = () => {
     };
 
     return (
-        <Box className="billing-container">
-            <Container maxWidth={false} sx={{ maxWidth: '1300px', mx: 'auto' }}>
+        <Box className="billing-container" sx={{
+            minHeight: '100vh',
+            backgroundColor: '#f8fafc',
+            pt: isModal ? 0 : 4,
+            display: 'flex',
+            flexDirection: 'column'
+        }}>
+            {/* Modal Header */}
+            {isModal && (
+                <ModalHeader
+                    title="Billing & Payments"
+                    onClose={onClose}
+                    showCloseButton={showCloseButton}
+                />
+            )}
+
+            <Container maxWidth={false} sx={{
+                maxWidth: '1300px',
+                mx: 'auto',
+                flexGrow: 1,
+                pt: isModal ? 3 : 0
+            }}>
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6 }}
                 >
-                    <div className="breadcrumb-container">
-                        <Link
-                            component={RouterLink}
-                            to="/"
-                            className="breadcrumb-link"
-                        >
-                            <HomeIcon sx={{ fontSize: 20, mr: 0.5 }} />
-                            Home
-                        </Link>
-                        <NavigateNextIcon className="breadcrumb-separator" />
-                        <Typography className="breadcrumb-current">
-                            Billing & Payments
-                        </Typography>
-                    </div>
+                    {/* Page Header - Only show when not in modal */}
+                    {!isModal && (
+                        <Box sx={{ mb: 4 }}>
+                            <Typography
+                                variant="h4"
+                                component="h1"
+                                sx={{
+                                    fontWeight: 700,
+                                    fontSize: '28px',
+                                    color: '#111827',
+                                    mb: 1
+                                }}
+                            >
+                                Billing & Payments
+                            </Typography>
+                            <Typography
+                                variant="body1"
+                                sx={{
+                                    fontSize: '14px',
+                                    color: '#6b7280'
+                                }}
+                            >
+                                Manage your billing profiles, view invoices, and update payment methods
+                            </Typography>
+                        </Box>
+                    )}
 
-                    <Box sx={{ mb: 4 }}>
-                        <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1 }}>
-                            Billing & Payments
-                        </Typography>
-                        <Typography variant="body1" color="text.secondary">
-                            Manage your billing profiles, view invoices, and update payment methods
-                        </Typography>
-                    </Box>
-
+                    {/* Main Content */}
                     <Paper
                         elevation={0}
                         sx={{
-                            border: '1px solid #eee',
-                            borderRadius: 2,
-                            overflow: 'hidden'
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            backgroundColor: 'white'
                         }}
                     >
                         <Tabs
                             value={activeTab}
                             onChange={handleTabChange}
                             sx={{
-                                borderBottom: '1px solid #eee',
+                                borderBottom: '1px solid #e5e7eb',
+                                backgroundColor: '#f8fafc',
                                 '& .MuiTab-root': {
                                     textTransform: 'none',
                                     fontWeight: 500,
+                                    fontSize: '14px',
                                     minHeight: 48,
-                                    px: 3
+                                    px: 3,
+                                    color: '#6b7280',
+                                    '&.Mui-selected': {
+                                        color: '#111827'
+                                    }
+                                },
+                                '& .MuiTabs-indicator': {
+                                    backgroundColor: '#6b46c1'
                                 }
                             }}
                         >

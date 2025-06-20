@@ -6,6 +6,8 @@ export const useDocuments = (shipmentId, shipmentStatus) => {
     const [shipmentDocuments, setShipmentDocuments] = useState({
         labels: [],
         bol: [],
+        carrierConfirmations: [],
+        documents: [],
         other: []
     });
     const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -36,9 +38,53 @@ export const useDocuments = (shipmentId, shipmentStatus) => {
                 console.log('Categorized documents:', {
                     labels: documents.labels?.length || 0,
                     bol: documents.bol?.length || 0,
+                    carrierConfirmations: documents.carrierConfirmations?.length || 0,
+                    documents: documents.documents?.length || 0,
                     other: documents.other?.length || 0,
                     allDocuments: Object.values(documents).flat().length
                 });
+
+                // Debug: Log all documents with their key properties
+                const allDocs = Object.values(documents).flat();
+                console.log('🔍 All fetched documents details:', allDocs.map(doc => ({
+                    id: doc.id,
+                    filename: doc.filename,
+                    documentType: doc.documentType,
+                    docType: doc.docType,
+                    category: Object.keys(documents).find(key => documents[key].includes(doc))
+                })));
+
+                // Enhanced categorization: Look for carrier confirmations in "other" category
+                if (documents.other?.length > 0) {
+                    console.log('Checking "other" documents for carrier confirmations...');
+                    
+                    const confirmationDocs = documents.other.filter(doc => {
+                        const filename = (doc.filename || '').toLowerCase();
+                        const documentType = (doc.documentType || '').toLowerCase();
+                        
+                        return doc.docType === 7 || // Carrier confirmation type
+                               documentType === 'carrier_confirmation' ||
+                               filename.includes('carrier_confirmation') ||
+                               filename.includes('carrier-confirmation') ||
+                               (filename.includes('carrier') && filename.includes('confirmation')) ||
+                               filename.includes('pickup_confirmation') ||
+                               filename.includes('pickup-confirmation');
+                    });
+                    
+                    if (confirmationDocs.length > 0) {
+                        console.log('Found carrier confirmations in "other" category:', confirmationDocs);
+                        // Move confirmations to carrierConfirmations array
+                        documents.carrierConfirmations = [...(documents.carrierConfirmations || []), ...confirmationDocs];
+                        // Remove them from other
+                        documents.other = documents.other.filter(doc =>
+                            !confirmationDocs.some(conf => conf.id === doc.id)
+                        );
+                        console.log('Moved carrier confirmations. New counts:', {
+                            carrierConfirmations: documents.carrierConfirmations.length,
+                            other: documents.other.length
+                        });
+                    }
+                }
 
                 // Fallback: If no labels detected but we have "other" documents that might be labels
                 if (documents.labels?.length === 0 && documents.other?.length > 0) {
@@ -49,19 +95,35 @@ export const useDocuments = (shipmentId, shipmentStatus) => {
                         const filename = (doc.filename || '').toLowerCase();
                         const documentType = (doc.documentType || '').toLowerCase();
 
-                        return filename.includes('label') ||
-                            filename.includes('shipping') ||
-                            filename.includes('ship') ||
-                            filename.includes('print') ||
-                            // Specific eShipPlus ProLabel patterns
-                            filename.includes('prolabel') ||
-                            filename.includes('pro-label') ||
-                            filename.includes('prolabel4x6') ||
-                            filename.includes('prolabelavery') ||
-                            filename.includes('4x6inch') ||
-                            filename.includes('3x4inch') ||
-                            documentType.includes('label') ||
-                            documentType.includes('shipping');
+                        // Exclude BOL and carrier confirmation documents first
+                        const isBOL = filename.includes('bol') || 
+                                    filename.includes('billoflading') || 
+                                    filename.includes('bill_of_lading') ||
+                                    documentType.includes('bol') ||
+                                    documentType === 'bill_of_lading';
+                                    
+                        const isConfirmation = filename.includes('confirmation') || 
+                                             (filename.includes('carrier') && filename.includes('confirmation')) ||
+                                             documentType === 'carrier_confirmation' ||
+                                             doc.docType === 7;
+                        
+                        if (isBOL || isConfirmation) {
+                            return false; // Don't move BOL or confirmation docs to labels
+                        }
+
+                        // Only look for actual shipping labels with specific patterns
+                        return (filename.includes('label') && !filename.includes('confirmation')) ||
+                               filename.includes('shipping_label') ||
+                               // Specific eShipPlus ProLabel patterns
+                               filename.includes('prolabel') ||
+                               filename.includes('pro-label') ||
+                               filename.includes('prolabel4x6') ||
+                               filename.includes('prolabelavery') ||
+                               filename.includes('4x6inch') ||
+                               filename.includes('3x4inch') ||
+                               (documentType.includes('label') && !documentType.includes('confirmation')) ||
+                               documentType === 'shipping_label' ||
+                               doc.docType === 1; // eShipPlus label type
                     });
 
                     if (potentialLabels.length > 0) {
@@ -98,6 +160,8 @@ export const useDocuments = (shipmentId, shipmentStatus) => {
             setShipmentDocuments({
                 labels: [],
                 bol: [],
+                carrierConfirmations: [],
+                documents: [],
                 other: []
             });
         } finally {

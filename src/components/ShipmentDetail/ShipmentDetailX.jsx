@@ -128,6 +128,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         snackbar,
         handlePrintLabel,
         handlePrintBOL,
+        handlePrintConfirmation,
         handlePrintShipment,
         handleRefreshStatus,
         handleCancelShipment,
@@ -579,34 +580,60 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
         }
     }, [shipment, isGoogleMapsLoaded, mapsApiKey, useMetric, isMapReady]);
 
-    // Handle map load and bounds - exactly like the original
+    // Handle map load and bounds - fixed for proper route zoom
     const handleMapLoad = React.useCallback((map) => {
         setMap(map);
         setIsMapLoaded(true);
         setIsMapReady(true); // Set map as ready when it's fully loaded
+    }, []);
 
-        if (directions?.request?.origin && directions?.request?.destination) {
-            // Create bounds that include both markers
-            const bounds = new window.google.maps.LatLngBounds();
-            bounds.extend(directions.request.origin);
-            bounds.extend(directions.request.destination);
+    // Separate effect to handle bounds fitting when directions change
+    useEffect(() => {
+        if (map && directions && directions.routes && directions.routes[0]) {
+            const route = directions.routes[0];
 
-            // Add appropriate padding to the bounds
-            const padding = 50; // Increased padding for better visibility
+            // Use the route bounds if available, otherwise create bounds from origin/destination
+            let bounds;
+            if (route.bounds) {
+                bounds = route.bounds;
+            } else if (directions.request?.origin && directions.request?.destination) {
+                bounds = new window.google.maps.LatLngBounds();
+                bounds.extend(directions.request.origin);
+                bounds.extend(directions.request.destination);
 
-            // Fit the map to the bounds with padding - let Google Maps determine optimal zoom
-            map.fitBounds(bounds, {
-                padding: {
+                // If we have overview_path, extend bounds to include the entire route
+                if (route.overview_path && route.overview_path.length > 0) {
+                    route.overview_path.forEach(point => {
+                        bounds.extend(point);
+                    });
+                }
+            }
+
+            if (bounds) {
+                // Add appropriate padding for better visibility
+                const padding = 80; // Increased padding for better route visibility
+
+                // Fit the map to the route bounds with padding
+                map.fitBounds(bounds, {
                     top: padding,
                     right: padding,
                     bottom: padding,
                     left: padding
-                }
-            });
+                });
 
-            // Don't override the zoom level - let fitBounds determine the best zoom to show the entire route
+                // Ensure minimum zoom level for route visibility
+                const listener = window.google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+                    const currentZoom = map.getZoom();
+                    if (currentZoom > 15) {
+                        map.setZoom(15); // Set max zoom for route view
+                    }
+                    if (currentZoom < 6) {
+                        map.setZoom(6); // Set min zoom for route view
+                    }
+                });
+            }
         }
-    }, [directions]);
+    }, [map, directions]);
 
     // Handle opening tracking drawer
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -652,6 +679,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                     isEShipPlusCarrier={isEShipPlusCarrier}
                     onPrintLabel={() => setPrintLabelModalOpen(true)}
                     onPrintBOL={handlePrintBOL}
+                    onPrintConfirmation={handlePrintConfirmation}
                     onPrintShipment={handlePrintShipment}
                     fetchShipmentDocuments={fetchShipmentDocuments}
                     onBackToTable={onBackToTable}

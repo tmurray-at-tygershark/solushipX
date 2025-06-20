@@ -447,8 +447,7 @@ const EARTH_TEXTURES = {
     day: '/textures/8k_earth_daymap.jpg', // 8K high-resolution Earth texture for incredible detail
     normal: '/textures/planets/earth_normal_2048.jpg', // Normal map for terrain relief  
     bump: '/textures/8k_earth_daymap.jpg', // Bump map using 8K texture for realistic surface details
-    clouds: '/textures/planets/earth_clouds_1024.png'
-    // Removed ocean/specular map to reduce memory usage
+    // Removed clouds texture to improve performance
 };
 
 // Night lights are now integrated into the main Earth texture - no separate creation needed
@@ -1001,7 +1000,7 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
 
 
     useEffect(() => {
-        let scene, camera, renderer, controls, earth, clouds, atmosphere, group, animationId;
+        let scene, camera, renderer, controls, earth, atmosphere, group, animationId;
 
         const initializeGlobe = async () => {
             if (isInitializedRef.current) {
@@ -1122,11 +1121,10 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                 group.rotation.y = -0.3;
 
                 const textureLoader = new THREE.TextureLoader();
-                const [dayMap, normalMap, bumpMap, cloudsMap] = await Promise.all([
+                const [dayMap, normalMap, bumpMap] = await Promise.all([
                     textureLoader.loadAsync(EARTH_TEXTURES.day),
                     textureLoader.loadAsync(EARTH_TEXTURES.normal),
                     textureLoader.loadAsync(EARTH_TEXTURES.bump),
-                    textureLoader.loadAsync(EARTH_TEXTURES.clouds)
                 ]);
                 dayMap.colorSpace = THREE.SRGBColorSpace;
 
@@ -1143,16 +1141,6 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                 });
                 earth = new THREE.Mesh(earthGeo, earthMat);
                 group.add(earth);
-
-                const cloudGeo = new THREE.SphereGeometry(10.1, 32, 32);
-                const cloudsMat = new THREE.MeshLambertMaterial({
-                    map: cloudsMap,
-                    transparent: true,
-                    opacity: 0.3,
-                    depthWrite: false,
-                });
-                clouds = new THREE.Mesh(cloudGeo, cloudsMat);
-                group.add(clouds);
 
                 const atmosGeo = new THREE.SphereGeometry(12.5, 64, 64);
                 const atmosMat = new THREE.ShaderMaterial({
@@ -1184,7 +1172,7 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                     const time = performance.now();
 
                     if (!userInteracting) {
-                        clouds.rotateY(0.0001 * params.speedFactor);
+                        // Earth rotation can be added here if needed
                     }
 
                     if (scene.userData.animatedArcs && !isPaused) {
@@ -1231,22 +1219,6 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                                     setActiveShipment(arc.userData.shipmentData);
                                     setCurrentShipmentIndex(arc.userData.sequentialIndex);
                                 }
-
-                                // Update progress bar based on current arc animation phase - COMMENTED OUT UNTIL FIXED
-                                // if (arc.userData.shipmentData === activeShipment) {
-                                //     let currentProgress = 0;
-                                //     if (timeSinceStart <= TRAVEL_DURATION) {
-                                //         // Travel phase (0-33.33%)
-                                //         currentProgress = (timeSinceStart / TRAVEL_DURATION) * 33.33;
-                                //     } else if (timeSinceStart <= TRAVEL_DURATION + HOLD_DURATION) {
-                                //         // Hold phase (33.33-66.66%)
-                                //         currentProgress = 33.33 + ((timeSinceStart - TRAVEL_DURATION) / HOLD_DURATION) * 33.33;
-                                //     } else {
-                                //         // Fade out phase (66.66-100%)
-                                //         currentProgress = 66.66 + ((timeSinceStart - (TRAVEL_DURATION + HOLD_DURATION)) / FADE_DURATION) * 33.33;
-                                //     }
-                                //     setAnimationProgress(Math.min(100, currentProgress));
-                                // }
 
                                 // Phase 1: Travel (Fade in and shoot across)
                                 if (timeSinceStart <= TRAVEL_DURATION) {

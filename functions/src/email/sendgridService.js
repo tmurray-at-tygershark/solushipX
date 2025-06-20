@@ -1,9 +1,15 @@
+const logger = require('firebase-functions/logger');
+const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
-const { getFirestore } = require('firebase-admin/firestore');
-const { logger } = require('firebase-functions');
-const fetch = require('node-fetch'); // Add fetch for downloading attachments
 
-// Get SendGrid API key from environment variables
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+    admin.initializeApp();
+}
+
+const db = admin.firestore();
+
+// Get SendGrid API key from environment variables or Firebase config
 const sendgridApiKey = process.env.SENDGRID_API_KEY;
 
 // Initialize SendGrid only if API key is available
@@ -12,8 +18,6 @@ if (sendgridApiKey) {
 } else {
     console.warn('SendGrid API key not found in environment variables');
 }
-
-const db = getFirestore();
 
 /**
  * Email templates and utilities
@@ -151,7 +155,7 @@ const EMAIL_TEMPLATES = {
                     ` : ''}
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                        <p style="margin: 0;">Need help? Contact us at <a href="mailto:tyler@tygershark.com" style="color: #1c277d;">tyler@tygershark.com</a></p>
+                        <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
                         <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
@@ -199,7 +203,7 @@ ${data.rate.freightCharge > 0 ? `Freight: $${data.rate.freightCharge.toFixed(2)}
 
 ${data.shipmentNumber ? `Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}` : ''}
 
-Need help? Contact us at tyler@tygershark.com
+Need help? Contact us at support@integratedcarriers.com
         `
     },
 
@@ -302,7 +306,7 @@ Thank you for choosing SolushipX!
                     ` : ''}
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                        <p style="margin: 0;">Questions? Contact us at <a href="mailto:tyler@tygershark.com" style="color: #1c277d;">tyler@tygershark.com</a></p>
+                        <p style="margin: 0;">Questions? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
                         <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
@@ -321,7 +325,7 @@ We're actively monitoring your shipment and will notify you of any further updat
 
 ${data.shipmentNumber ? `Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}` : ''}
 
-Questions? Contact tyler@tygershark.com
+Questions? Contact support@integratedcarriers.com
         `
     },
 
@@ -412,7 +416,7 @@ Questions? Contact tyler@tygershark.com
                             </a>
                         </div>
                         <p style="margin: 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
-                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Questions? Contact us at tyler@tygershark.com</p>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Questions? Contact us at support@integratedcarriers.com</p>
                     </div>
                 </div>
             </div>
@@ -447,7 +451,7 @@ ${data.description ? `What This Means: ${data.description}` : ''}
 
 Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}
 
-Questions? Contact tyler@tygershark.com
+Questions? Contact support@integratedcarriers.com
         `
     },
 
@@ -532,7 +536,7 @@ Questions? Contact tyler@tygershark.com
                     </div>
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                        <p style="margin: 0;">Need help? Contact us at <a href="mailto:tyler@tygershark.com" style="color: #1c277d;">tyler@tygershark.com</a></p>
+                        <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
                         <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
@@ -566,37 +570,36 @@ ${data.attachments.map(attachment => {
 
 View customer details and collaborate: ${data.noteUrl}
 
-Need help? Contact us at tyler@tygershark.com
+Need help? Contact us at support@integratedcarriers.com
         `
     },
 
     quickship_customer_confirmation: {
-        subject: (data) => `QuickShip Confirmation - ${data.shipmentId}`,
+        subject: (data) => `Shipment Confirmation - ${data.shipmentId}`,
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                     <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">QuickShip Booking Confirmed!</h1>
-                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Your manual freight shipment has been successfully booked</p>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment has been booked with ${data.carrier}</p>
                 </div>
                 
                 <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
                     <!-- Shipment Summary -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">QuickShip Summary</h2>
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Shipment Summary</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment ID:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentId}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${data.carrier}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service Type:</strong></td><td style="padding: 8px 0;">QuickShip Manual Entry</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.trackingNumber || data.shipmentId}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${data.shipDate}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${data.referenceNumber || 'N/A'}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${data.trackingNumber}</td></tr>
+                            ${data.referenceNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${data.referenceNumber}</td></tr>` : ''}
                         </table>
                     </div>
 
-                    <!-- Address Information -->
+                    <!-- Addresses -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Address Information</h2>
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Shipping Addresses</h2>
                         <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
                             <div style="flex: 1; min-width: 200px; margin-right: 20px;">
                                 <h4 style="color: #000; margin: 0 0 10px 0;">Ship From:</h4>
@@ -617,49 +620,42 @@ Need help? Contact us at tyler@tygershark.com
 
                     <!-- Package Information -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Package Information</h2>
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Total Pieces:</strong></td><td style="padding: 8px 0;">${data.totalPieces} pieces</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total Weight:</strong></td><td style="padding: 8px 0;">${data.totalWeight} lbs</td></tr>
-                        </table>
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Package Details</h2>
+                        <p style="margin: 0 0 10px 0; color: #666;">
+                            <strong>Total: ${data.totalPieces} piece${data.totalPieces > 1 ? 's' : ''}, ${data.totalWeight} lbs</strong>
+                        </p>
                     </div>
 
-                    <!-- Rate Information - Enhanced for QuickShip -->
-                    ${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `
+                    <!-- Rate Breakdown -->
+                    ${data.rateBreakdown && data.rateBreakdown.length > 0 ? `
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Manual Rate Breakdown</h2>
-                        <p style="margin: 0 0 15px 0; font-size: 12px; color: #666;">Manually entered freight charges</p>
-                        ${data.rateBreakdown.map(rate => `
-                            <div style="border-bottom: 1px solid #eee; padding: 8px 0; display: flex; justify-content: space-between;">
-                                <span style="font-weight: 500;">${rate.description}</span>
-                                <span style="font-weight: bold;">${rate.currency} $${rate.amount}</span>
-                            </div>
-                        `).join('')}
-                        <div style="border-top: 2px solid #1c277d; padding: 12px 0; display: flex; justify-content: space-between; font-weight: bold; background: #f8f9fa; margin: 10px -10px 0 -10px; padding-left: 10px; padding-right: 10px;">
-                            <span style="font-size: 16px;">Total Charges:</span>
-                            <span style="color: #1c277d; font-size: 18px;">${data.currency} $${data.totalCharges}</span>
-                        </div>
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Rate Details</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            ${data.rateBreakdown.map(rate => `
+                                <tr>
+                                    <td style="padding: 8px 0; color: #666;">${rate.description}:</td>
+                                    <td style="padding: 8px 0; text-align: right;">${rate.currency} $${rate.amount}</td>
+                                </tr>
+                            `).join('')}
+                            <tr style="border-top: 2px solid #1c277d;">
+                                <td style="padding: 12px 0 8px 0; color: #1c277d; font-weight: bold;">Total:</td>
+                                <td style="padding: 12px 0 8px 0; text-align: right; font-weight: bold; font-size: 18px; color: #1c277d;">${data.currency} $${data.totalCharges}</td>
+                            </tr>
+                        </table>
                     </div>
                     ` : ''}
 
-                    <!-- QuickShip Information Notice -->
-                    <div style="background: #e8f4fd; padding: 20px; border-radius: 0; border-left: 4px solid #1c277d; margin-bottom: 20px;">
-                        <h3 style="color: #1c277d; margin: 0 0 10px 0; font-size: 16px;">QuickShip Information</h3>
-                        <p style="margin: 0; color: #1e40af; font-size: 14px;">This shipment was booked using QuickShip manual entry. All rates have been manually calculated and entered. Documents including Bill of Lading and carrier confirmation have been generated and attached to this email.</p>
-                    </div>
-
-                    <!-- Tracking Section -->
-                    <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
-                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
-                        <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold; color: #1c277d;">${data.trackingNumber}</p>
-                        <a href="https://solushipx.web.app/tracking/${data.trackingNumber}" 
-                           style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
-                           Track Shipment
-                        </a>
+                    <!-- Important Notice -->
+                    <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 15px; border-radius: 0; margin-bottom: 20px;">
+                        <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">Important Information</h3>
+                        <p style="margin: 0; color: #92400e; font-size: 14px;">
+                            This is a QuickShip manual booking. Please ensure all packages are properly labeled and ready for pickup.
+                            Bill of Lading (BOL) and Carrier Confirmation documents are attached to this email.
+                        </p>
                     </div>
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                        <p style="margin: 0;">Thank you for choosing SolushipX QuickShip!</p>
+                        <p style="margin: 0;">Questions? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
                         <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
@@ -668,58 +664,56 @@ Need help? Contact us at tyler@tygershark.com
         text: (data) => `
 QuickShip Booking Confirmed!
 
-QUICKSHIP SUMMARY
+SHIPMENT SUMMARY
 - Shipment ID: ${data.shipmentId}
 - Carrier: ${data.carrier}
-- Service Type: QuickShip Manual Entry
+- Tracking #: ${data.trackingNumber || data.shipmentId}
 - Ship Date: ${data.shipDate}
-- Reference #: ${data.referenceNumber || 'N/A'}
-- Tracking #: ${data.trackingNumber}
+${data.referenceNumber ? `- Reference #: ${data.referenceNumber}` : ''}
 
-ADDRESSES
-Ship From: ${data.shipFromCompany}
+SHIPPING ADDRESSES
+Ship From:
+${data.shipFromCompany}
 ${data.shipFromAddress}
 
-Ship To: ${data.shipToCompany}
+Ship To:
+${data.shipToCompany}
 ${data.shipToAddress}
 
-PACKAGE INFORMATION
-- Total Pieces: ${data.totalPieces} pieces
-- Total Weight: ${data.totalWeight} lbs
+PACKAGE DETAILS
+Total: ${data.totalPieces} piece${data.totalPieces > 1 ? 's' : ''}, ${data.totalWeight} lbs
 
-${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `MANUAL RATE BREAKDOWN
+${data.rateBreakdown && data.rateBreakdown.length > 0 ? `RATE DETAILS
 ${data.rateBreakdown.map(rate => `${rate.description}: ${rate.currency} $${rate.amount}`).join('\n')}
-Total Charges: ${data.currency} $${data.totalCharges}` : ''}
+Total: ${data.currency} $${data.totalCharges}` : ''}
 
-QUICKSHIP INFORMATION
-This shipment was booked using QuickShip manual entry. All rates have been manually calculated and entered. Documents including Bill of Lading and carrier confirmation have been generated and attached to this email.
+IMPORTANT INFORMATION
+This is a QuickShip manual booking. Please ensure all packages are properly labeled and ready for pickup.
+Bill of Lading (BOL) and Carrier Confirmation documents are attached to this email.
 
-Track your shipment: https://solushipx.web.app/tracking/${data.trackingNumber}
-
-Thank you for choosing SolushipX QuickShip!
+Questions? Contact support@integratedcarriers.com
         `
     },
 
     quickship_carrier_notification: {
-        subject: (data) => `QuickShip Pickup Assignment - Order ${data.orderNumber}`,
+        subject: (data) => `Carrier Confirmation - Order ${data.orderNumber}`,
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="background-color: #1976d2; color: white; padding: 30px; border-radius: 0;">
+                <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                     <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
-                    <h1 style="margin: 0; font-size: 24px;">QuickShip Pickup Assignment</h1>
-                    <p style="margin: 10px 0 0 0; opacity: 0.9;">New manual freight pickup order for ${data.carrierName}</p>
+                    <h1 style="margin: 0; font-size: 24px;">New Carrier Confirmation</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Order ${data.orderNumber} is ready for pickup</p>
                 </div>
                 
                 <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
                     <!-- Carrier Information -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h2 style="color: #1976d2; margin: 0 0 15px 0; font-size: 18px;">Carrier Assignment</h2>
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Carrier Information</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.carrierName}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Contact:</strong></td><td style="padding: 8px 0;">${data.contactName}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Order #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.orderNumber}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Confirmation #:</strong></td><td style="padding: 8px 0;">${data.confirmationNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service Type:</strong></td><td style="padding: 8px 0; color: #1976d2; font-weight: bold;">${data.serviceType || 'QuickShip Manual Entry'}</td></tr>
                         </table>
                     </div>
 
@@ -804,7 +798,7 @@ Thank you for choosing SolushipX QuickShip!
             </div>
         `,
         text: (data) => `
-QuickShip Pickup Assignment - Order ${data.orderNumber}
+Carrier Confirmation - Order ${data.orderNumber}
 
 CARRIER ASSIGNMENT
 - Carrier: ${data.carrierName}
@@ -995,11 +989,11 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
         const messages = subscriberEmails.map(email => ({
             to: email,
             from: {
-                email: 'tyler@tygershark.com',
+                email: 'support@integratedcarriers.com',
                 name: 'SolushipX Notifications'
             },
             replyTo: {
-                email: 'tyler@tygershark.com',
+                email: 'support@integratedcarriers.com',
                 name: 'Tyler from SolushipX'
             },
             subject,
@@ -1052,6 +1046,26 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
             notificationId,
             companyId
         });
+        
+        // Log the full SendGrid error response
+        if (error.response) {
+            logger.error('SendGrid error details:', {
+                statusCode: error.code,
+                body: error.response.body,
+                errors: error.response.body?.errors
+            });
+            
+            // Log the specific error messages
+            if (error.response.body?.errors && Array.isArray(error.response.body.errors)) {
+                error.response.body.errors.forEach((err, index) => {
+                    logger.error(`SendGrid error ${index + 1}:`, {
+                        message: err.message,
+                        field: err.field,
+                        help: err.help
+                    });
+                });
+            }
+        }
 
         // Log failed attempts for available emails
         const subscriberEmails = await getCompanyNotificationSubscribers(companyId, type).catch(() => []);
@@ -1775,8 +1789,8 @@ async function sendReportNotificationEmail(templateType, userId, data = {}) {
         const msg = {
             to: data.recipientEmail || data.recipient,
             from: {
-                email: 'tyler@tygershark.com',
-                name: 'SolushipX Reports'
+                email: SEND_FROM_EMAIL,
+                name: SEND_FROM_NAME
             },
             subject: template.subject,
             html: template.html
@@ -1809,128 +1823,120 @@ async function sendReportNotificationEmail(templateType, userId, data = {}) {
 // Add the missing sendEmail function before the module exports
 async function sendEmail(emailData) {
     try {
-        logger.info('Sending email with sendEmail function', { 
-            to: emailData.to, 
-            subject: emailData.subject,
-            hasAttachments: !!(emailData.attachments && emailData.attachments.length > 0)
-        });
-
         if (!sendgridApiKey) {
             throw new Error('SendGrid API key not configured');
         }
 
-        // Prepare the email message
-        const msg = {
-            to: emailData.to,
-            from: {
-                email: 'tyler@tygershark.com',
-                name: 'SolushipX'
-            },
-            replyTo: {
-                email: 'tyler@tygershark.com',
-                name: 'Tyler from SolushipX'
-            },
-            subject: emailData.subject,
-            trackingSettings: {
-                clickTracking: { enable: true },
-                openTracking: { enable: true }
-            }
-        };
-
-        // Handle template-based emails
-        if (emailData.templateId && emailData.dynamicTemplateData) {
-            // For dynamic templates, we'll generate HTML using our internal templates
-            const templateKey = emailData.templateId;
-            const templateData = emailData.dynamicTemplateData;
-            
-            if (EMAIL_TEMPLATES[templateKey]) {
-                const template = EMAIL_TEMPLATES[templateKey];
-                msg.html = template.html(templateData);
-                msg.text = template.text(templateData);
-                
-                // Update subject if template provides one
-                if (template.subject) {
-                    msg.subject = template.subject(templateData);
-                }
-            } else {
-                throw new Error(`Unknown email template: ${templateKey}`);
-            }
-        } else if (emailData.html || emailData.text) {
-            // Direct HTML/text content
-            if (emailData.html) msg.html = emailData.html;
-            if (emailData.text) msg.text = emailData.text;
-        } else {
-            throw new Error('Email must include either templateId with dynamicTemplateData, or html/text content');
+        // Validate recipient
+        if (!emailData.to || emailData.to.trim() === '') {
+            logger.warn('Cannot send email: No recipient specified', {
+                subject: emailData.subject,
+                templateId: emailData.templateId
+            });
+            return { success: false, message: 'No recipient specified' };
         }
 
-        // Handle attachments
+        // Prepare base message data
+        const msg = {
+            to: emailData.to,
+            from: emailData.from || SEND_FROM_EMAIL,
+            subject: emailData.subject,
+            text: emailData.text || '',
+            html: emailData.html || ''
+        };
+
+        // Handle dynamic templates
+        if (emailData.templateId) {
+            // Get the template data
+            const templateData = EMAIL_TEMPLATES[emailData.templateId] || EMAIL_TEMPLATES.generic;
+            
+            // Generate subject, text, and HTML from template
+            msg.subject = templateData.subject(emailData.dynamicTemplateData || {});
+            msg.text = templateData.text(emailData.dynamicTemplateData || {});
+            msg.html = templateData.html(emailData.dynamicTemplateData || {});
+        }
+
+        // Handle attachments from URLs
         if (emailData.attachments && emailData.attachments.length > 0) {
             msg.attachments = [];
             
             for (const attachment of emailData.attachments) {
-                try {
-                    if (attachment.url) {
-                        // Download file from URL and attach
+                if (attachment.url) {
+                    try {
+                        // Download file from URL
                         const response = await fetch(attachment.url);
+                        
                         if (!response.ok) {
-                            logger.warn(`Failed to download attachment from ${attachment.url}:`, response.statusText);
+                            logger.warn(`Failed to download attachment from ${attachment.url}: ${response.statusText}`);
                             continue;
                         }
                         
-                        const buffer = await response.buffer();
+                        // Get array buffer and convert to Node.js Buffer
+                        const arrayBuffer = await response.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
                         const base64Content = buffer.toString('base64');
                         
                         msg.attachments.push({
-                            filename: attachment.filename || 'document.pdf',
+                            content: base64Content,
+                            filename: attachment.filename || 'attachment.pdf',
                             type: attachment.type || 'application/pdf',
                             disposition: attachment.disposition || 'attachment',
-                            content: base64Content
+                            content_id: attachment.content_id || undefined
                         });
                         
-                        logger.info(`Successfully attached document: ${attachment.filename}`);
-                    } else if (attachment.content) {
-                        // Direct content attachment
-                        msg.attachments.push({
-                            filename: attachment.filename || 'document.pdf',
-                            type: attachment.type || 'application/pdf',
-                            disposition: attachment.disposition || 'attachment',
-                            content: attachment.content
-                        });
+                        logger.info(`Successfully attached ${attachment.filename} to email`);
+                    } catch (error) {
+                        logger.error(`Error downloading attachment from ${attachment.url}:`, error);
+                        // Continue with other attachments if one fails
                     }
-                } catch (attachmentError) {
-                    logger.error(`Error processing attachment ${attachment.filename}:`, attachmentError);
-                    // Continue with other attachments
+                } else if (attachment.content) {
+                    // Direct base64 content provided
+                    msg.attachments.push({
+                        content: attachment.content,
+                        filename: attachment.filename || 'attachment.pdf',
+                        type: attachment.type || 'application/pdf',
+                        disposition: attachment.disposition || 'attachment',
+                        content_id: attachment.content_id || undefined
+                    });
                 }
             }
-            
-            logger.info(`Prepared ${msg.attachments.length} attachments for email`);
         }
 
         // Send the email
-        const response = await sgMail.send(msg);
+        await sgMail.send(msg);
         
-        logger.info(`Email sent successfully to ${msg.to}`, { 
-            messageId: response[0].headers['x-message-id'],
-            statusCode: response[0].statusCode,
-            attachmentCount: msg.attachments ? msg.attachments.length : 0
-        });
-
-        return {
-            success: true,
-            messageId: response[0].headers['x-message-id'],
-            statusCode: response[0].statusCode
-        };
-
-    } catch (error) {
-        logger.error('Failed to send email:', {
-            error: error.message,
-            code: error.code,
-            response: error.response?.body,
+        logger.info('Email sent successfully', {
             to: emailData.to,
-            subject: emailData.subject
+            subject: msg.subject,
+            attachmentCount: msg.attachments?.length || 0,
+            templateId: emailData.templateId || 'custom'
         });
-
-        throw new Error(`Failed to send email: ${error.message}`);
+        
+        return { success: true, message: 'Email sent successfully' };
+    } catch (error) {
+        logger.error('Error sending email:', error);
+        
+        // Log the full SendGrid error response
+        if (error.response) {
+            logger.error('SendGrid error response:', {
+                statusCode: error.code,
+                body: error.response.body,
+                errors: error.response.body?.errors
+            });
+            
+            // Log the specific error messages
+            if (error.response.body?.errors && Array.isArray(error.response.body.errors)) {
+                error.response.body.errors.forEach((err, index) => {
+                    logger.error(`SendGrid error ${index + 1}:`, {
+                        message: err.message,
+                        field: err.field,
+                        help: err.help
+                    });
+                });
+            }
+        }
+        
+        throw error;
     }
 }
 

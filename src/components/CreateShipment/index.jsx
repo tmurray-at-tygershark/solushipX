@@ -249,9 +249,19 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
         }
 
         try {
-            // Generate a simple draft ID with short timestamp
-            const shortTimestamp = Date.now().toString().slice(-6); // Last 6 digits
-            const newShipmentID = `${companyIdForAddress}-DRAFT-${shortTimestamp}`;
+            // Generate final shipment ID immediately (no DRAFT prefix)
+            let newShipmentID;
+            try {
+                // Use the official shipment ID generator
+                newShipmentID = await generateShipmentId(companyIdForAddress);
+                console.log("CreateShipment: Generated final shipmentID:", newShipmentID);
+            } catch (idError) {
+                console.warn("CreateShipment: Failed to generate shipmentID, using fallback:", idError);
+                // Fallback ID generation without DRAFT prefix
+                const shortTimestamp = Date.now().toString().slice(-6); // Last 6 digits
+                const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+                newShipmentID = `${companyIdForAddress}-${randomSuffix}${shortTimestamp}`;
+            }
 
             // Check if a shipment with this ID already exists
             const existingShipment = await checkShipmentExists(newShipmentID);

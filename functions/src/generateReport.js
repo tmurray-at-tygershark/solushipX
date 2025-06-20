@@ -725,7 +725,7 @@ async function sendReportNotifications(report, emailRecipients, type, reportId) 
             const emailContent = {
                 to: email,
                 from: {
-                    email: 'noreply@solushipx.com',
+                    email: 'noreply@integratedcarriers.com',
                     name: 'SolushipX Reports'
                 },
                 subject: `Report Ready: ${formatReportType(type)}`,
@@ -821,7 +821,7 @@ function generateReportEmailHTML(data, recipient) {
                 </div>
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                    <p style="margin: 0;">Questions about reports? Contact us at <a href="mailto:tyler@tygershark.com" style="color: #1c277d;">tyler@tygershark.com</a></p>
+                    <p style="margin: 0;">Questions about reports? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
                     <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                 </div>
             </div>
@@ -863,7 +863,7 @@ WHAT'S NEXT?
 - Schedule automated delivery for regular updates
 - Configure additional report types as needed
 
-Questions about reports? Contact tyler@tygershark.com
+Questions about reports? Contact support@integratedcarriers.com
 
 © 2024 SolushipX. All rights reserved.
     `;

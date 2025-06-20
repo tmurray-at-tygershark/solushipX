@@ -43,16 +43,20 @@ export const getCountryFlag = (address) => {
 export const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermDestination = '') => {
     const formatLocation = (address) => {
         if (!address || typeof address !== 'object') {
-            return { text: 'N/A', flag: '' };
+            return { text: 'N/A', flag: '', postalCode: '' };
         }
         // Format as "City, State/Province" for compact display
         const parts = [];
         if (address.city) parts.push(address.city);
         if (address.state || address.province) parts.push(address.state || address.province);
 
+        // Get postal/zip code
+        const postalCode = address.postalCode || address.zipCode || address.postal || address.zip || '';
+
         return {
             text: parts.length > 0 ? parts.join(', ') : 'N/A',
-            flag: getCountryFlag(address)
+            flag: getCountryFlag(address),
+            postalCode: postalCode
         };
     };
 
@@ -67,6 +71,12 @@ export const formatDateTime = (timestamp) => {
     if (!timestamp) return null;
 
     try {
+        // Handle serverTimestamp placeholders
+        if (timestamp._methodName === 'serverTimestamp') {
+            console.warn('Encountered serverTimestamp placeholder, returning null');
+            return null;
+        }
+
         let date;
         
         // Handle Firestore Timestamp objects

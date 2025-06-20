@@ -38,6 +38,7 @@ const ShipmentsTable = ({
         checkbox: { width: 48 },
         id: { width: 160 },
         date: { width: 100 },
+        reference: { width: 120 },
         customer: { width: 140 },
         route: { width: 150 },
         carrier: { width: 220 },
@@ -53,7 +54,7 @@ const ShipmentsTable = ({
         }}>
             <Table sx={{
                 width: '100%',
-                minWidth: 1150,
+                minWidth: 1178,
                 tableLayout: 'fixed',
                 '& .MuiTableCell-root': {
                     fontSize: '12px',
@@ -131,6 +132,14 @@ const ShipmentsTable = ({
                             DATE
                         </TableCell>
                         <TableCell sx={{
+                            width: 120,
+                            minWidth: 120,
+                            maxWidth: 120,
+                            backgroundColor: '#f8fafc !important'
+                        }}>
+                            REFERENCE
+                        </TableCell>
+                        <TableCell sx={{
                             width: 140,
                             minWidth: 140,
                             maxWidth: 140,
@@ -186,13 +195,13 @@ const ShipmentsTable = ({
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                            <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
                                 <CircularProgress />
                             </TableCell>
                         </TableRow>
                     ) : safeShipments.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={9} align="center" sx={{ py: 4, color: '#6b7280' }}>
+                            <TableCell colSpan={10} align="center" sx={{ py: 4, color: '#6b7280' }}>
                                 No shipments found
                             </TableCell>
                         </TableRow>

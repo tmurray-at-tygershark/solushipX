@@ -4,23 +4,21 @@ const admin = require('firebase-admin');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
+const uuid = require('uuid');
 
 const db = admin.firestore();
 const storage = admin.storage();
 
 /**
- * Generates a Generic Bill of Lading (BOL) PDF document for QuickShip
- * Based on the exact format from Basic_BOL.pdf template
- * @param {Object} request - Firebase function request containing shipment data
- * @returns {Object} - Success/error response with document download URL
+ * Core BOL generation function - can be called directly from other functions
+ * @param {string} shipmentId - The shipment ID
+ * @param {string} firebaseDocId - The Firebase document ID
+ * @returns {Object} - Success/error response with document info
  */
-const generateGenericBOL = onCall(async (request) => {
+async function generateBOLCore(shipmentId, firebaseDocId) {
     try {
-        const { shipmentId, firebaseDocId } = request.data;
+        logger.info('generateBOLCore called with:', { shipmentId, firebaseDocId });
         
-        logger.info('generateGenericBOL called with:', { shipmentId, firebaseDocId });
-        
-        // Validate required parameters
         if (!shipmentId) {
             throw new Error('Shipment ID is required');
         }
@@ -30,7 +28,6 @@ const generateGenericBOL = onCall(async (request) => {
         }
         
         // Get shipment data from Firestore
-        // First try to get by document ID (for when firebaseDocId is the actual doc ID)
         let shipmentDoc = await db.collection('shipments').doc(firebaseDocId).get();
         let shipmentData = null;
         
@@ -38,7 +35,7 @@ const generateGenericBOL = onCall(async (request) => {
             shipmentData = shipmentDoc.data();
             logger.info('Retrieved shipment data by document ID for Generic BOL generation');
         } else {
-            // If not found by document ID, try to find by shipmentID field
+            // Try to find by shipmentID field
             logger.info(`Document ${firebaseDocId} not found, searching by shipmentID field`);
             const shipmentQuery = await db.collection('shipments')
                 .where('shipmentID', '==', shipmentId)
@@ -50,7 +47,7 @@ const generateGenericBOL = onCall(async (request) => {
                 shipmentData = shipmentDoc.data();
                 logger.info(`Found shipment by shipmentID: ${shipmentId}`);
             } else {
-                // Also try searching by the firebaseDocId as shipmentID (in case they're passed incorrectly)
+                // Try firebaseDocId as shipmentID
                 const fallbackQuery = await db.collection('shipments')
                     .where('shipmentID', '==', firebaseDocId)
                     .limit(1)
@@ -61,7 +58,7 @@ const generateGenericBOL = onCall(async (request) => {
                     shipmentData = shipmentDoc.data();
                     logger.info(`Found shipment by fallback shipmentID: ${firebaseDocId}`);
                 } else {
-                    throw new Error(`Shipment with ID ${shipmentId} or ${firebaseDocId} not found in database`);
+                    throw new Error(`Shipment with ID ${shipmentId} or ${firebaseDocId} not found`);
                 }
             }
         }
@@ -71,15 +68,15 @@ const generateGenericBOL = onCall(async (request) => {
         }
         
         // Extract data for BOL generation
-        const bolData = extractGenericBOLData(shipmentData, shipmentId);
+        const bolData = extractBOLData(shipmentData, shipmentId);
         
         // Generate the PDF BOL
-        const pdfBuffer = await generateGenericBOLPDF(bolData);
+        const pdfBuffer = await generateBOLPDF(bolData);
         
         // Store the BOL document
-        const documentInfo = await storeGenericBOLDocument(pdfBuffer, shipmentId, firebaseDocId);
+        const documentInfo = await storeBOLDocument(pdfBuffer, shipmentId, firebaseDocId);
         
-        logger.info('Generic BOL generation completed successfully');
+        logger.info('Core Generic BOL generation completed successfully');
         
         return {
             success: true,
@@ -92,6 +89,33 @@ const generateGenericBOL = onCall(async (request) => {
         };
         
     } catch (error) {
+        logger.error('Error in generateBOLCore:', error);
+        return {
+            success: false,
+            error: error.message,
+            data: null
+        };
+    }
+}
+
+/**
+ * Generates a Generic Bill of Lading (BOL) PDF document
+ * Using exact Polaris Transportation BOL format with QuickShip data
+ */
+const generateGenericBOL = onCall({
+    minInstances: 1, // Keep warm to prevent cold starts for document generation
+    memory: '1GiB', // More memory for PDF generation
+    timeoutSeconds: 60
+}, async (request) => {
+    try {
+        const { shipmentId, firebaseDocId } = request.data;
+        
+        logger.info('generateGenericBOL called with:', { shipmentId, firebaseDocId });
+        
+        // Use the core function
+        return await generateBOLCore(shipmentId, firebaseDocId);
+        
+    } catch (error) {
         logger.error('Error in generateGenericBOL:', error);
         return {
             success: false,
@@ -102,19 +126,20 @@ const generateGenericBOL = onCall(async (request) => {
 });
 
 /**
- * Extracts and formats data from shipment for Generic BOL generation
+ * Extracts and formats data from shipment for BOL generation
+ * Enhanced to handle QuickShip data formats
  * @param {Object} shipmentData - Firestore shipment document data
- * @param {string} shipmentId - Shipment ID
+ * @param {string} shipmentId - QuickShip shipment ID
  * @returns {Object} - Formatted BOL data
  */
-function extractGenericBOLData(shipmentData, shipmentId) {
-    console.log('extractGenericBOLData: Processing shipment data for Generic BOL');
+function extractBOLData(shipmentData, shipmentId) {
+    console.log('extractBOLData: Processing QuickShip data for Generic BOL');
     
-    // Extract addresses
+    // Extract addresses from QuickShip format
     const shipFrom = shipmentData.shipFrom || {};
     const shipTo = shipmentData.shipTo || {};
     
-    // Extract packages
+    // Extract packages from QuickShip format
     const packages = shipmentData.packages || [];
     
     // Extract reference information
@@ -123,114 +148,124 @@ function extractGenericBOLData(shipmentData, shipmentId) {
                           shipmentData.shipmentID ||
                           '';
     
-    // Generate BOL number
-    const bolNumber = `BOL-${shipmentId}`;
+    // Generate BOL number with proper format
+    const bolNumber = Math.floor(Math.random() * 900000) + 4000000; // Generates number like 4429597
     
     // Extract and format ship date
     const shipDate = shipmentData.shipmentInfo?.shipmentDate || 
+                    shipmentData.shipmentDate ||
                     new Date().toISOString().split('T')[0];
     
     const formattedShipDate = new Date(shipDate).toLocaleDateString('en-US', {
+        year: 'numeric',
         month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
+        day: '2-digit'
     });
+    
+    // Extract Pro Number from QuickShip
+    const proNumber = shipmentData.shipmentInfo?.carrierTrackingNumber || 
+                     shipmentData.carrierTrackingNumber ||
+                     `P${Math.floor(Math.random() * 90000000) + 10000000}`;
     
     // Calculate total weight and piece count
     let totalWeight = 0;
     let totalPieces = 0;
     
-    console.log('Calculating totals from packages:', packages);
-    
-    packages.forEach((pkg, index) => {
-        // Ensure numeric values for individual packages
-        const rawWeight = pkg.weight || pkg.totalWeight || 0;
-        const weight = parseFloat(String(rawWeight).replace(/[^\d.-]/g, '')) || 0;
+    packages.forEach(pkg => {
+        const weight = parseFloat(String(pkg.weight || 0).replace(/[^\d.-]/g, '')) || 0;
+        const quantity = parseInt(String(pkg.quantity || pkg.packagingQuantity || 1).replace(/[^\d]/g, '')) || 1;
         
-        const rawQuantity = pkg.quantity || pkg.packagingQuantity || pkg.pieces || 1;
-        const pieces = parseInt(String(rawQuantity).replace(/[^\d]/g, '')) || 1;
-        
-        console.log(`Package ${index + 1}: weight=${rawWeight} -> ${weight}, quantity=${rawQuantity} -> ${pieces}`);
-        
-        // Add to totals (ensure numeric addition)
-        totalWeight = Number(totalWeight) + Number(weight);
-        totalPieces = Number(totalPieces) + Number(pieces);
+        totalWeight += weight;
+        totalPieces += quantity;
     });
     
-    // Ensure final totals are numbers
-    totalWeight = Number(totalWeight) || 0;
-    totalPieces = Number(totalPieces) || 0;
+    // Get carrier name from QuickShip
+    const carrierName = shipmentData.selectedCarrier || 
+                       shipmentData.carrier || 
+                       'GENERIC CARRIER';
     
-    console.log('Final calculated totals:', { totalWeight, totalPieces });
+    // Extract special instructions for QuickShip
+    const specialInstructions = [];
     
-    // Extract carrier details
-    const carrierDetails = shipmentData.carrierDetails || {};
-    const carrierName = shipmentData.carrier || 'Generic Carrier';
+    // Add QuickShip specific instructions
+    specialInstructions.push('QuickShip Manual Entry Shipment');
+    specialInstructions.push('Questions or issues with shipment call support');
+    
+    // Add pickup special instructions if available
+    const pickupInstructions = shipmentData.shipmentInfo?.pickupSpecialInstructions ||
+                              shipmentData.pickup_instructions ||
+                              shipmentData.specialInstructions?.pickup;
+    if (pickupInstructions && pickupInstructions.trim()) {
+        specialInstructions.push(`PICKUP: ${pickupInstructions}`);
+    }
+    
+    // Add delivery special instructions if available
+    const deliveryInstructions = shipmentData.shipmentInfo?.deliverySpecialInstructions ||
+                                shipmentData.delivery_instructions ||
+                                shipmentData.specialInstructions?.delivery;
+    if (deliveryInstructions && deliveryInstructions.trim()) {
+        specialInstructions.push(`DELIVERY: ${deliveryInstructions}`);
+    }
     
     return {
         // Header Information
-        bolNumber: bolNumber,
+        bolNumber: bolNumber.toString(),
         shipDate: formattedShipDate,
         carrier: carrierName,
-        proNumber: shipmentId,
+        proNumber: proNumber,
         customerRef: referenceNumber,
         
-        // Ship From Information
+        // Ship From Information - Enhanced extraction for QuickShip
         shipFrom: {
             company: shipFrom?.companyName || shipFrom?.company || 'Unknown Shipper',
             contact: shipFrom?.contact || shipFrom?.contactName || '',
-            address1: shipFrom?.street || '',
-            address2: shipFrom?.street2 || '',
+            address1: shipFrom?.street || shipFrom?.address1 || '',
+            address2: shipFrom?.street2 || shipFrom?.address2 || '',
             city: shipFrom?.city || '',
-            state: shipFrom?.state || '',
-            zip: shipFrom?.postalCode || '',
+            state: shipFrom?.state || shipFrom?.province || '',
+            zip: shipFrom?.postalCode || shipFrom?.zip || '',
             phone: shipFrom?.phone || '',
             openTime: shipmentData.shipmentInfo?.earliestPickup || '09:00',
             closeTime: shipmentData.shipmentInfo?.latestPickup || '17:00'
         },
         
-        // Ship To Information
+        // Ship To Information - Enhanced extraction for QuickShip
         shipTo: {
             company: shipTo?.companyName || shipTo?.company || 'Unknown Consignee',
             contact: shipTo?.contact || shipTo?.contactName || '',
-            address1: shipTo?.street || '',
-            address2: shipTo?.street2 || '',
+            address1: shipTo?.street || shipTo?.address1 || '',
+            address2: shipTo?.street2 || shipTo?.address2 || '',
             city: shipTo?.city || '',
-            state: shipTo?.state || '',
-            zip: shipTo?.postalCode || '',
+            state: shipTo?.state || shipTo?.province || '',
+            zip: shipTo?.postalCode || shipTo?.zip || '',
             phone: shipTo?.phone || ''
         },
         
         // Third Party Billing (SolushipX - Integrated Carriers)
         thirdParty: {
-            company: 'INTEGRATED CARRIERS',
+            company: 'SOLUSHIPX - INTEGRATED CARRIERS',
             address1: '9 - 75 FIRST STREET,',
             address2: 'SUITE 209,',
             city: 'Orangeville',
             state: 'ON',
-            zip: 'L9W 5B6'
+            zip: 'L9W 5B6',
+            accountNumber: '000605'
         },
         
-        // Package Information
+        // Package Information - Enhanced mapping for QuickShip
         packages: packages.map((pkg, index) => {
-            // Ensure numeric values for individual packages
-            const rawWeight = pkg.weight || pkg.totalWeight || 0;
-            const weight = parseFloat(String(rawWeight).replace(/[^\d.-]/g, '')) || 0;
-            
-            const rawQuantity = pkg.quantity || pkg.packagingQuantity || pkg.pieces || 1;
-            const pieces = parseInt(String(rawQuantity).replace(/[^\d]/g, '')) || 1;
-            
-            const length = parseFloat(pkg.length) || 48;
-            const width = parseFloat(pkg.width) || 40;
-            const height = parseFloat(pkg.height) || 48;
+            const weight = parseFloat(String(pkg.weight || 0).replace(/[^\d.-]/g, '')) || 0;
+            const length = pkg.length || 48;
+            const width = pkg.width || 40;
+            const height = pkg.height || 48;
             
             return {
-                pieces: pieces,
+                type: pkg.packageType || pkg.type || 'PALLET',
                 weight: weight,
                 description: pkg.description || 
                            pkg.itemDescription ||
                            'General Freight',
-                dimensions: `${length}" x ${width}" x ${height}"`,
+                dimensions: `${length} x ${width} x ${height}`,
                 freightClass: pkg.freightClass || ''
             };
         }),
@@ -239,8 +274,8 @@ function extractGenericBOLData(shipmentData, shipmentId) {
         totalPieces: totalPieces,
         totalWeight: totalWeight,
         
-        // Manual rates for special instructions
-        manualRates: shipmentData.manualRates || [],
+        // Special Instructions
+        specialInstructions: specialInstructions,
         
         // Store complete shipment data for reference
         shipmentData: shipmentData
@@ -248,22 +283,20 @@ function extractGenericBOLData(shipmentData, shipmentId) {
 }
 
 /**
- * Generates the Generic BOL PDF document using PDFKit
- * @param {Object} bolData - Formatted BOL data
- * @returns {Buffer} - PDF buffer
+ * Generates the BOL PDF with exact layout matching Polaris Transportation format
  */
-async function generateGenericBOLPDF(bolData) {
+async function generateBOLPDF(bolData) {
     return new Promise((resolve, reject) => {
         try {
-            // Create PDF document (Letter size: 612 x 792 points)
+            // Create PDF document (Letter size: 612 x 792 points) with no margins for exact positioning
             const doc = new PDFDocument({
                 size: 'letter',
                 margin: 0,
                 info: {
-                    Title: `Generic BOL ${bolData.bolNumber}`,
+                    Title: `BOL ${bolData.bolNumber} - Generic BOL`,
                     Author: 'Integrated Carriers SoluShip',
                     Subject: 'Bill of Lading',
-                    Keywords: 'BOL, Bill of Lading, Generic, Freight'
+                    Keywords: 'BOL, Bill of Lading, QuickShip, Freight'
                 }
             });
             
@@ -275,8 +308,8 @@ async function generateGenericBOLPDF(bolData) {
             });
             doc.on('error', reject);
             
-            // Build the BOL document
-            buildGenericBOLDocument(doc, bolData);
+            // Build the BOL document with exact positioning matching Polaris format
+            buildExactBOLDocument(doc, bolData);
             
             // Finalize the PDF
             doc.end();
@@ -288,46 +321,58 @@ async function generateGenericBOLPDF(bolData) {
 }
 
 /**
- * Builds the complete Generic BOL document with exact positioning
+ * Builds the complete BOL document with exact pixel positioning matching Polaris format
+ * OPTIMIZED FOR 8.5x11 (LETTER SIZE) FORMAT
  * @param {PDFDocument} doc - PDFKit document instance
  * @param {Object} bolData - BOL data
  */
-function buildGenericBOLDocument(doc, bolData) {
+function buildExactBOLDocument(doc, bolData) {
     // Set default stroke and fill colors
     doc.strokeColor('#000000').fillColor('#000000');
     
-    // Main container border
+    // Main container border (full page border) - SIZED FOR 8.5x11
     doc.lineWidth(2)
-       .rect(20, 20, 572, 752)
+       .rect(20, 20, 572, 752) // Standard letter size with margins
        .stroke();
     
-    // Header Section
-    drawGenericHeader(doc, bolData);
+    // Header Section (Y: 20-100)
+    drawExactHeader(doc, bolData);
     
-    // Ship From/To Section
-    drawGenericShippingSection(doc, bolData);
+    // Ship From/To Section (Y: 100-260)
+    drawExactShippingSection(doc, bolData);
     
-    // Third Party Billing Section  
-    drawGenericThirdPartySection(doc, bolData);
+    // Third Party Billing Section (Y: 260-340)
+    drawExactThirdPartySection(doc, bolData);
     
-    // Special Services Section
-    drawGenericSpecialServices(doc, bolData);
+    // Special Instructions Section (Y: 340-400)
+    drawExactSpecialInstructions(doc, bolData);
     
-    // Freight Table Section
-    drawGenericFreightTable(doc, bolData);
+    // Freight Table Section (Y: 400-520) - ADJUSTED HEIGHT
+    drawExactFreightTable(doc, bolData);
     
-    // Signature Section
-    drawGenericSignatureSection(doc, bolData);
+    // Value Declaration Section (Y: 525-565) - REPOSITIONED
+    drawExactValueDeclaration(doc, bolData);
+    
+    // Trailer Information Section (Y: 570-620) - REPOSITIONED
+    drawExactTrailerSection(doc, bolData);
+    
+    // Signature Section (Y: 625-725) - REPOSITIONED
+    drawExactSignatureSection(doc, bolData);
+    
+    // Legal disclaimer at bottom (Y: 735-750) - FITS ON PAGE
+    drawExactLegalDisclaimer(doc);
 }
 
 /**
- * Draws the header section with Integrated Carriers branding
+ * Draws the exact header section matching the Polaris BOL with SolushipX branding
  */
-function drawGenericHeader(doc, bolData) {
-    // Company logo area
+function drawExactHeader(doc, bolData) {
+    // Company logo area (top-left) - REMOVED BOX around logo
+    // Load and embed SolushipX logo image
     try {
         const logoPath = path.join(__dirname, '../../assets/SolushipX_black.png');
         if (fs.existsSync(logoPath)) {
+            // Embed the actual logo image WITHOUT border box
             doc.image(logoPath, 35, 30, {
                 width: 150,
                 height: 60,
@@ -336,373 +381,639 @@ function drawGenericHeader(doc, bolData) {
                 valign: 'center'
             });
         } else {
-            // Fallback to text
+            // Fallback to text if image not found
             doc.font('Helvetica-Bold')
-               .fontSize(20)
+               .fontSize(16)
                .fillColor('#000000')
-               .text('INTEGRATED', 35, 35)
-               .text('CARRIERS', 35, 55);
+               .text('SolushipX', 35, 40);
+            
+            // Add registered trademark symbol
+            doc.fontSize(6)
+               .text('®', 135, 35);
+            
+            // Company subtitle
+            doc.font('Helvetica')
+               .fontSize(8)
+               .text('INTEGRATED CARRIERS', 35, 60)
+               .fontSize(7)
+               .text('Freight Logistics & Transportation', 35, 72);
         }
     } catch (error) {
+        console.error('Error loading logo image:', error);
         // Fallback to text-based logo
         doc.font('Helvetica-Bold')
-           .fontSize(20)
+           .fontSize(16)
            .fillColor('#000000')
-           .text('INTEGRATED', 35, 35)
-           .text('CARRIERS', 35, 55);
+           .text('SolushipX', 35, 40);
+        
+        // Add registered trademark symbol
+        doc.fontSize(6)
+           .text('®', 135, 35);
+        
+        // Company subtitle
+        doc.font('Helvetica')
+           .fontSize(8)
+           .text('INTEGRATED CARRIERS', 35, 60)
+           .fontSize(7)
+           .text('Freight Logistics & Transportation', 35, 72);
     }
     
-    // Title section
+    // Professional accent line under logo area
+    doc.strokeColor('#000000')
+       .lineWidth(2)
+       .moveTo(35, 83)
+       .lineTo(170, 83)
+       .stroke();
+    
+    // Title section (top-right) - FIXED POSITIONING TO PREVENT OVERLAP
     doc.font('Helvetica-Bold')
-       .fontSize(16)
+       .fontSize(11)
        .fillColor('#000000')
-       .text('BILL OF LADING', 350, 30, {
-           width: 200,
+       .text('LTL Bill of Lading- Not Negotiable', 280, 25, {
+           width: 160,
            align: 'center'
        });
     
-    doc.font('Helvetica')
-       .fontSize(12)
-       .text('Not Negotiable', 350, 50, {
-           width: 200,
-           align: 'center'
-       });
-    
-    // BOL Number box
+    // BOL Number box - REPOSITIONED AND RESIZED TO FIT PROPERLY
     doc.lineWidth(1)
-       .rect(450, 70, 120, 25)
+       .rect(450, 45, 120, 25)
        .stroke();
     
     doc.font('Helvetica-Bold')
-       .fontSize(8)
-       .text('BOL Number:', 455, 75)
-       .fontSize(10)
-       .text(bolData.bolNumber, 455, 87);
+       .fontSize(7)
+       .text('BOL Number:', 455, 50)
+       .fontSize(9)
+       .fillColor('#000000')
+       .text(bolData.bolNumber, 455, 62, {
+           width: 110,
+           align: 'left'
+       });
     
-    // Horizontal separator
-    doc.lineWidth(1)
-       .moveTo(25, 110)
-       .lineTo(587, 110)
+    // Horizontal separator line
+    doc.strokeColor('#000000')
+       .lineWidth(1)
+       .moveTo(25, 100)
+       .lineTo(587, 100)
        .stroke();
 }
 
 /**
- * Draws the shipping addresses section
+ * Draws the exact shipping addresses section
  */
-function drawGenericShippingSection(doc, bolData) {
-    const sectionY = 115;
-    
-    // Ship From section
+function drawExactShippingSection(doc, bolData) {
+    // Ship From section (left column)
     doc.lineWidth(1)
-       .rect(25, sectionY, 275, 90)
+       .rect(25, 100, 280, 80)
        .stroke();
     
+    // Ship From header
     doc.font('Helvetica-Bold')
-       .fontSize(10)
-       .text('SHIP FROM', 30, sectionY + 5);
+       .fontSize(8)
+       .fillColor('#FFFFFF')
+       .rect(25, 100, 280, 15)
+       .fill('#000000')
+       .fillColor('#FFFFFF')
+       .text('SHIP FROM', 30, 105);
     
-    let yPos = sectionY + 20;
-    doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .text(bolData.shipFrom.company, 30, yPos);
-    yPos += 12;
+    // Ship From content
+    doc.fillColor('#000000')
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text(bolData.shipFrom.company, 30, 118);
     
-    if (bolData.shipFrom.contact) {
+    // Only show contact if it exists and is meaningful
+    let yPos = 128;
+    if (bolData.shipFrom.contact && bolData.shipFrom.contact.trim() !== '' && bolData.shipFrom.contact !== bolData.shipFrom.company) {
         doc.font('Helvetica')
-           .fontSize(8)
            .text(`Contact: ${bolData.shipFrom.contact}`, 30, yPos);
         yPos += 10;
     }
     
-    doc.text(bolData.shipFrom.address1, 30, yPos);
+    doc.font('Helvetica')
+       .text(bolData.shipFrom.address1, 30, yPos);
     yPos += 10;
     
-    if (bolData.shipFrom.address2) {
+    if (bolData.shipFrom.address2 && bolData.shipFrom.address2.trim()) {
         doc.text(bolData.shipFrom.address2, 30, yPos);
         yPos += 10;
     }
     
     doc.text(`${bolData.shipFrom.city}, ${bolData.shipFrom.state} ${bolData.shipFrom.zip}`, 30, yPos);
-    yPos += 10;
     
-    doc.text(`Phone: ${bolData.shipFrom.phone}`, 30, yPos);
+    // Ship From timing
+    doc.text(`Open: ${bolData.shipFrom.openTime}`, 200, 118)
+       .text(`Close: ${bolData.shipFrom.closeTime}`, 200, 128)
+       .text(`Phone: ${bolData.shipFrom.phone}`, 200, 138);
+    
+    // Ship date and carrier info (right side of Ship From)
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('Ship Date:', 320, 118)
+       .font('Helvetica')
+       .text(bolData.shipDate, 370, 118);
+    
+    doc.font('Helvetica-Bold')
+       .text('Carrier:', 320, 128)
+       .font('Helvetica')
+       .fontSize(6)
+       .text(bolData.carrier, 370, 128, { width: 200 });
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('Pro Number:', 320, 145)
+       .font('Helvetica')
+       .text(bolData.proNumber, 390, 145);
     
     // Ship To section
     doc.lineWidth(1)
-       .rect(305, sectionY, 282, 90)
+       .rect(25, 180, 280, 80)
        .stroke();
     
-    doc.font('Helvetica-Bold')
-       .fontSize(10)
-       .text('SHIP TO', 310, sectionY + 5);
-    
-    yPos = sectionY + 20;
-    doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .text(bolData.shipTo.company, 310, yPos);
-    yPos += 12;
-    
-    if (bolData.shipTo.contact) {
-        doc.font('Helvetica')
-           .fontSize(8)
-           .text(`Contact: ${bolData.shipTo.contact}`, 310, yPos);
-        yPos += 10;
-    }
-    
-    doc.text(bolData.shipTo.address1, 310, yPos);
-    yPos += 10;
-    
-    if (bolData.shipTo.address2) {
-        doc.text(bolData.shipTo.address2, 310, yPos);
-        yPos += 10;
-    }
-    
-    doc.text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 310, yPos);
-    yPos += 10;
-    
-    doc.text(`Phone: ${bolData.shipTo.phone}`, 310, yPos);
-    
-    // Date and Pro Number
+    // Ship To header
     doc.font('Helvetica-Bold')
        .fontSize(8)
-       .text('Date:', 200, sectionY + 60)
+       .fillColor('#FFFFFF')
+       .rect(25, 180, 280, 15)
+       .fill('#000000')
+       .fillColor('#FFFFFF')
+       .text('SHIP TO', 30, 185);
+    
+    // Ship To content
+    doc.fillColor('#000000')
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text(bolData.shipTo.company, 30, 198);
+    
+    // Only show contact if it exists and is meaningful
+    let shipToYPos = 208;
+    if (bolData.shipTo.contact && bolData.shipTo.contact.trim() !== '' && bolData.shipTo.contact !== bolData.shipTo.company) {
+        doc.font('Helvetica')
+           .text(`Contact: ${bolData.shipTo.contact}`, 30, shipToYPos);
+        shipToYPos += 10;
+    }
+    
+    // Properly format address
+    doc.font('Helvetica');
+    if (bolData.shipTo.address1) {
+        doc.text(bolData.shipTo.address1, 30, shipToYPos);
+        shipToYPos += 10;
+    }
+    if (bolData.shipTo.address2 && bolData.shipTo.address2.trim()) {
+        doc.text(bolData.shipTo.address2, 30, shipToYPos);
+        shipToYPos += 10;
+    }
+    doc.text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 30, shipToYPos);
+    
+    // References section (right column)
+    doc.lineWidth(1)
+       .rect(305, 180, 282, 80)
+       .stroke();
+    
+    // References header
+    doc.font('Helvetica-Bold')
+       .fontSize(8)
+       .fillColor('#FFFFFF')
+       .rect(305, 180, 282, 15)
+       .fill('#000000')
+       .fillColor('#FFFFFF')
+       .text('REFERENCES', 310, 185);
+    
+    // References content
+    doc.fillColor('#000000')
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text('BOL #:', 310, 200)
        .font('Helvetica')
-       .text(bolData.shipDate, 220, sectionY + 60);
+       .text(bolData.bolNumber, 350, 200);
     
     doc.font('Helvetica-Bold')
-       .text('Pro #:', 200, sectionY + 75)
+       .text('Customer Ref #:', 310, 215)
        .font('Helvetica')
-       .text(bolData.proNumber, 225, sectionY + 75);
+       .text(bolData.customerRef, 390, 215);
+    
+    doc.font('Helvetica-Bold')
+       .text('P.O. Number:', 310, 230)
+       .font('Helvetica')
+       .text('', 380, 230);
 }
 
 /**
- * Draws the third party billing section
+ * Draws the exact third party billing section
  */
-function drawGenericThirdPartySection(doc, bolData) {
-    const sectionY = 210;
-    
+function drawExactThirdPartySection(doc, bolData) {
+    // Third party billing section
     doc.lineWidth(1)
-       .rect(25, sectionY, 562, 60)
+       .rect(25, 260, 562, 80)
        .stroke();
     
-    doc.font('Helvetica-Bold')
-       .fontSize(10)
-       .text('THIRD PARTY FREIGHT CHARGES BILLED TO', 30, sectionY + 5);
-    
-    doc.font('Helvetica')
-       .fontSize(9)
-       .text(bolData.thirdParty.company, 30, sectionY + 20)
-       .text(bolData.thirdParty.address1, 30, sectionY + 35)
-       .text(`${bolData.thirdParty.city}, ${bolData.thirdParty.state} ${bolData.thirdParty.zip}`, 30, sectionY + 50);
-    
-    // Freight charges checkboxes
+    // Third party header
     doc.font('Helvetica-Bold')
        .fontSize(8)
-       .text('Freight Charges:', 350, sectionY + 20);
+       .fillColor('#FFFFFF')
+       .rect(25, 260, 562, 15)
+       .fill('#000000')
+       .fillColor('#FFFFFF')
+       .text('THIRD PARTY FREIGHT CHARGES BILLED TO', 30, 265);
     
-    doc.rect(350, sectionY + 35, 8, 8).stroke()
+    // Third party content
+    doc.fillColor('#000000')
        .font('Helvetica')
        .fontSize(7)
-       .text('Prepaid', 365, sectionY + 37);
+       .text(bolData.thirdParty.company, 30, 280)
+       .text(bolData.thirdParty.address1, 30, 290)
+       .text(bolData.thirdParty.address2, 30, 300)
+       .text(`${bolData.thirdParty.city}, ${bolData.thirdParty.state} ${bolData.thirdParty.zip}`, 30, 310);
     
-    doc.rect(420, sectionY + 35, 8, 8).stroke()
-       .text('Collect', 435, sectionY + 37);
-    
-    doc.rect(480, sectionY + 35, 8, 8).stroke()
-       .text('3rd Party', 495, sectionY + 37);
-    
-    // Check the 3rd Party box
-    doc.text('✓', 482, sectionY + 36);
-}
-
-/**
- * Draws special services section
- */
-function drawGenericSpecialServices(doc, bolData) {
-    const sectionY = 275;
-    
-    doc.lineWidth(1)
-       .rect(25, sectionY, 562, 40)
-       .stroke();
-    
+    // Account number (right side)
     doc.font('Helvetica-Bold')
-       .fontSize(10)
-       .text('SPECIAL SERVICES', 30, sectionY + 5);
+       .fontSize(7)
+       .text('Account Number:', 400, 280)
+       .font('Helvetica')
+       .text(bolData.thirdParty.accountNumber, 490, 280);
     
-    // List manual rate items as special services
-    let servicesText = 'Manual Rate Entry: ';
-    if (bolData.manualRates && bolData.manualRates.length > 0) {
-        const rateItems = bolData.manualRates.map(rate => 
-            `${rate.chargeName || rate.code} - $${rate.charge || '0.00'}`
-        ).join(', ');
-        servicesText += rateItems;
-    } else {
-        servicesText += 'Standard freight service';
-    }
-    
+    // Check boxes for freight terms
+    const checkBoxY = 300;
     doc.font('Helvetica')
-       .fontSize(8)
-       .text(servicesText, 30, sectionY + 20, {
-           width: 520,
-           height: 15
-       });
+       .fontSize(6)
+       .text('Freight Charges are:', 400, checkBoxY);
+    
+    // Draw checkboxes
+    doc.rect(400, checkBoxY + 12, 6, 6).stroke()
+       .text('Prepaid', 410, checkBoxY + 14);
+    
+    doc.rect(450, checkBoxY + 12, 6, 6).stroke()
+       .text('Collect', 460, checkBoxY + 14);
+    
+    doc.rect(500, checkBoxY + 12, 6, 6).stroke()
+       .text('3rd Party', 510, checkBoxY + 14);
 }
 
 /**
- * Draws the freight table section
+ * Draws the exact special instructions section
  */
-function drawGenericFreightTable(doc, bolData) {
-    const tableY = 320;
-    const tableHeight = 160;
-    
-    // Table border
+function drawExactSpecialInstructions(doc, bolData) {
+    // Special instructions section
     doc.lineWidth(1)
-       .rect(25, tableY, 562, tableHeight)
+       .rect(25, 340, 562, 60)
        .stroke();
     
-    // Column definitions
+    // Special instructions header
+    doc.font('Helvetica-Bold')
+       .fontSize(8)
+       .fillColor('#FFFFFF')
+       .rect(25, 340, 562, 15)
+       .fill('#000000')
+       .fillColor('#FFFFFF')
+       .text('SPECIAL INSTRUCTIONS', 30, 345);
+    
+    // Special instructions content
+    doc.fillColor('#000000')
+       .font('Helvetica')
+       .fontSize(6);
+    
+    let textY = 360;
+    bolData.specialInstructions.forEach((instruction, index) => {
+        doc.text(instruction, 30, textY);
+        textY += 10;
+    });
+}
+
+/**
+ * Draws the exact freight table section
+ */
+function drawExactFreightTable(doc, bolData) {
+    const tableStartY = 400;
+    const tableWidth = 562;
+    const rowHeight = 18;
+    
+    // Column definitions with exact widths
     const columns = [
-        { header: 'PIECES', width: 70, x: 25 },
-        { header: 'WEIGHT\n(LBS)', width: 80, x: 95 },
-        { header: 'HM', width: 40, x: 175 },
-        { header: 'COMMODITY DESCRIPTION', width: 250, x: 215 },
-        { header: 'DIMENSIONS\nL x W x H', width: 122, x: 465 }
+        { header: 'PACKAGE\nQUANTITY', width: 60, align: 'center' },
+        { header: 'PACKAGE\nTYPE', width: 60, align: 'center' },
+        { header: 'WEIGHT\n(LBS)', width: 60, align: 'center' },
+        { header: 'H/M', width: 40, align: 'center' },
+        { header: 'COMMODITY DESCRIPTION', width: 220, align: 'left' },
+        { header: 'DIMENSIONS\nL x W x H', width: 80, align: 'center' },
+        { header: 'CLASS', width: 42, align: 'center' }
     ];
     
-    // Draw header
-    doc.font('Helvetica-Bold')
-       .fontSize(8)
-       .fillColor('#000000')
-       .rect(25, tableY, 562, 20)
+    // Draw table border
+    doc.lineWidth(1)
+       .rect(25, tableStartY, tableWidth, 120)
        .stroke();
     
+    // Draw table header
+    doc.font('Helvetica-Bold')
+       .fontSize(6)
+       .fillColor('#FFFFFF')
+       .rect(25, tableStartY, tableWidth, 20)
+       .fill('#000000');
+    
+    let xPos = 25;
     columns.forEach(col => {
-        doc.text(col.header, col.x + 3, tableY + 3, {
-            width: col.width - 6,
-            align: 'center'
-        });
+        doc.fillColor('#FFFFFF')
+           .text(col.header, xPos + 2, tableStartY + 3, {
+               width: col.width - 4,
+               align: col.align,
+               height: 16
+           });
         
-        // Column separators
-        if (col.x > 25) {
-            doc.moveTo(col.x, tableY)
-               .lineTo(col.x, tableY + tableHeight)
+        // Draw column separators
+        if (xPos > 25) {
+            doc.strokeColor('#FFFFFF')
+               .lineWidth(1)
+               .moveTo(xPos, tableStartY)
+               .lineTo(xPos, tableStartY + 20)
                .stroke();
         }
+        
+        xPos += col.width;
+    });
+    
+    // Draw column separators for data rows
+    doc.strokeColor('#000000')
+       .lineWidth(0.5);
+    
+    xPos = 25;
+    columns.forEach((col, index) => {
+        if (index > 0) {
+            doc.moveTo(xPos, tableStartY + 20)
+               .lineTo(xPos, tableStartY + 120)
+               .stroke();
+        }
+        xPos += col.width;
     });
     
     // Draw data rows
-    doc.font('Helvetica')
-       .fontSize(8);
+    doc.fillColor('#000000')
+       .font('Helvetica')
+       .fontSize(6);
     
-    let rowY = tableY + 25;
-    const maxRows = 6;
+    let dataY = tableStartY + 28;
+    const maxRows = 4;
     
     bolData.packages.slice(0, maxRows).forEach((pkg, index) => {
-        columns.forEach((col, colIndex) => {
-            let cellValue = '';
-            switch (colIndex) {
-                case 0: cellValue = pkg.pieces.toString(); break;
-                case 1: cellValue = pkg.weight.toFixed(0); break;
-                case 2: cellValue = ''; break; // HM
-                case 3: cellValue = pkg.description; break;
-                case 4: cellValue = pkg.dimensions; break;
-            }
-            
-            doc.text(cellValue, col.x + 3, rowY, {
-                width: col.width - 6,
-                align: colIndex === 3 ? 'left' : 'center'
-            });
+        if (index > 0) {
+            // Draw row separator
+            doc.strokeColor('#CCCCCC')
+               .lineWidth(0.25)
+               .moveTo(25, dataY - 3)
+               .lineTo(587, dataY - 3)
+               .stroke();
+        }
+        
+        xPos = 25;
+        const rowData = [
+            '1', // Package quantity
+            pkg.type || 'PALLET',
+            pkg.weight.toFixed(0),
+            '', // H/M
+            pkg.description,
+            pkg.dimensions,
+            pkg.freightClass || ''
+        ];
+        
+        rowData.forEach((data, colIndex) => {
+            doc.fillColor('#000000')
+               .text(data, xPos + 2, dataY, {
+                   width: columns[colIndex].width - 4,
+                   align: columns[colIndex].align,
+                   height: rowHeight - 3
+               });
+            xPos += columns[colIndex].width;
         });
         
-        rowY += 20;
-        
-        // Row separator
-        if (index < bolData.packages.length - 1 && index < maxRows - 1) {
-            doc.strokeColor('#CCCCCC')
-               .lineWidth(0.5)
-               .moveTo(25, rowY - 5)
-               .lineTo(587, rowY - 5)
-               .stroke()
-               .strokeColor('#000000')
-               .lineWidth(1);
-        }
+        dataY += rowHeight;
     });
     
-    // Totals section
-    const totalsY = tableY + tableHeight - 25;
+    // Position totals WITHIN the table at bottom
+    const totalsY = tableStartY + 95;
+    
+    // Draw separator line for totals section
     doc.strokeColor('#000000')
-       .lineWidth(1)
+       .lineWidth(0.5)
        .moveTo(25, totalsY)
        .lineTo(587, totalsY)
        .stroke();
     
+    // TOTAL PIECES and WEIGHT
     doc.font('Helvetica-Bold')
-       .fontSize(9)
+       .fontSize(7)
+       .fillColor('#000000')
        .text('TOTAL PIECES:', 350, totalsY + 5)
-       .text(bolData.totalPieces.toString(), 450, totalsY + 5)
+       .text(bolData.totalPieces.toString(), 430, totalsY + 5)
        .text('TOTAL WEIGHT:', 350, totalsY + 15)
-       .text(`${bolData.totalWeight.toFixed(0)} LBS`, 450, totalsY + 15);
+       .text(`${bolData.totalWeight.toFixed(0)} LBS`, 430, totalsY + 15);
 }
 
 /**
- * Draws the signature section
+ * Draws the exact value declaration section
  */
-function drawGenericSignatureSection(doc, bolData) {
-    const sigY = 485;
+function drawExactValueDeclaration(doc, bolData) {
+    // Value declaration section
+    doc.lineWidth(1)
+       .rect(25, 525, 562, 40)
+       .stroke();
+    
+    doc.font('Helvetica')
+       .fontSize(5)
+       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 530)
+       .text('The agreed or declared value of the property is specifically stated by the shipper to be not exceeding _____________ per _______________', 30, 538);
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(5)
+       .text('NOTE: Liability limitation for loss or damage in this shipment may be applicable. See 49 CFR 370.', 30, 548);
+    
+    // COD section (right side)
+    doc.lineWidth(0.5)
+       .rect(400, 525, 187, 40)
+       .stroke();
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(6)
+       .text('COD', 405, 530);
+    
+    doc.font('Helvetica')
+       .fontSize(5)
+       .text('Amount: $ _______________', 405, 540)
+       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 548)
+       .text('Customer check acceptable: ☐', 405, 556);
+}
+
+/**
+ * Draws the exact trailer loading section
+ */
+function drawExactTrailerSection(doc, bolData) {
+    const sectionY = 570;
+    
+    // Trailer loaded section (left)
+    doc.lineWidth(1)
+       .rect(25, sectionY, 186, 50)
+       .stroke();
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('TRAILER LOADED:', 30, sectionY + 5);
+    
+    doc.font('Helvetica')
+       .fontSize(6)
+       .text('_____________ by shipper', 30, sectionY + 18)
+       .text('_____________ by driver', 30, sectionY + 30);
+    
+    // Freight counted section (middle)
+    doc.lineWidth(1)
+       .rect(211, sectionY, 186, 50)
+       .stroke();
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('FREIGHT COUNTED:', 216, sectionY + 5);
+    
+    doc.font('Helvetica')
+       .fontSize(6)
+       .text('_____________ by shipper', 216, sectionY + 18)
+       .text('_____________ by driver', 216, sectionY + 30);
+    
+    // Container sealed section (right)
+    doc.lineWidth(1)
+       .rect(397, sectionY, 190, 50)
+       .stroke();
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('CONTAINER SEALED:', 402, sectionY + 5);
+    
+    doc.font('Helvetica')
+       .fontSize(6)
+       .text('_____________ by shipper', 402, sectionY + 18)
+       .text('_____________ by driver', 402, sectionY + 30);
+}
+
+/**
+ * Draws the exact signature section
+ */
+function drawExactSignatureSection(doc, bolData) {
+    const sigY = 625;
     const sigHeight = 100;
     const colWidth = 187;
     
-    // Three signature boxes
-    const signatures = [
-        { title: 'SHIPPER SIGNATURE/DATE', x: 25 },
-        { title: 'CARRIER SIGNATURE/DATE', x: 212 },
-        { title: 'CONSIGNEE SIGNATURE/DATE', x: 399 }
-    ];
+    // Shipper signature section (left)
+    doc.lineWidth(1)
+       .rect(25, sigY, colWidth, sigHeight)
+       .stroke();
     
-    signatures.forEach(sig => {
-        doc.lineWidth(1)
-           .rect(sig.x, sigY, colWidth, sigHeight)
-           .stroke();
-        
-        doc.font('Helvetica-Bold')
-           .fontSize(8)
-           .text(sig.title, sig.x + 5, sigY + 5);
-        
-        // Signature line
-        doc.strokeColor('#000000')
-           .lineWidth(0.5)
-           .moveTo(sig.x + 5, sigY + 70)
-           .lineTo(sig.x + 140, sigY + 70)
-           .stroke();
-        
-        doc.font('Helvetica')
-           .fontSize(7)
-           .text('Signature', sig.x + 5, sigY + 75);
-        
-        // Date line
-        doc.moveTo(sig.x + 150, sigY + 70)
-           .lineTo(sig.x + 180, sigY + 70)
-           .stroke();
-        
-        doc.text('Date', sig.x + 155, sigY + 75);
-    });
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('SHIPPER SIGNATURE/DATE', 30, sigY + 5);
     
-    // Legal text at bottom
     doc.font('Helvetica')
-       .fontSize(6)
-       .text('Subject to the conditions of the carrier\'s tariff. Received in good order except as noted.', 25, sigY + sigHeight + 10);
+       .fontSize(5)
+       .text('This is to certify that the above named materials are', 30, sigY + 16)
+       .text('properly classified, packaged, marked and labeled,', 30, sigY + 24)
+       .text('and are in proper condition for transportation', 30, sigY + 32)
+       .text('according to the applicable regulations of the', 30, sigY + 40)
+       .text('Department of Transportation.', 30, sigY + 48);
+    
+    // Signature lines
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(30, sigY + 65)
+       .lineTo(140, sigY + 65)
+       .stroke();
+    
+    doc.fontSize(5)
+       .text('Shipper', 30, sigY + 70);
+    
+    doc.moveTo(150, sigY + 65)
+       .lineTo(200, sigY + 65)
+       .stroke();
+    
+    doc.text('Date', 160, sigY + 70);
+    
+    // Carrier signature section (middle)
+    doc.lineWidth(1)
+       .rect(212, sigY, colWidth, sigHeight)
+       .stroke();
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('CARRIER SIGNATURE/DATE', 217, sigY + 5);
+    
+    doc.font('Helvetica')
+       .fontSize(5)
+       .text('Carrier acknowledges receipt of packages and', 217, sigY + 16)
+       .text('required placards. Property described above is', 217, sigY + 24)
+       .text('received in good order, except as noted.', 217, sigY + 32);
+    
+    // Signature lines
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(217, sigY + 65)
+       .lineTo(327, sigY + 65)
+       .stroke();
+    
+    doc.fontSize(5)
+       .text('Carrier', 217, sigY + 70);
+    
+    doc.moveTo(337, sigY + 65)
+       .lineTo(387, sigY + 65)
+       .stroke();
+    
+    doc.text('Date', 347, sigY + 70);
+    
+    // Consignee signature section (right)
+    doc.lineWidth(1)
+       .rect(399, sigY, 188, sigHeight)
+       .stroke();
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('CONSIGNEE SIGNATURE/DATE', 404, sigY + 5);
+    
+    doc.font('Helvetica')
+       .fontSize(5)
+       .text('Received in good order, except as noted.', 404, sigY + 16);
+    
+    // Signature lines
+    doc.strokeColor('#000000')
+       .lineWidth(0.5)
+       .moveTo(404, sigY + 65)
+       .lineTo(514, sigY + 65)
+       .stroke();
+    
+    doc.fontSize(5)
+       .text('Consignee', 404, sigY + 70);
+    
+    doc.moveTo(524, sigY + 65)
+       .lineTo(574, sigY + 65)
+       .stroke();
+    
+    doc.text('Date', 534, sigY + 70);
 }
 
 /**
- * Stores the Generic BOL document in Firebase Storage
+ * Draws the exact legal disclaimer at the bottom
  */
-async function storeGenericBOLDocument(pdfBuffer, shipmentId, firebaseDocId) {
+function drawExactLegalDisclaimer(doc) {
+    // Position legal disclaimer to fit on page
+    const disclaimerY = 735;
+    
+    doc.font('Helvetica')
+       .fontSize(5)
+       .text('Subject to Section 7 of conditions, if this shipment is to be delivered to the consignee without recourse on the consignor, the consignor shall sign the following statement:', 25, disclaimerY)
+       .text('The carrier shall not make delivery of this shipment without payment of freight and all other lawful charges. ________________________ (Signature of consignor)', 25, disclaimerY + 10);
+}
+
+/**
+ * Stores the BOL document in Firebase Storage
+ */
+async function storeBOLDocument(pdfBuffer, shipmentId, firebaseDocId) {
     try {
         const fileName = `SOLUSHIP-${shipmentId}-BOL.pdf`;
         const bucket = storage.bucket();
         const file = bucket.file(`shipment-documents/${firebaseDocId}/${fileName}`);
         
-        // Upload PDF to Firebase Storage
+        // Upload the file
         await file.save(pdfBuffer, {
             metadata: {
                 contentType: 'application/pdf',
@@ -715,56 +1026,79 @@ async function storeGenericBOLDocument(pdfBuffer, shipmentId, firebaseDocId) {
             }
         });
         
-        // Get download URL
-        const [downloadUrl] = await file.getSignedUrl({
-            action: 'read',
-            expires: Date.now() + 1000 * 60 * 60 * 24 * 365 // 1 year
+        // Make the file publicly accessible
+        await file.makePublic();
+        
+        // Get the public URL
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+        
+        // Generate download token for Firebase Storage URL
+        const downloadToken = uuid.v4();
+        
+        // Update metadata with download token
+        await file.setMetadata({
+            metadata: {
+                firebaseStorageDownloadTokens: downloadToken,
+                shipmentId: shipmentId,
+                carrier: 'Generic',
+                documentType: 'bol',
+                generatedAt: new Date().toISOString()
+            }
         });
         
-        // Create document record
+        // Firebase Storage download URL with token
+        const firebaseStorageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(file.name)}?alt=media&token=${downloadToken}`;
+        
         const documentData = {
             shipmentId: firebaseDocId,
-            filename: fileName,
-            docType: 3, // 3 for BOL documents
+            fileName: fileName,
+            filename: fileName, // Keep for backward compatibility
+            docType: 3,
             fileSize: pdfBuffer.length,
             carrier: 'Generic',
             documentType: 'bol',
-            downloadUrl: downloadUrl,
+            downloadUrl: firebaseStorageUrl,
+            publicUrl: publicUrl,
+            downloadToken: downloadToken,
             storagePath: `shipment-documents/${firebaseDocId}/${fileName}`,
             metadata: {
                 genericShipmentId: shipmentId,
                 documentFormat: 'PDF',
                 bolGenerated: true,
-                isQuickShip: true
+                isQuickShip: true,
+                exactPositioning: true,
+                polarisLayoutMatch: true,
+                exactPositioning: true,
+                polarisLayoutMatch: true
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             _isUnifiedStructure: true
         };
         
-        // Store in unified structure
         const unifiedDocRef = db.collection('shipments').doc(firebaseDocId)
                                 .collection('documents').doc(`${firebaseDocId}_bol`);
         await unifiedDocRef.set(documentData);
         
-        // Store in main collection
         const legacyDocRef = db.collection('shipmentDocuments').doc(`${firebaseDocId}_bol`);
         await legacyDocRef.set({
             ...documentData,
             unifiedDocumentId: `${firebaseDocId}_bol`,
-            migrationNote: 'Created with unified ID structure for QuickShip',
+            migrationNote: 'Created with unified ID structure for QuickShip with Polaris layout',
             _isUnifiedStructure: true
         });
         
-        logger.info(`Generic BOL stored:`, {
+        logger.info(`Generic BOL stored with Polaris layout:`, {
             shipmentId: firebaseDocId,
             documentId: `${firebaseDocId}_bol`,
-            storagePath: documentData.storagePath
+            storagePath: documentData.storagePath,
+            downloadUrl: firebaseStorageUrl
         });
         
         return {
             documentId: `${firebaseDocId}_bol`,
-            downloadUrl: downloadUrl,
+            downloadUrl: firebaseStorageUrl,
+            publicUrl: publicUrl,
             fileName: fileName,
             storagePath: documentData.storagePath
         };
@@ -776,5 +1110,6 @@ async function storeGenericBOLDocument(pdfBuffer, shipmentId, firebaseDocId) {
 }
 
 module.exports = {
-    generateGenericBOL
+    generateGenericBOL,
+    generateBOLCore
 }; 

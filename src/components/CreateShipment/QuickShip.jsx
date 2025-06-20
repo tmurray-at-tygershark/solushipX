@@ -32,7 +32,9 @@ import {
     Tooltip,
     Autocomplete,
     Switch,
-    FormHelperText
+    FormHelperText,
+    AlertTitle,
+    Snackbar
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -45,7 +47,7 @@ import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, serverTimestamp, increment, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
@@ -247,6 +249,44 @@ const FREIGHT_CLASSES = [
     }
 ];
 
+// Comprehensive validation schema for QuickShip
+const QUICKSHIP_VALIDATION = {
+    shipFrom: {
+        required: ['companyName', 'street', 'city', 'state', 'postalCode', 'country'],
+        optional: ['contact', 'phone', 'email', 'street2']
+    },
+    shipTo: {
+        required: ['companyName', 'street', 'city', 'state', 'postalCode', 'country'],
+        optional: ['contact', 'phone', 'email', 'street2']
+    },
+    packages: {
+        minCount: 1,
+        maxCount: 99,
+        required: ['itemDescription', 'packagingType', 'packagingQuantity', 'weight', 'length', 'width', 'height'],
+        weightLimits: { min: 0.1, max: 30000 }, // lbs
+        dimensionLimits: { min: 1, max: 999 } // inches
+    },
+    rates: {
+        minCount: 1,
+        required: ['code', 'chargeName', 'cost', 'charge'],
+        validCodes: ['FRT', 'FUE', 'ADC', 'SUR', 'TRF'] // Match RATE_CODE_OPTIONS
+    }
+};
+
+// Professional error messages
+const ERROR_MESSAGES = {
+    MISSING_ADDRESSES: 'Please select both ship from and ship to addresses before booking.',
+    MISSING_CARRIER: 'Please select a carrier for your shipment.',
+    INVALID_PACKAGES: 'Please ensure all package information is complete and valid.',
+    INVALID_RATES: 'Please add at least one rate line item with complete information.',
+    WEIGHT_LIMIT: 'Package weight must be between 0.1 and 30,000 lbs.',
+    DIMENSION_LIMIT: 'Package dimensions must be between 1 and 999 inches.',
+    NETWORK_ERROR: 'Network error occurred. Please check your connection and try again.',
+    BOOKING_FAILED: 'Failed to book shipment. Please try again or contact support.',
+    DOCUMENT_GENERATION_FAILED: 'Shipment booked successfully but document generation failed. Documents will be sent via email.',
+    EMAIL_FAILED: 'Shipment booked successfully but email notification failed. You can download documents from the shipment details.'
+};
+
 const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false }) => {
     const { currentUser } = useAuth();
     const { companyData, companyIdForAddress } = useCompany();
@@ -280,6 +320,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     const [newCarrierName, setNewCarrierName] = useState('');
     const [newCarrierContactName, setNewCarrierContactName] = useState('');
     const [newCarrierContactEmail, setNewCarrierContactEmail] = useState('');
+    const [newCarrierPhone, setNewCarrierPhone] = useState('');
     const [loadingCarriers, setLoadingCarriers] = useState(false);
 
     // Package state
@@ -292,7 +333,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         length: '48', // Standard skid length
         width: '40', // Standard skid width
         height: '',
-        freightClass: '' // Optional freight class field
+        freightClass: '', // Optional freight class field
+        unitSystem: 'imperial' // Individual unit system per package
     }]);
 
     // Unit system state
@@ -312,7 +354,6 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [activeDraftId, setActiveDraftId] = useState(null);
     const [showBookingDialog, setShowBookingDialog] = useState(false);
     const [bookingStep, setBookingStep] = useState('booking');
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -327,14 +368,44 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     const [draftSaved, setDraftSaved] = useState(false);
 
     // Shipment ID state - generate early and reuse
-    const [initialShipmentID, setInitialShipmentID] = useState(null);
+    const [shipmentID, setShipmentID] = useState(null);
+    const [activeDraftId, setActiveDraftId] = useState(null); // Track the actual Firestore document ID
 
     // Sliding navigation state
     const [currentView, setCurrentView] = useState('quickship'); // 'quickship' | 'addaddress'
     const [isSliding, setIsSliding] = useState(false);
     const [addressEditMode, setAddressEditMode] = useState('from'); // 'from' | 'to'
 
+    // Additional state for draft save success
+    const [showDraftSuccess, setShowDraftSuccess] = useState(false);
 
+    // Error handling improvements
+    const errorAlertRef = useRef(null);
+    const [showErrorSnackbar, setShowErrorSnackbar] = useState(false);
+    const mainContentRef = useRef(null);
+
+    // Scroll to error function
+    const scrollToError = () => {
+        if (errorAlertRef.current) {
+            errorAlertRef.current.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        } else if (mainContentRef.current) {
+            // Fallback to scrolling to top if error ref not available
+            mainContentRef.current.scrollTop = 0;
+        }
+    };
+
+    // Enhanced error handling with scroll and snackbar
+    const showError = (message) => {
+        setError(message);
+        setShowErrorSnackbar(true);
+        // Small delay to ensure DOM is updated before scrolling
+        setTimeout(() => {
+            scrollToError();
+        }, 100);
+    };
 
     // Conversion functions
     const lbsToKg = (lbs) => (lbs * 0.453592).toFixed(2);
@@ -368,24 +439,114 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     // Generate shipment ID early when component initializes
     useEffect(() => {
         const generateInitialShipmentID = async () => {
-            if (!companyIdForAddress || isEditingDraft || initialShipmentID) return;
+            // Don't generate if we already have a shipmentID or if we're loading a draft
+            if (!companyIdForAddress || shipmentID || draftId) return;
 
             try {
-                const shipmentID = await generateShipmentId(companyIdForAddress);
-                setInitialShipmentID(shipmentID);
-                console.log('Generated initial QuickShip shipmentID:', shipmentID);
+                const newShipmentID = await generateShipmentId(companyIdForAddress);
+                setShipmentID(newShipmentID);
+                console.log('Generated initial QuickShip shipmentID:', newShipmentID);
             } catch (error) {
                 console.warn('Failed to generate initial shipmentID:', error);
                 // Fallback ID generation
                 const timestamp = Date.now().toString().slice(-8);
                 const randomSuffix = Math.random().toString(36).substr(2, 6).toUpperCase();
                 const fallbackID = `${companyIdForAddress}-${randomSuffix}`;
-                setInitialShipmentID(fallbackID);
+                setShipmentID(fallbackID);
             }
         };
 
         generateInitialShipmentID();
-    }, [companyIdForAddress, isEditingDraft, initialShipmentID]);
+    }, [companyIdForAddress, draftId]); // Removed shipmentID from dependencies to prevent loops
+
+    // Create draft in database immediately after shipment ID is generated
+    useEffect(() => {
+        const createInitialDraft = async () => {
+            // Only create if we have a shipment ID, we're not editing an existing draft, and we're not loading a draft
+            if (!shipmentID || isEditingDraft || draftId || !companyIdForAddress || !currentUser) return;
+
+            try {
+                // Check if this shipment already exists in the database by shipmentID field
+                const existingShipmentQuery = await getDocs(
+                    query(
+                        collection(db, 'shipments'),
+                        where('shipmentID', '==', shipmentID),
+                        limit(1)
+                    )
+                );
+
+                if (!existingShipmentQuery.empty) {
+                    console.log('Shipment already exists in database:', shipmentID);
+                    // Set the draft ID to the existing document ID
+                    const existingDoc = existingShipmentQuery.docs[0];
+                    setActiveDraftId(existingDoc.id);
+                    return;
+                }
+
+                // Create minimal draft data with creationMethod set
+                const initialDraftData = {
+                    shipmentID: shipmentID,
+                    status: 'draft',
+                    creationMethod: 'quickship', // This is the key field
+                    companyID: companyIdForAddress,
+                    createdBy: currentUser.uid,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+
+                    // Initialize with empty/default values
+                    shipmentInfo: {
+                        shipmentType: 'freight',
+                        shipmentDate: new Date().toISOString().split('T')[0],
+                        shipperReferenceNumber: shipmentID, // Use shipment ID as default reference
+                        unitSystem: unitSystem
+                    },
+                    packages: [{
+                        id: 1,
+                        itemDescription: '',
+                        packagingType: 262, // Default to SKID(S)
+                        packagingQuantity: 1,
+                        weight: '',
+                        length: '48',
+                        width: '40',
+                        height: '',
+                        freightClass: '',
+                        unitSystem: 'imperial'
+                    }],
+                    manualRates: [{
+                        id: 1,
+                        carrier: '',
+                        code: '',
+                        chargeName: '',
+                        cost: '',
+                        costCurrency: 'CAD',
+                        charge: '',
+                        chargeCurrency: 'CAD'
+                    }],
+                    unitSystem: unitSystem,
+
+                    // QuickShip specific flags
+                    isDraft: true,
+                    draftVersion: 1
+                };
+
+                // Create the draft document with auto-generated ID
+                const docRef = await addDoc(collection(db, 'shipments'), initialDraftData);
+                console.log('Created initial QuickShip draft in database with ID:', docRef.id, 'shipmentID:', shipmentID);
+
+                // Store the draft document ID
+                setActiveDraftId(docRef.id);
+
+                // Mark that we're now editing this draft
+                setIsEditingDraft(true);
+
+            } catch (error) {
+                console.error('Error creating initial draft:', error);
+                // Don't show error to user - this is a background operation
+            }
+        };
+
+        createInitialDraft();
+    }, [shipmentID, isEditingDraft, companyIdForAddress, currentUser, unitSystem]);
 
     useEffect(() => {
         const loadCarriers = async () => {
@@ -416,24 +577,29 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     // Add new Quick Ship Carrier
     const handleAddCarrier = async () => {
         if (!newCarrierName.trim() || !companyIdForAddress) {
-            setError('Carrier name is required.');
+            showError('Carrier name is required.');
             return;
         }
 
         // Validate required fields
         if (!newCarrierContactName.trim()) {
-            setError('Contact name is required.');
+            showError('Contact name is required.');
             return;
         }
 
         if (!newCarrierContactEmail.trim()) {
-            setError('Contact email is required.');
+            showError('Contact email is required.');
+            return;
+        }
+
+        if (!newCarrierPhone.trim()) {
+            showError('Contact phone is required.');
             return;
         }
 
         // Validate email format
         if (!isValidEmail(newCarrierContactEmail.trim())) {
-            setError('Please enter a valid email address.');
+            showError('Please enter a valid email address.');
             return;
         }
 
@@ -443,7 +609,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         );
 
         if (isDuplicate) {
-            setError('A carrier with this name already exists. Please choose a different name.');
+            showError('A carrier with this name already exists. Please choose a different name.');
             return;
         }
 
@@ -452,6 +618,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 name: newCarrierName.trim(),
                 contactName: newCarrierContactName.trim(),
                 contactEmail: newCarrierContactEmail.trim(),
+                contactPhone: newCarrierPhone.trim(),
                 companyID: companyIdForAddress,
                 createdAt: serverTimestamp()
             };
@@ -479,6 +646,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             setNewCarrierName('');
             setNewCarrierContactName('');
             setNewCarrierContactEmail('');
+            setNewCarrierPhone('');
             setShowAddCarrierDialog(false);
         } catch (error) {
             console.error('Error adding quick ship carrier:', error);
@@ -502,46 +670,53 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         })));
     };
 
-    // Handle unit system change
-    const handleUnitChange = (event) => {
-        const newUnitSystem = event.target.checked ? 'metric' : 'imperial';
-        if (newUnitSystem !== unitSystem) {
-            const updatedPackages = packages.map(pkg => {
-                const updatedPkg = { ...pkg };
-                if (pkg.weight) {
-                    if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
-                        updatedPkg.weight = lbsToKg(pkg.weight);
-                    } else if (unitSystem === 'metric' && newUnitSystem === 'imperial') {
-                        updatedPkg.weight = kgToLbs(pkg.weight);
-                    }
-                }
-                if (pkg.length) {
-                    if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
-                        updatedPkg.length = inchesToCm(pkg.length);
-                    } else if (unitSystem === 'metric' && newUnitSystem === 'imperial') {
-                        updatedPkg.length = cmToInches(pkg.length);
-                    }
-                }
-                if (pkg.width) {
-                    if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
-                        updatedPkg.width = inchesToCm(pkg.width);
-                    } else if (unitSystem === 'metric' && newUnitSystem === 'imperial') {
-                        updatedPkg.width = cmToInches(pkg.width);
-                    }
-                }
-                if (pkg.height) {
-                    if (unitSystem === 'imperial' && newUnitSystem === 'metric') {
-                        updatedPkg.height = inchesToCm(pkg.height);
-                    } else if (unitSystem === 'metric' && newUnitSystem === 'imperial') {
-                        updatedPkg.height = cmToInches(pkg.height);
-                    }
-                }
-                return updatedPkg;
-            });
+    // Handle unit system change for individual packages
+    const handlePackageUnitChange = (packageId, newUnitSystem) => {
+        setPackages(prev => prev.map(pkg => {
+            if (pkg.id === packageId) {
+                const oldUnitSystem = pkg.unitSystem || 'imperial';
+                if (newUnitSystem !== oldUnitSystem) {
+                    const updatedPkg = { ...pkg, unitSystem: newUnitSystem };
 
-            setPackages(updatedPackages);
-            setUnitSystem(newUnitSystem);
-        }
+                    // Convert weight
+                    if (pkg.weight) {
+                        if (oldUnitSystem === 'imperial' && newUnitSystem === 'metric') {
+                            updatedPkg.weight = lbsToKg(pkg.weight);
+                        } else if (oldUnitSystem === 'metric' && newUnitSystem === 'imperial') {
+                            updatedPkg.weight = kgToLbs(pkg.weight);
+                        }
+                    }
+
+                    // Convert dimensions
+                    if (pkg.length) {
+                        if (oldUnitSystem === 'imperial' && newUnitSystem === 'metric') {
+                            updatedPkg.length = inchesToCm(pkg.length);
+                        } else if (oldUnitSystem === 'metric' && newUnitSystem === 'imperial') {
+                            updatedPkg.length = cmToInches(pkg.length);
+                        }
+                    }
+
+                    if (pkg.width) {
+                        if (oldUnitSystem === 'imperial' && newUnitSystem === 'metric') {
+                            updatedPkg.width = inchesToCm(pkg.width);
+                        } else if (oldUnitSystem === 'metric' && newUnitSystem === 'imperial') {
+                            updatedPkg.width = cmToInches(pkg.width);
+                        }
+                    }
+
+                    if (pkg.height) {
+                        if (oldUnitSystem === 'imperial' && newUnitSystem === 'metric') {
+                            updatedPkg.height = inchesToCm(pkg.height);
+                        } else if (oldUnitSystem === 'metric' && newUnitSystem === 'imperial') {
+                            updatedPkg.height = cmToInches(pkg.height);
+                        }
+                    }
+
+                    return updatedPkg;
+                }
+            }
+            return pkg;
+        }));
     };
 
     // Package management functions
@@ -556,7 +731,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             length: '48', // Standard skid length
             width: '40', // Standard skid width
             height: '',
-            freightClass: '' // Optional freight class field
+            freightClass: '', // Optional freight class field
+            unitSystem: 'imperial' // Individual unit system per package
         }]);
     };
 
@@ -780,25 +956,12 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
     // Handle Book Shipment button click
     const handleBookShipment = () => {
-        // Validate required fields
-        if (!selectedCarrier) {
-            setError('Please select a carrier before booking.');
-            return;
-        }
-        if (!shipFromAddress || !shipToAddress) {
-            setError('Please select both ship from and ship to addresses.');
-            return;
-        }
-        if (packages.length === 0) {
-            setError('Please add at least one package.');
-            return;
-        }
-        if (manualRates.length === 0) {
-            setError('Please add at least one rate line item.');
+        // Run comprehensive validation
+        if (!validateQuickShipForm()) {
             return;
         }
 
-        // Show confirmation dialog
+        // Show confirmation dialog with shipment summary
         setShowConfirmDialog(true);
     };
 
@@ -816,24 +979,24 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         setError(null);
 
         try {
-            // Validate required addresses for booking
-            if (!shipToAddress?.id || !shipFromAddress?.id) {
-                throw new Error('Both ship from and ship to addresses are required for booking.');
+            // Final validation before booking
+            if (!validateQuickShipForm()) {
+                throw new Error('Validation failed. Please check your form data.');
             }
 
             // Use the pre-generated shipment ID or generate a new one if needed
-            let shipmentID = initialShipmentID;
+            let finalShipmentID = shipmentID;
 
-            if (!shipmentID) {
+            if (!finalShipmentID) {
                 // Generate shipmentID if we don't have one yet
                 try {
-                    shipmentID = await generateShipmentId(companyIdForAddress);
-                    console.log('Generated QuickShip shipmentID for booking:', shipmentID);
+                    finalShipmentID = await generateShipmentId(companyIdForAddress);
+                    console.log('Generated QuickShip shipmentID for booking:', finalShipmentID);
                 } catch (idError) {
                     console.warn('Failed to generate shipmentID, using fallback:', idError);
                     const timestamp = Date.now().toString().slice(-8);
                     const randomSuffix = Math.random().toString(36).substr(2, 6).toUpperCase();
-                    shipmentID = `${companyIdForAddress}-${randomSuffix}`;
+                    finalShipmentID = `QS-${companyIdForAddress}-${timestamp}-${randomSuffix}`;
                 }
             }
 
@@ -841,13 +1004,18 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             const carrierDetails = quickShipCarriers.find(c => c.name === selectedCarrier) || {
                 name: selectedCarrier,
                 contactName: '',
-                contactEmail: ''
+                contactEmail: '',
+                contactPhone: ''
             };
 
-            // Prepare shipment data
+            // Calculate total weight and pieces for validation
+            const totalWeight = packages.reduce((sum, pkg) => sum + parseFloat(pkg.weight || 0), 0);
+            const totalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
+
+            // Prepare shipment data with enhanced validation
             const shipmentData = {
                 // Basic shipment info
-                shipmentID: shipmentID,
+                shipmentID: finalShipmentID,
                 status: 'booked',
                 creationMethod: 'quickship',
                 companyID: companyIdForAddress,
@@ -859,45 +1027,84 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 shipmentInfo: {
                     ...shipmentInfo,
                     shipmentBillType: shipmentInfo.billType,
-                    actualShipDate: new Date().toISOString().split('T')[0]
+                    actualShipDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
+                    totalWeight: totalWeight,
+                    totalPieces: totalPieces,
+                    unitSystem: unitSystem
                 },
 
-                // Addresses - properly structured from address book  
+                // Addresses - properly structured from address book with validation
                 shipFrom: {
                     ...shipFromAddress,
                     addressId: shipFromAddress.id,
-                    type: 'origin'
+                    type: 'origin',
+                    // Ensure all required fields are present
+                    companyName: shipFromAddress.companyName || shipFromAddress.company || 'Unknown Company',
+                    street: shipFromAddress.street || '',
+                    city: shipFromAddress.city || '',
+                    state: shipFromAddress.state || '',
+                    postalCode: shipFromAddress.postalCode || '',
+                    country: shipFromAddress.country || 'CA'
                 },
                 shipTo: {
                     ...shipToAddress,
                     addressId: shipToAddress.id,
                     customerID: shipToAddress.id, // Use address ID as customer reference
-                    type: 'destination'
+                    type: 'destination',
+                    // Ensure all required fields are present
+                    companyName: shipToAddress.companyName || shipToAddress.company || 'Unknown Company',
+                    street: shipToAddress.street || '',
+                    city: shipToAddress.city || '',
+                    state: shipToAddress.state || '',
+                    postalCode: shipToAddress.postalCode || '',
+                    country: shipToAddress.country || 'CA'
                 },
 
-                // Packages
-                packages: packages,
+                // Packages with validation
+                packages: packages.map(pkg => ({
+                    ...pkg,
+                    weight: parseFloat(pkg.weight || 0),
+                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
+                    length: parseFloat(pkg.length || 0),
+                    width: parseFloat(pkg.width || 0),
+                    height: parseFloat(pkg.height || 0),
+                    packagingTypeCode: pkg.packagingType,
+                    packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
+                    unitSystem: pkg.unitSystem || 'imperial', // Include individual unit system
+                    freightClass: pkg.freightClass || '' // Include freight class
+                })),
 
                 // Carrier and rates
                 carrier: selectedCarrier,
                 carrierType: 'manual',
                 carrierDetails: carrierDetails,
-                manualRates: manualRates,
+                manualRates: manualRates.map(rate => ({
+                    ...rate,
+                    cost: parseFloat(rate.cost || 0),
+                    charge: parseFloat(rate.charge || 0)
+                })),
                 totalCharges: totalCost,
-                currency: 'CAD',
+                currency: manualRates[0]?.chargeCurrency || 'CAD',
                 unitSystem: unitSystem,
 
                 // Tracking
-                trackingNumber: shipmentInfo.carrierTrackingNumber || shipmentID, // Use carrier tracking number if provided, otherwise fall back to shipment ID
+                trackingNumber: shipmentInfo.carrierTrackingNumber || finalShipmentID,
 
                 // QuickShip specific flags
                 isQuickShip: true,
-                rateSource: 'manual'
+                rateSource: 'manual',
+                bookingTimestamp: new Date().toISOString()
             };
 
-            console.log('QuickShip booking data:', shipmentData);
+            console.log('QuickShip booking data prepared:', {
+                shipmentID: finalShipmentID,
+                carrier: selectedCarrier,
+                totalWeight,
+                totalPieces,
+                totalCharges: totalCost
+            });
 
-            // Call the QuickShip booking function
+            // Call the QuickShip booking function with enhanced error handling
             const functions = getFunctions();
             const bookQuickShipFunction = httpsCallable(functions, 'bookQuickShipment');
 
@@ -910,25 +1117,27 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
             if (result.data && result.data.success) {
                 const bookingDetails = result.data.data;
-                setFinalShipmentId(shipmentID);
+                setFinalShipmentId(finalShipmentID);
 
-                // Generate BOL and Carrier Confirmation for QuickShip bookings
-                console.log('QuickShip booking successful, generating documents...');
+                // Backend already handles document generation, just update the UI
+                console.log('QuickShip booking successful!');
+                setBookingStep('completed');
+                setLabelGenerationStatus('Booking completed successfully!');
 
-                // Get selected carrier details
-                const selectedCarrierDetails = quickShipCarriers.find(c => c.name === selectedCarrier) || {
-                    name: selectedCarrier,
-                    contactName: '',
-                    contactEmail: ''
-                };
-
-                // Use the Firebase document ID from the booking response or fall back to shipmentID
-                const firebaseDocId = bookingDetails?.firebaseDocId || bookingDetails?.documentId || shipmentID;
-
-                generateQuickShipDocuments(shipmentID, firebaseDocId, selectedCarrierDetails);
+                // Check if documents were generated by the backend
+                if (bookingDetails.documents && bookingDetails.documents.length > 0) {
+                    const successfulDocs = bookingDetails.documents.filter(doc => doc.success);
+                    if (successfulDocs.length > 0) {
+                        setLabelGenerationStatus(`Booking completed! ${successfulDocs.length} document(s) generated successfully.`);
+                    } else {
+                        setLabelGenerationStatus('Booking completed! Documents will be generated shortly.');
+                    }
+                } else {
+                    setLabelGenerationStatus('Booking completed successfully!');
+                }
 
             } else {
-                const errorMessage = result.data?.error || 'Failed to book QuickShip shipment.';
+                const errorMessage = result.data?.error || ERROR_MESSAGES.BOOKING_FAILED;
                 console.error('QuickShip booking error:', errorMessage);
                 setError(errorMessage);
                 setBookingStep('error');
@@ -936,7 +1145,17 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
         } catch (error) {
             console.error('Error booking QuickShip:', error);
-            setError(`Failed to book shipment: ${error.message}`);
+
+            // Enhanced error handling with specific messages
+            let errorMessage = ERROR_MESSAGES.BOOKING_FAILED;
+
+            if (error.code === 'functions/unavailable' || error.message?.includes('network')) {
+                errorMessage = ERROR_MESSAGES.NETWORK_ERROR;
+            } else if (error.message?.includes('validation')) {
+                errorMessage = error.message;
+            }
+
+            setError(errorMessage);
             setBookingStep('error');
         } finally {
             setIsBooking(false);
@@ -955,12 +1174,12 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         }
     };
 
-    // Handle view shipment - navigate to shipment detail
+    // Handle view shipment - open shipment detail modal directly
     const handleViewShipment = () => {
         setShowBookingDialog(false);
 
-        if (onViewShipment && finalShipmentId) {
-            // Close QuickShip modal and open shipment detail with deep link
+        if (finalShipmentId && onViewShipment) {
+            // Call the onViewShipment prop to open the shipment detail modal directly
             onViewShipment(finalShipmentId);
         } else if (onReturnToShipments) {
             onReturnToShipments();
@@ -987,15 +1206,21 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
                     // Set draft state first to ensure components know they're in edit mode
                     setIsEditingDraft(true);
-                    setActiveDraftId(draftShipmentId);
 
-                    // Load form context data immediately (no delay)
+                    // Set the shipment ID from the draft
+                    if (draftData.shipmentID) {
+                        setShipmentID(draftData.shipmentID);
+                    }
+
+                    // Load address data immediately
                     if (draftData.shipFrom) {
                         console.log('Loading shipFrom data:', draftData.shipFrom);
+                        setShipFromAddress(draftData.shipFrom);
                         updateFormSection('shipFrom', draftData.shipFrom);
                     }
                     if (draftData.shipTo) {
                         console.log('Loading shipTo data:', draftData.shipTo);
+                        setShipToAddress(draftData.shipTo);
                         updateFormSection('shipTo', draftData.shipTo);
                     }
 
@@ -1027,7 +1252,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                 length: pkg.length || '48', // Standard skid length
                                 width: pkg.width || '40', // Standard skid width
                                 height: pkg.height || '',
-                                freightClass: pkg.freightClass || '' // Include freight class field
+                                freightClass: pkg.freightClass || '', // Include freight class field
+                                unitSystem: pkg.unitSystem || 'imperial' // Include individual unit system
                             }));
                             setPackages(validatedPackages);
                         }
@@ -1067,7 +1293,10 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         const loadDraft = async () => {
             if (!draftId) return;
 
+            // Set editing state first
+            setIsEditingDraft(true);
             setIsDraftLoading(true);
+
             try {
                 const draftDoc = await getDoc(doc(db, 'shipments', draftId));
                 if (draftDoc.exists()) {
@@ -1079,9 +1308,13 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                         console.log('Draft shipFrom data:', draftData.shipFrom);
                         console.log('Draft packages data:', draftData.packages);
 
-                        // Set draft state first to ensure components know they're in edit mode
-                        setIsEditingDraft(true);
-                        setActiveDraftId(draftId);
+                        // Set the shipment ID from the draft
+                        if (draftData.shipmentID) {
+                            setShipmentID(draftData.shipmentID);
+                        } else {
+                            // Use the draftId as the shipmentID if shipmentID field is missing
+                            setShipmentID(draftId);
+                        }
 
                         // Load address data immediately
                         if (draftData.shipFrom) {
@@ -1123,7 +1356,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                     length: pkg.length || '48', // Standard skid length
                                     width: pkg.width || '40', // Standard skid width
                                     height: pkg.height || '',
-                                    freightClass: pkg.freightClass || '' // Include freight class field
+                                    freightClass: pkg.freightClass || '', // Include freight class field
+                                    unitSystem: pkg.unitSystem || 'imperial' // Include individual unit system
                                 }));
                                 setPackages(validatedPackages);
                             }
@@ -1162,123 +1396,115 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     }, [draftId, updateFormSection, onReturnToShipments]);
 
     // Additional effect to ensure components are properly updated when draft editing begins
-    useEffect(() => {
-        if (isEditingDraft && activeDraftId) {
-            // Force a small delay to ensure all components have properly re-rendered with the new key
-            const timer = setTimeout(() => {
-                console.log('Draft editing mode active, ensuring components are updated');
-                // No need to call updateFormSection here as the data is already loaded in loadDraftData
-            }, 100);
+    // Removed - no longer needed since we're using final shipment IDs from the start
+    // useEffect(() => {
+    //     if (isEditingDraft && activeDraftId) {
+    //         // Force a small delay to ensure all components have properly re-rendered with the new key
+    //         const timer = setTimeout(() => {
+    //             console.log('Draft editing mode active, ensuring components are updated');
+    //             // No need to call updateFormSection here as the data is already loaded in loadDraftData
+    //         }, 100);
 
-            return () => clearTimeout(timer);
-        }
-    }, [isEditingDraft, activeDraftId]);
+    //         return () => clearTimeout(timer);
+    //     }
+    // }, [isEditingDraft, activeDraftId]);
 
     // Ship Later - Save as QuickShip draft
     const handleShipLater = async () => {
-        if (!companyIdForAddress || !currentUser) {
-            setError('Missing required information to save draft.');
-            return;
-        }
-
-        // Validate required fields for saving draft
-        if (!shipToAddress?.id || !shipFromAddress?.id) {
-            setError('Please select both ship from and ship to addresses before saving draft.');
-            return;
-        }
-
         setIsSavingDraft(true);
+        setError(null);
+
         try {
-            // Use the pre-generated shipment ID or generate a new one if needed
-            let shipmentID = initialShipmentID;
+            // Remove validation - Ship Later should save whatever is currently entered
+            // This allows users to save incomplete work and come back later
 
-            if (!shipmentID) {
-                // Generate shipmentID if we don't have one yet
-                try {
-                    shipmentID = await generateShipmentId(companyIdForAddress);
-                    console.log('Generated QuickShip shipmentID for draft:', shipmentID);
-                } catch (idError) {
-                    console.warn('Failed to generate shipmentID, using fallback:', idError);
-                    // Fallback to timestamp-based ID if generation fails
-                    const timestamp = Date.now().toString().slice(-8);
-                    const randomSuffix = Math.random().toString(36).substr(2, 6).toUpperCase();
-                    shipmentID = `${companyIdForAddress}-${randomSuffix}`;
-                }
-            }
+            console.log('Saving QuickShip draft:', {
+                shipmentID,
+                isEditingDraft,
+                draftId,
+                activeDraftId
+            });
 
-            // Prepare draft data with all current QuickShip state
+            // Get the ship from and ship to addresses with full details
+            const shipFromAddressFull = availableAddresses.find(addr => addr.id === shipFromAddress?.id) || shipFromAddress;
+            const shipToAddressFull = availableAddresses.find(addr => addr.id === shipToAddress?.id) || shipToAddress;
+
             const draftData = {
-                // Shipment metadata
+                // Basic shipment fields
+                shipmentID: shipmentID, // Always use the shipmentID field
                 status: 'draft',
-                creationMethod: 'quickship', // Key field to identify QuickShip drafts
+                creationMethod: 'quickship',
                 companyID: companyIdForAddress,
-                createdBy: currentUser.uid,
-                createdAt: serverTimestamp(),
+                createdBy: currentUser?.uid || 'unknown',
                 updatedAt: serverTimestamp(),
 
-                // Set the proper shipmentID
-                shipmentID: shipmentID,
-
-                // QuickShip specific data
-                shipmentInfo,
-                selectedCarrier,
-                packages,
-                manualRates,
-                unitSystem,
-
-                // Address data - properly structured from address book
-                shipFrom: {
-                    ...shipFromAddress,
-                    addressId: shipFromAddress.id,
-                    type: 'origin'
+                // Shipment information - save whatever is entered
+                shipmentInfo: {
+                    ...shipmentInfo,
+                    shipmentType: shipmentInfo.shipmentType || 'freight',
+                    unitSystem: unitSystem,
+                    carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '' // Ensure this is saved
                 },
-                shipTo: {
-                    ...shipToAddress,
-                    addressId: shipToAddress.id,
-                    customerID: shipToAddress.id, // Use address ID as customer reference
-                    type: 'destination'
-                },
+                shipFrom: shipFromAddressFull || null, // Save null if not selected
+                shipTo: shipToAddressFull || null, // Save null if not selected
+                packages: packages,
+                selectedCarrier: selectedCarrier || '', // Save empty string if not selected
+                manualRates: manualRates,
+                unitSystem: unitSystem,
+                totalCost: totalCost,
+                carrier: selectedCarrier || '', // Direct carrier field for table display
+                carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '', // Save at top level too
 
-                // Carrier information for proper display in table
-                carrier: selectedCarrier, // Direct carrier field as fallback
-
-                // Draft-specific fields
+                // Draft specific fields
                 isDraft: true,
-                draftSource: 'quickship'
+                draftSavedAt: serverTimestamp(),
+                draftVersion: increment(1) // Increment version on each save
             };
 
+            // Determine which document to update
             let docRef;
-            let message;
+            let docId;
 
-            if (isEditingDraft && activeDraftId) {
-                // Update existing draft
+            if (activeDraftId) {
+                // We already have a draft document, update it
                 docRef = doc(db, 'shipments', activeDraftId);
-                await updateDoc(docRef, {
-                    ...draftData,
-                    updatedAt: serverTimestamp()
-                });
-                message = 'Draft updated successfully!';
+                docId = activeDraftId;
+                await updateDoc(docRef, draftData);
+                console.log('QuickShip draft updated successfully:', docId);
+            } else if (draftId) {
+                // We're editing an existing draft that was passed as prop
+                docRef = doc(db, 'shipments', draftId);
+                docId = draftId;
+                await updateDoc(docRef, draftData);
+                console.log('QuickShip draft updated successfully:', docId);
             } else {
-                // Create new draft
+                // Create a new draft document with auto-generated ID
+                draftData.createdAt = serverTimestamp();
                 docRef = await addDoc(collection(db, 'shipments'), draftData);
-                message = 'Draft saved successfully!';
+                docId = docRef.id;
+                setActiveDraftId(docId); // Store the new document ID
+                console.log('QuickShip draft created successfully:', docId);
             }
 
-            console.log('QuickShip draft saved:', docRef.id || activeDraftId);
+            // Show success notification
+            setShowDraftSuccess(true);
 
-            // Show success message
-            setDraftSaved(true);
-
-            // Return to shipments after showing success message
+            // After a short delay, navigate to shipments modal
             setTimeout(() => {
+                setShowDraftSuccess(false);
+                // Close QuickShip modal first
+                if (onClose) {
+                    onClose();
+                }
+                // Then open shipments modal
                 if (onReturnToShipments) {
                     onReturnToShipments();
                 }
-            }, 1500);
+            }, 1500); // Show success message for 1.5 seconds before navigating
 
         } catch (error) {
             console.error('Error saving QuickShip draft:', error);
-            setError('Failed to save draft. Please try again.');
+            setError(`Failed to save draft: ${error.message}`);
         } finally {
             setIsSavingDraft(false);
         }
@@ -1350,16 +1576,175 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         }
     };
 
+    // Comprehensive validation functions
+    const validateAddress = (address, type) => {
+        if (!address) return { valid: false, message: `Please select a ${type} address.` };
+
+        const requiredFields = QUICKSHIP_VALIDATION[type].required;
+        const missingFields = requiredFields.filter(field => !address[field]);
+
+        if (missingFields.length > 0) {
+            return {
+                valid: false,
+                message: `${type === 'shipFrom' ? 'Ship From' : 'Ship To'} address is missing: ${missingFields.join(', ')}`
+            };
+        }
+
+        // Validate postal code format
+        const postalCodeRegex = /^[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d$/; // Canadian postal code
+        const zipCodeRegex = /^\d{5}(-\d{4})?$/; // US zip code
+
+        if (address.country === 'CA' && !postalCodeRegex.test(address.postalCode)) {
+            return { valid: false, message: 'Invalid Canadian postal code format.' };
+        }
+
+        if (address.country === 'US' && !zipCodeRegex.test(address.postalCode)) {
+            return { valid: false, message: 'Invalid US zip code format.' };
+        }
+
+        return { valid: true };
+    };
+
+    const validatePackages = () => {
+        if (packages.length === 0) {
+            return { valid: false, message: ERROR_MESSAGES.INVALID_PACKAGES };
+        }
+
+        if (packages.length > QUICKSHIP_VALIDATION.packages.maxCount) {
+            return { valid: false, message: `Maximum ${QUICKSHIP_VALIDATION.packages.maxCount} packages allowed.` };
+        }
+
+        for (let i = 0; i < packages.length; i++) {
+            const pkg = packages[i];
+
+            // Check required fields
+            if (!pkg.itemDescription || !pkg.itemDescription.trim()) {
+                return { valid: false, message: `Package ${i + 1}: Description is required.` };
+            }
+
+            // Validate weight
+            const weight = parseFloat(pkg.weight);
+            if (isNaN(weight) || weight < QUICKSHIP_VALIDATION.packages.weightLimits.min ||
+                weight > QUICKSHIP_VALIDATION.packages.weightLimits.max) {
+                return { valid: false, message: `Package ${i + 1}: ${ERROR_MESSAGES.WEIGHT_LIMIT}` };
+            }
+
+            // Validate dimensions
+            const dimensions = ['length', 'width', 'height'];
+            for (const dim of dimensions) {
+                const value = parseFloat(pkg[dim]);
+                if (isNaN(value) || value < QUICKSHIP_VALIDATION.packages.dimensionLimits.min ||
+                    value > QUICKSHIP_VALIDATION.packages.dimensionLimits.max) {
+                    return { valid: false, message: `Package ${i + 1}: ${ERROR_MESSAGES.DIMENSION_LIMIT}` };
+                }
+            }
+
+            // Validate packaging quantity
+            const quantity = parseInt(pkg.packagingQuantity);
+            if (isNaN(quantity) || quantity < 1 || quantity > 999) {
+                return { valid: false, message: `Package ${i + 1}: Quantity must be between 1 and 999.` };
+            }
+        }
+
+        return { valid: true };
+    };
+
+    const validateRates = () => {
+        if (manualRates.length === 0) {
+            return { valid: false, message: ERROR_MESSAGES.INVALID_RATES };
+        }
+
+        let hasValidRate = false;
+
+        for (let i = 0; i < manualRates.length; i++) {
+            const rate = manualRates[i];
+
+            // Check if this rate line has all required fields
+            if (rate.code && rate.chargeName && rate.cost && rate.charge) {
+                const cost = parseFloat(rate.cost);
+                const charge = parseFloat(rate.charge);
+
+                if (isNaN(cost) || cost < 0) {
+                    return { valid: false, message: `Rate ${i + 1}: Cost must be a valid positive number.` };
+                }
+
+                if (isNaN(charge) || charge < 0) {
+                    return { valid: false, message: `Rate ${i + 1}: Charge must be a valid positive number.` };
+                }
+
+                // Only validate the rate code if it's not empty
+                if (rate.code && !QUICKSHIP_VALIDATION.rates.validCodes.includes(rate.code)) {
+                    return { valid: false, message: `Rate ${i + 1}: Invalid rate code selected.` };
+                }
+
+                hasValidRate = true;
+            } else if (rate.code || rate.chargeName || rate.cost || rate.charge) {
+                // If any field is partially filled, check for specific issues
+                if (rate.code && !QUICKSHIP_VALIDATION.rates.validCodes.includes(rate.code)) {
+                    return { valid: false, message: `Rate ${i + 1}: Invalid rate code '${rate.code}'. Please select a valid code.` };
+                }
+            }
+        }
+
+        if (!hasValidRate) {
+            return { valid: false, message: 'At least one complete rate entry is required.' };
+        }
+
+        return { valid: true };
+    };
+
+    const validateQuickShipForm = () => {
+        // Clear any existing errors
+        setError(null);
+
+        // Validate carrier
+        if (!selectedCarrier) {
+            setError(ERROR_MESSAGES.MISSING_CARRIER);
+            return false;
+        }
+
+        // Validate addresses
+        const fromValidation = validateAddress(shipFromAddress, 'shipFrom');
+        if (!fromValidation.valid) {
+            setError(fromValidation.message);
+            return false;
+        }
+
+        const toValidation = validateAddress(shipToAddress, 'shipTo');
+        if (!toValidation.valid) {
+            setError(toValidation.message);
+            return false;
+        }
+
+        // Validate packages
+        const packageValidation = validatePackages();
+        if (!packageValidation.valid) {
+            setError(packageValidation.message);
+            return false;
+        }
+
+        // Validate rates
+        const rateValidation = validateRates();
+        if (!rateValidation.valid) {
+            setError(rateValidation.message);
+            return false;
+        }
+
+        // All validations passed
+        return true;
+    };
+
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Modal Header */}
             {isModal && (
                 <ModalHeader
-                    title={currentView === 'addaddress'
-                        ? `Add ${addressEditMode === 'from' ? 'Ship From' : 'Ship To'} Address`
-                        : isEditingDraft
-                            ? 'Edit Quick Ship Draft'
-                            : 'Quick Ship'
+                    title={
+                        currentView === 'addaddress'
+                            ? `Add ${addressEditMode === 'from' ? 'Ship From' : 'Ship To'} Address`
+                            : isEditingDraft
+                                ? `Edit Quick Ship Draft${shipmentID ? ` - ${shipmentID}` : ''}`
+                                : `Quick Ship${shipmentID ? ` - ${shipmentID}` : ''}`
                     }
                     onBack={currentView === 'addaddress' ? handleBackToQuickShip : undefined}
                     showBackButton={currentView === 'addaddress'}
@@ -1381,17 +1766,61 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 zIndex: currentView === 'addaddress' ? 1000 : 1200
             }}>
                 {/* QuickShip Main View */}
-                <Box sx={{
-                    width: '50%',
-                    overflow: 'auto',
-                    p: 3,
-                    position: 'relative',
-                    zIndex: currentView === 'addaddress' ? 900 : 1100,
-                    pointerEvents: currentView === 'addaddress' ? 'none' : 'auto'
-                }}>
+                <Box
+                    ref={mainContentRef}
+                    sx={{
+                        width: '50%',
+                        overflow: 'auto',
+                        p: 3,
+                        position: 'relative',
+                        zIndex: currentView === 'addaddress' ? 900 : 1100,
+                        pointerEvents: currentView === 'addaddress' ? 'none' : 'auto'
+                    }}
+                >
+                    {/* Error Display */}
                     {error && (
-                        <Alert severity="error" sx={{ mb: 3 }}>
-                            {error}
+                        <Box ref={errorAlertRef}>
+                            <Alert
+                                severity="error"
+                                onClose={() => {
+                                    setError(null);
+                                    setShowErrorSnackbar(false);
+                                }}
+                                sx={{
+                                    mb: 3,
+                                    borderRadius: 2,
+                                    '& .MuiAlert-message': {
+                                        fontSize: '14px'
+                                    },
+                                    boxShadow: 2,
+                                    border: '1px solid #f87171'
+                                }}
+                            >
+                                <AlertTitle sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                    Error
+                                </AlertTitle>
+                                {error}
+                            </Alert>
+                        </Box>
+                    )}
+
+                    {/* Success Message for Draft Save */}
+                    {showDraftSuccess && (
+                        <Alert
+                            severity="success"
+                            onClose={() => setShowDraftSuccess(false)}
+                            sx={{
+                                mb: 3,
+                                borderRadius: 2,
+                                '& .MuiAlert-message': {
+                                    fontSize: '14px'
+                                }
+                            }}
+                        >
+                            <AlertTitle sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                Draft Saved Successfully
+                            </AlertTitle>
+                            Your shipment has been saved as a draft. You can complete it later from the Shipments page.
                         </Alert>
                     )}
 
@@ -1419,15 +1848,18 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             <Grid container spacing={3}>
                                 <Grid item xs={12} md={6}>
                                     <FormControl fullWidth size="small">
-                                        <InputLabel>Shipment Type</InputLabel>
+                                        <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
                                         <Select
                                             value={shipmentInfo.shipmentType}
                                             onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentType: e.target.value }))}
                                             label="Shipment Type"
-                                            sx={{ fontSize: '12px' }}
+                                            sx={{
+                                                fontSize: '12px',
+                                                '& .MuiSelect-select': { fontSize: '12px' }
+                                            }}
                                         >
-                                            <MenuItem value="courier">Courier</MenuItem>
-                                            <MenuItem value="freight">Freight</MenuItem>
+                                            <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                            <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
                                         </Select>
                                     </FormControl>
                                 </Grid>
@@ -1439,8 +1871,13 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                         type="date"
                                         value={shipmentInfo.shipmentDate}
                                         onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
-                                        InputLabelProps={{ shrink: true }}
-                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                        InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                        sx={{
+                                            '& .MuiInputBase-input': {
+                                                fontSize: '12px',
+                                                '&::placeholder': { fontSize: '12px' }
+                                            }
+                                        }}
                                     />
                                 </Grid>
                                 <Grid item xs={12} md={6}>
@@ -1461,7 +1898,10 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                     required
                                                     disabled={currentView === 'addaddress'}
                                                     sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            '&::placeholder': { fontSize: '12px' }
+                                                        },
                                                         '& .MuiInputLabel-root': { fontSize: '12px' }
                                                     }}
                                                     InputProps={{
@@ -1507,7 +1947,13 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                         label="Carrier Tracking Number"
                                         value={shipmentInfo.carrierTrackingNumber}
                                         onChange={(e) => setShipmentInfo(prev => ({ ...prev, carrierTrackingNumber: e.target.value }))}
-                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                        sx={{
+                                            '& .MuiInputBase-input': {
+                                                fontSize: '12px',
+                                                '&::placeholder': { fontSize: '12px' }
+                                            },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
                                     />
                                 </Grid>
                                 <Grid item xs={12} md={6}>
@@ -1517,21 +1963,30 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                         label="Reference Number"
                                         value={shipmentInfo.shipperReferenceNumber}
                                         onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                        sx={{
+                                            '& .MuiInputBase-input': {
+                                                fontSize: '12px',
+                                                '&::placeholder': { fontSize: '12px' }
+                                            },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
                                     />
                                 </Grid>
                                 <Grid item xs={12} md={6}>
                                     <FormControl fullWidth size="small">
-                                        <InputLabel>Bill Type</InputLabel>
+                                        <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
                                         <Select
                                             value={shipmentInfo.billType}
                                             onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
                                             label="Bill Type"
-                                            sx={{ fontSize: '12px' }}
+                                            sx={{
+                                                fontSize: '12px',
+                                                '& .MuiSelect-select': { fontSize: '12px' }
+                                            }}
                                         >
-                                            <MenuItem value="prepaid">Prepaid (Sender Pays)</MenuItem>
-                                            <MenuItem value="collect">Collect (Receiver Pays)</MenuItem>
-                                            <MenuItem value="third_party">Third Party</MenuItem>
+                                            <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
+                                            <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
+                                            <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
                                         </Select>
                                     </FormControl>
                                 </Grid>
@@ -1845,7 +2300,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                 console.log(`Rendering package ${index + 1}:`, pkg);
                                 return (
                                     <Box
-                                        key={`${pkg.id}-${isEditingDraft ? activeDraftId : 'new'}`}
+                                        key={`${pkg.id}-${isEditingDraft ? shipmentID : 'new'}`}
                                         component="fieldset"
                                         sx={{
                                             border: '1px solid #e5e7eb',
@@ -1973,7 +2428,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                                         fontSize: '0.875rem'
                                                                     }}
                                                                 >
-                                                                    {unitSystem === 'metric' ? 'kg' : 'lbs'}
+                                                                    {(pkg.unitSystem || 'imperial') === 'metric' ? 'kg' : 'lbs'}
                                                                 </Box>
                                                             </InputAdornment>
                                                         )
@@ -2007,7 +2462,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                                         fontSize: '0.875rem'
                                                                     }}
                                                                 >
-                                                                    {unitSystem === 'metric' ? 'cm' : 'in'}
+                                                                    {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
                                                                 </Box>
                                                             </InputAdornment>
                                                         )
@@ -2041,7 +2496,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                                         fontSize: '0.875rem'
                                                                     }}
                                                                 >
-                                                                    {unitSystem === 'metric' ? 'cm' : 'in'}
+                                                                    {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
                                                                 </Box>
                                                             </InputAdornment>
                                                         )
@@ -2075,7 +2530,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                                         fontSize: '0.875rem'
                                                                     }}
                                                                 >
-                                                                    {unitSystem === 'metric' ? 'cm' : 'in'}
+                                                                    {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
                                                                 </Box>
                                                             </InputAdornment>
                                                         )
@@ -2083,30 +2538,28 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                 />
                                             </Grid>
 
-                                            {/* Unit System Toggle - only show for first package */}
-                                            {index === 0 && (
-                                                <Grid item xs={12} md={2.4}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: '40px', justifyContent: 'center' }}>
-                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Imperial</Typography>
-                                                        <Switch
-                                                            checked={unitSystem === 'metric'}
-                                                            onChange={handleUnitChange}
-                                                            sx={{
-                                                                '& .MuiSwitch-switchBase.Mui-checked': {
-                                                                    color: 'primary.main',
-                                                                    '&:hover': {
-                                                                        backgroundColor: 'primary.light'
-                                                                    }
-                                                                },
-                                                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                                    backgroundColor: 'primary.main'
+                                            {/* Unit System Toggle - show for each package */}
+                                            <Grid item xs={12} md={2.4}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: '40px', justifyContent: 'center' }}>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Imperial</Typography>
+                                                    <Switch
+                                                        checked={(pkg.unitSystem || 'imperial') === 'metric'}
+                                                        onChange={(e) => handlePackageUnitChange(pkg.id, e.target.checked ? 'metric' : 'imperial')}
+                                                        sx={{
+                                                            '& .MuiSwitch-switchBase.Mui-checked': {
+                                                                color: 'primary.main',
+                                                                '&:hover': {
+                                                                    backgroundColor: 'primary.light'
                                                                 }
-                                                            }}
-                                                        />
-                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Metric</Typography>
-                                                    </Box>
-                                                </Grid>
-                                            )}
+                                                            },
+                                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                                backgroundColor: 'primary.main'
+                                                            }
+                                                        }}
+                                                    />
+                                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Metric</Typography>
+                                                </Box>
+                                            </Grid>
 
                                             {/* Freight Class - Optional field */}
                                             <Grid item xs={12}>
@@ -2172,13 +2625,11 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Code</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Charge Name</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Our Cost</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Currency</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Customer Charge</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Currency</TableCell>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Actions</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '80px' }}>Code</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: 'auto' }}>Charge Name</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '180px', textAlign: 'center' }}>Our Cost</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '180px', textAlign: 'center' }}>Customer Charge</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '60px' }}>Actions</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
@@ -2186,7 +2637,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                             <TableRow key={rate.id}>
                                                 {/* Hidden carrier field - save but don't show */}
                                                 <input type="hidden" value={rate.carrier} />
-                                                <TableCell>
+                                                <TableCell sx={{ width: '80px' }}>
                                                     <FormControl fullWidth size="small">
                                                         <Select
                                                             value={rate.code}
@@ -2205,60 +2656,103 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                         </Select>
                                                     </FormControl>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell sx={{ width: 'auto' }}>
                                                     <TextField
                                                         fullWidth
                                                         size="small"
                                                         value={rate.chargeName}
                                                         onChange={(e) => updateRateLineItem(rate.id, 'chargeName', e.target.value)}
                                                         sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                                        placeholder="Enter charge description"
                                                     />
                                                 </TableCell>
-                                                <TableCell>
-                                                    <TextField
-                                                        fullWidth
-                                                        size="small"
-                                                        type="number"
-                                                        value={rate.cost}
-                                                        onChange={(e) => updateRateLineItem(rate.id, 'cost', e.target.value)}
-                                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                                    />
+                                                <TableCell sx={{ width: '180px', padding: '8px 4px' }}>
+                                                    <Box sx={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden' }}>
+                                                        <TextField
+                                                            size="small"
+                                                            type="number"
+                                                            value={rate.cost}
+                                                            onChange={(e) => updateRateLineItem(rate.id, 'cost', e.target.value)}
+                                                            sx={{
+                                                                flex: 1,
+                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right', padding: '6px 8px' },
+                                                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                '& input[type=number]': {
+                                                                    '-moz-appearance': 'textfield'
+                                                                },
+                                                                '& input[type=number]::-webkit-outer-spin-button': {
+                                                                    '-webkit-appearance': 'none',
+                                                                    margin: 0
+                                                                },
+                                                                '& input[type=number]::-webkit-inner-spin-button': {
+                                                                    '-webkit-appearance': 'none',
+                                                                    margin: 0
+                                                                }
+                                                            }}
+                                                            placeholder="0.00"
+                                                        />
+                                                        <FormControl size="small" sx={{ minWidth: '60px', backgroundColor: '#f9fafb' }}>
+                                                            <Select
+                                                                value={rate.costCurrency}
+                                                                onChange={(e) => updateRateLineItem(rate.id, 'costCurrency', e.target.value)}
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
+                                                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                    '& .MuiSelect-icon': { fontSize: '16px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
+                                                                <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Box>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <FormControl fullWidth size="small">
-                                                        <Select
-                                                            value={rate.costCurrency}
-                                                            onChange={(e) => updateRateLineItem(rate.id, 'costCurrency', e.target.value)}
-                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                        >
-                                                            <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
-                                                            <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
-                                                        </Select>
-                                                    </FormControl>
+                                                <TableCell sx={{ width: '180px', padding: '8px 4px' }}>
+                                                    <Box sx={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden' }}>
+                                                        <TextField
+                                                            size="small"
+                                                            type="number"
+                                                            value={rate.charge}
+                                                            onChange={(e) => updateRateLineItem(rate.id, 'charge', e.target.value)}
+                                                            sx={{
+                                                                flex: 1,
+                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right', padding: '6px 8px' },
+                                                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                '& input[type=number]': {
+                                                                    '-moz-appearance': 'textfield'
+                                                                },
+                                                                '& input[type=number]::-webkit-outer-spin-button': {
+                                                                    '-webkit-appearance': 'none',
+                                                                    margin: 0
+                                                                },
+                                                                '& input[type=number]::-webkit-inner-spin-button': {
+                                                                    '-webkit-appearance': 'none',
+                                                                    margin: 0
+                                                                }
+                                                            }}
+                                                            placeholder="0.00"
+                                                        />
+                                                        <FormControl size="small" sx={{ minWidth: '60px', backgroundColor: '#f9fafb' }}>
+                                                            <Select
+                                                                value={rate.chargeCurrency}
+                                                                onChange={(e) => updateRateLineItem(rate.id, 'chargeCurrency', e.target.value)}
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
+                                                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                    '& .MuiSelect-icon': { fontSize: '16px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
+                                                                <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Box>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <TextField
-                                                        fullWidth
-                                                        size="small"
-                                                        type="number"
-                                                        value={rate.charge}
-                                                        onChange={(e) => updateRateLineItem(rate.id, 'charge', e.target.value)}
-                                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <FormControl fullWidth size="small">
-                                                        <Select
-                                                            value={rate.chargeCurrency}
-                                                            onChange={(e) => updateRateLineItem(rate.id, 'chargeCurrency', e.target.value)}
-                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                        >
-                                                            <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
-                                                            <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
-                                                        </Select>
-                                                    </FormControl>
-                                                </TableCell>
-                                                <TableCell>
+                                                <TableCell sx={{ width: '60px' }}>
                                                     <IconButton
                                                         size="small"
                                                         onClick={() => removeRateLineItem(rate.id)}
@@ -2276,43 +2770,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             {/* Combined Total and Action Section */}
                             <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-                                    {/* Left side - Ready to Ship text and buttons */}
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                            Ready to Ship?
-                                        </Typography>
-                                        <Box sx={{ display: 'flex', gap: 2 }}>
-                                            <Button
-                                                variant="outlined"
-                                                onClick={handleShipLater}
-                                                disabled={isSavingDraft || isDraftLoading}
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    textTransform: 'none',
-                                                    minWidth: '120px'
-                                                }}
-                                                startIcon={isSavingDraft ? <CircularProgress size={16} /> : null}
-                                            >
-                                                {isSavingDraft ? 'Saving...' : isEditingDraft ? 'Update Draft' : 'Ship Later'}
-                                            </Button>
-                                            <Button
-                                                variant="contained"
-                                                color="primary"
-                                                onClick={handleBookShipment}
-                                                disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    textTransform: 'none',
-                                                    minWidth: '120px'
-                                                }}
-                                            >
-                                                {isBooking ? 'Booking...' : 'Book Shipment'}
-                                            </Button>
-                                        </Box>
-                                    </Box>
-
-                                    {/* Right side - Total cost */}
-                                    <Box sx={{ textAlign: 'right' }}>
+                                    {/* Left side - Total cost */}
+                                    <Box sx={{ textAlign: 'left' }}>
                                         <Typography variant="h4" sx={{
                                             fontSize: '24px',
                                             fontWeight: 700,
@@ -2325,15 +2784,49 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                             Total
                                         </Typography>
                                     </Box>
-                                </Box>
 
-                                {/* Helper text below the main row */}
-                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 2 }}>
-                                    {isEditingDraft
-                                        ? 'Update your draft to save changes, or book the shipment to proceed with shipping.'
-                                        : 'Save as draft to complete later, or book now to proceed with shipping.'
-                                    }
-                                </Typography>
+                                    {/* Right side - Ready to Ship text and buttons */}
+                                    <Box sx={{ textAlign: 'right' }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
+                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                Ready to Ship?
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', gap: 2 }}>
+                                                <Button
+                                                    variant="outlined"
+                                                    onClick={handleShipLater}
+                                                    disabled={isSavingDraft || isDraftLoading}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        minWidth: '120px'
+                                                    }}
+                                                    startIcon={isSavingDraft ? <CircularProgress size={16} /> : null}
+                                                >
+                                                    {isSavingDraft ? 'Saving...' : 'Ship Later'}
+                                                </Button>
+                                                <Button
+                                                    variant="contained"
+                                                    color="primary"
+                                                    onClick={handleBookShipment}
+                                                    disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        minWidth: '120px'
+                                                    }}
+                                                >
+                                                    {isBooking ? 'Booking...' : 'Book Shipment'}
+                                                </Button>
+                                            </Box>
+                                        </Box>
+
+                                        {/* Helper text below the buttons on the right */}
+                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1.5 }}>
+                                            Save as draft to complete later, or book now to proceed with shipping.
+                                        </Typography>
+                                    </Box>
+                                </Box>
                             </Box>
                         </CardContent>
                     </Card>
@@ -2387,6 +2880,20 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                     helperText="Email for carrier confirmations"
                                     FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                                 />
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Contact Phone *"
+                                    value={newCarrierPhone}
+                                    onChange={(e) => {
+                                        setNewCarrierPhone(e.target.value);
+                                        setError(null); // Clear errors when typing
+                                    }}
+                                    required
+                                    sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                    helperText="Phone number for carrier confirmations"
+                                    FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                                />
                             </Box>
                         </DialogContent>
                         <DialogActions>
@@ -2396,6 +2903,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                     setNewCarrierName('');
                                     setNewCarrierContactName('');
                                     setNewCarrierContactEmail('');
+                                    setNewCarrierPhone('');
                                     setError(null); // Clear any errors
                                 }}
                                 sx={{ fontSize: '12px' }}
@@ -2405,7 +2913,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             <Button
                                 onClick={handleAddCarrier}
                                 variant="contained"
-                                disabled={!newCarrierName.trim() || !newCarrierContactName.trim() || !newCarrierContactEmail.trim()}
+                                disabled={!newCarrierName.trim() || !newCarrierContactName.trim() || !newCarrierContactEmail.trim() || !newCarrierPhone.trim()}
                                 sx={{ fontSize: '12px' }}
                             >
                                 Add Carrier
@@ -2571,6 +3079,26 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     )}
                 </DialogContent>
             </Dialog>
+
+            {/* Error Snackbar */}
+            <Snackbar
+                open={showErrorSnackbar}
+                autoHideDuration={6000}
+                onClose={() => setShowErrorSnackbar(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert
+                    onClose={() => setShowErrorSnackbar(false)}
+                    severity="error"
+                    sx={{
+                        width: '100%',
+                        fontSize: '14px',
+                        boxShadow: 3
+                    }}
+                >
+                    {error}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };

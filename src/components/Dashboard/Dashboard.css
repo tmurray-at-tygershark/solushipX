@@ -393,3 +393,17 @@
 .dashboard-container ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.5);
 }
+
+/* Tracking Search Box - Always White Background */
+.tracking-search-box .MuiOutlinedInput-root {
+    background-color: white !important;
+}
+
+.tracking-search-box .MuiInputBase-input {
+    color: #000 !important;
+}
+
+.tracking-search-box .MuiInputBase-input::placeholder {
+    color: rgba(0, 0, 0, 0.5) !important;
+    opacity: 1 !important;
+}

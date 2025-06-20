@@ -24,6 +24,7 @@ const ShipmentTableRow = ({
     onSelect,
     onActionMenuOpen,
     customers,
+    companyData,
     carrierData,
     searchFields,
     highlightSearchTerm,
@@ -39,6 +40,8 @@ const ShipmentTableRow = ({
     // Get tracking number
     const getTrackingNumber = () => {
         const trackingNumber = shipment.trackingNumber ||
+            shipment.carrierTrackingNumber || // Check top-level carrierTrackingNumber for QuickShip
+            shipment.shipmentInfo?.carrierTrackingNumber || // Check inside shipmentInfo for QuickShip
             shipment.selectedRate?.trackingNumber ||
             shipment.selectedRate?.TrackingNumber ||
             shipment.selectedRateRef?.trackingNumber ||
@@ -128,10 +131,41 @@ const ShipmentTableRow = ({
         } : {};
     };
 
+    const handleRowClick = (event) => {
+        // Prevent clicking on checkboxes, buttons, or action areas
+        if (
+            event.target.closest('.MuiCheckbox-root') ||
+            event.target.closest('.MuiIconButton-root') ||
+            event.target.closest('.MuiButton-root') ||
+            event.target.closest('[data-no-click]')
+        ) {
+            return;
+        }
+
+        // Check if it's a draft shipment
+        if (shipment.status === 'draft') {
+            // For drafts, call the edit handler instead of view detail
+            onEditDraftShipment(shipment.id);
+        } else {
+            // For non-drafts, open the shipment detail view
+            onViewShipmentDetail(shipment.id);
+        }
+    };
+
     return (
         <TableRow
             hover
+            onClick={handleRowClick}
+            role="checkbox"
+            aria-checked={isSelected}
+            tabIndex={-1}
             selected={isSelected}
+            sx={{
+                cursor: 'pointer',
+                '&:hover': {
+                    backgroundColor: '#f8fafc'
+                }
+            }}
         >
             {/* Checkbox */}
             {visibleColumns.checkbox !== false && (
@@ -255,7 +289,31 @@ const ShipmentTableRow = ({
                 </TableCell>
             )}
 
-            {/* Customer */}
+            {/* Reference */}
+            {visibleColumns.reference !== false && (
+                <TableCell sx={{
+                    verticalAlign: 'top',
+                    textAlign: 'left',
+                    ...getColumnWidth('reference'),
+                    padding: '8px 12px',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.3
+                }}>
+                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                        {highlightSearchTerm(
+                            shipment.shipmentInfo?.shipperReferenceNumber ||
+                            shipment.referenceNumber ||
+                            shipment.shipperReferenceNumber ||
+                            shipment.selectedRate?.referenceNumber ||
+                            shipment.selectedRateRef?.referenceNumber ||
+                            '',
+                            searchFields.referenceNumber
+                        ) || 'N/A'}
+                    </Typography>
+                </TableCell>
+            )}
+
+            {/* Company */}
             {visibleColumns.customer !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
@@ -265,9 +323,7 @@ const ShipmentTableRow = ({
                     wordBreak: 'break-word',
                     lineHeight: 1.3
                 }}>
-                    {shipment.shipTo?.customerID
-                        ? customers[shipment.shipTo.customerID] || shipment.shipTo?.company || 'N/A'
-                        : shipment.shipTo?.company || 'N/A'}
+                    {companyData?.name || 'N/A'}
                 </TableCell>
             )}
 
@@ -290,11 +346,18 @@ const ShipmentTableRow = ({
                         return (
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '12px' }}>
                                 {/* Origin */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <span>{route.origin.flag}</span>
-                                    <Box sx={{ wordBreak: 'break-word', lineHeight: 1.2 }}>
-                                        {highlightSearchTerm(route.origin.text, searchFields.origin)}
+                                <Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <span>{route.origin.flag}</span>
+                                        <Box sx={{ wordBreak: 'break-word', lineHeight: 1.2 }}>
+                                            {highlightSearchTerm(route.origin.text, searchFields.origin)}
+                                        </Box>
                                     </Box>
+                                    {route.origin.postalCode && (
+                                        <Box sx={{ pl: 3, fontSize: '11px', color: '#64748b' }}>
+                                            {highlightSearchTerm(route.origin.postalCode, searchFields.origin)}
+                                        </Box>
+                                    )}
                                 </Box>
 
                                 {/* Down Arrow */}
@@ -308,11 +371,18 @@ const ShipmentTableRow = ({
                                 </Box>
 
                                 {/* Destination */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <span>{route.destination.flag}</span>
-                                    <Box sx={{ wordBreak: 'break-word', lineHeight: 1.2 }}>
-                                        {highlightSearchTerm(route.destination.text, searchFields.destination)}
+                                <Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <span>{route.destination.flag}</span>
+                                        <Box sx={{ wordBreak: 'break-word', lineHeight: 1.2 }}>
+                                            {highlightSearchTerm(route.destination.text, searchFields.destination)}
+                                        </Box>
                                     </Box>
+                                    {route.destination.postalCode && (
+                                        <Box sx={{ pl: 3, fontSize: '11px', color: '#64748b' }}>
+                                            {highlightSearchTerm(route.destination.postalCode, searchFields.destination)}
+                                        </Box>
+                                    )}
                                 </Box>
                             </Box>
                         );
@@ -370,18 +440,6 @@ const ShipmentTableRow = ({
                                     <ContentCopyIcon sx={{ fontSize: '0.875rem', color: '#64748b' }} />
                                 </IconButton>
                             </Box>
-                        )}
-
-                        {/* Reference Number */}
-                        {shipment.referenceNumber && (
-                            <Typography variant="body2" sx={{
-                                fontSize: '12px',
-                                color: '#64748b',
-                                wordBreak: 'break-word',
-                                lineHeight: 1.2
-                            }}>
-                                Ref: {shipment.referenceNumber}
-                            </Typography>
                         )}
 
                         {/* Service Level */}

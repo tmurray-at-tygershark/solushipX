@@ -134,6 +134,132 @@ exports.keepAlivePolaris = onSchedule({
 });
 
 /**
+ * Keep QuickShip functions warm
+ * Critical for email notification reliability - runs every 3 minutes
+ */
+exports.keepAliveQuickShip = onSchedule({
+    schedule: 'every 3 minutes',
+    timeZone: 'America/Toronto'
+}, async (event) => {
+    const results = [];
+    
+    // QuickShip test data for warmup
+    const quickShipWarmupData = {
+        shipmentData: {
+            shipmentID: 'WARMUP-TEST-001',
+            companyID: 'warmup-test',
+            carrier: 'Test Carrier',
+            shipFrom: {
+                company: "Warmup Test Company",
+                street: "123 Test St",
+                city: "Toronto",
+                state: "ON",
+                postalCode: "M1M1M1",
+                country: "CA"
+            },
+            shipTo: {
+                company: "Warmup Test Destination",
+                street: "456 Test Ave",
+                city: "Vancouver",
+                state: "BC",
+                postalCode: "V1V1V1",
+                country: "CA"
+            },
+            packages: [{
+                id: 1,
+                itemDescription: "Test Item",
+                packagingType: 262,
+                packagingQuantity: 1,
+                weight: 100,
+                length: 48,
+                width: 40,
+                height: 48
+            }],
+            manualRates: [{
+                id: 1,
+                carrier: "Test Carrier",
+                code: "STANDARD",
+                chargeName: "Freight",
+                cost: 150.00,
+                charge: 200.00,
+                costCurrency: "CAD",
+                chargeCurrency: "CAD"
+            }],
+            totalCharges: 200.00,
+            currency: "CAD",
+            status: "warmup",
+            _isWarmupRequest: true
+        },
+        carrierDetails: {
+            name: "Test Carrier",
+            contactEmail: "warmup@test.com",
+            phone: "555-0123"
+        },
+        _isWarmupRequest: true
+    };
+
+    logger.info('🔥 Starting QuickShip functions warmup...');
+
+    // 1. Warm up bookQuickShipment
+    try {
+        const { bookQuickShipment } = require('./carrier-api/generic/bookQuickShipment');
+        await bookQuickShipment({
+            data: quickShipWarmupData,
+            auth: { uid: 'keepalive-system' }
+        });
+        results.push({ function: 'bookQuickShipment', success: true });
+        logger.info('✅ bookQuickShipment warmed successfully');
+    } catch (error) {
+        results.push({ function: 'bookQuickShipment', success: false, error: error.message });
+        logger.warn('⚠️ bookQuickShipment warmup failed (expected):', error.message);
+    }
+
+    // 2. Warm up generateGenericBOL
+    try {
+        const { generateBOLCore } = require('./carrier-api/generic/generateGenericBOL');
+        await generateBOLCore('WARMUP-TEST-001', 'warmup-doc-id');
+        results.push({ function: 'generateGenericBOL', success: true });
+        logger.info('✅ generateGenericBOL warmed successfully');
+    } catch (error) {
+        results.push({ function: 'generateGenericBOL', success: false, error: error.message });
+        logger.warn('⚠️ generateGenericBOL warmup failed (expected):', error.message);
+    }
+
+    // 3. Warm up generateCarrierConfirmation
+    try {
+        const { generateCarrierConfirmationCore } = require('./carrier-api/generic/generateCarrierConfirmation');
+        await generateCarrierConfirmationCore('WARMUP-TEST-001', 'warmup-doc-id', quickShipWarmupData.carrierDetails);
+        results.push({ function: 'generateCarrierConfirmation', success: true });
+        logger.info('✅ generateCarrierConfirmation warmed successfully');
+    } catch (error) {
+        results.push({ function: 'generateCarrierConfirmation', success: false, error: error.message });
+        logger.warn('⚠️ generateCarrierConfirmation warmup failed (expected):', error.message);
+    }
+
+    // 4. Warm up sendQuickShipNotifications
+    try {
+        const { sendQuickShipNotifications } = require('./carrier-api/generic/sendQuickShipNotifications');
+        await sendQuickShipNotifications({
+            shipmentData: { ...quickShipWarmupData.shipmentData, _skipEmailSending: true },
+            carrierDetails: quickShipWarmupData.carrierDetails,
+            documentResults: []
+        });
+        results.push({ function: 'sendQuickShipNotifications', success: true });
+        logger.info('✅ sendQuickShipNotifications warmed successfully');
+    } catch (error) {
+        results.push({ function: 'sendQuickShipNotifications', success: false, error: error.message });
+        logger.warn('⚠️ sendQuickShipNotifications warmup failed (expected):', error.message);
+    }
+
+    logger.info('🏁 QuickShip warmup completed:', results);
+    return {
+        success: true,
+        timestamp: new Date().toISOString(),
+        results
+    };
+});
+
+/**
  * Comprehensive keep-alive for all carrier functions
  * Runs during off-peak hours (less frequently to save costs)
  */
@@ -147,9 +273,16 @@ exports.keepAliveAllCarriers = onSchedule({
         { name: 'Canpar', module: './carrier-api/canpar/getRates', func: 'getRatesCanpar' },
         { name: 'PolarisTransportation', module: './carrier-api/polaristransportation/getRates', func: 'getRatesPolarisTransportation' }
     ];
+    
+    const quickShipFunctions = [
+        { name: 'bookQuickShipment', module: './carrier-api/generic/bookQuickShipment', func: 'bookQuickShipment' },
+        { name: 'generateGenericBOL', module: './carrier-api/generic/generateGenericBOL', func: 'generateBOLCore' },
+        { name: 'generateCarrierConfirmation', module: './carrier-api/generic/generateCarrierConfirmation', func: 'generateCarrierConfirmationCore' }
+    ];
 
     logger.info('🔥 Starting comprehensive carrier warmup...');
 
+    // Warm up carrier functions
     for (const carrier of carriers) {
         try {
             const { [carrier.func]: carrierFunction } = require(carrier.module);
@@ -159,12 +292,55 @@ exports.keepAliveAllCarriers = onSchedule({
                 auth: { uid: 'keepalive-system' }
             });
             
-            results.push({ carrier: carrier.name, success: true });
+            results.push({ carrier: carrier.name, success: true, type: 'carrier' });
             logger.info(`✅ ${carrier.name} warmed successfully`);
             
         } catch (error) {
-            results.push({ carrier: carrier.name, success: false, error: error.message });
+            results.push({ carrier: carrier.name, success: false, error: error.message, type: 'carrier' });
             logger.warn(`⚠️ ${carrier.name} warmup failed:`, error.message);
+        }
+    }
+
+    // Warm up QuickShip functions
+    logger.info('🔥 Starting QuickShip functions warmup...');
+    
+    // QuickShip warmup data
+    const quickShipWarmupData = {
+        shipmentData: {
+            shipmentID: 'WARMUP-COMPREHENSIVE-001',
+            companyID: 'warmup-test',
+            carrier: 'Test Carrier',
+            status: "warmup",
+            _isWarmupRequest: true
+        },
+        carrierDetails: {
+            name: "Test Carrier",
+            contactEmail: "warmup@test.com"
+        },
+        _isWarmupRequest: true
+    };
+
+    for (const quickShipFunc of quickShipFunctions) {
+        try {
+            const { [quickShipFunc.func]: funcToCall } = require(quickShipFunc.module);
+            
+            if (quickShipFunc.name === 'bookQuickShipment') {
+                await funcToCall({
+                    data: quickShipWarmupData,
+                    auth: { uid: 'keepalive-system' }
+                });
+            } else if (quickShipFunc.name === 'generateGenericBOL') {
+                await funcToCall('WARMUP-COMPREHENSIVE-001', 'warmup-doc-id');
+            } else if (quickShipFunc.name === 'generateCarrierConfirmation') {
+                await funcToCall('WARMUP-COMPREHENSIVE-001', 'warmup-doc-id', quickShipWarmupData.carrierDetails);
+            }
+            
+            results.push({ carrier: quickShipFunc.name, success: true, type: 'quickship' });
+            logger.info(`✅ ${quickShipFunc.name} warmed successfully`);
+            
+        } catch (error) {
+            results.push({ carrier: quickShipFunc.name, success: false, error: error.message, type: 'quickship' });
+            logger.warn(`⚠️ ${quickShipFunc.name} warmup failed:`, error.message);
         }
     }
 
@@ -194,6 +370,12 @@ exports.warmupCarriersNow = onCall({
         { name: 'Canpar', module: './carrier-api/canpar/getRates', func: 'getRatesCanpar' },
         { name: 'PolarisTransportation', module: './carrier-api/polaristransportation/getRates', func: 'getRatesPolarisTransportation' }
     ];
+    
+    const quickShipFunctions = [
+        { name: 'bookQuickShipment', module: './carrier-api/generic/bookQuickShipment', func: 'bookQuickShipment' },
+        { name: 'generateGenericBOL', module: './carrier-api/generic/generateGenericBOL', func: 'generateBOLCore' },
+        { name: 'generateCarrierConfirmation', module: './carrier-api/generic/generateCarrierConfirmation', func: 'generateCarrierConfirmationCore' }
+    ];
 
     for (const carrier of carriers) {
         try {
@@ -210,7 +392,8 @@ exports.warmupCarriersNow = onCall({
                 carrier: carrier.name, 
                 success: true, 
                 duration: `${duration}ms`,
-                status: 'warmed'
+                status: 'warmed',
+                type: 'carrier'
             });
             
         } catch (error) {
@@ -218,14 +401,69 @@ exports.warmupCarriersNow = onCall({
                 carrier: carrier.name, 
                 success: false, 
                 error: error.message,
-                status: 'failed'
+                status: 'failed',
+                type: 'carrier'
+            });
+        }
+    }
+
+    // Warm up QuickShip functions
+    logger.info('🔥 Manual QuickShip warmup...');
+    
+    const quickShipWarmupData = {
+        shipmentData: {
+            shipmentID: 'WARMUP-MANUAL-001',
+            companyID: 'warmup-test',
+            carrier: 'Test Carrier',
+            status: "warmup",
+            _isWarmupRequest: true
+        },
+        carrierDetails: {
+            name: "Test Carrier",
+            contactEmail: "warmup@test.com"
+        },
+        _isWarmupRequest: true
+    };
+
+    for (const quickShipFunc of quickShipFunctions) {
+        try {
+            const startTime = Date.now();
+            const { [quickShipFunc.func]: funcToCall } = require(quickShipFunc.module);
+            
+            if (quickShipFunc.name === 'bookQuickShipment') {
+                await funcToCall({
+                    data: quickShipWarmupData,
+                    auth: { uid: request.auth?.uid || 'manual-warmup' }
+                });
+            } else if (quickShipFunc.name === 'generateGenericBOL') {
+                await funcToCall('WARMUP-MANUAL-001', 'warmup-doc-id');
+            } else if (quickShipFunc.name === 'generateCarrierConfirmation') {
+                await funcToCall('WARMUP-MANUAL-001', 'warmup-doc-id', quickShipWarmupData.carrierDetails);
+            }
+            
+            const duration = Date.now() - startTime;
+            results.push({ 
+                carrier: quickShipFunc.name, 
+                success: true, 
+                duration: `${duration}ms`,
+                status: 'warmed',
+                type: 'quickship'
+            });
+            
+        } catch (error) {
+            results.push({ 
+                carrier: quickShipFunc.name, 
+                success: false, 
+                error: error.message,
+                status: 'failed',
+                type: 'quickship'
             });
         }
     }
 
     return {
         success: true,
-        message: 'Warmup process completed',
+        message: 'Warmup process completed (carriers + QuickShip)',
         timestamp: new Date().toISOString(),
         results
     };

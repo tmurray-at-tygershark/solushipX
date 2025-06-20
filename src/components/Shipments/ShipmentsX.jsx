@@ -47,7 +47,8 @@ import {
     FirstPage,
     KeyboardArrowLeft,
     KeyboardArrowRight,
-    LastPage
+    LastPage,
+    FlashOn as FlashOnIcon
 } from '@mui/icons-material';
 import { DateRangePicker } from '@mui/x-date-pickers-pro/DateRangePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -314,8 +315,28 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     }, [shipments, pushView, modalNavigation]);
 
     // Auto-open shipment detail if specified in deep link params
+    const [hasAutoOpenedShipment, setHasAutoOpenedShipment] = useState(false);
+
     useEffect(() => {
-        if (deepLinkParams && deepLinkParams.shipmentId && shipments.length > 0) {
+        // Handle direct-to-detail navigation from QuickShip "View Shipment"
+        if (deepLinkParams && deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId && shipments.length > 0 && !hasAutoOpenedShipment) {
+            console.log('Direct-to-detail navigation triggered for shipment:', deepLinkParams.selectedShipmentId);
+
+            const shipment = shipments.find(s =>
+                s.shipmentID === deepLinkParams.selectedShipmentId ||
+                s.id === deepLinkParams.selectedShipmentId
+            );
+
+            if (shipment) {
+                // Use the document ID to open the detail view directly
+                handleViewShipmentDetail(shipment.id);
+                setHasAutoOpenedShipment(true); // Prevent running again
+            } else {
+                console.warn('Shipment not found for direct-to-detail navigation:', deepLinkParams.selectedShipmentId);
+            }
+        }
+        // Handle legacy auto-open shipment detail if specified in deep link params (for backwards compatibility)
+        else if (deepLinkParams && deepLinkParams.shipmentId && shipments.length > 0 && !hasAutoOpenedShipment) {
             const shipment = shipments.find(s =>
                 s.shipmentID === deepLinkParams.shipmentId ||
                 s.id === deepLinkParams.shipmentId
@@ -324,11 +345,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             if (shipment) {
                 // Use the document ID to open the detail view
                 handleViewShipmentDetail(shipment.id);
+                setHasAutoOpenedShipment(true); // Prevent running again
             } else {
                 console.warn('Shipment not found for auto-detail open:', deepLinkParams.shipmentId);
             }
         }
-    }, [deepLinkParams, shipments, handleViewShipmentDetail]); // Include shipments dependency to wait for data to load
+    }, [deepLinkParams, shipments, handleViewShipmentDetail, hasAutoOpenedShipment]); // Include shipments dependency to wait for data to load
 
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
@@ -981,6 +1003,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setFiltersOpen(false);
         setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
         setMountedViews(['table']);
+        // Reset auto-open state to prevent sticky navigation
+        setHasAutoOpenedShipment(false);
     }, []);
 
     // Expose reset function via useEffect for external calls
@@ -1083,7 +1107,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <Button variant="outlined" startIcon={<FilterIcon />} onClick={() => setFiltersOpen(!filtersOpen)} size="small" sx={{ fontSize: '11px', textTransform: 'none' }}>
                                             {filtersOpen ? 'Hide' : 'Show'}
                                         </Button>
-                                        <Button variant="outlined" startIcon={<ExportIcon />} onClick={() => setIsExportDialogOpen(true)} size="small" sx={{ fontSize: '11px', textTransform: 'none' }}>Export</Button>
+                                        <IconButton variant="outlined" onClick={() => setIsExportDialogOpen(true)} size="small" sx={{ border: '1px solid rgba(0, 0, 0, 0.23)', borderRadius: '4px' }}>
+                                            <ExportIcon sx={{ fontSize: '16px' }} />
+                                        </IconButton>
 
                                         {/* Draft-specific actions */}
                                         {selectedTab === 'draft' && stats.drafts > 0 && (
@@ -1106,21 +1132,39 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         )}
 
                                         {hasEnabledCarriers(companyData) && (
-                                            <Button
-                                                onClick={() => {
-                                                    if (onOpenCreateShipment) {
-                                                        onOpenCreateShipment();
-                                                    } else {
-                                                        showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
-                                                    }
-                                                }}
-                                                variant="contained"
-                                                startIcon={<AddIcon />}
-                                                size="small"
-                                                sx={{ fontSize: '11px', textTransform: 'none' }}
-                                            >
-                                                New
-                                            </Button>
+                                            <>
+                                                <Button
+                                                    onClick={() => {
+                                                        if (onOpenCreateShipment) {
+                                                            // Open QuickShip modal with mode parameter
+                                                            onOpenCreateShipment(null, null, null, 'quickship');
+                                                        } else {
+                                                            showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
+                                                        }
+                                                    }}
+                                                    variant="contained"
+                                                    startIcon={<FlashOnIcon />}
+                                                    size="small"
+                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
+                                                >
+                                                    Quick Ship
+                                                </Button>
+                                                <Button
+                                                    onClick={() => {
+                                                        if (onOpenCreateShipment) {
+                                                            onOpenCreateShipment();
+                                                        } else {
+                                                            showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
+                                                        }
+                                                    }}
+                                                    variant="contained"
+                                                    startIcon={<AddIcon />}
+                                                    size="small"
+                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
+                                                >
+                                                    New
+                                                </Button>
+                                            </>
                                         )}
                                     </Box>
                                 </Toolbar>
@@ -1518,6 +1562,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     onActionMenuOpen={handleActionMenuOpen}
                                     onEditDraftShipment={handleEditDraftShipment}
                                     customers={customers}
+                                    companyData={companyData}
                                     carrierData={carrierData}
                                     searchFields={searchFields}
                                     highlightSearchTerm={highlightSearchTerm}

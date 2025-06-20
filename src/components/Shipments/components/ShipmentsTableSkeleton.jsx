@@ -15,7 +15,7 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
     return (
         <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none' }}>
             <TableContainer>
-                <Table sx={{ minWidth: 1130 }}>
+                <Table sx={{ minWidth: 1178 }}>
                     <TableHead>
                         <TableRow>
                             {/* Checkbox */}
@@ -27,11 +27,15 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
                                 <Skeleton variant="text" width={120} height={20} />
                             </TableCell>
                             {/* Date */}
-                            <TableCell sx={{ width: 80, minWidth: 80, maxWidth: 80 }}>
+                            <TableCell sx={{ width: 100, minWidth: 100, maxWidth: 100 }}>
                                 <Skeleton variant="text" width={60} height={20} />
                             </TableCell>
+                            {/* Reference */}
+                            <TableCell sx={{ width: 120, minWidth: 120, maxWidth: 120 }}>
+                                <Skeleton variant="text" width={80} height={20} />
+                            </TableCell>
                             {/* Customer */}
-                            <TableCell sx={{ width: 160, minWidth: 160, maxWidth: 160 }}>
+                            <TableCell sx={{ width: 140, minWidth: 140, maxWidth: 140 }}>
                                 <Skeleton variant="text" width={100} height={20} />
                             </TableCell>
                             {/* Route */}
@@ -47,7 +51,7 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
                                 <Skeleton variant="text" width={50} height={20} />
                             </TableCell>
                             {/* Status */}
-                            <TableCell sx={{ width: 90, minWidth: 90, maxWidth: 90 }}>
+                            <TableCell sx={{ width: 110, minWidth: 110, maxWidth: 110 }}>
                                 <Skeleton variant="rectangular" width={70} height={24} sx={{ borderRadius: 1 }} />
                             </TableCell>
                             {/* Actions */}
@@ -71,14 +75,18 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
                                     </Box>
                                 </TableCell>
                                 {/* Date */}
-                                <TableCell sx={{ width: 80, minWidth: 80, maxWidth: 80 }}>
+                                <TableCell sx={{ width: 100, minWidth: 100, maxWidth: 100 }}>
                                     <Box>
                                         <Skeleton variant="text" width={50} height={14} />
                                         <Skeleton variant="text" width={40} height={12} />
                                     </Box>
                                 </TableCell>
+                                {/* Reference */}
+                                <TableCell sx={{ width: 120, minWidth: 120, maxWidth: 120 }}>
+                                    <Skeleton variant="text" width={Math.random() * 60 + 40} height={16} />
+                                </TableCell>
                                 {/* Customer */}
-                                <TableCell sx={{ width: 160, minWidth: 160, maxWidth: 160 }}>
+                                <TableCell sx={{ width: 140, minWidth: 140, maxWidth: 140 }}>
                                     <Skeleton variant="text" width={Math.random() * 80 + 60} height={16} />
                                 </TableCell>
                                 {/* Route */}
@@ -103,7 +111,7 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
                                     <Skeleton variant="text" width={50} height={16} />
                                 </TableCell>
                                 {/* Status */}
-                                <TableCell sx={{ width: 90, minWidth: 90, maxWidth: 90 }}>
+                                <TableCell sx={{ width: 110, minWidth: 110, maxWidth: 110 }}>
                                     <Skeleton variant="rectangular" width={70} height={24} sx={{ borderRadius: 1 }} />
                                 </TableCell>
                                 {/* Actions */}

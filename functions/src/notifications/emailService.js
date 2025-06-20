@@ -36,178 +36,265 @@ exports.onShipmentCreated = onDocumentWritten('shipments/{shipmentId}', async (e
     
     // CRITICAL: Ensure we have the final shipment ID (not draft) before sending emails
     const currentShipmentId = shipmentData.shipmentID || shipmentData.readableShipmentID || shipmentData.shipmentNumber;
-    if (!currentShipmentId || currentShipmentId.includes('-DRAFT-')) {
-        logger.info(`Shipment ${shipmentData.shipmentID} still has draft ID (${currentShipmentId}), skipping notification until final ID is set`);
+    
+    // Check if this is a QuickShip booking
+    const isQuickShip = shipmentData.bookingMethod === 'quickship_manual' || shipmentData.creationMethod === 'quickship';
+    
+    if (isQuickShip) {
+        logger.info('QuickShip shipment detected - notifications handled directly by bookQuickShipment function to avoid race conditions', { 
+            shipmentId: currentShipmentId 
+        });
+        
+        // Skip QuickShip notifications here as they're handled directly by bookQuickShipment function
+        // This prevents race conditions where emails are sent before documents are fully accessible
+        
+        // Continue with regular shipment creation notification processing below for internal notifications
+    }
+
+    // Regular shipment creation notification processing
+    logger.info(`Processing shipment creation notification for ${currentShipmentId}`);
+
+    // Get company ID and extract notification subscribers
+    const companyId = shipmentData.companyID || shipmentData.companyId || shipmentData.userCompanyId;
+    
+    if (!companyId) {
+        logger.error('No company ID found in shipment data', {
+            shipmentId: currentShipmentId
+        });
         return;
     }
 
-    // Get company ID and shipment number first - check multiple possible fields (moved outside try block for error logging)
-    const companyId = shipmentData.companyID || shipmentData.companyId || shipmentData.userCompanyId;
-    
-    // Get shipment number - this should be the final carrier shipment ID after booking
-    const shipmentNumber = shipmentData.shipmentID || shipmentData.readableShipmentID || shipmentData.shipmentNumber;
-
     try {
-
-        logger.info(`Processing shipment creation notification for ${shipmentNumber}`, {
-            isNewShipment,
-            isBeingBooked,
-            status: shipmentData.status,
-            previousStatus: previousData?.status || 'none'
-        });
+        logger.info(`Sending shipment_created notification for company ${companyId}`);
         
-        if (!companyId) {
-            logger.warn(`No company ID found for shipment ${shipmentNumber}. Available fields: ${Object.keys(shipmentData).join(', ')}`);
-            return;
-        }
-
-        // Send notification using new subscription system
-        // The sendNotificationEmail function will handle recipient lookup internally
-
-        // Extract comprehensive shipment data like in ShipmentDetail.jsx
-        const carrierBookingConfirmation = shipmentData.carrierBookingConfirmation || {};
-        
-        // Get rate information (checking multiple possible sources)
-        const rateInfo = shipmentData.selectedRate || shipmentData.selectedRateRef || {};
-        
-        // Extract addresses with fallbacks
-        const shipFrom = shipmentData.shipFrom || shipmentData.origin || {};
-        const shipTo = shipmentData.shipTo || shipmentData.destination || {};
-        
-        // Get packages information
-        const packages = shipmentData.packages || [];
-        
-        // Extract tracking number with carrier-specific logic
-        let trackingNumber = carrierBookingConfirmation.proNumber || 
-                           carrierBookingConfirmation.confirmationNumber ||
-                           carrierBookingConfirmation.trackingNumber ||
-                           shipmentData.trackingNumber ||
-                           shipmentData.id;
-
-        // Prepare comprehensive email data
-        const emailData = {
-            // Basic Information
-            shipmentNumber: shipmentNumber,
-            shipmentId: shipmentData.shipmentID,
-            companyID: companyId,
-            customerID: shipTo.customerID || 'N/A',
-            createdAt: shipmentData.createdAt?.toDate?.() || new Date(),
-            
-            // Shipment Information
-            shipmentInfo: {
-                shipmentType: shipmentData.shipmentInfo?.shipmentType || 'package',
-                shipmentDate: shipmentData.shipmentInfo?.shipmentDate || null,
-                referenceNumber: shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentNumber,
-                billType: shipmentData.shipmentInfo?.shipmentBillType || 'prepaid',
-                holdForPickup: shipmentData.shipmentInfo?.holdForPickup || false,
-                saturdayDelivery: shipmentData.shipmentInfo?.saturdayDelivery || false,
-                signatureRequired: shipmentData.shipmentInfo?.signatureRequired || false,
-                pickupWindow: {
-                    earliest: shipmentData.shipmentInfo?.earliestPickupTime || '09:00',
-                    latest: shipmentData.shipmentInfo?.latestPickupTime || '17:00'
-                }
-            },
-            
-            // Carrier and Service Information
-            carrier: {
-                name: rateInfo.carrier || shipmentData.carrier || 'Unknown',
-                service: rateInfo.service || rateInfo.serviceName || 'Standard Service',
-                displayCarrierId: rateInfo.displayCarrierId,
-                sourceCarrierName: rateInfo.sourceCarrierName
-            },
-            
-            // Tracking Information
-            trackingNumber: trackingNumber,
-            status: shipmentData.status || 'pending',
-            
-            // Timing Information
-            estimatedDeliveryDate: carrierBookingConfirmation.estimatedDeliveryDate || 
-                                 rateInfo.estimatedDeliveryDate || 
-                                 rateInfo.transit?.estimatedDelivery || null,
-            transitDays: rateInfo.transitDays || rateInfo.transit?.days || 0,
-            
-            // Rate Information
-            rate: {
-                totalCharges: rateInfo.totalCharges || rateInfo.pricing?.total || 0,
-                freightCharge: rateInfo.freightCharge || rateInfo.freightCharges || rateInfo.pricing?.freight || 0,
-                fuelCharge: rateInfo.fuelCharge || rateInfo.fuelCharges || rateInfo.pricing?.fuel || 0,
-                serviceCharges: rateInfo.serviceCharges || rateInfo.pricing?.service || 0,
-                accessorialCharges: rateInfo.accessorialCharges || rateInfo.pricing?.accessorial || 0,
-                currency: rateInfo.currency || rateInfo.pricing?.currency || 'USD',
-                guaranteed: rateInfo.guaranteed || rateInfo.transit?.guaranteed || false
-            },
-            
-            // Address Information
-            origin: {
-                company: shipFrom.company || '',
-                street: shipFrom.street || '',
-                street2: shipFrom.street2 || '',
-                city: shipFrom.city || 'Unknown',
-                state: shipFrom.state || '',
-                postalCode: shipFrom.postalCode || '',
-                country: shipFrom.country || 'Unknown',
-                contact: shipFrom.contact || '',
-                phone: shipFrom.phone || '',
-                email: shipFrom.email || ''
-            },
-            destination: {
-                company: shipTo.company || '',
-                street: shipTo.street || '',
-                street2: shipTo.street2 || '',
-                city: shipTo.city || 'Unknown',
-                state: shipTo.state || '',
-                postalCode: shipTo.postalCode || '',
-                country: shipTo.country || 'Unknown',
-                contact: shipTo.contact || '',
-                phone: shipTo.phone || '',
-                email: shipTo.email || '',
-                customerID: shipTo.customerID || ''
-            },
-            
-            // Package Information
-            packages: packages.map((pkg, index) => ({
-                number: index + 1,
-                description: pkg.description || pkg.itemDescription || 'Package',
-                quantity: pkg.quantity || pkg.packagingQuantity || 1,
-                weight: pkg.weight || 0,
-                dimensions: {
-                    length: pkg.dimensions?.length || pkg.length || 0,
-                    width: pkg.dimensions?.width || pkg.width || 0,
-                    height: pkg.dimensions?.height || pkg.height || 0
-                },
-                freightClass: pkg.freightClass || 'N/A',
-                declaredValue: pkg.value || pkg.declaredValue || 0
-            })),
-            
-            // Calculated Information
-            totalPackages: packages.length,
-            totalWeight: packages.reduce((sum, pkg) => sum + (pkg.weight || 0), 0),
-            isInternational: shipFrom.country && shipTo.country && shipFrom.country !== shipTo.country,
-            isFreight: (shipmentData.shipmentInfo?.shipmentType || '').toLowerCase() === 'freight'
-        };
-
-        // Send notification email using new subscription system
+        // Get notification subscribers for this company
         const result = await sendNotificationEmail(
             'shipment_created',
             companyId,
-            emailData,
-            `shipment_created_${shipmentNumber}_${Date.now()}`
+            {
+                shipmentNumber: currentShipmentId,
+                carrierName: shipmentData.carrier || 'Unknown Carrier',
+                trackingNumber: shipmentData.trackingNumber || currentShipmentId,
+                shipFrom: `${shipmentData.shipFrom?.companyName || shipmentData.shipFrom?.company || 'Unknown'}, ${shipmentData.shipFrom?.city || 'Unknown'}`,
+                shipTo: `${shipmentData.shipTo?.companyName || shipmentData.shipTo?.company || 'Unknown'}, ${shipmentData.shipTo?.city || 'Unknown'}`,
+                totalCharges: shipmentData.totalCharges || 0,
+                currency: shipmentData.currency || 'CAD',
+                createdAt: new Date().toLocaleDateString()
+            }
         );
 
-        logger.info(`Shipment creation notification sent successfully`, {
-            shipmentNumber: shipmentNumber,
-            recipientCount: result.count,
-            companyId: companyId
-        });
+        if (result.success) {
+            logger.info(`Shipment creation notification sent successfully`, {
+                shipmentNumber: currentShipmentId,
+                recipientCount: result.count,
+                companyId: companyId
+            });
+        } else {
+            logger.error(`Failed to send shipment creation notification: ${result.error}`, {
+                shipmentNumber: currentShipmentId,
+                companyId: companyId
+            });
+        }
 
     } catch (error) {
         logger.error(`Failed to send shipment creation notification`, {
             error: error.message,
-            shipmentNumber: shipmentNumber,
+            shipmentNumber: currentShipmentId,
             shipmentId: event.params.shipmentId
         });
     }
 });
+
+/**
+ * Handles QuickShip notifications (documents already generated during booking)
+ * Called after the shipment is written to the database
+ */
+async function handleQuickShipProcessing(shipmentData, firestoreDocId) {
+    logger.info('Starting QuickShip email notifications (documents already generated during booking)');
+    
+    const shipmentId = shipmentData.shipmentID;
+    const carrierDetails = shipmentData.quickShipCarrierDetails;
+    
+    if (!shipmentId) {
+        throw new Error('Shipment ID is required for QuickShip processing');
+    }
+    
+    // Documents should already be generated by bookQuickShipment function
+    // So we just need to find them and send email notifications
+    try {
+        logger.info('Searching for QuickShip documents using multiple approaches...', {
+            firestoreDocId,
+            shipmentId
+        });
+        
+        const foundDocuments = [];
+        
+        // Approach 1: Direct document lookups in top-level collection (most reliable)
+        logger.info('Approach 1: Direct document lookups in shipmentDocuments collection');
+        const bolDocId = `${firestoreDocId}_bol`;
+        const confirmationDocId = `${firestoreDocId}_carrier_confirmation`;
+        
+        try {
+            const [bolDoc, confirmationDoc] = await Promise.all([
+                db.collection('shipmentDocuments').doc(bolDocId).get(),
+                db.collection('shipmentDocuments').doc(confirmationDocId).get()
+            ]);
+            
+            if (bolDoc.exists) {
+                const bolData = bolDoc.data();
+                logger.info('Found BOL document in shipmentDocuments:', {
+                    id: bolDoc.id,
+                    fileName: bolData.fileName || bolData.filename,
+                    hasDownloadUrl: !!bolData.downloadUrl
+                });
+                
+                foundDocuments.push({
+                    success: true,
+                    data: {
+                        downloadUrl: bolData.downloadUrl,
+                        publicUrl: bolData.publicUrl || bolData.downloadUrl,
+                        fileName: bolData.fileName || bolData.filename,
+                        documentType: bolData.documentType || 'bol',
+                        docType: bolData.docType
+                    }
+                });
+            } else {
+                logger.warn('BOL document not found with ID:', bolDocId);
+            }
+            
+            if (confirmationDoc.exists) {
+                const confirmationData = confirmationDoc.data();
+                logger.info('Found carrier confirmation document in shipmentDocuments:', {
+                    id: confirmationDoc.id,
+                    fileName: confirmationData.fileName || confirmationData.filename,
+                    hasDownloadUrl: !!confirmationData.downloadUrl
+                });
+                
+                foundDocuments.push({
+                    success: true,
+                    data: {
+                        downloadUrl: confirmationData.downloadUrl,
+                        publicUrl: confirmationData.publicUrl || confirmationData.downloadUrl,
+                        fileName: confirmationData.fileName || confirmationData.filename,
+                        documentType: confirmationData.documentType || 'carrier_confirmation',
+                        docType: confirmationData.docType
+                    }
+                });
+            } else {
+                logger.warn('Carrier confirmation document not found with ID:', confirmationDocId);
+            }
+        } catch (error) {
+            logger.error('Error in direct document lookups:', error);
+        }
+        
+        // Approach 2: If no documents found, try subcollection lookups
+        if (foundDocuments.length === 0) {
+            logger.info('Approach 2: Searching in shipment subcollections');
+            try {
+                const subcollectionSnapshot = await db.collection('shipments').doc(firestoreDocId)
+                    .collection('documents').get();
+                    
+                if (!subcollectionSnapshot.empty) {
+                    subcollectionSnapshot.docs.forEach(doc => {
+                        const docData = doc.data();
+                        logger.info('Found document in subcollection:', {
+                            id: doc.id,
+                            fileName: docData.fileName || docData.filename,
+                            documentType: docData.documentType,
+                            hasDownloadUrl: !!docData.downloadUrl
+                        });
+                        
+                        if (docData.downloadUrl) {
+                            foundDocuments.push({
+                                success: true,
+                                data: {
+                                    downloadUrl: docData.downloadUrl,
+                                    publicUrl: docData.publicUrl || docData.downloadUrl,
+                                    fileName: docData.fileName || docData.filename,
+                                    documentType: docData.documentType,
+                                    docType: docData.docType
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    logger.warn('No documents found in subcollection either');
+                }
+            } catch (error) {
+                logger.error('Error searching subcollections:', error);
+            }
+        }
+        
+        // Approach 3: Query-based search as final fallback
+        if (foundDocuments.length === 0) {
+            logger.info('Approach 3: Query-based search in shipmentDocuments collection');
+            try {
+                let documentsSnapshot = await db.collection('shipmentDocuments')
+                    .where('shipmentId', '==', firestoreDocId)
+                    .get();
+                
+                // If no documents found with firestoreDocId, try with shipmentID
+                if (documentsSnapshot.empty && shipmentId !== firestoreDocId) {
+                    logger.info('Trying query with shipmentID:', shipmentId);
+                    documentsSnapshot = await db.collection('shipmentDocuments')
+                        .where('shipmentId', '==', shipmentId)
+                        .get();
+                }
+                
+                if (!documentsSnapshot.empty) {
+                    documentsSnapshot.docs.forEach(doc => {
+                        const docData = doc.data();
+                        logger.info('Found document via query:', {
+                            id: doc.id,
+                            fileName: docData.fileName || docData.filename,
+                            documentType: docData.documentType,
+                            hasDownloadUrl: !!docData.downloadUrl
+                        });
+                        
+                        if (docData.downloadUrl) {
+                            foundDocuments.push({
+                                success: true,
+                                data: {
+                                    downloadUrl: docData.downloadUrl,
+                                    publicUrl: docData.publicUrl || docData.downloadUrl,
+                                    fileName: docData.fileName || docData.filename,
+                                    documentType: docData.documentType,
+                                    docType: docData.docType
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    logger.warn('No documents found via any query approach');
+                }
+            } catch (error) {
+                logger.error('Error in query-based search:', error);
+            }
+        }
+        
+        logger.info('Found existing documents for QuickShip notifications:', {
+            totalDocuments: foundDocuments.length,
+            documentsWithUrls: foundDocuments.filter(r => r.success && r.data?.downloadUrl).length,
+            documentDetails: foundDocuments.map(r => ({
+                fileName: r.data?.fileName,
+                hasUrl: !!r.data?.downloadUrl
+            }))
+        });
+        
+        // Send QuickShip notifications with existing document attachments
+        const { sendQuickShipNotifications } = require('../carrier-api/generic/sendQuickShipNotifications');
+        await sendQuickShipNotifications({
+            shipmentData: shipmentData,
+            carrierDetails: carrierDetails,
+            documentResults: foundDocuments
+        });
+        logger.info('QuickShip notifications sent successfully with existing document attachments');
+        
+    } catch (notificationError) {
+        logger.error('Error sending QuickShip notifications:', notificationError);
+        // Don't fail the entire process if notifications fail
+    }
+}
 
 /**
  * Cloud Function triggered when shipment status changes
@@ -686,6 +773,110 @@ exports.migrateToCollectionSystem = onCall({
 });
 
 /**
+ * Callable function to automatically setup notification subscriptions for company admins
+ */
+exports.setupAdminNotifications = onCall({
+    cors: true,
+    region: 'us-central1'
+}, async (request) => {
+    const { usersToAdd, usersToRemove, companyId } = request.data;
+
+    if (!companyId) {
+        throw new Error('Missing required parameter: companyId');
+    }
+
+    if ((!usersToAdd || !Array.isArray(usersToAdd)) && (!usersToRemove || !Array.isArray(usersToRemove))) {
+        throw new Error('Must provide usersToAdd or usersToRemove arrays');
+    }
+
+    try {
+        logger.info(`Setting up admin notifications for company ${companyId}`, {
+            usersToAdd: usersToAdd || [],
+            usersToRemove: usersToRemove || []
+        });
+
+        // Import the V2 function from sendgridService
+        const { updateUserNotificationSubscriptionsV2 } = require('../email/sendgridService');
+        
+        const results = {
+            added: [],
+            removed: [],
+            errors: []
+        };
+
+        // Default admin notification preferences (hawkeye mode enabled)
+        const defaultAdminPreferences = {
+            shipment_created: true,
+            shipment_delivered: true,
+            shipment_delayed: true,
+            status_changed: true,
+            customer_note_added: true,
+            hawkeye_mode: true
+        };
+
+        // Disabled preferences for removal
+        const disabledPreferences = {
+            shipment_created: false,
+            shipment_delivered: false,
+            shipment_delayed: false,
+            status_changed: false,
+            customer_note_added: false,
+            hawkeye_mode: false
+        };
+
+        // Add notification subscriptions for new admins
+        if (usersToAdd && usersToAdd.length > 0) {
+            for (const userId of usersToAdd) {
+                try {
+                    await updateUserNotificationSubscriptionsV2(userId, companyId, defaultAdminPreferences);
+                    results.added.push(userId);
+                    logger.info(`Successfully added notification subscriptions for admin user ${userId}`);
+                } catch (error) {
+                    logger.error(`Failed to add notification subscriptions for user ${userId}`, {
+                        error: error.message,
+                        companyId
+                    });
+                    results.errors.push({ userId, operation: 'add', error: error.message });
+                }
+            }
+        }
+
+        // Remove notification subscriptions for removed admins
+        if (usersToRemove && usersToRemove.length > 0) {
+            for (const userId of usersToRemove) {
+                try {
+                    await updateUserNotificationSubscriptionsV2(userId, companyId, disabledPreferences);
+                    results.removed.push(userId);
+                    logger.info(`Successfully removed notification subscriptions for admin user ${userId}`);
+                } catch (error) {
+                    logger.error(`Failed to remove notification subscriptions for user ${userId}`, {
+                        error: error.message,
+                        companyId
+                    });
+                    results.errors.push({ userId, operation: 'remove', error: error.message });
+                }
+            }
+        }
+
+        logger.info(`Admin notification setup completed for company ${companyId}`, results);
+
+        return {
+            success: true,
+            message: `Admin notification setup completed`,
+            results: results
+        };
+
+    } catch (error) {
+        logger.error(`Failed to setup admin notifications for company ${companyId}`, {
+            error: error.message,
+            usersToAdd: usersToAdd || [],
+            usersToRemove: usersToRemove || []
+        });
+        throw new Error(`Failed to setup admin notifications: ${error.message}`);
+    }
+});
+
+/**
  * Get user-friendly status descriptions
  */
 function getStatusDescription(status) {
@@ -712,5 +903,6 @@ module.exports = {
     sendCustomerNoteNotification: exports.sendCustomerNoteNotification,
     updateNotificationPreferences: exports.updateNotificationPreferences,
     getNotificationPreferences: exports.getNotificationPreferences,
-    migrateToCollectionSystem: exports.migrateToCollectionSystem
+    migrateToCollectionSystem: exports.migrateToCollectionSystem,
+    setupAdminNotifications: exports.setupAdminNotifications
 }; 

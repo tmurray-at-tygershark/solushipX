@@ -2,11 +2,15 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const logger = require('firebase-functions/logger');
 const { sendReportNotificationEmail } = require('./email/sendgridService');
+const sgMail = require('@sendgrid/mail');
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
     admin.initializeApp();
 }
+
+// Get SendGrid API key from environment variables
+const sendgridApiKey = process.env.SENDGRID_API_KEY;
 
 /**
  * Send a test report notification email with CORS enabled
@@ -93,7 +97,7 @@ async function sendTestEmail(data) {
     const emailContent = {
         to: data.recipientEmail,
         from: {
-            email: 'noreply@solushipx.com',
+            email: 'noreply@integratedcarriers.com',
             name: 'SolushipX Reports'
         },
         subject: data.subject,
@@ -162,7 +166,7 @@ function generateTestEmailHTML(data) {
                 </div>
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                    <p style="margin: 0;">Questions about reports? Contact us at <a href="mailto:tyler@tygershark.com" style="color: #1c277d;">tyler@tygershark.com</a></p>
+                    <p style="margin: 0;">Questions about reports? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
                     <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                 </div>
             </div>
@@ -197,7 +201,7 @@ NEXT STEPS:
 - Generate your first report to test the complete workflow
 - Review notification preferences for your team
 
-Questions about reports? Contact tyler@tygershark.com
+Questions about reports? Contact support@integratedcarriers.com
 
 © 2024 SolushipX. All rights reserved.
     `;

@@ -1,10 +1,6 @@
+/* Billing Container Styles */
 .billing-container {
-    margin: 0 auto;
-    max-width: 1300px;
-    width: 100%;
-    padding: 20px;
-    min-height: calc(100vh - 64px);
-    background-color: #f5f5f5;
+    /* Styles handled by sx prop in component */
 }
 
 .breadcrumb-container {

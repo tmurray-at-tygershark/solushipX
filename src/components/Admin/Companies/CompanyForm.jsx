@@ -360,6 +360,90 @@ const CompanyForm = () => {
             await batch.commit();
             setOriginalAdminUserIds(newAdminSelections);
 
+            // Setup notification subscriptions for new/removed company admins
+            if (usersToAddLink.length > 0 || usersToRemoveLink.length > 0) {
+                try {
+                    console.log('Setting up admin notifications...', {
+                        companyId: humanReadableCompanyID,
+                        usersToAdd: usersToAddLink,
+                        usersToRemove: usersToRemoveLink
+                    });
+
+                    // Default admin notification preferences (hawkeye mode enabled)
+                    const defaultAdminPreferences = {
+                        shipment_created: true,
+                        shipment_delivered: true,
+                        shipment_delayed: true,
+                        status_changed: true,
+                        customer_note_added: true,
+                        hawkeye_mode: true
+                    };
+
+                    // Disabled preferences for removal
+                    const disabledPreferences = {
+                        shipment_created: false,
+                        shipment_delivered: false,
+                        shipment_delayed: false,
+                        status_changed: false,
+                        customer_note_added: false,
+                        hawkeye_mode: false
+                    };
+
+                    const notificationPromises = [];
+
+                    // Add notification subscriptions for new admins
+                    for (const userId of usersToAddLink) {
+                        Object.entries(defaultAdminPreferences).forEach(([notificationType, enabled]) => {
+                            const subscriptionId = `${userId}_${humanReadableCompanyID}_${notificationType}`;
+                            const subscriptionData = {
+                                userId: userId,
+                                companyId: humanReadableCompanyID,
+                                notificationType: notificationType,
+                                enabled: enabled,
+                                createdAt: serverTimestamp(),
+                                updatedAt: serverTimestamp()
+                            };
+
+                            notificationPromises.push(
+                                setDoc(doc(db, 'notificationSubscriptions', subscriptionId), subscriptionData)
+                            );
+                        });
+                    }
+
+                    // Remove notification subscriptions for removed admins
+                    for (const userId of usersToRemoveLink) {
+                        Object.entries(disabledPreferences).forEach(([notificationType, enabled]) => {
+                            const subscriptionId = `${userId}_${humanReadableCompanyID}_${notificationType}`;
+                            const subscriptionData = {
+                                userId: userId,
+                                companyId: humanReadableCompanyID,
+                                notificationType: notificationType,
+                                enabled: enabled,
+                                createdAt: serverTimestamp(),
+                                updatedAt: serverTimestamp()
+                            };
+
+                            notificationPromises.push(
+                                setDoc(doc(db, 'notificationSubscriptions', subscriptionId), subscriptionData)
+                            );
+                        });
+                    }
+
+                    // Execute all notification updates
+                    await Promise.all(notificationPromises);
+
+                    console.log('Admin notifications setup completed successfully', {
+                        usersAdded: usersToAddLink.length,
+                        usersRemoved: usersToRemoveLink.length,
+                        totalSubscriptions: notificationPromises.length
+                    });
+
+                } catch (notificationError) {
+                    console.error('Error setting up admin notifications:', notificationError);
+                    enqueueSnackbar(`Company saved successfully, but notification setup failed. Users may need to manually configure notifications.`, { variant: 'warning' });
+                }
+            }
+
             enqueueSnackbar(`Company ${isEditMode ? 'updated' : 'created'} successfully!`, { variant: 'success' });
             const redirectId = isEditMode ? companyFirestoreId : companyDocRef.id;
             navigate(`/admin/companies/${redirectId}`);

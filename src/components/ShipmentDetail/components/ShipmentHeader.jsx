@@ -26,6 +26,7 @@ const ShipmentHeader = ({
     isEShipPlusCarrier,
     onPrintLabel,
     onPrintBOL,
+    onPrintConfirmation,
     onPrintShipment,
     fetchShipmentDocuments,
     onBackToTable,
@@ -143,10 +144,47 @@ const ShipmentHeader = ({
                         />
                     )}
 
-                    {/* Labels Button - Show when labels exist */}
+                    {/* Labels Button - Show when actual shipping labels exist (not confirmation docs) */}
                     {shipment?.status !== 'draft' &&
                         !documentsLoading &&
-                        shipmentDocuments.labels?.length > 0 && (
+                        (() => {
+                            // Get all potential label documents
+                            const allDocs = [
+                                ...(shipmentDocuments.labels || []),
+                                ...(shipmentDocuments.other || []),
+                                ...(shipmentDocuments.documents || [])
+                            ];
+
+                            // Filter for actual shipping labels (exclude BOL and carrier confirmations)
+                            const actualLabels = allDocs.filter(doc => {
+                                const filename = (doc.filename || '').toLowerCase();
+                                const documentType = (doc.documentType || '').toLowerCase();
+
+                                // Exclude BOL and carrier confirmation documents
+                                const isBOL = filename.includes('bol') ||
+                                    filename.includes('billoflading') ||
+                                    filename.includes('bill_of_lading') ||
+                                    documentType.includes('bol') ||
+                                    documentType === 'bill_of_lading';
+
+                                const isConfirmation = filename.includes('confirmation') ||
+                                    filename.includes('carrier') ||
+                                    documentType === 'carrier_confirmation' ||
+                                    doc.docType === 7;
+
+                                if (isBOL || isConfirmation) return false;
+
+                                // Look for actual shipping labels
+                                return filename.includes('label') ||
+                                    filename.includes('prolabel') ||
+                                    filename.includes('shipping_label') ||
+                                    documentType.includes('label') ||
+                                    documentType === 'shipping_label' ||
+                                    doc.docType === 1; // eShipPlus label type
+                            });
+
+                            return actualLabels.length > 0;
+                        })() && (
                             <Button
                                 onClick={onPrintLabel}
                                 variant="outlined"
@@ -174,6 +212,59 @@ const ShipmentHeader = ({
                                 sx={buttonStyle}
                             >
                                 {actionStates.printBOL.loading ? 'Loading...' : 'BOL'}
+                            </Button>
+                        )}
+
+                    {/* Carrier Confirmation Button - Show when carrier confirmation documents exist */}
+                    {shipment?.status !== 'draft' &&
+                        !documentsLoading &&
+                        onPrintConfirmation &&
+                        (() => {
+                            // Check all document collections for carrier confirmations
+                            const allDocs = [
+                                ...(shipmentDocuments.carrierConfirmations || []),
+                                ...(shipmentDocuments.documents || []),
+                                ...(shipmentDocuments.other || []),
+                                ...(shipmentDocuments.bol || []), // Sometimes confirmations are misclassified
+                                ...(shipmentDocuments.labels || []) // Sometimes confirmations are misclassified
+                            ];
+
+                            // Look for carrier confirmation documents
+                            const confirmationDocs = allDocs.filter(doc => {
+                                const filename = (doc.filename || '').toLowerCase();
+                                const documentType = (doc.documentType || '').toLowerCase();
+
+                                return doc.docType === 7 || // Carrier confirmation type
+                                    documentType === 'carrier_confirmation' ||
+                                    filename.includes('carrier_confirmation') ||
+                                    filename.includes('carrier-confirmation') ||
+                                    (filename.includes('carrier') && filename.includes('confirmation')) ||
+                                    filename.includes('pickup_confirmation') ||
+                                    filename.includes('pickup-confirmation');
+                            });
+
+                            console.log('🔍 Confirmation button check:', {
+                                allDocsCount: allDocs.length,
+                                confirmationDocsFound: confirmationDocs.length,
+                                confirmationDocs: confirmationDocs.map(doc => ({
+                                    filename: doc.filename,
+                                    documentType: doc.documentType,
+                                    docType: doc.docType
+                                }))
+                            });
+
+                            return confirmationDocs.length > 0;
+                        })() && (
+                            <Button
+                                onClick={onPrintConfirmation}
+                                variant="outlined"
+                                size="small"
+                                startIcon={actionStates.printConfirmation?.loading ?
+                                    <CircularProgress size={14} /> : <LocalShippingIcon sx={{ fontSize: 14 }} />}
+                                disabled={actionStates.printConfirmation?.loading}
+                                sx={buttonStyle}
+                            >
+                                {actionStates.printConfirmation?.loading ? 'Loading...' : 'Confirmation'}
                             </Button>
                         )}
                 </Box>

@@ -34,6 +34,8 @@ import {
     Menu,
     MenuItem,
     Divider,
+    Collapse,
+    Paper
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -48,10 +50,16 @@ import {
     Logout as LogoutIcon,
     Fullscreen as FullscreenIcon,
     Close as CloseIcon,
-    QrCode2 as BarcodeIcon,
+    QrCodeScanner as BarcodeIcon,
     Add as AddIcon,
     ContactMail as ContactMailIcon,
     FlightTakeoff as TrackingIcon,
+    ArrowBack as ArrowBackIcon,
+    RocketLaunch as RocketLaunchIcon,
+    Calculate as CalculateIcon,
+    ExpandLess,
+    ExpandMore,
+    AccountBalanceWallet as AccountBalanceWalletIcon
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
@@ -99,6 +107,9 @@ const CompanyComponent = lazy(() => import('../Company/Company'));
 
 // Lazy load the AddressBook component for the modal
 const AddressBookComponent = lazy(() => import('../AddressBook/AddressBook'));
+
+// Lazy load the Billing component for the modal
+const BillingComponent = lazy(() => import('../Billing/Billing'));
 
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
@@ -328,7 +339,7 @@ const Dashboard = () => {
     const [trackingNumber, setTrackingNumber] = useState('');
     const [isShipmentsModalOpen, setIsShipmentsModalOpen] = useState(false);
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
-    const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false);
+    // const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false); // Replaced with Billing link
     const [isCarriersModalOpen, setIsCarriersModalOpen] = useState(false);
     const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
     const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
@@ -336,6 +347,7 @@ const Dashboard = () => {
     const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
     const [isAddressBookModalOpen, setIsAddressBookModalOpen] = useState(false);
     const [isQuickShipModalOpen, setIsQuickShipModalOpen] = useState(false);
+    const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
 
@@ -349,9 +361,10 @@ const Dashboard = () => {
 
     // User profile data state
     const [userProfileData, setUserProfileData] = useState({
-        photoURL: null,
         firstName: '',
-        lastName: ''
+        lastName: '',
+        email: '',
+        photoURL: ''
     });
 
     // Modal navigation stack for chaining modals (e.g., Customers -> Shipments)
@@ -362,6 +375,10 @@ const Dashboard = () => {
     const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
 
     const globeRef = useRef(null); // Ref to access Globe's methods
+
+    const [hasError, setHasError] = useState(false);
+    const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+    const [newShipmentExpanded, setNewShipmentExpanded] = useState(false);
 
     useEffect(() => {
         // Ensure the loading screen is visible for at least 3 seconds
@@ -499,14 +516,16 @@ const Dashboard = () => {
                     setUserProfileData({
                         photoURL: userData.photoURL || currentUser.photoURL || null,
                         firstName: userData.firstName || '',
-                        lastName: userData.lastName || ''
+                        lastName: userData.lastName || '',
+                        email: userData.email || ''
                     });
                 } else {
                     // Fallback to Firebase Auth data
                     setUserProfileData({
                         photoURL: currentUser.photoURL || null,
                         firstName: currentUser.displayName?.split(' ')[0] || '',
-                        lastName: currentUser.displayName?.split(' ')[1] || ''
+                        lastName: currentUser.displayName?.split(' ')[1] || '',
+                        email: currentUser.email || ''
                     });
                 }
             } catch (error) {
@@ -515,7 +534,8 @@ const Dashboard = () => {
                 setUserProfileData({
                     photoURL: currentUser.photoURL || null,
                     firstName: currentUser.displayName?.split(' ')[0] || '',
-                    lastName: currentUser.displayName?.split(' ')[1] || ''
+                    lastName: currentUser.displayName?.split(' ')[1] || '',
+                    email: currentUser.email || ''
                 });
             }
         };
@@ -542,7 +562,7 @@ const Dashboard = () => {
                 });
 
                 // Open customers modal with specific customer and note
-                setIsCustomersModalOpen(true);
+                // setIsCustomersModalOpen(true); // Commented out - Customers replaced with Billing
 
                 // Clear URL parameters after processing to avoid re-triggering
                 const newUrl = window.location.pathname;
@@ -657,7 +677,8 @@ const Dashboard = () => {
                 setUserProfileData({
                     photoURL: userData.photoURL || currentUser.photoURL || null,
                     firstName: userData.firstName || '',
-                    lastName: userData.lastName || ''
+                    lastName: userData.lastName || '',
+                    email: userData.email || ''
                 });
             }
         } catch (error) {
@@ -668,8 +689,8 @@ const Dashboard = () => {
     const handleOpenCreateShipmentModal = (prePopulatedData = null, draftId = null, quickshipDraftId = null, mode = 'advanced') => {
         console.log('🚀 Opening modal with:', { prePopulatedData, draftId, quickshipDraftId, mode });
 
-        if (mode === 'quickship' && quickshipDraftId) {
-            console.log('🚀 Opening QuickShip modal for draft:', quickshipDraftId);
+        if (mode === 'quickship') {
+            console.log('🚀 Opening QuickShip modal');
 
             // Close other modals first if open
             if (isShipmentsModalOpen) {
@@ -681,8 +702,14 @@ const Dashboard = () => {
                 setIsQuickShipModalOpen(true);
             }
 
-            // Store the draft ID for QuickShip
-            setCreateShipmentPrePopulatedData({ quickshipDraftId });
+            // Store the draft ID for QuickShip if provided
+            if (quickshipDraftId) {
+                console.log('🚀 Opening QuickShip modal for draft:', quickshipDraftId);
+                setCreateShipmentPrePopulatedData({ quickshipDraftId: quickshipDraftId });
+            } else {
+                // Clear any previous data when opening QuickShip for new shipment
+                setCreateShipmentPrePopulatedData(null);
+            }
 
         } else {
             console.log('🔧 Opening CreateShipment modal (advanced mode)');
@@ -746,10 +773,10 @@ const Dashboard = () => {
         // Close QuickShip modal
         setIsQuickShipModalOpen(false);
 
-        // Set up deep link parameters to open shipment detail directly
+        // Open Shipments modal directly to shipment detail (bypassing the table)
         setShipmentsDeepLinkParams({
-            shipmentId: shipmentId,
-            openDetail: true // Flag to indicate we want to open detail view immediately
+            directToDetail: true,
+            selectedShipmentId: shipmentId
         });
 
         // Open Shipments modal after a brief delay
@@ -769,7 +796,7 @@ const Dashboard = () => {
         setShipmentsDeepLinkParams(deepLinkParams);
 
         // Close customers modal and open shipments modal
-        setIsCustomersModalOpen(false);
+        // setIsCustomersModalOpen(false); // Commented out - Customers replaced with Billing
         setTimeout(() => {
             setIsShipmentsModalOpen(true);
         }, 300); // Delay to allow slide transition
@@ -792,7 +819,7 @@ const Dashboard = () => {
             setIsShipmentsModalOpen(false);
             setTimeout(() => {
                 if (previousModal === 'customers') {
-                    setIsCustomersModalOpen(true);
+                    // setIsCustomersModalOpen(true); // Commented out - Customers replaced with Billing
                 } else if (previousModal === 'shipments') {
                     // If previous modal was shipments, just close the current modal
                     setIsShipmentsModalOpen(false);
@@ -803,10 +830,36 @@ const Dashboard = () => {
     }, [modalStack]);
 
     const menuItems = [
-        { text: 'New Shipment', icon: <AddIcon />, action: () => handleOpenCreateShipmentModal() },
+        {
+            text: 'New Shipment',
+            icon: <AddIcon />,
+            action: () => setNewShipmentExpanded(!newShipmentExpanded),
+            expandable: true,
+            expanded: newShipmentExpanded,
+            subItems: [
+                {
+                    text: 'Quick Ship',
+                    icon: <RocketLaunchIcon />,
+                    description: 'Fast manual entry',
+                    action: () => {
+                        handleOpenQuickShipModal();
+                        setNewShipmentExpanded(false);
+                    }
+                },
+                {
+                    text: 'Real-Time Rates',
+                    icon: <CalculateIcon />,
+                    description: 'Compare carrier rates',
+                    action: () => {
+                        handleOpenCreateShipmentModal();
+                        setNewShipmentExpanded(false);
+                    }
+                }
+            ]
+        },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
-        { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
         { text: 'Address Book', icon: <ContactMailIcon />, action: () => setIsAddressBookModalOpen(true) },
+        { text: 'Billing', icon: <AccountBalanceWalletIcon />, action: () => setIsBillingModalOpen(true) },
         { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
     ];
 
@@ -836,7 +889,7 @@ const Dashboard = () => {
                 // Completely transparent header with no background
                 transition: 'all 0.3s ease'
             }}>
-                {/* Right Section - Adaptive Search - Now takes full width */}
+                {/* Right Section - Profile and Settings */}
                 <Box sx={{
                     display: 'flex',
                     alignItems: 'center',
@@ -844,64 +897,6 @@ const Dashboard = () => {
                     justifyContent: 'flex-end',
                     width: '100%'
                 }}>
-                    <TextField
-                        variant="standard"
-                        value={trackingNumber}
-                        onChange={(e) => setTrackingNumber(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
-                        placeholder={window.innerWidth < 600 ? "Track..." : "Shipment/Tracking Number"}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <BarcodeIcon sx={{
-                                        color: 'rgba(255, 255, 255, 0.7)',
-                                        fontSize: { xs: '1.2rem', sm: '1.4rem' }
-                                    }} />
-                                </InputAdornment>
-                            ),
-                            disableUnderline: true,
-                            style: { color: 'white' },
-                            sx: {
-                                '& .MuiInputBase-input': {
-                                    color: 'white',
-                                    fontSize: { xs: '0.75rem', sm: '0.8rem' },
-                                    '&::placeholder': {
-                                        color: 'rgba(255, 255, 255, 0.7)',
-                                        opacity: 1
-                                    }
-                                }
-                            }
-                        }}
-                        sx={{
-                            bgcolor: 'rgba(255, 255, 255, 0.1)',
-                            borderRadius: '20px',
-                            p: { xs: '3px 12px', sm: '4px 16px' },
-                            width: {
-                                xs: '100%',
-                                sm: '200px',
-                                md: '250px',
-                                lg: '300px'
-                            },
-                            maxWidth: { xs: '200px', sm: 'none' },
-                            '& .MuiInputBase-input': {
-                                color: 'white',
-                                fontSize: { xs: '0.75rem', sm: '0.8rem' }
-                            },
-                            '& .MuiInputBase-root': {
-                                color: 'white'
-                            },
-                            '&:hover': {
-                                bgcolor: 'rgba(255, 255, 255, 0.15)',
-                                transform: 'scale(1.02)'
-                            },
-                            '&:focus-within': {
-                                bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.3)'
-                            },
-                            transition: 'all 0.2s ease'
-                        }}
-                    />
-
                     {/* Profile Avatar */}
                     <IconButton
                         onClick={handleProfileMenuOpen}
@@ -1119,7 +1114,7 @@ const Dashboard = () => {
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                width: { xs: '280px', sm: '300px', md: '320px' },
+                width: { xs: '220px', sm: '240px', md: '260px' },
                 height: '100vh',
                 color: 'white',
                 display: 'flex',
@@ -1145,7 +1140,7 @@ const Dashboard = () => {
 
                 {/* Header with Logo */}
                 <Box sx={{
-                    p: { xs: 2, sm: 2.5 },
+                    p: { xs: 1.5, sm: 2 },
                     display: 'flex',
                     justifyContent: 'flex-start',
                     position: 'relative',
@@ -1155,7 +1150,65 @@ const Dashboard = () => {
                     <img
                         src="/images/solushipx_logo_white.png"
                         alt="SoluShipX"
-                        style={{ height: 32 }}
+                        style={{ height: 28 }}
+                    />
+                </Box>
+
+                {/* Tracking Search Box */}
+                <Box sx={{
+                    px: { xs: 1.5, sm: 2 },
+                    py: 2,
+                    position: 'relative',
+                    zIndex: 1
+                }}>
+                    <TextField
+                        fullWidth
+                        variant="outlined"
+                        size="small"
+                        value={trackingNumber}
+                        onChange={(e) => setTrackingNumber(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
+                        placeholder="Track Shipment"
+                        className="tracking-search-box"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <BarcodeIcon sx={{
+                                        color: 'rgba(0, 0, 0, 0.6)',
+                                        fontSize: '20px'
+                                    }} />
+                                </InputAdornment>
+                            ),
+                            sx: {
+                                '& .MuiInputBase-input': {
+                                    fontSize: '12px',
+                                    color: '#000',
+                                    '&::placeholder': {
+                                        color: 'rgba(0, 0, 0, 0.5)',
+                                        opacity: 1
+                                    }
+                                }
+                            }
+                        }}
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                borderRadius: '8px',
+                                '& fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.3)',
+                                },
+                                '&:hover fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.5)',
+                                },
+                                '&.Mui-focused fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.7)',
+                                },
+                            },
+                            '& .MuiInputBase-input': {
+                                fontSize: '12px',
+                                py: 1
+                            }
+                        }}
                     />
                 </Box>
 
@@ -1164,51 +1217,117 @@ const Dashboard = () => {
                     flexGrow: 1,
                     position: 'relative',
                     zIndex: 1,
-                    px: { xs: 1, sm: 1.5 },
-                    py: 2
+                    px: { xs: 0.5, sm: 1 },
+                    py: 0
                 }}>
                     {menuItems.map((item, index) => (
-                        <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-                            <ListItemButton
-                                onClick={item.action}
-                                sx={{
-                                    borderRadius: '12px',
-                                    py: { xs: 1.5, sm: 2 },
-                                    px: { xs: 2, sm: 2.5 },
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                        transform: 'translateX(4px)',
-                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
-                                    },
-                                    transition: 'all 0.3s ease'
-                                }}
-                            >
-                                <ListItemIcon sx={{
-                                    color: 'rgba(255,255,255,0.8) !important',
-                                    minWidth: { xs: 40, sm: 44, md: 44 },
-                                    '& .MuiSvgIcon-root': {
-                                        fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.4rem' }
-                                    }
-                                }}>
-                                    {item.icon}
-                                </ListItemIcon>
-                                <ListItemText
-                                    primary={item.text}
-                                    primaryTypographyProps={{
-                                        fontSize: { xs: '0.9rem', sm: '0.95rem', md: '0.95rem' },
-                                        fontWeight: 500,
-                                        color: 'white'
+                        <React.Fragment key={item.text}>
+                            <ListItem disablePadding sx={{ mb: 0.5 }}>
+                                <ListItemButton
+                                    onClick={item.action}
+                                    sx={{
+                                        borderRadius: '12px',
+                                        py: { xs: 1.25, sm: 1.5 },
+                                        px: { xs: 1.5, sm: 2 },
+                                        backgroundColor: item.expanded ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                            transform: 'translateX(4px)',
+                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                        },
+                                        transition: 'all 0.3s ease'
                                     }}
-                                />
-                            </ListItemButton>
-                        </ListItem>
+                                >
+                                    <ListItemIcon sx={{
+                                        color: 'rgba(255,255,255,0.8) !important',
+                                        minWidth: { xs: 36, sm: 40 },
+                                        '& .MuiSvgIcon-root': {
+                                            fontSize: { xs: '1.2rem', sm: '1.3rem', md: '1.3rem' }
+                                        }
+                                    }}>
+                                        {item.icon}
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary={item.text}
+                                        primaryTypographyProps={{
+                                            fontSize: { xs: '0.85rem', sm: '0.9rem', md: '0.9rem' },
+                                            fontWeight: 500,
+                                            color: 'white'
+                                        }}
+                                    />
+                                    {item.expandable && (
+                                        item.expanded ? (
+                                            <ExpandLess sx={{ color: 'rgba(255,255,255,0.6)' }} />
+                                        ) : (
+                                            <ExpandMore sx={{ color: 'rgba(255,255,255,0.6)' }} />
+                                        )
+                                    )}
+                                </ListItemButton>
+                            </ListItem>
+
+                            {/* Submenu items */}
+                            {item.expandable && (
+                                <Collapse in={item.expanded} timeout="auto" unmountOnExit>
+                                    <List component="div" disablePadding>
+                                        {item.subItems?.map((subItem) => (
+                                            <ListItem key={subItem.text} disablePadding sx={{ mb: 0.5 }}>
+                                                <ListItemButton
+                                                    onClick={subItem.action}
+                                                    sx={{
+                                                        borderRadius: '12px',
+                                                        py: { xs: 1.25, sm: 1.5 },
+                                                        px: { xs: 1.5, sm: 2 },
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                        '&:hover': {
+                                                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                                            borderColor: 'rgba(255, 255, 255, 0.15)',
+                                                            transform: 'translateX(4px)',
+                                                            '& .subitem-icon': {
+                                                                transform: 'scale(1.1)',
+                                                            }
+                                                        },
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                >
+                                                    <ListItemIcon sx={{
+                                                        color: 'rgba(255,255,255,0.7) !important',
+                                                        minWidth: { xs: 36, sm: 40 },
+                                                        '& .MuiSvgIcon-root': {
+                                                            fontSize: { xs: '1.2rem', sm: '1.3rem', md: '1.3rem' },
+                                                            className: 'subitem-icon',
+                                                            transition: 'transform 0.2s ease'
+                                                        }
+                                                    }}>
+                                                        {subItem.icon}
+                                                    </ListItemIcon>
+                                                    <ListItemText
+                                                        primary={subItem.text}
+                                                        secondary={subItem.description}
+                                                        primaryTypographyProps={{
+                                                            fontSize: { xs: '0.85rem', sm: '0.9rem', md: '0.9rem' },
+                                                            fontWeight: 500,
+                                                            color: 'rgba(255,255,255,0.9)'
+                                                        }}
+                                                        secondaryTypographyProps={{
+                                                            fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                            color: 'rgba(255,255,255,0.5)'
+                                                        }}
+                                                    />
+                                                </ListItemButton>
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Collapse>
+                            )}
+                        </React.Fragment>
                     ))}
                 </List>
 
                 {/* Footer Section */}
                 <Box sx={{
-                    px: { xs: 2, sm: 2.5 },
-                    pb: { xs: 2, sm: 2.5 },
+                    px: { xs: 1.5, sm: 2 },
+                    pb: { xs: 1.5, sm: 2 },
                     position: 'relative',
                     zIndex: 1,
                     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
@@ -1282,7 +1401,11 @@ const Dashboard = () => {
             {/* Shipments Fullscreen Modal */}
             <Dialog
                 open={isShipmentsModalOpen}
-                onClose={() => setIsShipmentsModalOpen(false)}
+                onClose={() => {
+                    setIsShipmentsModalOpen(false);
+                    // Clear deep link parameters when modal closes to prevent sticky navigation
+                    setShipmentsDeepLinkParams(null);
+                }}
                 TransitionComponent={Transition}
                 fullScreen
                 sx={{
@@ -1315,7 +1438,11 @@ const Dashboard = () => {
                     }>
                         <ShipmentsComponent
                             isModal={true}
-                            onClose={() => setIsShipmentsModalOpen(false)}
+                            onClose={() => {
+                                setIsShipmentsModalOpen(false);
+                                // Clear deep link parameters when modal closes to prevent sticky navigation
+                                setShipmentsDeepLinkParams(null);
+                            }}
                             showCloseButton={true}
                             onModalBack={modalStack.length > 0 ? handleModalBack : null}
                             deepLinkParams={shipmentsDeepLinkParams}
@@ -1375,8 +1502,8 @@ const Dashboard = () => {
                 </Box>
             </Dialog>
 
-            {/* Customers Fullscreen Modal */}
-            <Dialog
+            {/* Customers Fullscreen Modal - Commented out, replaced with Billing link */}
+            {/* <Dialog
                 open={isCustomersModalOpen}
                 onClose={() => setIsCustomersModalOpen(false)}
                 TransitionComponent={Transition}
@@ -1421,7 +1548,7 @@ const Dashboard = () => {
                         />
                     </LazyComponentWrapper>
                 </Box>
-            </Dialog>
+            </Dialog> */}
 
             {/* Carriers Fullscreen Modal */}
             <Dialog
@@ -1687,6 +1814,49 @@ const Dashboard = () => {
                 </Box>
             </Dialog>
 
+            {/* Billing Fullscreen Modal */}
+            <Dialog
+                open={isBillingModalOpen}
+                onClose={() => setIsBillingModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <BillingComponent
+                            isModal={true}
+                            onClose={() => setIsBillingModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
             {/* QuickShip Fullscreen Modal */}
             <Dialog
                 open={isQuickShipModalOpen}
@@ -1757,13 +1927,13 @@ const Dashboard = () => {
             <Box sx={{
                 position: 'absolute',
                 top: 0,
-                left: { xs: '280px', sm: '300px', md: '320px' }, // Start after the left navigation panel
-                width: 'calc(100% - 280px)', // Adjust width for xs
+                left: { xs: '220px', sm: '240px', md: '260px' },
+                width: 'calc(100% - 220px)',
                 '@media (min-width: 600px)': {
-                    width: 'calc(100% - 300px)' // Adjust width for sm
+                    width: 'calc(100% - 240px)'
                 },
                 '@media (min-width: 960px)': {
-                    width: 'calc(100% - 320px)' // Adjust width for md and up
+                    width: 'calc(100% - 260px)'
                 },
                 height: '100%',
                 opacity: showLoadingScreen ? 0 : 1,
@@ -1787,17 +1957,17 @@ const Dashboard = () => {
                 <Box sx={{
                     position: 'absolute',
                     top: 0,
-                    left: { xs: '280px', sm: '300px', md: '320px' }, // Start after the left navigation panel
-                    width: 'calc(100% - 280px)', // Adjust width for xs
+                    left: { xs: '220px', sm: '240px', md: '260px' },
+                    width: 'calc(100% - 220px)',
                     '@media (min-width: 600px)': {
-                        width: 'calc(100% - 300px)' // Adjust width for sm
+                        width: 'calc(100% - 240px)'
                     },
                     '@media (min-width: 960px)': {
-                        width: 'calc(100% - 320px)' // Adjust width for md and up
+                        width: 'calc(100% - 260px)'
                     },
                     height: '100%',
-                    zIndex: 2, // Lower z-index so UI elements appear above it
-                    pointerEvents: 'none' // Allow interaction with UI elements above
+                    zIndex: 2,
+                    pointerEvents: 'none'
                 }}>
                     <GlobeLoadingScreen />
                 </Box>

@@ -9,6 +9,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
     const [actionStates, setActionStates] = useState({
         printLabel: { loading: false, error: null },
         printBOL: { loading: false, error: null },
+        printConfirmation: { loading: false, error: null },
         printShipment: { loading: false, error: null },
         refreshStatus: { loading: false, error: null },
         generateBOL: { loading: false, error: null },
@@ -256,6 +257,79 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, [shipment?.id, shipment?.shipmentID, shipment?.creationMethod, shipmentDocuments, setActionLoading, showSnackbar, viewPdfInModal]);
 
+    // Carrier Confirmation handler - for QuickShip and manual carriers
+    const handlePrintConfirmation = useCallback(async () => {
+        try {
+            setActionLoading('printConfirmation', true);
+            showSnackbar('Loading Carrier Confirmation...', 'info');
+
+            // Check all document collections for carrier confirmations
+            const allDocs = [
+                ...(shipmentDocuments.carrierConfirmations || []),
+                ...(shipmentDocuments.documents || []),
+                ...(shipmentDocuments.other || []),
+                ...(shipmentDocuments.bol || []), // Sometimes confirmations are misclassified
+                ...(shipmentDocuments.labels || []) // Sometimes confirmations are misclassified
+            ];
+            
+            // Look for carrier confirmation documents
+            const confirmationDocuments = allDocs.filter(doc => {
+                const filename = (doc.filename || '').toLowerCase();
+                const documentType = (doc.documentType || '').toLowerCase();
+                
+                return doc.docType === 7 || // Carrier confirmation type
+                       documentType === 'carrier_confirmation' ||
+                       filename.includes('carrier_confirmation') ||
+                       filename.includes('carrier-confirmation') ||
+                       (filename.includes('carrier') && filename.includes('confirmation')) ||
+                       filename.includes('pickup_confirmation') ||
+                       filename.includes('pickup-confirmation');
+            });
+
+            if (confirmationDocuments.length > 0) {
+                console.log('🔍 Carrier Confirmation Selection - Available documents:', confirmationDocuments.map(doc => ({
+                    id: doc.id,
+                    filename: doc.filename,
+                    docType: doc.docType,
+                    documentType: doc.documentType,
+                    carrier: doc.carrier
+                })));
+
+                // Use the first available carrier confirmation document
+                const selectedDoc = confirmationDocuments[0];
+                
+                console.log('✅ Selected carrier confirmation document:', {
+                    id: selectedDoc.id,
+                    filename: selectedDoc.filename,
+                    docType: selectedDoc.docType,
+                    documentType: selectedDoc.documentType
+                });
+
+                showSnackbar('Opening carrier confirmation...', 'success');
+
+                await viewPdfInModal(
+                    selectedDoc.id,
+                    selectedDoc.filename,
+                    `Carrier Confirmation - ${shipment?.shipmentID}`,
+                    'printConfirmation'
+                );
+            } else {
+                // No carrier confirmation found
+                if (shipment?.creationMethod === 'quickship') {
+                    showSnackbar('Carrier confirmation not found. The document should have been generated during booking. Please contact support.', 'error');
+                } else {
+                    showSnackbar('No carrier confirmation document found for this shipment', 'warning');
+                }
+            }
+
+        } catch (error) {
+            console.error('Error printing carrier confirmation:', error);
+            showSnackbar(`Failed to print carrier confirmation: ${error.message}`, 'error');
+        } finally {
+            setActionLoading('printConfirmation', false);
+        }
+    }, [shipment?.id, shipment?.shipmentID, shipment?.creationMethod, shipmentDocuments, setActionLoading, showSnackbar, viewPdfInModal]);
+
     // Enhanced shipment print handler
     const handlePrintShipment = useCallback(async () => {
         try {
@@ -364,6 +438,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         snackbar,
         handlePrintLabel,
         handlePrintBOL,
+        handlePrintConfirmation,
         handlePrintShipment,
         handleRefreshStatus,
         handleCancelShipment,
