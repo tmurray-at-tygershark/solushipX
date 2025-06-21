@@ -49,7 +49,7 @@ import {
 import './CompanyList.css';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, Link as RouterLink, useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Link as MuiLink } from '@mui/material';
 import { useCompany } from '../../../contexts/CompanyContext';
@@ -230,6 +230,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
     const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
 
     const navigate = useNavigate();
+    const location = useLocation();
     const { setCompanyContext } = useCompany();
 
     // Helper function to show snackbar
@@ -318,13 +319,13 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
     // Handle dashboard navigation with company context switch
     const handleDashboardNavigation = async (company) => {
         try {
-            // Set the company context to the selected company
+            // Set the company context to the selected company and store current path
             await setCompanyContext({
                 companyID: company.companyID,
                 name: company.name,
                 id: company.id,
                 ...company // Include all company data
-            });
+            }, location.pathname); // Store current admin path for return navigation
 
             // Navigate to dashboard
             navigate('/dashboard');

@@ -1856,7 +1856,7 @@ const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
-    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin } = useCompany();
+    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin, getAdminReturnPath, clearAdminReturnPath } = useCompany();
     const navigate = useNavigate();
     const location = useLocation();
     const { logout, userRole, currentUser } = useAuth();
@@ -2893,7 +2893,11 @@ const Dashboard = () => {
                             fullWidth
                             variant="outlined"
                             startIcon={<AdminPanelSettingsIcon />}
-                            onClick={() => navigate('/admin')}
+                            onClick={() => {
+                                const returnPath = getAdminReturnPath();
+                                clearAdminReturnPath();
+                                navigate(returnPath);
+                            }}
                             sx={{
                                 borderRadius: '12px',
                                 py: 1.5,

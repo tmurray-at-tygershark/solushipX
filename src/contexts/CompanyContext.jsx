@@ -152,11 +152,16 @@ export const CompanyProvider = ({ children }) => {
     };
 
     // Function to manually set company data (for admin users switching context)
-    const setCompanyContext = async (newCompanyData) => {
+    const setCompanyContext = async (newCompanyData, returnPath = null) => {
         try {
             // Update localStorage cache
             localStorage.setItem('solushipx_company_data', JSON.stringify(newCompanyData));
             localStorage.setItem('solushipx_company_id_for_address', newCompanyData.companyID);
+
+            // Store the return path for "Return to Admin" functionality
+            if (returnPath) {
+                localStorage.setItem('solushipx_admin_return_path', returnPath);
+            }
 
             // Update state
             setCompanyData(newCompanyData);
@@ -169,6 +174,16 @@ export const CompanyProvider = ({ children }) => {
         }
     };
 
+    // Function to get the admin return path
+    const getAdminReturnPath = () => {
+        return localStorage.getItem('solushipx_admin_return_path') || '/admin/dashboard';
+    };
+
+    // Function to clear admin return path (when returning to admin)
+    const clearAdminReturnPath = () => {
+        localStorage.removeItem('solushipx_admin_return_path');
+    };
+
     const value = {
         companyData,
         companyIdForAddress,
@@ -177,6 +192,8 @@ export const CompanyProvider = ({ children }) => {
         clearCompanyData,
         refreshCompanyData,
         setCompanyContext,
+        getAdminReturnPath,
+        clearAdminReturnPath,
         isAdmin: ADMIN_ROLES.includes(userRole)
     };
 
