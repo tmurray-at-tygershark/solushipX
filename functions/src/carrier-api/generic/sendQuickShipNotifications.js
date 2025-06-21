@@ -854,7 +854,7 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentID}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${shipmentData.companyID || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold; text-transform: capitalize;">Booked</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold; text-transform: capitalize;">Pending</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Method:</strong></td><td style="padding: 8px 0;">QuickShip</td></tr>
                     </table>
                 </div>
@@ -988,7 +988,7 @@ SHIPMENT SUMMARY
 - Shipment #: ${shipmentData.shipmentID}
 - Company ID: ${shipmentData.companyID || 'N/A'}
 - Created: ${new Date().toLocaleDateString()}
-- Status: Booked
+- Status: Pending
 - Method: QuickShip
 
 SHIPMENT INFORMATION

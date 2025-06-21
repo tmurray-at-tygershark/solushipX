@@ -310,9 +310,9 @@ export const UNIVERSAL_BOOKING_SCHEMA = {
     
     // Booking Status
     status: {
-        code: '',             // Status code (booked, in_transit, delivered, etc.)
-        description: '',      // Human readable status
-        updatedAt: null,      // Last status update
+        code: 'pending',
+        description: 'Successfully Booked',
+        updatedAt: new Date().toISOString(),
     },
     
     // Tracking Information
@@ -724,7 +724,7 @@ export function mapBookingResponseToUniversal(response, carrier) {
         },
         
         status: {
-            code: 'booked',
+            code: 'pending',
             description: 'Successfully Booked',
             updatedAt: new Date().toISOString(),
         },

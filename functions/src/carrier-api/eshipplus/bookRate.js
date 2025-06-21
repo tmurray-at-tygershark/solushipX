@@ -720,7 +720,7 @@ async function processBookingRequest(data) {
         // 1. Update the main shipment document
         const shipmentDocRef = db.collection('shipments').doc(draftFirestoreDocId);
         const shipmentUpdateData = {
-            status: 'booked',
+            status: 'pending',
             
             carrierBookingConfirmation: {
                 confirmationNumber: bookingConfirmationResult.confirmationNumber,
@@ -758,11 +758,11 @@ async function processBookingRequest(data) {
             await recordStatusChange(
                 draftFirestoreDocId,
                 'draft',
-                'booked',
+                'pending',
                 null,
                 'Shipment successfully booked with eShipPlus carrier'
             );
-            logger.info(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> booked`);
+            logger.info(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> pending`);
         } catch (eventError) {
             logger.error('Error recording status change event:', eventError);
             // Don't fail the booking process for event recording errors
@@ -772,7 +772,7 @@ async function processBookingRequest(data) {
         if (selectedRateDocumentId) { // Should always be true due to earlier validation
             const rateDocRefToUpdate = db.collection('shipmentRates').doc(selectedRateDocumentId);
             const rateUpdateData = {
-                status: 'booked',
+                status: 'pending',
                 bookingConfirmation: {
                     confirmationNumber: bookingConfirmationResult.confirmationNumber,
                     proNumber: bookingConfirmationResult.proNumber,

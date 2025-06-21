@@ -87,7 +87,7 @@ const bookQuickShipment = onCall({
             firestoreDocId: firestoreDocId,
             bookingMethod: 'quickship_manual',
             carrierType: 'manual',
-            status: 'booked', // Ensure status is set to booked
+            status: 'pending', // Ensure status is set to pending
             
             // Store carrier details for document generation
             quickShipCarrierDetails: carrierDetails,
@@ -96,9 +96,9 @@ const bookQuickShipment = onCall({
             trackingInfo: {
                 trackingNumber: shipmentData.shipmentID,
                 carrier: shipmentData.carrier,
-                status: 'booked',
+                status: 'pending',
                 statusHistory: [{
-                    status: 'booked',
+                    status: 'pending',
                     timestamp: new Date(), // Use regular Date object instead of serverTimestamp() in arrays
                     description: 'QuickShip booking confirmed',
                     location: shipmentData.shipFrom?.city || 'Origin'
@@ -179,7 +179,7 @@ const bookQuickShipment = onCall({
                 shipmentId: shipmentData.shipmentID,
                 firestoreDocId: firestoreDocId,
                 trackingNumber: shipmentData.shipmentID,
-                status: 'booked',
+                status: 'pending',
                 carrier: shipmentData.carrier,
                 totalCharges: shipmentData.totalCharges,
                 currency: shipmentData.currency,

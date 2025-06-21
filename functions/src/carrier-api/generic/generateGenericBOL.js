@@ -148,8 +148,8 @@ function extractBOLData(shipmentData, shipmentId) {
                           shipmentData.shipmentID ||
                           '';
     
-    // Generate BOL number with proper format
-    const bolNumber = Math.floor(Math.random() * 900000) + 4000000; // Generates number like 4429597
+    // Use SHIPMENT ID as BOL number instead of random number
+    const bolNumber = shipmentData.shipmentID || shipmentId || 'Unknown';
     
     // Extract and format ship date
     const shipDate = shipmentData.shipmentInfo?.shipmentDate || 
@@ -183,6 +183,12 @@ function extractBOLData(shipmentData, shipmentId) {
     const carrierName = shipmentData.selectedCarrier || 
                        shipmentData.carrier || 
                        'GENERIC CARRIER';
+    
+    // Extract billing type from shipment data
+    const billingType = shipmentData.shipmentInfo?.billingType || 
+                       shipmentData.billingType || 
+                       shipmentData.paymentTerms ||
+                       '3rd Party'; // Default to 3rd Party
     
     // Extract special instructions for QuickShip
     const specialInstructions = [];
@@ -226,7 +232,8 @@ function extractBOLData(shipmentData, shipmentId) {
             zip: shipFrom?.postalCode || shipFrom?.zip || '',
             phone: shipFrom?.phone || '',
             openTime: shipmentData.shipmentInfo?.earliestPickup || '09:00',
-            closeTime: shipmentData.shipmentInfo?.latestPickup || '17:00'
+            closeTime: shipmentData.shipmentInfo?.latestPickup || '17:00',
+            specialInstructions: shipFrom?.specialInstructions || shipFrom?.instructions || ''
         },
         
         // Ship To Information - Enhanced extraction for QuickShip
@@ -238,7 +245,8 @@ function extractBOLData(shipmentData, shipmentId) {
             city: shipTo?.city || '',
             state: shipTo?.state || shipTo?.province || '',
             zip: shipTo?.postalCode || shipTo?.zip || '',
-            phone: shipTo?.phone || ''
+            phone: shipTo?.phone || '',
+            specialInstructions: shipTo?.specialInstructions || shipTo?.instructions || ''
         },
         
         // Third Party Billing (SolushipX - Integrated Carriers)
@@ -266,13 +274,16 @@ function extractBOLData(shipmentData, shipmentId) {
                            pkg.itemDescription ||
                            'General Freight',
                 dimensions: `${length} x ${width} x ${height}`,
-                freightClass: pkg.freightClass || ''
+                freightClass: pkg.freightClass || pkg.class || ''
             };
         }),
         
         // Totals
         totalPieces: totalPieces,
         totalWeight: totalWeight,
+        
+        // Billing Information
+        billingType: billingType,
         
         // Special Instructions
         specialInstructions: specialInstructions,
@@ -347,19 +358,19 @@ function buildExactBOLDocument(doc, bolData) {
     // Special Instructions Section (Y: 340-400)
     drawExactSpecialInstructions(doc, bolData);
     
-    // Freight Table Section (Y: 400-520) - ADJUSTED HEIGHT
+    // Freight Table Section (Y: 385-525) - UPDATED POSITIONING
     drawExactFreightTable(doc, bolData);
     
-    // Value Declaration Section (Y: 525-565) - REPOSITIONED
+    // Value Declaration Section (Y: 530-570) - REPOSITIONED
     drawExactValueDeclaration(doc, bolData);
     
-    // Trailer Information Section (Y: 570-620) - REPOSITIONED
+    // Trailer Information Section (Y: 575-625) - REPOSITIONED
     drawExactTrailerSection(doc, bolData);
     
-    // Signature Section (Y: 625-725) - REPOSITIONED
+    // Signature Section (Y: 630-730) - REPOSITIONED
     drawExactSignatureSection(doc, bolData);
     
-    // Legal disclaimer at bottom (Y: 735-750) - FITS ON PAGE
+    // Legal disclaimer at bottom (Y: 740-755) - ADJUSTED FOR NEW LAYOUT
     drawExactLegalDisclaimer(doc);
 }
 
@@ -505,6 +516,16 @@ function drawExactShippingSection(doc, bolData) {
        .text(`Close: ${bolData.shipFrom.closeTime}`, 200, 128)
        .text(`Phone: ${bolData.shipFrom.phone}`, 200, 138);
     
+    // Add special instructions from ship from address if available
+    if (bolData.shipFrom.specialInstructions && bolData.shipFrom.specialInstructions.trim()) {
+        doc.font('Helvetica-Bold')
+           .fontSize(6)
+           .text('Instructions:', 30, 155);
+        doc.font('Helvetica')
+           .fontSize(6)
+           .text(bolData.shipFrom.specialInstructions, 80, 155, { width: 220 });
+    }
+    
     // Ship date and carrier info (right side of Ship From)
     doc.font('Helvetica-Bold')
        .fontSize(7)
@@ -564,6 +585,17 @@ function drawExactShippingSection(doc, bolData) {
     }
     doc.text(`${bolData.shipTo.city}, ${bolData.shipTo.state} ${bolData.shipTo.zip}`, 30, shipToYPos);
     
+    // Add special instructions from ship to address if available
+    if (bolData.shipTo.specialInstructions && bolData.shipTo.specialInstructions.trim()) {
+        shipToYPos += 15;
+        doc.font('Helvetica-Bold')
+           .fontSize(6)
+           .text('Instructions:', 30, shipToYPos);
+        doc.font('Helvetica')
+           .fontSize(6)
+           .text(bolData.shipTo.specialInstructions, 80, shipToYPos, { width: 220 });
+    }
+    
     // References section (right column)
     doc.lineWidth(1)
        .rect(305, 180, 282, 80)
@@ -578,13 +610,13 @@ function drawExactShippingSection(doc, bolData) {
        .fillColor('#FFFFFF')
        .text('REFERENCES', 310, 185);
     
-    // References content
+    // References content - Use Shipment ID instead of BOL number
     doc.fillColor('#000000')
        .font('Helvetica-Bold')
        .fontSize(7)
-       .text('BOL #:', 310, 200)
+       .text('Shipment ID:', 310, 200)
        .font('Helvetica')
-       .text(bolData.bolNumber, 350, 200);
+       .text(bolData.bolNumber, 370, 200); // This is now the shipment ID
     
     doc.font('Helvetica-Bold')
        .text('Customer Ref #:', 310, 215)
@@ -631,30 +663,60 @@ function drawExactThirdPartySection(doc, bolData) {
        .font('Helvetica')
        .text(bolData.thirdParty.accountNumber, 490, 280);
     
-    // Check boxes for freight terms
+    // Check boxes for freight terms with X marks based on billing type
     const checkBoxY = 300;
     doc.font('Helvetica')
        .fontSize(6)
        .text('Freight Charges are:', 400, checkBoxY);
     
-    // Draw checkboxes
-    doc.rect(400, checkBoxY + 12, 6, 6).stroke()
-       .text('Prepaid', 410, checkBoxY + 14);
+    // Normalize billing type for comparison
+    const normalizedBillingType = bolData.billingType.toLowerCase().trim();
     
-    doc.rect(450, checkBoxY + 12, 6, 6).stroke()
-       .text('Collect', 460, checkBoxY + 14);
+    // Draw checkboxes with X marks for selected option
+    doc.rect(400, checkBoxY + 12, 6, 6).stroke();
+    if (normalizedBillingType === 'prepaid' || normalizedBillingType === 'prepay') {
+        // Add X mark for prepaid
+        doc.moveTo(401, checkBoxY + 13)
+           .lineTo(405, checkBoxY + 17)
+           .stroke()
+           .moveTo(405, checkBoxY + 13)
+           .lineTo(401, checkBoxY + 17)
+           .stroke();
+    }
+    doc.text('Prepaid', 410, checkBoxY + 14);
     
-    doc.rect(500, checkBoxY + 12, 6, 6).stroke()
-       .text('3rd Party', 510, checkBoxY + 14);
+    doc.rect(450, checkBoxY + 12, 6, 6).stroke();
+    if (normalizedBillingType === 'collect' || normalizedBillingType === 'cod') {
+        // Add X mark for collect
+        doc.moveTo(451, checkBoxY + 13)
+           .lineTo(455, checkBoxY + 17)
+           .stroke()
+           .moveTo(455, checkBoxY + 13)
+           .lineTo(451, checkBoxY + 17)
+           .stroke();
+    }
+    doc.text('Collect', 460, checkBoxY + 14);
+    
+    doc.rect(500, checkBoxY + 12, 6, 6).stroke();
+    if (normalizedBillingType === '3rd party' || normalizedBillingType === 'third party' || normalizedBillingType === 'thirdparty') {
+        // Add X mark for 3rd party
+        doc.moveTo(501, checkBoxY + 13)
+           .lineTo(505, checkBoxY + 17)
+           .stroke()
+           .moveTo(505, checkBoxY + 13)
+           .lineTo(501, checkBoxY + 17)
+           .stroke();
+    }
+    doc.text('3rd Party', 510, checkBoxY + 14);
 }
 
 /**
  * Draws the exact special instructions section
  */
 function drawExactSpecialInstructions(doc, bolData) {
-    // Special instructions section
+    // Special instructions section - REDUCED HEIGHT from 60 to 40
     doc.lineWidth(1)
-       .rect(25, 340, 562, 60)
+       .rect(25, 340, 562, 40)
        .stroke();
     
     // Special instructions header
@@ -673,18 +735,21 @@ function drawExactSpecialInstructions(doc, bolData) {
     
     let textY = 360;
     bolData.specialInstructions.forEach((instruction, index) => {
-        doc.text(instruction, 30, textY);
-        textY += 10;
+        if (textY < 375) { // Limit to available space
+            doc.text(instruction, 30, textY);
+            textY += 8; // Reduced line spacing
+        }
     });
 }
 
 /**
- * Draws the exact freight table section
+ * Draws the exact freight table section - EXPANDED for more line items
  */
 function drawExactFreightTable(doc, bolData) {
-    const tableStartY = 400;
+    const tableStartY = 385; // MOVED UP from 400 to 385
     const tableWidth = 562;
-    const rowHeight = 18;
+    const rowHeight = 16; // Slightly reduced row height
+    const tableHeight = 140; // INCREASED from 120 to 140
     
     // Column definitions with exact widths
     const columns = [
@@ -692,14 +757,14 @@ function drawExactFreightTable(doc, bolData) {
         { header: 'PACKAGE\nTYPE', width: 60, align: 'center' },
         { header: 'WEIGHT\n(LBS)', width: 60, align: 'center' },
         { header: 'H/M', width: 40, align: 'center' },
-        { header: 'COMMODITY DESCRIPTION', width: 220, align: 'left' },
+        { header: 'COMMODITY DESCRIPTION', width: 200, align: 'left' }, // Reduced width
         { header: 'DIMENSIONS\nL x W x H', width: 80, align: 'center' },
-        { header: 'CLASS', width: 42, align: 'center' }
+        { header: 'CLASS', width: 62, align: 'center' } // Increased width for freight class
     ];
     
     // Draw table border
     doc.lineWidth(1)
-       .rect(25, tableStartY, tableWidth, 120)
+       .rect(25, tableStartY, tableWidth, tableHeight)
        .stroke();
     
     // Draw table header
@@ -738,27 +803,27 @@ function drawExactFreightTable(doc, bolData) {
     columns.forEach((col, index) => {
         if (index > 0) {
             doc.moveTo(xPos, tableStartY + 20)
-               .lineTo(xPos, tableStartY + 120)
+               .lineTo(xPos, tableStartY + tableHeight)
                .stroke();
         }
         xPos += col.width;
     });
     
-    // Draw data rows
+    // Draw data rows - INCREASED capacity from 4 to 6 rows
     doc.fillColor('#000000')
        .font('Helvetica')
        .fontSize(6);
     
-    let dataY = tableStartY + 28;
-    const maxRows = 4;
+    let dataY = tableStartY + 25;
+    const maxRows = 6; // INCREASED from 4 to 6
     
     bolData.packages.slice(0, maxRows).forEach((pkg, index) => {
         if (index > 0) {
             // Draw row separator
             doc.strokeColor('#CCCCCC')
                .lineWidth(0.25)
-               .moveTo(25, dataY - 3)
-               .lineTo(587, dataY - 3)
+               .moveTo(25, dataY - 2)
+               .lineTo(587, dataY - 2)
                .stroke();
         }
         
@@ -770,7 +835,7 @@ function drawExactFreightTable(doc, bolData) {
             '', // H/M
             pkg.description,
             pkg.dimensions,
-            pkg.freightClass || ''
+            pkg.freightClass || '' // Now properly displays freight class
         ];
         
         rowData.forEach((data, colIndex) => {
@@ -778,7 +843,7 @@ function drawExactFreightTable(doc, bolData) {
                .text(data, xPos + 2, dataY, {
                    width: columns[colIndex].width - 4,
                    align: columns[colIndex].align,
-                   height: rowHeight - 3
+                   height: rowHeight - 2
                });
             xPos += columns[colIndex].width;
         });
@@ -787,7 +852,7 @@ function drawExactFreightTable(doc, bolData) {
     });
     
     // Position totals WITHIN the table at bottom
-    const totalsY = tableStartY + 95;
+    const totalsY = tableStartY + tableHeight - 25;
     
     // Draw separator line for totals section
     doc.strokeColor('#000000')
@@ -812,39 +877,39 @@ function drawExactFreightTable(doc, bolData) {
 function drawExactValueDeclaration(doc, bolData) {
     // Value declaration section
     doc.lineWidth(1)
-       .rect(25, 525, 562, 40)
+       .rect(25, 530, 562, 40)
        .stroke();
     
     doc.font('Helvetica')
        .fontSize(5)
-       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 530)
-       .text('The agreed or declared value of the property is specifically stated by the shipper to be not exceeding _____________ per _______________', 30, 538);
+       .text('Where the rate is dependent on value, shippers are required to state specifically in writing the agreed or declared value of the property as follows:', 30, 535)
+       .text('The agreed or declared value of the property is specifically stated by the shipper to be not exceeding _____________ per _______________', 30, 543);
     
     doc.font('Helvetica-Bold')
        .fontSize(5)
-       .text('NOTE: Liability limitation for loss or damage in this shipment may be applicable. See 49 CFR 370.', 30, 548);
+       .text('NOTE: Liability limitation for loss or damage in this shipment may be applicable. See 49 CFR 370.', 30, 553);
     
     // COD section (right side)
     doc.lineWidth(0.5)
-       .rect(400, 525, 187, 40)
+       .rect(400, 530, 187, 40)
        .stroke();
     
     doc.font('Helvetica-Bold')
        .fontSize(6)
-       .text('COD', 405, 530);
+       .text('COD', 405, 535);
     
     doc.font('Helvetica')
        .fontSize(5)
-       .text('Amount: $ _______________', 405, 540)
-       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 548)
-       .text('Customer check acceptable: ☐', 405, 556);
+       .text('Amount: $ _______________', 405, 545)
+       .text('Fee Terms: ☐ Collect ☐ Prepaid', 405, 553)
+       .text('Customer check acceptable: ☐', 405, 561);
 }
 
 /**
  * Draws the exact trailer loading section
  */
 function drawExactTrailerSection(doc, bolData) {
-    const sectionY = 570;
+    const sectionY = 575;
     
     // Trailer loaded section (left)
     doc.lineWidth(1)
@@ -893,7 +958,7 @@ function drawExactTrailerSection(doc, bolData) {
  * Draws the exact signature section
  */
 function drawExactSignatureSection(doc, bolData) {
-    const sigY = 625;
+    const sigY = 630;
     const sigHeight = 100;
     const colWidth = 187;
     
@@ -995,8 +1060,8 @@ function drawExactSignatureSection(doc, bolData) {
  * Draws the exact legal disclaimer at the bottom
  */
 function drawExactLegalDisclaimer(doc) {
-    // Position legal disclaimer to fit on page
-    const disclaimerY = 735;
+    // Position legal disclaimer to fit on page with new layout
+    const disclaimerY = 740;
     
     doc.font('Helvetica')
        .fontSize(5)

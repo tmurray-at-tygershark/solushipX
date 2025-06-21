@@ -1300,7 +1300,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             // Create the main shipment document first
             const shipmentData = {
                 shipmentID: finalShipmentID,
-                status: 'booked',
+                status: 'pending',
                 creationMethod: 'advanced',
                 companyID: companyData.companyID,
                 createdBy: user.uid,

@@ -212,7 +212,7 @@ export const useShipmentData = (shipmentId) => {
 
             // If no selectedRate, find a booked/selected rate
             if (!shipmentData.selectedRate && allRates.length > 0) {
-                const bookedRate = allRates.find(rate => rate.status === 'booked') ||
+                const bookedRate = allRates.find(rate => rate.status === 'pending') ||
                     allRates.find(rate => rate.status === 'selected') ||
                     allRates[0];
                 if (bookedRate) {
@@ -336,7 +336,7 @@ export const useShipmentData = (shipmentId) => {
         }
 
         if (allShipmentRates.length > 0) {
-            const bookedRate = allShipmentRates.find(rate => rate.status === 'booked') ||
+            const bookedRate = allShipmentRates.find(rate => rate.status === 'pending') ||
                 allShipmentRates.find(rate => rate.status === 'selected') ||
                 allShipmentRates[0];
 

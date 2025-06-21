@@ -664,7 +664,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
                 if (!querySnapshot.empty) {
                     const rates = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    const selectedRate = rates.find(rate => rate.status === 'selected_in_ui' || rate.status === 'booked') || rates[0];
+                    const selectedRate = rates.find(rate => rate.status === 'selected_in_ui' || rate.status === 'pending') || rates[0];
 
                     if (selectedRate) {
                         return {

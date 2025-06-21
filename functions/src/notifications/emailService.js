@@ -19,12 +19,19 @@ exports.onShipmentCreated = onDocumentWritten('shipments/{shipmentId}', async (e
         return;
     }
 
-    // Check if this is a new shipment or a shipment transitioning to 'booked' status
-    const isNewShipment = !previousData;
-    const isBeingBooked = shipmentData.status === 'booked' && (!previousData || previousData.status !== 'booked');
+    // Check if this is a booking notification (shipment just moved to pending status)
+    const isBeingBooked = shipmentData.status === 'pending' && (!previousData || previousData.status !== 'pending');
     
-    // Only send creation notification for new shipments or when becoming booked for the first time
-    if (!isNewShipment && !isBeingBooked) {
+    logger.info('onShipmentCreated: Shipment creation detected', {
+        shipmentId: shipmentData.shipmentID || shipmentData.shipmentNumber,
+        status: shipmentData.status,
+        isBeingBooked,
+        previousStatus: previousData?.status || 'none',
+        creationMethod: shipmentData.creationMethod
+    });
+
+    // Only send notifications for newly booked shipments (status = pending)
+    if (shipmentData.status !== 'pending') {
         return;
     }
     
@@ -315,11 +322,11 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
         return;
     }
 
-    // SKIP redundant notifications for draft -> booked transitions
+    // SKIP redundant notifications for draft -> pending transitions
     // These are already handled by booking-specific notification systems
     // (QuickShip notifications, CreateShipmentX notifications, etc.)
-    if (oldStatus === 'draft' && newStatus === 'booked') {
-        logger.info(`Skipping redundant status change notification for draft -> booked transition`, {
+    if (oldStatus === 'draft' && newStatus === 'pending') {
+        logger.info(`Skipping redundant status change notification for draft -> pending transition`, {
             shipmentId: event.params.shipmentId,
             shipmentNumber: newData.shipmentID || newData.shipmentNumber
         });

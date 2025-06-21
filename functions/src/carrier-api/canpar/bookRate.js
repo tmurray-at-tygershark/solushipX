@@ -63,11 +63,11 @@ async function bookCanparShipment(rateRequestData, draftFirestoreDocId, selected
             await recordStatusChange(
                 draftFirestoreDocId,
                 'draft',
-                'booked',
+                'pending',
                 null,
                 'Shipment successfully booked with Canpar carrier'
             );
-            console.log(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> booked`);
+            console.log(`Recorded status change event for shipment ${draftFirestoreDocId}: draft -> pending`);
         } catch (eventError) {
             console.error('Error recording status change event:', eventError);
             // Don't fail the booking process for event recording errors
@@ -75,7 +75,7 @@ async function bookCanparShipment(rateRequestData, draftFirestoreDocId, selected
 
         // Update the rate document with booking status
         await db.collection('shipmentRates').doc(selectedRateDocumentId).update({
-            status: 'booked',
+            status: 'pending',
             bookingConfirmation: bookingResult,
             bookedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -425,7 +425,7 @@ async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult,
     console.log('updateShipmentWithBookingData: Updating shipment document');
 
     const updateData = {
-        status: 'booked',
+        status: 'pending',
         
         carrierBookingConfirmation: {
             confirmationNumber: bookingResult.confirmationNumber,
@@ -462,13 +462,11 @@ async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult,
         selectedRateRef: {
             ...selectedRate,
             bookingConfirmation: bookingResult,
-            status: 'booked'
+            status: 'pending'
         },
         
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-
-
 
     await db.collection('shipments').doc(draftFirestoreDocId).update(updateData);
     console.log('updateShipmentWithBookingData: Shipment document updated successfully');
