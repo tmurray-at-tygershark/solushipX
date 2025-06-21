@@ -590,13 +590,13 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                         fontWeight: 700,
                         fontSize: '1.2rem'
                     }}>
-                        Shipping Command Center
+                        Command Center
                     </Typography>
                     <Typography variant="caption" sx={{
                         color: 'rgba(255,255,255,0.7)',
                         fontSize: '0.75rem'
                     }}>
-                        Real-time shipment monitoring & control
+                        Shipment monitoring & control
                     </Typography>
                 </Box>
 

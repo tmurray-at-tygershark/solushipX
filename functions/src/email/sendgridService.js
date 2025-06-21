@@ -27,7 +27,7 @@ if (sendgridApiKey) {
  */
 const EMAIL_TEMPLATES = {
     shipment_created: {
-        subject: (data) => `Shipment Created # ${data.shipmentNumber}`,
+        subject: (data) => `Shipment Created:  ${data.shipmentNumber}`,
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
@@ -578,7 +578,7 @@ Need help? Contact us at support@integratedcarriers.com
     },
 
     quickship_customer_confirmation: {
-        subject: (data) => `Shipment Confirmation - ${data.shipmentId}`,
+        subject: (data) => `Shipment Confirmation: ${data.shipmentId}`,
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">

@@ -324,7 +324,7 @@ async function sendCustomerNotification(shipmentData, documentResults) {
                 email: SEND_FROM_EMAIL,
                 name: SEND_FROM_NAME
             },
-            subject: `Shipment Confirmation - ${shipmentData.shipmentID || shipmentData.id}`,
+            subject: `Shipment Confirmation: ${shipmentData.shipmentID || shipmentData.id}`,
             html: generateCreateShipmentXCustomerHTML(shipmentData, totalPieces, totalWeight),
             text: generateCreateShipmentXCustomerText(shipmentData, totalPieces, totalWeight),
             attachments: attachments
@@ -439,7 +439,7 @@ async function sendCarrierNotification(shipmentData, documentResults) {
                 email: SEND_FROM_EMAIL,
                 name: SEND_FROM_NAME
             },
-            subject: `New Shipment Assignment - ${shipmentData.shipmentID || shipmentData.id}`,
+            subject: `New Shipment Assignment: ${shipmentData.shipmentID || shipmentData.id}`,
             html: generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeight),
             text: generateCreateShipmentXCarrierText(shipmentData, totalPieces, totalWeight),
             attachments: attachments
@@ -531,7 +531,7 @@ async function sendInternalNotification(shipmentData, documentResults) {
                         email: SEND_FROM_EMAIL,
                         name: SEND_FROM_NAME
                     },
-                    subject: `New Shipment Created - ${shipmentData.shipmentID || shipmentData.id}`,
+                    subject: `New Shipment Created: ${shipmentData.shipmentID || shipmentData.id}`,
                     html: generateCreateShipmentXInternalHTML(shipmentData, totalPieces, totalWeight),
                     text: generateCreateShipmentXInternalText(shipmentData, totalPieces, totalWeight),
                     attachments: attachments
@@ -697,11 +697,17 @@ function generateCreateShipmentXCustomerHTML(shipmentData, totalPieces, totalWei
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                 <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
-                <h1 style="margin: 0; font-size: 24px;">CreateShipmentX Order Confirmation</h1>
-                <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment ${shipmentData.shipmentID || shipmentData.id} has been successfully booked</p>
+                <h1 style="margin: 0; font-size: 24px;">Shipment Confirmation</h1>
+                <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment ${shipmentData.shipmentID || shipmentData.id} has been successfully entered in the system</p>
             </div>
             
             <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                <!-- Shipment Confirmed Notice -->
+                <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 0; margin-bottom: 20px;">
+                    <h3 style="color: #065f46; margin: 0 0 10px 0; font-size: 16px;">✅ Shipment Confirmed</h3>
+                    <p style="color: #047857; margin: 0; font-size: 14px;">Your shipment has been processed successfully! Your shipping documents are attachments to this email.</p>
+                </div>
+
                 <!-- Shipment Summary -->
                 <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Shipment Summary</h2>
@@ -786,11 +792,6 @@ function generateCreateShipmentXCustomerHTML(shipmentData, totalPieces, totalWei
                     </div>
                 </div>
 
-                <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 0; margin-bottom: 20px;">
-                    <h3 style="color: #065f46; margin: 0 0 10px 0; font-size: 16px;">✅ Booking Confirmed</h3>
-                    <p style="color: #047857; margin: 0; font-size: 14px;">Your CreateShipmentX booking has been processed successfully! You should receive your shipping documents as attachments to this email.</p>
-                </div>
-
                 ${shipmentData.shipmentID || shipmentData.id ? `
                 <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
                     <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
@@ -804,7 +805,7 @@ function generateCreateShipmentXCustomerHTML(shipmentData, totalPieces, totalWei
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                     <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 Integrated Carrier. All rights reserved.</p>
                 </div>
             </div>
         </div>
@@ -837,7 +838,6 @@ SHIPMENT SUMMARY
 - Company ID: ${shipmentData.companyID || 'N/A'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
-- Method: CreateShipmentX
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
@@ -860,18 +860,20 @@ ${shipmentData.packages?.slice(0, 3).map((pkg, index) =>
 
 ADDRESSES
 Ship From:
-${shipmentData.shipFrom?.companyName ? `${shipmentData.shipFrom.companyName}\n` : ''}${shipmentData.shipFrom?.firstName || shipmentData.shipFrom?.lastName ? `${shipmentData.shipFrom.firstName || ''} ${shipmentData.shipFrom.lastName || ''}\n` : ''}${shipmentData.shipFrom?.street ? `${shipmentData.shipFrom.street}\n` : ''}${shipmentData.shipFrom?.street2 ? `${shipmentData.shipFrom.street2}\n` : ''}${shipmentData.shipFrom ? `${shipmentData.shipFrom.city}, ${shipmentData.shipFrom.state} ${shipmentData.shipFrom.postalCode}\n` : ''}${shipmentData.shipFrom?.country ? shipmentData.shipFrom.country : ''}${shipmentData.shipFrom?.phone ? `\nPhone: ${shipmentData.shipFrom.phone}` : ''}
+${shipmentData.shipFrom?.companyName ? `${shipmentData.shipFrom.companyName}\n` : ''}${shipmentData.shipFrom?.firstName || shipmentData.shipFrom?.lastName ? `${shipmentData.shipFrom.firstName || ''} ${shipmentData.shipFrom.lastName || ''}<br>` : ''}
+${shipmentData.shipFrom?.street ? `${shipmentData.shipFrom.street}\n` : ''}${shipmentData.shipFrom?.street2 ? `${shipmentData.shipFrom.street2}\n` : ''}${shipmentData.shipFrom ? `${shipmentData.shipFrom.city}, ${shipmentData.shipFrom.state} ${shipmentData.shipFrom.postalCode}\n` : ''}${shipmentData.shipFrom?.country ? shipmentData.shipFrom.country : ''}${shipmentData.shipFrom?.phone ? `\nPhone: ${shipmentData.shipFrom.phone}` : ''}
 
 Ship To:
-${shipmentData.shipTo?.companyName ? `${shipmentData.shipTo.companyName}\n` : ''}${shipmentData.shipTo?.firstName || shipmentData.shipTo?.lastName ? `${shipmentData.shipTo.firstName || ''} ${shipmentData.shipTo.lastName || ''}\n` : ''}${shipmentData.shipTo?.street ? `${shipmentData.shipTo.street}\n` : ''}${shipmentData.shipTo?.street2 ? `${shipmentData.shipTo.street2}\n` : ''}${shipmentData.shipTo ? `${shipmentData.shipTo.city}, ${shipmentData.shipTo.state} ${shipmentData.shipTo.postalCode}\n` : ''}${shipmentData.shipTo?.country ? shipmentData.shipTo.country : ''}${shipmentData.shipTo?.phone ? `\nPhone: ${shipmentData.shipTo.phone}` : ''}
+${shipmentData.shipTo?.companyName ? `${shipmentData.shipTo.companyName}\n` : ''}${shipmentData.shipTo?.firstName || shipmentData.shipTo?.lastName ? `${shipmentData.shipTo.firstName || ''} ${shipmentData.shipTo.lastName || ''}<br>` : ''}
+${shipmentData.shipTo?.street ? `${shipmentData.shipTo.street}\n` : ''}${shipmentData.shipTo?.street2 ? `${shipmentData.shipTo.street2}\n` : ''}${shipmentData.shipTo ? `${shipmentData.shipTo.city}, ${shipmentData.shipTo.state} ${shipmentData.shipTo.postalCode}\n` : ''}${shipmentData.shipTo?.country ? shipmentData.shipTo.country : ''}${shipmentData.shipTo?.phone ? `\nPhone: ${shipmentData.shipTo.phone}` : ''}
 
-✅ BOOKING CONFIRMED
-Your CreateShipmentX booking has been processed successfully! You should receive your shipping documents as attachments to this email.
+✅ SHIPMENT CONFIRMED
+Your shipment has been processed successfully! Your shipping documents are attachments to this email.
 
 ${shipmentData.shipmentID || shipmentData.id ? `Track your shipment: https://solushipx.web.app/tracking/${shipmentData.shipmentID || shipmentData.id}` : ''}
 
 Need help? Contact us at support@integratedcarriers.com
-© 2024 SolushipX. All rights reserved.
+© 2025 Integrated Carrier. All rights reserved.
     `;
 }
 
@@ -906,6 +908,12 @@ function generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeig
             </div>
             
             <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                <!-- Pickup Required Notice -->
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 0; margin-bottom: 20px;">
+                    <h3 style="color: #1d4ed8; margin: 0 0 10px 0; font-size: 16px;">📦 Pickup Required</h3>
+                    <p style="color: #1e40af; margin: 0; font-size: 14px;">Please coordinate pickup time with the shipper and confirm receipt of this assignment. You should receive the shipping documents as attachments to this email.</p>
+                </div>
+
                 <!-- Pickup Assignment Summary -->
                 <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Pickup Assignment</h2>
@@ -915,7 +923,7 @@ function generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeig
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Assigned Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${carrierDetails.name}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold;">Pending</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Method:</strong></td><td style="padding: 8px 0;">CreateShipmentX</td></tr>
+
                     </table>
                 </div>
 
@@ -993,11 +1001,6 @@ function generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeig
                     </div>
                 </div>
 
-                <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 0; margin-bottom: 20px;">
-                    <h3 style="color: #1d4ed8; margin: 0 0 10px 0; font-size: 16px;">📦 Pickup Required</h3>
-                    <p style="color: #1e40af; margin: 0; font-size: 14px;">Please coordinate pickup time with the shipper and confirm receipt of this assignment. You should receive the shipping documents as attachments to this email.</p>
-                </div>
-
                 ${shipmentData.shipmentInfo?.notes ? `
                 <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Special Instructions</h2>
@@ -1009,7 +1012,7 @@ function generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeig
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                     <p style="margin: 0;">Questions? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 Integrated Carrier. All rights reserved.</p>
                 </div>
             </div>
         </div>
@@ -1045,7 +1048,6 @@ ORDER DETAILS
 - Assigned Carrier: ${carrierDetails.name}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
-- Method: CreateShipmentX
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
@@ -1070,16 +1072,18 @@ ${shipmentData.packages?.slice(0, 3).map((pkg, index) =>
 
 PICKUP & DELIVERY ADDRESSES
 📍 Pickup From:
-${shipmentData.shipFrom?.companyName ? `${shipmentData.shipFrom.companyName}\n` : ''}${shipmentData.shipFrom?.firstName || shipmentData.shipFrom?.lastName ? `${shipmentData.shipFrom.firstName || ''} ${shipmentData.shipFrom.lastName || ''}\n` : ''}${shipmentData.shipFrom?.street ? `${shipmentData.shipFrom.street}\n` : ''}${shipmentData.shipFrom?.street2 ? `${shipmentData.shipFrom.street2}\n` : ''}${shipmentData.shipFrom ? `${shipmentData.shipFrom.city}, ${shipmentData.shipFrom.state} ${shipmentData.shipFrom.postalCode}\n` : ''}${shipmentData.shipFrom?.country ? shipmentData.shipFrom.country : ''}${shipmentData.shipFrom?.phone ? `\nPhone: ${shipmentData.shipFrom.phone}` : ''}
+${shipmentData.shipFrom?.companyName ? `${shipmentData.shipFrom.companyName}\n` : ''}${shipmentData.shipFrom?.firstName || shipmentData.shipFrom?.lastName ? `${shipmentData.shipFrom.firstName || ''} ${shipmentData.shipFrom.lastName || ''}<br>` : ''}
+${shipmentData.shipFrom?.street ? `${shipmentData.shipFrom.street}\n` : ''}${shipmentData.shipFrom?.street2 ? `${shipmentData.shipFrom.street2}\n` : ''}${shipmentData.shipFrom ? `${shipmentData.shipFrom.city}, ${shipmentData.shipFrom.state} ${shipmentData.shipFrom.postalCode}\n` : ''}${shipmentData.shipFrom?.country ? shipmentData.shipFrom.country : ''}${shipmentData.shipFrom?.phone ? `\nPhone: ${shipmentData.shipFrom.phone}` : ''}
 
 🚚 Deliver To:
-${shipmentData.shipTo?.companyName ? `${shipmentData.shipTo.companyName}\n` : ''}${shipmentData.shipTo?.firstName || shipmentData.shipTo?.lastName ? `${shipmentData.shipTo.firstName || ''} ${shipmentData.shipTo.lastName || ''}\n` : ''}${shipmentData.shipTo?.street ? `${shipmentData.shipTo.street}\n` : ''}${shipmentData.shipTo?.street2 ? `${shipmentData.shipTo.street2}\n` : ''}${shipmentData.shipTo ? `${shipmentData.shipTo.city}, ${shipmentData.shipTo.state} ${shipmentData.shipTo.postalCode}\n` : ''}${shipmentData.shipTo?.country ? shipmentData.shipTo.country : ''}${shipmentData.shipTo?.phone ? `\nPhone: ${shipmentData.shipTo.phone}` : ''}
+${shipmentData.shipTo?.companyName ? `${shipmentData.shipTo.companyName}\n` : ''}${shipmentData.shipTo?.firstName || shipmentData.shipTo?.lastName ? `${shipmentData.shipTo.firstName || ''} ${shipmentData.shipTo.lastName || ''}<br>` : ''}
+${shipmentData.shipTo?.street ? `${shipmentData.shipTo.street}\n` : ''}${shipmentData.shipTo?.street2 ? `${shipmentData.shipTo.street2}\n` : ''}${shipmentData.shipTo ? `${shipmentData.shipTo.city}, ${shipmentData.shipTo.state} ${shipmentData.shipTo.postalCode}\n` : ''}${shipmentData.shipTo?.country ? shipmentData.shipTo.country : ''}${shipmentData.shipTo?.phone ? `\nPhone: ${shipmentData.shipTo.phone}` : ''}
 
 ${shipmentData.shipmentInfo?.notes ? `SPECIAL INSTRUCTIONS\n${shipmentData.shipmentInfo.notes}\n\n` : ''}📦 PICKUP REQUIRED
 Please coordinate pickup time with the shipper and confirm receipt of this assignment. You should receive the shipping documents as attachments to this email.
 
 Questions? Contact us at support@integratedcarriers.com
-© 2024 SolushipX. All rights reserved.
+© 2025 Integrated Carrier. All rights reserved.
     `;
 }
 
@@ -1104,7 +1108,7 @@ function generateCreateShipmentXInternalHTML(shipmentData, totalPieces, totalWei
             <div style="background-color: #1c277d; color: white; padding: 30px; text-align: center;">
                 <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px;" />
                 <h1 style="margin: 0; font-size: 24px;">New Shipment Created</h1>
-                <p style="margin: 10px 0 0 0; opacity: 0.9;">A new CreateShipmentX shipment has been booked</p>
+                <p style="margin: 10px 0 0 0; opacity: 0.9;">A new shipment has been created in the system</p>
             </div>
             
             <div style="background-color: #f5f5f5; padding: 30px;">
@@ -1115,7 +1119,6 @@ function generateCreateShipmentXInternalHTML(shipmentData, totalPieces, totalWei
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${shipmentData.companyID || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold;">Pending</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Method:</strong></td><td style="padding: 8px 0;">CreateShipmentX</td></tr>
                     </table>
                 </div>
 
@@ -1136,7 +1139,7 @@ function generateCreateShipmentXInternalHTML(shipmentData, totalPieces, totalWei
                 </div>
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                    <p style="margin: 0;">This is an automated notification from SolushipX</p>
+                    <p style="margin: 0;">This is an automated notification from Integrated Carriers</p>
                 </div>
             </div>
         </div>
@@ -1162,14 +1165,13 @@ function generateCreateShipmentXInternalText(shipmentData, totalPieces, totalWei
     return `
 New Shipment Created
 
-A new CreateShipmentX shipment has been booked.
+A new shipment has been created in the system.
 
 SHIPMENT DETAILS
 - Shipment ID: ${shipmentData.shipmentID || shipmentData.id}
 - Company ID: ${shipmentData.companyID || 'N/A'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
-- Method: CreateShipmentX
 
 CARRIER & SERVICE
 - Carrier: ${carrierName}
@@ -1181,7 +1183,7 @@ From: ${formatAddress(shipmentData.shipFrom)}
 To: ${formatAddress(shipmentData.shipTo)}
 Packages: ${totalPieces} package${totalPieces > 1 ? 's' : ''}, ${totalWeight.toFixed(1)} ${shipmentData.unitSystem === 'metric' ? 'kg' : 'lbs'}
 
-This is an automated notification from SolushipX
+This is an automated notification from Integrated Carriers
     `;
 }
 

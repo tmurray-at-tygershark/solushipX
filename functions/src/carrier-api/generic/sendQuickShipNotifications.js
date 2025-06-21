@@ -251,7 +251,7 @@ async function sendCustomerNotification(shipmentData, documentResults) {
                 email: SEND_FROM_EMAIL,
                 name: SEND_FROM_NAME
             },
-            subject: `Shipment Confirmation - ${shipmentData.shipmentID}`,
+            subject: `Shipment Confirmation: ${shipmentData.shipmentID}`,
             html: generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight),
             text: generateQuickShipCustomerText(shipmentData, totalPieces, totalWeight),
             attachments: attachments
@@ -842,7 +842,7 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                 <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
-                <h1 style="margin: 0; font-size: 24px;">QuickShip Order Confirmation</h1>
+                <h1 style="margin: 0; font-size: 24px;">Shipment Confirmation</h1>
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment ${shipmentData.shipmentID} has been successfully booked</p>
             </div>
             
@@ -855,7 +855,6 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${shipmentData.companyID || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold; text-transform: capitalize;">Pending</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Method:</strong></td><td style="padding: 8px 0;">QuickShip</td></tr>
                     </table>
                 </div>
 
@@ -875,9 +874,9 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
                 <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Carrier & Service</h2>
                     <table style="width: 100%; border-collapse: collapse;">
-                        <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${shipmentData.carrier}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${shipmentData.carrier || 'Unknown'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">QuickShip Manual Entry</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber || 'Pending'}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentInfo?.carrierTrackingNumber || shipmentData.trackingNumber || shipmentData.shipmentID}</td></tr>
                     </table>
                 </div>
 
@@ -989,7 +988,6 @@ SHIPMENT SUMMARY
 - Company ID: ${shipmentData.companyID || 'N/A'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
-- Method: QuickShip
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
@@ -999,9 +997,9 @@ SHIPMENT INFORMATION
 ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.shipmentInfo.carrierTrackingNumber}` : ''}
 
 CARRIER & SERVICE
-- Carrier: ${shipmentData.carrier}
+- Carrier: ${shipmentData.carrier || 'Unknown'}
 - Service: QuickShip Manual Entry
-- Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber || 'Pending'}
+- Tracking #: ${shipmentData.shipmentInfo?.carrierTrackingNumber || shipmentData.trackingNumber || shipmentData.shipmentID}
 
 PACKAGE INFORMATION
 Total: ${totalPieces} package${totalPieces > 1 ? 's' : ''}, ${totalWeight.toFixed(1)} ${shipmentData.unitSystem === 'metric' ? 'kg' : 'lbs'}
@@ -1059,10 +1057,9 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Order #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentID}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${shipmentData.companyID || 'N/A'}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Assigned Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${carrierDetails.name}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Assigned Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${carrierDetails.name || shipmentData.carrier || 'Unknown'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold;">Awaiting Pickup</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Method:</strong></td><td style="padding: 8px 0;">QuickShip</td></tr>
                     </table>
                 </div>
 
@@ -1082,7 +1079,7 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                 <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Carrier Contact Information</h2>
                     <table style="width: 100%; border-collapse: collapse;">
-                        <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${carrierDetails.name}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${carrierDetails.name || shipmentData.carrier || 'Unknown'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Contact Person:</strong></td><td style="padding: 8px 0;">${carrierDetails.contactName || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Email:</strong></td><td style="padding: 8px 0;">${carrierDetails.contactEmail || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Phone:</strong></td><td style="padding: 8px 0;">${carrierDetails.contactPhone || 'N/A'}</td></tr>
@@ -1196,10 +1193,9 @@ New pickup request for order ${shipmentData.shipmentID}
 ORDER DETAILS
 - Order #: ${shipmentData.shipmentID}
 - Company ID: ${shipmentData.companyID || 'N/A'}
-- Assigned Carrier: ${carrierDetails.name}
+- Assigned Carrier: ${carrierDetails.name || shipmentData.carrier || 'Unknown'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Awaiting Pickup
-- Method: QuickShip
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
@@ -1209,7 +1205,7 @@ SHIPMENT INFORMATION
 ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.shipmentInfo.carrierTrackingNumber}` : ''}
 
 CARRIER CONTACT INFORMATION
-- Carrier: ${carrierDetails.name}
+- Carrier: ${carrierDetails.name || shipmentData.carrier || 'Unknown'}
 - Contact Person: ${carrierDetails.contactName || 'N/A'}
 - Email: ${carrierDetails.contactEmail || 'N/A'}
 - Phone: ${carrierDetails.contactPhone || 'N/A'}

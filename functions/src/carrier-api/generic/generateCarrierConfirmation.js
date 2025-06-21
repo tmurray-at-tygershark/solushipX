@@ -758,26 +758,22 @@ function drawEnhancedShipperSection(doc, data) {
     
     // Address - stacked in left column
     doc.font('Helvetica')
-       .fontSize(9)
+       .fontSize(8)
        .fillColor('#000000')
        .text(data.shipper.address1, valueX, yPos);
     
     if (data.shipper.address2) {
-        yPos += 10;
+        yPos += 9;
         doc.text(data.shipper.address2, valueX, yPos);
     }
     
     // City
-    yPos += 10;
+    yPos += 9;
     doc.text(data.shipper.city, valueX, yPos);
     
-    // State/Prov and Postal Code on same line
-    yPos += 10;
-    doc.text(`${data.shipper.state}     ${data.shipper.postalCode}`, valueX, yPos);
-    
-    // Country
-    yPos += 10;
-    doc.text(data.shipper.country, valueX, yPos);
+    // State/Prov, Postal Code and Country on same line
+    yPos += 9;
+    doc.text(`${data.shipper.state}     ${data.shipper.postalCode}     ${data.shipper.country}`, valueX, yPos);
     
     // Right column - aligned with top
     // Reference Number
@@ -903,26 +899,22 @@ function drawEnhancedConsigneeSection(doc, data) {
     
     // Address - stacked in left column
     doc.font('Helvetica')
-       .fontSize(9)
+       .fontSize(8)
        .fillColor('#000000')
        .text(data.consignee.address1, valueX, yPos);
     
     if (data.consignee.address2) {
-        yPos += 10;
+        yPos += 9;
         doc.text(data.consignee.address2, valueX, yPos);
     }
     
     // City
-    yPos += 10;
+    yPos += 9;
     doc.text(data.consignee.city, valueX, yPos);
     
-    // State/Prov and Postal Code on same line
-    yPos += 10;
-    doc.text(`${data.consignee.state}     ${data.consignee.postalCode}`, valueX, yPos);
-    
-    // Country
-    yPos += 10;
-    doc.text(data.consignee.country, valueX, yPos);
+    // State/Prov, Postal Code and Country on same line
+    yPos += 9;
+    doc.text(`${data.consignee.state}     ${data.consignee.postalCode}     ${data.consignee.country}`, valueX, yPos);
     
     // Right column - aligned with top
     // Contact
