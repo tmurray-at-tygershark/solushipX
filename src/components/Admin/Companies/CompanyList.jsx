@@ -30,7 +30,8 @@ import {
     Grid,
     Alert,
     Tooltip,
-    Avatar
+    Avatar,
+    Snackbar
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -51,6 +52,7 @@ import { db } from '../../../firebase/firebase';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Link as MuiLink } from '@mui/material';
+import { useCompany } from '../../../contexts/CompanyContext';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
@@ -228,6 +230,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
     const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
 
     const navigate = useNavigate();
+    const { setCompanyContext } = useCompany();
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -309,6 +312,27 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
             showSnackbar(`${label} copied to clipboard`, 'success');
         } catch (error) {
             showSnackbar(`Failed to copy ${label}`, 'error');
+        }
+    };
+
+    // Handle dashboard navigation with company context switch
+    const handleDashboardNavigation = async (company) => {
+        try {
+            // Set the company context to the selected company
+            await setCompanyContext({
+                companyID: company.companyID,
+                name: company.name,
+                id: company.id,
+                ...company // Include all company data
+            });
+
+            // Navigate to dashboard
+            navigate('/dashboard');
+
+            showSnackbar(`Switched to ${company.name} dashboard`, 'success');
+        } catch (error) {
+            console.error('Error switching company context:', error);
+            showSnackbar('Failed to switch company context', 'error');
         }
     };
 
@@ -485,11 +509,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                         }}
                     >
                         <Tab label={`All (${stats.total})`} value="all" />
-                        <Tab label={
-                            <Badge badgeContent={stats.active} color="success" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Active
-                            </Badge>
-                        } value="active" />
+                        <Tab label={`Active (${stats.active})`} value="active" />
                         <Tab label={
                             <Badge badgeContent={stats.inactive} color="error" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
                                 Inactive
@@ -696,7 +716,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                     size="small"
                                                     variant="outlined"
                                                     startIcon={<DashboardIcon sx={{ fontSize: '14px' }} />}
-                                                    onClick={() => navigate('/dashboard')}
+                                                    onClick={() => handleDashboardNavigation(company)}
                                                     sx={{
                                                         fontSize: '11px',
                                                         textTransform: 'none',
@@ -807,6 +827,21 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
             }}>
                 {renderTableView()}
             </Box>
+
+            {/* Snackbar for notifications */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={4000}
+                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                message={snackbar.message}
+                sx={{
+                    '& .MuiSnackbarContent-root': {
+                        backgroundColor: snackbar.severity === 'success' ? '#10b981' :
+                            snackbar.severity === 'error' ? '#ef4444' : '#3b82f6',
+                        fontSize: '12px'
+                    }
+                }}
+            />
         </Box>
     );
 };

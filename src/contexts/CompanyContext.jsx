@@ -151,6 +151,24 @@ export const CompanyProvider = ({ children }) => {
         }
     };
 
+    // Function to manually set company data (for admin users switching context)
+    const setCompanyContext = async (newCompanyData) => {
+        try {
+            // Update localStorage cache
+            localStorage.setItem('solushipx_company_data', JSON.stringify(newCompanyData));
+            localStorage.setItem('solushipx_company_id_for_address', newCompanyData.companyID);
+
+            // Update state
+            setCompanyData(newCompanyData);
+            setCompanyIdForAddress(newCompanyData.companyID);
+
+            return Promise.resolve();
+        } catch (err) {
+            console.error('Error setting company context:', err);
+            return Promise.reject(err);
+        }
+    };
+
     const value = {
         companyData,
         companyIdForAddress,
@@ -158,6 +176,7 @@ export const CompanyProvider = ({ children }) => {
         error,
         clearCompanyData,
         refreshCompanyData,
+        setCompanyContext,
         isAdmin: ADMIN_ROLES.includes(userRole)
     };
 
