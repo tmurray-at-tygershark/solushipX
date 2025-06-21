@@ -1345,10 +1345,12 @@ const ShipmentAgent = ({
         if (endOfMessagesRef.current) {
             // Add a small delay to ensure all content is rendered before scrolling
             setTimeout(() => {
-                endOfMessagesRef.current.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'end'
-                });
+                if (endOfMessagesRef.current) {
+                    endOfMessagesRef.current.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'end'
+                    });
+                }
             }, 100);
         }
     }, [messages, isLoading]);
@@ -1357,10 +1359,12 @@ const ShipmentAgent = ({
     useEffect(() => {
         if (isPanelOpen && endOfMessagesRef.current) {
             setTimeout(() => {
-                endOfMessagesRef.current.scrollIntoView({
-                    behavior: 'auto',
-                    block: 'end'
-                });
+                if (endOfMessagesRef.current) {
+                    endOfMessagesRef.current.scrollIntoView({
+                        behavior: 'auto',
+                        block: 'end'
+                    });
+                }
             }, 300);
         }
     }, [isPanelOpen]);

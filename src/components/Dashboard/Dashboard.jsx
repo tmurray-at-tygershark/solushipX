@@ -60,10 +60,17 @@ import {
     ExpandLess,
     ExpandMore,
     AccountBalanceWallet as AccountBalanceWalletIcon,
-    AdminPanelSettings as AdminPanelSettingsIcon
+    AdminPanelSettings as AdminPanelSettingsIcon,
+    LocationOn as LocationOnIcon,
+    SwapHoriz as SwapHorizIcon,
+    Route as RouteIcon,
+    TrendingUp as TrendingUpIcon,
+    Map as MapIcon,
+    ExpandMore as ExpandMoreIcon,
+    ExpandLess as ExpandLessIcon
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
-import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -73,8 +80,26 @@ import { motion as framerMotion } from 'framer-motion';
 // Import responsive CSS
 import './Dashboard.css';
 
+// Google Maps components (lazy loaded when needed)
+let GoogleMap, DirectionsRenderer, Marker;
+const loadGoogleMapsComponents = async () => {
+    if (!GoogleMap) {
+        const googleMapsApi = await import('@react-google-maps/api');
+        GoogleMap = googleMapsApi.GoogleMap;
+        DirectionsRenderer = googleMapsApi.DirectionsRenderer;
+        Marker = googleMapsApi.Marker;
+    }
+    return { GoogleMap, DirectionsRenderer, Marker };
+};
+
 // Lazy load the Globe component to prevent it from loading on other pages
 const ShipmentGlobe = lazy(() => import('../Globe/Globe'));
+
+// Lazy load the LogisticsCommandCenter component
+const LogisticsCommandCenter = lazy(() => import('./LogisticsCommandCenter'));
+
+// Lazy load the AdvancedLogisticsMap component  
+const AdvancedLogisticsMap = lazy(() => import('./AdvancedLogisticsMap'));
 
 // Lazy load the Tracking component for the drawer
 const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
@@ -118,22 +143,1520 @@ const BillingComponent = lazy(() => import('../Billing/Billing'));
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
 
+// Route View Badge Component
+const RouteViewBadge = ({ shipments, onRouteClick }) => {
+    const [selectedRoute, setSelectedRoute] = useState(0);
+    const [useMetric, setUseMetric] = useState(false);
+    const [showMap, setShowMap] = useState(false);
+    const [mapDirections, setMapDirections] = useState(null);
+    const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+    const [mapError, setMapError] = useState(null);
+    const [mapsApiKey, setMapsApiKey] = useState(null);
+
+    // Get recent shipments with valid routes
+    const routeShipments = useMemo(() => {
+        const validShipments = shipments
+            .filter(shipment => {
+                try {
+                    return shipment &&
+                        shipment.shipFrom &&
+                        shipment.shipTo &&
+                        shipment.status !== 'delivered' &&
+                        shipment.status !== 'cancelled';
+                } catch (error) {
+                    console.warn('Error filtering shipment:', error, shipment);
+                    return false;
+                }
+            })
+            .slice(0, 5); // Show max 5 recent routes
+
+        // Debug carrier data structure
+        validShipments.forEach((shipment, index) => {
+            console.log(`RouteViewBadge Shipment ${index}:`, {
+                id: shipment.id,
+                carrier: shipment.carrier,
+                carrierType: typeof shipment.carrier,
+                hasCarrier: !!shipment.carrier
+            });
+        });
+
+        return validShipments;
+    }, [shipments]);
+
+    // Initialize Google Maps
+    useEffect(() => {
+        const initializeMaps = async () => {
+            try {
+                if (window.google && window.google.maps) {
+                    setIsGoogleMapsLoaded(true);
+
+                    // Fetch API key from Firestore for Routes API
+                    const keysRef = collection(db, 'keys');
+                    const keysSnapshot = await getDocs(keysRef);
+
+                    if (!keysSnapshot.empty) {
+                        const firstDoc = keysSnapshot.docs[0];
+                        const key = firstDoc.data().googleAPI;
+                        if (key) {
+                            setMapsApiKey(key);
+                        }
+                    }
+                    return;
+                }
+
+                // Check periodically if Google Maps is loaded (from Globe component)
+                const checkMaps = setInterval(async () => {
+                    if (window.google && window.google.maps) {
+                        setIsGoogleMapsLoaded(true);
+
+                        // Fetch API key when maps become available
+                        try {
+                            const keysRef = collection(db, 'keys');
+                            const keysSnapshot = await getDocs(keysRef);
+
+                            if (!keysSnapshot.empty) {
+                                const firstDoc = keysSnapshot.docs[0];
+                                const key = firstDoc.data().googleAPI;
+                                if (key) {
+                                    setMapsApiKey(key);
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error fetching API key:', error);
+                        }
+
+                        clearInterval(checkMaps);
+                    }
+                }, 1000);
+
+                // Clean up after 10 seconds if not loaded
+                setTimeout(() => clearInterval(checkMaps), 10000);
+            } catch (error) {
+                console.error('Error initializing Maps:', error);
+                setMapError('Failed to load Google Maps API key');
+            }
+        };
+
+        initializeMaps();
+    }, []);
+
+    // Get carrier logo URL
+    const getCarrierLogo = useCallback((shipment) => {
+        if (!shipment || !shipment.carrier) return null;
+
+        // Handle both string and object carrier data
+        let carrierName = '';
+        if (typeof shipment.carrier === 'string') {
+            carrierName = shipment.carrier.toLowerCase();
+        } else if (typeof shipment.carrier === 'object' && shipment.carrier.name) {
+            carrierName = shipment.carrier.name.toLowerCase();
+        } else if (typeof shipment.carrier === 'object' && shipment.carrier.carrierName) {
+            carrierName = shipment.carrier.carrierName.toLowerCase();
+        } else {
+            return null;
+        }
+
+        const logoMap = {
+            'eshipplus': '/images/carrier-badges/eshipplus.png',
+            'canpar': '/images/carrier-badges/canpar.png',
+            'fedex': '/images/carrier-badges/fedex.png',
+            'ups': '/images/carrier-badges/ups.png',
+            'purolator': '/images/carrier-badges/purolator.png',
+            'dhl': '/images/carrier-badges/dhl.png',
+            'tnt': '/images/carrier-badges/tnt.png',
+            'polaris': '/images/carrier-badges/polaris.png',
+            'polaris transportation': '/images/carrier-badges/polaris.png'
+        };
+
+        return logoMap[carrierName] || null;
+    }, []);
+
+    // Calculate route directions using modern Routes API v2 (same as ShipmentDetailX)
+    const calculateRouteDirections = useCallback(async (shipment) => {
+        if (!isGoogleMapsLoaded || !shipment?.shipFrom || !shipment?.shipTo || !mapsApiKey) {
+            return null;
+        }
+
+        try {
+            setMapError(null);
+
+            const formatAddress = (address) => {
+                if (!address) return '';
+                const components = [];
+
+                // Add company name if available
+                if (address.company) {
+                    components.push(address.company);
+                }
+
+                // Add street address
+                if (address.street) {
+                    components.push(address.street);
+                }
+
+                // Add street2 if available
+                if (address.street2) {
+                    components.push(address.street2);
+                }
+
+                // Add city, state, and postal code
+                const cityStateZip = [];
+                if (address.city) cityStateZip.push(address.city);
+                if (address.state) cityStateZip.push(address.state);
+                if (address.postalCode) cityStateZip.push(address.postalCode);
+
+                if (cityStateZip.length > 0) {
+                    components.push(cityStateZip.join(', '));
+                }
+
+                // Add country
+                if (address.country) {
+                    components.push(address.country);
+                }
+
+                return components.join(', ');
+            };
+
+            const geocodeAddress = async (address, type) => {
+                return new Promise((resolve, reject) => {
+                    const geocoder = new window.google.maps.Geocoder();
+                    const formattedAddress = formatAddress(address);
+
+                    geocoder.geocode({
+                        address: formattedAddress,
+                        region: address.country?.toLowerCase() || 'us'
+                    }, (results, status) => {
+                        if (status === 'OK' && results && results.length > 0) {
+                            resolve(results[0]);
+                        } else {
+                            reject(new Error(`Geocoding failed for ${type}: ${status}`));
+                        }
+                    });
+                });
+            };
+
+            const [originResult, destinationResult] = await Promise.all([
+                geocodeAddress(shipment.shipFrom, 'origin'),
+                geocodeAddress(shipment.shipTo, 'destination')
+            ]);
+
+            // Prepare the request body for Routes API v2
+            const requestBody = {
+                origin: originResult.place_id ?
+                    { placeId: originResult.place_id } :
+                    {
+                        location: {
+                            latLng: {
+                                latitude: originResult.geometry.location.lat(),
+                                longitude: originResult.geometry.location.lng()
+                            }
+                        }
+                    },
+                destination: destinationResult.place_id ?
+                    { placeId: destinationResult.place_id } :
+                    {
+                        location: {
+                            latLng: {
+                                latitude: destinationResult.geometry.location.lat(),
+                                longitude: destinationResult.geometry.location.lng()
+                            }
+                        }
+                    },
+                travelMode: "DRIVE",
+                routingPreference: "TRAFFIC_UNAWARE",
+                computeAlternativeRoutes: false,
+                languageCode: "en-US",
+                units: useMetric ? "METRIC" : "IMPERIAL"
+            };
+
+            // Add region code if country is available
+            if (shipment.shipFrom.country) {
+                const countryCode = shipment.shipFrom.country.toLowerCase();
+                if (countryCode.length === 2) {
+                    requestBody.regionCode = countryCode;
+                }
+            }
+
+            const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Goog-Api-Key': mapsApiKey,
+                    'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Route calculation failed: ${errorData.error?.message || response.statusText}`);
+            }
+
+            const routeData = await response.json();
+
+            if (!routeData.routes || routeData.routes.length === 0) {
+                throw new Error('No routes found');
+            }
+
+            const route = routeData.routes[0];
+            if (!route.polyline || !route.polyline.encodedPolyline) {
+                throw new Error('Route polyline data is missing');
+            }
+
+            const decodedPath = window.google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
+            const durationInSeconds = parseInt(route.duration);
+            const durationInMinutes = Math.round(durationInSeconds / 60);
+
+            // Create bounds for the route
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(originResult.geometry.location);
+            bounds.extend(destinationResult.geometry.location);
+
+            // Extend bounds to include the entire route path
+            decodedPath.forEach(point => {
+                bounds.extend(point);
+            });
+
+            // Create a properly structured directions object that matches DirectionsService format
+            const directionsResult = {
+                routes: [{
+                    legs: [{
+                        start_location: originResult.geometry.location,
+                        end_location: destinationResult.geometry.location,
+                        distance: {
+                            text: useMetric ? `${Math.round(route.distanceMeters / 1000)} km` : `${Math.round(route.distanceMeters / 1609.34)} mi`,
+                            value: route.distanceMeters
+                        },
+                        duration: {
+                            text: `${durationInMinutes} mins`,
+                            value: durationInSeconds
+                        },
+                        steps: [{
+                            distance: {
+                                text: useMetric ? `${Math.round(route.distanceMeters / 1000)} km` : `${Math.round(route.distanceMeters / 1609.34)} mi`,
+                                value: route.distanceMeters
+                            },
+                            duration: {
+                                text: `${durationInMinutes} mins`,
+                                value: durationInSeconds
+                            },
+                            start_location: originResult.geometry.location,
+                            end_location: destinationResult.geometry.location,
+                            instructions: "Follow the route",
+                            path: decodedPath
+                        }]
+                    }],
+                    overview_path: decodedPath,
+                    bounds: bounds,
+                    copyrights: "© Google Maps",
+                    warnings: [],
+                    waypoint_order: [],
+                    overview_polyline: {
+                        points: route.polyline.encodedPolyline
+                    }
+                }],
+                request: {
+                    origin: originResult.geometry.location,
+                    destination: destinationResult.geometry.location,
+                    travelMode: "DRIVING"
+                },
+                status: "OK",
+                geocoded_waypoints: [
+                    { status: "OK", place_id: originResult.place_id },
+                    { status: "OK", place_id: destinationResult.place_id }
+                ]
+            };
+
+            return directionsResult;
+        } catch (error) {
+            console.error('Error calculating directions:', error);
+            setMapError('Error calculating route: ' + error.message);
+            return null;
+        }
+    }, [isGoogleMapsLoaded, useMetric, mapsApiKey]);
+
+    // Load directions when route changes or map is shown
+    useEffect(() => {
+        if (showMap && routeShipments[selectedRoute] && mapsApiKey) {
+            console.log('RouteViewBadge: Loading directions for shipment:', routeShipments[selectedRoute].shipmentId);
+            calculateRouteDirections(routeShipments[selectedRoute]).then((directions) => {
+                console.log('RouteViewBadge: Directions calculated:', directions);
+                setMapDirections(directions);
+            });
+        } else {
+            console.log('RouteViewBadge: Not loading directions:', {
+                showMap,
+                hasShipment: !!routeShipments[selectedRoute],
+                hasMapsApiKey: !!mapsApiKey
+            });
+        }
+    }, [showMap, selectedRoute, routeShipments, calculateRouteDirections, mapsApiKey]);
+
+    // Calculate route distance (simplified estimation)
+    const calculateDistance = useCallback((shipFrom, shipTo) => {
+        if (!shipFrom || !shipTo) return null;
+
+        // Simple distance calculation using coordinates if available
+        // This is a rough estimation - in production you'd use Google Maps API
+        const R = 6371; // Earth's radius in km
+
+        // For demo purposes, create rough coordinates based on postal codes/cities
+        const getCoordinates = (address) => {
+            // This is a simplified approach - in real implementation you'd geocode
+            const city = address.city?.toLowerCase() || '';
+            const state = address.state?.toLowerCase() || '';
+
+            // Sample coordinates for common cities (you'd expand this or use geocoding)
+            const cityCoords = {
+                'toronto': { lat: 43.6532, lng: -79.3832 },
+                'vancouver': { lat: 49.2827, lng: -123.1207 },
+                'montreal': { lat: 45.5017, lng: -73.5673 },
+                'calgary': { lat: 51.0447, lng: -114.0719 },
+                'ottawa': { lat: 45.4215, lng: -75.6972 },
+                'new york': { lat: 40.7128, lng: -74.0060 },
+                'los angeles': { lat: 34.0522, lng: -118.2437 },
+                'chicago': { lat: 41.8781, lng: -87.6298 },
+                'houston': { lat: 29.7604, lng: -95.3698 },
+                'miami': { lat: 25.7617, lng: -80.1918 }
+            };
+
+            return cityCoords[city] || cityCoords[`${city}, ${state}`] || { lat: 43.6532, lng: -79.3832 };
+        };
+
+        const coord1 = getCoordinates(shipFrom);
+        const coord2 = getCoordinates(shipTo);
+
+        const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
+        const dLng = (coord2.lng - coord1.lng) * Math.PI / 180;
+
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(coord1.lat * Math.PI / 180) * Math.cos(coord2.lat * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = R * c;
+
+        return useMetric ? `${Math.round(distance)} km` : `${Math.round(distance * 0.621371)} mi`;
+    }, [useMetric]);
+
+    // Format address for display
+    const formatShortAddress = (address) => {
+        if (!address) return 'Unknown';
+        return `${address.city || 'Unknown'}, ${address.state || address.country || ''}`.trim().replace(/,$/, '');
+    };
+
+    // Get carrier name for display
+    const getCarrierName = useCallback((shipment) => {
+        if (!shipment || !shipment.carrier) return 'Unknown Carrier';
+
+        if (typeof shipment.carrier === 'string') {
+            return shipment.carrier;
+        } else if (typeof shipment.carrier === 'object') {
+            return shipment.carrier.name || shipment.carrier.carrierName || 'Unknown Carrier';
+        }
+
+        return 'Unknown Carrier';
+    }, []);
+
+    if (routeShipments.length === 0) {
+        return null;
+    }
+
+    const currentShipment = routeShipments[selectedRoute];
+
+    // Safe distance calculation with error handling
+    let distance = null;
+    try {
+        distance = calculateDistance(currentShipment?.shipFrom, currentShipment?.shipTo);
+    } catch (error) {
+        console.warn('Error calculating distance:', error);
+    }
+
+    // Error boundary for the component
+    try {
+        return (
+            <Box sx={{
+                position: 'absolute',
+                top: { xs: 80, sm: 90, md: 100 },
+                left: { xs: '220px', sm: '240px', md: '260px' },
+                right: 16,
+                zIndex: 8,
+                display: 'flex',
+                justifyContent: 'center',
+                pointerEvents: 'none'
+            }}>
+                <Card sx={{
+                    background: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(20px)',
+                    borderRadius: '20px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    maxWidth: '600px',
+                    width: '100%',
+                    pointerEvents: 'auto',
+                    overflow: 'hidden'
+                }}>
+                    <CardContent sx={{ p: 2 }}>
+                        {/* Header */}
+                        <Box sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            mb: 2
+                        }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <RouteIcon sx={{ color: '#4CAF50', fontSize: 20 }} />
+                                <Typography variant="subtitle2" sx={{
+                                    fontWeight: 600,
+                                    color: '#333',
+                                    fontSize: '0.85rem'
+                                }}>
+                                    Active Routes ({routeShipments.length})
+                                </Typography>
+                            </Box>
+
+                            {/* Route Navigation */}
+                            {routeShipments.length > 1 && (
+                                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                    {routeShipments.map((_, index) => (
+                                        <Box
+                                            key={index}
+                                            onClick={() => setSelectedRoute(index)}
+                                            sx={{
+                                                width: 8,
+                                                height: 8,
+                                                borderRadius: '50%',
+                                                backgroundColor: index === selectedRoute ? '#4CAF50' : 'rgba(0,0,0,0.2)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                '&:hover': {
+                                                    backgroundColor: index === selectedRoute ? '#4CAF50' : 'rgba(0,0,0,0.4)'
+                                                }
+                                            }}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
+                        </Box>
+
+                        {/* Route Information */}
+                        {currentShipment && (
+                            <Box sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 2,
+                                p: 1.5,
+                                background: 'rgba(76, 175, 80, 0.05)',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(76, 175, 80, 0.1)'
+                            }}>
+                                {/* Carrier Logo */}
+                                <Box sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    minWidth: '40px',
+                                    height: '40px'
+                                }}>
+                                    {getCarrierLogo(currentShipment) ? (
+                                        <img
+                                            src={getCarrierLogo(currentShipment)}
+                                            alt={getCarrierName(currentShipment)}
+                                            style={{
+                                                width: '36px',
+                                                height: '36px',
+                                                objectFit: 'contain',
+                                                borderRadius: '6px',
+                                                backgroundColor: 'white',
+                                                padding: '4px',
+                                                border: '1px solid rgba(0,0,0,0.1)'
+                                            }}
+                                            onError={(e) => {
+                                                e.target.style.display = 'none';
+                                            }}
+                                        />
+                                    ) : (
+                                        <Box sx={{
+                                            width: '36px',
+                                            height: '36px',
+                                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                                            borderRadius: '6px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1px solid rgba(76, 175, 80, 0.2)'
+                                        }}>
+                                            <LocalShippingIcon sx={{
+                                                color: '#4CAF50',
+                                                fontSize: 20
+                                            }} />
+                                        </Box>
+                                    )}
+                                </Box>
+
+                                {/* Origin */}
+                                <Box sx={{ flex: 1, textAlign: 'left' }}>
+                                    <Typography variant="caption" sx={{
+                                        color: 'rgba(0,0,0,0.6)',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 500,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px'
+                                    }}>
+                                        From
+                                    </Typography>
+                                    <Typography variant="body2" sx={{
+                                        fontWeight: 600,
+                                        color: '#333',
+                                        fontSize: '0.8rem',
+                                        lineHeight: 1.2
+                                    }}>
+                                        {formatShortAddress(currentShipment.shipFrom)}
+                                    </Typography>
+                                </Box>
+
+                                {/* Route Arrow with Distance */}
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 0.5,
+                                    minWidth: '80px'
+                                }}>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.5
+                                    }}>
+                                        <Box sx={{
+                                            width: '20px',
+                                            height: '2px',
+                                            background: 'linear-gradient(90deg, #4CAF50, #66BB6A)',
+                                            borderRadius: '1px'
+                                        }} />
+                                        <LocationOnIcon sx={{
+                                            color: '#4CAF50',
+                                            fontSize: 16,
+                                            transform: 'rotate(90deg)'
+                                        }} />
+                                        <Box sx={{
+                                            width: '20px',
+                                            height: '2px',
+                                            background: 'linear-gradient(90deg, #66BB6A, #4CAF50)',
+                                            borderRadius: '1px'
+                                        }} />
+                                    </Box>
+                                    {distance && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <Typography variant="caption" sx={{
+                                                color: '#4CAF50',
+                                                fontWeight: 600,
+                                                fontSize: '0.7rem'
+                                            }}>
+                                                {distance}
+                                            </Typography>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => setUseMetric(!useMetric)}
+                                                sx={{
+                                                    p: 0.25,
+                                                    color: '#4CAF50',
+                                                    '&:hover': { backgroundColor: 'rgba(76, 175, 80, 0.1)' }
+                                                }}
+                                            >
+                                                <SwapHorizIcon sx={{ fontSize: 12 }} />
+                                            </IconButton>
+                                        </Box>
+                                    )}
+                                </Box>
+
+                                {/* Destination */}
+                                <Box sx={{ flex: 1, textAlign: 'right' }}>
+                                    <Typography variant="caption" sx={{
+                                        color: 'rgba(0,0,0,0.6)',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 500,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px'
+                                    }}>
+                                        To
+                                    </Typography>
+                                    <Typography variant="body2" sx={{
+                                        fontWeight: 600,
+                                        color: '#333',
+                                        fontSize: '0.8rem',
+                                        lineHeight: 1.2
+                                    }}>
+                                        {formatShortAddress(currentShipment.shipTo)}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        )}
+
+                        {/* Google Maps Route */}
+                        <Collapse in={showMap} timeout={300}>
+                            <Box sx={{ mt: 2 }}>
+                                {mapError ? (
+                                    <Box sx={{
+                                        height: '200px',
+                                        borderRadius: '12px',
+                                        backgroundColor: 'rgba(244, 67, 54, 0.05)',
+                                        border: '1px solid rgba(244, 67, 54, 0.1)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexDirection: 'column',
+                                        gap: 1
+                                    }}>
+                                        <MapIcon sx={{ color: '#f44336', fontSize: 32 }} />
+                                        <Typography variant="body2" sx={{
+                                            color: '#f44336',
+                                            fontSize: '0.8rem',
+                                            textAlign: 'center'
+                                        }}>
+                                            {mapError}
+                                        </Typography>
+                                    </Box>
+                                ) : !isGoogleMapsLoaded ? (
+                                    <Box sx={{
+                                        height: '200px',
+                                        borderRadius: '12px',
+                                        backgroundColor: 'rgba(0,0,0,0.02)',
+                                        border: '1px solid rgba(0,0,0,0.1)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 2
+                                    }}>
+                                        <CircularProgress size={24} sx={{ color: '#4CAF50' }} />
+                                        <Typography variant="body2" sx={{
+                                            color: 'rgba(0,0,0,0.6)',
+                                            fontSize: '0.8rem'
+                                        }}>
+                                            Loading Google Maps...
+                                        </Typography>
+                                    </Box>
+                                ) : (
+                                    <Box sx={{
+                                        height: '200px',
+                                        borderRadius: '12px',
+                                        overflow: 'hidden',
+                                        border: '1px solid rgba(0,0,0,0.1)'
+                                    }}>
+                                        <GoogleMapComponent
+                                            directions={mapDirections}
+                                            shipment={currentShipment}
+                                        />
+                                    </Box>
+                                )}
+                            </Box>
+                        </Collapse>
+
+                        {/* Shipment Details */}
+                        {currentShipment && (
+                            <Box sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                mt: 1.5,
+                                pt: 1.5,
+                                borderTop: '1px solid rgba(0,0,0,0.08)'
+                            }}>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Chip
+                                        label={currentShipment.shipmentId}
+                                        size="small"
+                                        sx={{
+                                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                                            color: '#1976D2',
+                                            fontWeight: 500,
+                                            fontSize: '0.7rem',
+                                            height: '24px'
+                                        }}
+                                    />
+                                    <Chip
+                                        label={currentShipment.status?.replace(/_/g, ' ').toUpperCase()}
+                                        size="small"
+                                        sx={{
+                                            backgroundColor: currentShipment.status === 'in_transit'
+                                                ? 'rgba(255, 193, 7, 0.1)'
+                                                : 'rgba(76, 175, 80, 0.1)',
+                                            color: currentShipment.status === 'in_transit'
+                                                ? '#F57C00'
+                                                : '#4CAF50',
+                                            fontWeight: 500,
+                                            fontSize: '0.7rem',
+                                            height: '24px'
+                                        }}
+                                    />
+                                </Box>
+
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                        size="small"
+                                        onClick={() => setShowMap(!showMap)}
+                                        startIcon={showMap ? <ExpandLessIcon /> : <MapIcon />}
+                                        sx={{
+                                            minWidth: 'auto',
+                                            px: 1.5,
+                                            py: 0.5,
+                                            fontSize: '0.7rem',
+                                            fontWeight: 500,
+                                            borderRadius: '8px',
+                                            textTransform: 'none',
+                                            color: showMap ? '#1976D2' : '#4CAF50',
+                                            backgroundColor: showMap ? 'rgba(25, 118, 210, 0.08)' : 'rgba(76, 175, 80, 0.08)',
+                                            '&:hover': {
+                                                backgroundColor: showMap ? 'rgba(25, 118, 210, 0.15)' : 'rgba(76, 175, 80, 0.15)'
+                                            }
+                                        }}
+                                    >
+                                        {showMap ? 'Hide Map' : 'Show Map'}
+                                    </Button>
+
+                                    <Button
+                                        size="small"
+                                        onClick={() => onRouteClick && onRouteClick(currentShipment)}
+                                        sx={{
+                                            minWidth: 'auto',
+                                            px: 1.5,
+                                            py: 0.5,
+                                            fontSize: '0.7rem',
+                                            fontWeight: 500,
+                                            borderRadius: '8px',
+                                            textTransform: 'none',
+                                            color: '#4CAF50',
+                                            backgroundColor: 'rgba(76, 175, 80, 0.08)',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(76, 175, 80, 0.15)'
+                                            }
+                                        }}
+                                    >
+                                        View Details
+                                    </Button>
+                                </Box>
+                            </Box>
+                        )}
+                    </CardContent>
+                </Card>
+            </Box>
+        );
+    } catch (error) {
+        console.error('Error rendering RouteViewBadge:', error);
+        return (
+            <Box sx={{
+                position: 'absolute',
+                top: { xs: 80, sm: 90, md: 100 },
+                left: { xs: '220px', sm: '240px', md: '260px' },
+                right: 16,
+                zIndex: 8,
+                display: 'flex',
+                justifyContent: 'center',
+                pointerEvents: 'none'
+            }}>
+                <Card sx={{
+                    background: 'rgba(244, 67, 54, 0.95)',
+                    backdropFilter: 'blur(20px)',
+                    borderRadius: '20px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid rgba(244, 67, 54, 0.2)',
+                    maxWidth: '400px',
+                    width: '100%',
+                    pointerEvents: 'auto'
+                }}>
+                    <CardContent sx={{ p: 2, textAlign: 'center' }}>
+                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.8rem' }}>
+                            Route information temporarily unavailable
+                        </Typography>
+                    </CardContent>
+                </Card>
+            </Box>
+        );
+    }
+};
+
+// Google Map Component for Route Display
+const GoogleMapComponent = ({ directions, shipment }) => {
+    const [map, setMap] = useState(null);
+    const [GoogleMap, setGoogleMap] = useState(null);
+    const [DirectionsRenderer, setDirectionsRenderer] = useState(null);
+
+    // Load Google Maps components
+    useEffect(() => {
+        const loadComponents = async () => {
+            try {
+                const components = await loadGoogleMapsComponents();
+                setGoogleMap(() => components.GoogleMap);
+                setDirectionsRenderer(() => components.DirectionsRenderer);
+            } catch (error) {
+                console.error('Error loading Google Maps components:', error);
+            }
+        };
+
+        loadComponents();
+    }, []);
+
+    const mapOptions = {
+        disableDefaultUI: true,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+        styles: [
+            {
+                featureType: 'water',
+                elementType: 'geometry',
+                stylers: [{ color: '#e9e9e9' }, { lightness: 17 }]
+            },
+            {
+                featureType: 'landscape',
+                elementType: 'geometry',
+                stylers: [{ color: '#f5f5f5' }, { lightness: 20 }]
+            }
+        ]
+    };
+
+    // Calculate map center from directions
+    const mapCenter = useMemo(() => {
+        if (directions?.routes?.[0]?.bounds) {
+            return directions.routes[0].bounds.getCenter();
+        }
+        if (directions?.routes?.[0]?.legs?.[0]) {
+            const leg = directions.routes[0].legs[0];
+            const startLat = leg.start_location.lat();
+            const startLng = leg.start_location.lng();
+            const endLat = leg.end_location.lat();
+            const endLng = leg.end_location.lng();
+
+            return {
+                lat: (startLat + endLat) / 2,
+                lng: (startLng + endLng) / 2
+            };
+        }
+        return { lat: 43.6532, lng: -79.3832 };
+    }, [directions]);
+
+    // Handle map load and fit bounds
+    const handleMapLoadWithBounds = useCallback((mapInstance) => {
+        setMap(mapInstance);
+
+        // Fit bounds to show the entire route
+        if (directions?.routes?.[0]?.bounds) {
+            const bounds = directions.routes[0].bounds;
+            mapInstance.fitBounds(bounds, { padding: 20 });
+        }
+    }, [directions]);
+
+    const handleMapLoad = useCallback((mapInstance) => {
+        setMap(mapInstance);
+    }, []);
+
+    if (!GoogleMap || !DirectionsRenderer) {
+        return (
+            <Box sx={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#f5f5f5'
+            }}>
+                <CircularProgress size={24} sx={{ color: '#4CAF50' }} />
+            </Box>
+        );
+    }
+
+    return (
+        <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            center={mapCenter}
+            zoom={6}
+            onLoad={handleMapLoadWithBounds}
+            options={mapOptions}
+        >
+            {directions && directions.routes && directions.routes.length > 0 && (
+                <DirectionsRenderer
+                    directions={directions}
+                    options={{
+                        suppressMarkers: false,
+                        preserveViewport: true, // Changed to true to prevent auto-zooming
+                        polylineOptions: {
+                            strokeColor: '#4CAF50',
+                            strokeWeight: 4,
+                            strokeOpacity: 0.8,
+                            geodesic: true
+                        },
+                        markerOptions: {
+                            icon: {
+                                path: window.google?.maps?.SymbolPath?.CIRCLE,
+                                scale: 8,
+                                fillColor: '#4CAF50',
+                                fillOpacity: 1,
+                                strokeColor: '#ffffff',
+                                strokeWeight: 2
+                            }
+                        }
+                    }}
+                />
+            )}
+        </GoogleMap>
+    );
+};
+
+// Dashboard Stats Overlay Component
+const DashboardStatsOverlay = ({ shipments }) => {
+    const stats = useMemo(() => {
+        const activeShipments = shipments.filter(s =>
+            s.status !== 'delivered' &&
+            s.status !== 'cancelled' &&
+            s.status !== 'draft'
+        );
+
+        const inTransit = shipments.filter(s => s.status === 'in_transit').length;
+        const delivered = shipments.filter(s => s.status === 'delivered').length;
+        const pending = shipments.filter(s => s.status === 'pending').length;
+
+        return {
+            total: shipments.length,
+            active: activeShipments.length,
+            inTransit,
+            delivered,
+            pending
+        };
+    }, [shipments]);
+
+    return (
+        <Box sx={{
+            position: 'absolute',
+            top: { xs: 80, sm: 90, md: 100 },
+            left: { xs: '240px', sm: '260px', md: '280px' },
+            zIndex: 8,
+            display: 'flex',
+            gap: 2,
+            pointerEvents: 'none'
+        }}>
+            {/* Stats Cards */}
+            <Card sx={{
+                background: 'rgba(255, 255, 255, 0.95)',
+                backdropFilter: 'blur(20px)',
+                borderRadius: '16px',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                pointerEvents: 'auto'
+            }}>
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                    <Box sx={{ display: 'flex', gap: 3 }}>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#4CAF50' }}>
+                                {stats.active}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
+                                Active
+                            </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#2196F3' }}>
+                                {stats.inTransit}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
+                                In Transit
+                            </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#FF9800' }}>
+                                {stats.pending}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
+                                Pending
+                            </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#9C27B0' }}>
+                                {stats.delivered}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
+                                Delivered
+                            </Typography>
+                        </Box>
+                    </Box>
+                </CardContent>
+            </Card>
+        </Box>
+    );
+};
+
+// Google Maps Dashboard Component - Main background map with routes and shipments
+const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) => {
+    const [map, setMap] = useState(null);
+    const [GoogleMap, setGoogleMap] = useState(null);
+    const [DirectionsRenderer, setDirectionsRenderer] = useState(null);
+    const [Marker, setMarker] = useState(null);
+    const [InfoWindow, setInfoWindow] = useState(null);
+    const [mapsApiKey, setMapsApiKey] = useState(null);
+    const [allDirections, setAllDirections] = useState([]);
+    const [selectedShipment, setSelectedShipment] = useState(null);
+    const [infoWindowOpen, setInfoWindowOpen] = useState(false);
+    const [mapCenter, setMapCenter] = useState({ lat: 43.6532, lng: -79.3832 }); // Default to Toronto
+    const [mapZoom, setMapZoom] = useState(6);
+
+    // Load Google Maps components and API for Command Center
+    useEffect(() => {
+        const loadMapsAndComponents = async () => {
+            try {
+                if (!mapsApiKey) {
+                    console.log('Dashboard: Waiting for API key...');
+                    return;
+                }
+
+                // Check if Google Maps is already loaded
+                if (window.google && window.google.maps) {
+                    console.log('Dashboard: Google Maps already loaded globally');
+                } else {
+                    console.log('Dashboard: Loading Google Maps API for Command Center...');
+
+                    // Load Google Maps API script
+                    const script = document.createElement('script');
+                    script.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places,geometry,routes`;
+                    script.async = true;
+                    script.defer = true;
+
+                    // Wait for the script to load
+                    await new Promise((resolve, reject) => {
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+
+                    console.log('Dashboard: Google Maps API loaded successfully');
+                }
+
+                // Import React Google Maps components
+                const googleMapsApi = await import('@react-google-maps/api');
+                setGoogleMap(() => googleMapsApi.GoogleMap);
+                setDirectionsRenderer(() => googleMapsApi.DirectionsRenderer);
+                setMarker(() => googleMapsApi.Marker);
+                setInfoWindow(() => googleMapsApi.InfoWindow);
+
+                console.log('Dashboard: React Google Maps components loaded');
+            } catch (error) {
+                console.error('Dashboard: Error loading Maps API or components:', error);
+            }
+        };
+
+        loadMapsAndComponents();
+    }, [mapsApiKey]);
+
+    // Fetch Maps API key from keys collection (same as ShipmentDetailX)
+    useEffect(() => {
+        const fetchApiKey = async () => {
+            try {
+                const keysRef = collection(db, 'keys');
+                const keysSnapshot = await getDocs(keysRef);
+
+                if (!keysSnapshot.empty) {
+                    const firstDoc = keysSnapshot.docs[0];
+                    const key = firstDoc.data().googleAPI;
+                    if (key) {
+                        setMapsApiKey(key);
+                        console.log('GoogleMapsDashboard: API key loaded successfully');
+                    } else {
+                        console.warn('GoogleMapsDashboard: No API key found in keys collection');
+                    }
+                } else {
+                    console.warn('GoogleMapsDashboard: No keys document found');
+                }
+            } catch (error) {
+                console.error('GoogleMapsDashboard: Error fetching Maps API key:', error);
+            }
+        };
+
+        fetchApiKey();
+    }, []);
+
+    // Get active shipments for route display
+    const activeShipments = useMemo(() => {
+        return shipments
+            .filter(shipment =>
+                shipment &&
+                shipment.shipFrom &&
+                shipment.shipTo &&
+                shipment.status !== 'delivered' &&
+                shipment.status !== 'cancelled' &&
+                shipment.status !== 'draft'
+            )
+            .slice(0, 10); // Limit to 10 routes for performance
+    }, [shipments]);
+
+    // Calculate routes for active shipments using Routes API v2 (modern API)
+    const calculateAllRoutes = useCallback(async () => {
+        if (!mapsApiKey || !window.google || activeShipments.length === 0) {
+            return;
+        }
+
+        console.log('GoogleMapsDashboard: Calculating routes for', activeShipments.length, 'shipments');
+
+        const routePromises = activeShipments.slice(0, 5).map(async (shipment, index) => {
+            try {
+                // Add delay between requests to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, index * 300));
+
+                const formatAddress = (address) => {
+                    const components = [];
+                    if (address.street) components.push(address.street);
+                    if (address.city) components.push(address.city);
+                    if (address.state) components.push(address.state);
+                    if (address.postalCode) components.push(address.postalCode);
+                    if (address.country) components.push(address.country);
+                    return components.join(', ');
+                };
+
+                const originAddress = formatAddress(shipment.shipFrom);
+                const destinationAddress = formatAddress(shipment.shipTo);
+
+                const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Goog-Api-Key': mapsApiKey,
+                        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.legs.duration,routes.legs.distanceMeters,routes.legs.startLocation,routes.legs.endLocation'
+                    },
+                    body: JSON.stringify({
+                        origin: { address: originAddress },
+                        destination: { address: destinationAddress },
+                        travelMode: "DRIVE",
+                        routingPreference: "TRAFFIC_UNAWARE",
+                        computeAlternativeRoutes: false,
+                        languageCode: "en-US",
+                        units: "IMPERIAL"
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Routes API error: ${response.status} - ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+
+                    // Decode polyline
+                    const decodedPath = window.google.maps.geometry.encoding.decodePath(
+                        route.polyline.encodedPolyline
+                    );
+
+                    // Create directions object compatible with DirectionsRenderer
+                    const startLocation = new window.google.maps.LatLng(
+                        route.legs[0].startLocation.latLng.latitude,
+                        route.legs[0].startLocation.latLng.longitude
+                    );
+                    const endLocation = new window.google.maps.LatLng(
+                        route.legs[0].endLocation.latLng.latitude,
+                        route.legs[0].endLocation.latLng.longitude
+                    );
+
+                    // Create bounds from the route
+                    const bounds = new window.google.maps.LatLngBounds();
+                    bounds.extend(startLocation);
+                    bounds.extend(endLocation);
+                    decodedPath.forEach(point => bounds.extend(point));
+
+                    const directions = {
+                        routes: [{
+                            legs: [{
+                                start_location: startLocation,
+                                end_location: endLocation,
+                                distance: {
+                                    text: `${Math.round(route.distanceMeters / 1609.34)} mi`,
+                                    value: route.distanceMeters
+                                },
+                                duration: {
+                                    text: `${Math.round(parseInt(route.duration.replace('s', '')) / 60)} mins`,
+                                    value: parseInt(route.duration.replace('s', ''))
+                                },
+                                steps: [{
+                                    distance: {
+                                        text: `${Math.round(route.distanceMeters / 1609.34)} mi`,
+                                        value: route.distanceMeters
+                                    },
+                                    duration: {
+                                        text: `${Math.round(parseInt(route.duration.replace('s', '')) / 60)} mins`,
+                                        value: parseInt(route.duration.replace('s', ''))
+                                    },
+                                    start_location: startLocation,
+                                    end_location: endLocation,
+                                    instructions: "Follow the route",
+                                    path: decodedPath,
+                                    travel_mode: "DRIVING"
+                                }]
+                            }],
+                            overview_path: decodedPath,
+                            bounds: bounds,
+                            overview_polyline: {
+                                points: route.polyline.encodedPolyline
+                            },
+                            copyrights: "© Google Maps",
+                            warnings: [],
+                            waypoint_order: []
+                        }],
+                        request: {
+                            origin: startLocation,
+                            destination: endLocation,
+                            travelMode: "DRIVING"
+                        },
+                        status: "OK",
+                        geocoded_waypoints: [
+                            { status: "OK" },
+                            { status: "OK" }
+                        ]
+                    };
+
+                    console.log('GoogleMapsDashboard: Route calculated for shipment:', shipment.shipmentId);
+                    return {
+                        shipment,
+                        directions,
+                        color: getRouteColor(index)
+                    };
+                }
+            } catch (error) {
+                console.warn('Failed to calculate route for shipment:', shipment.shipmentId, error);
+                return null;
+            }
+        });
+
+        const results = await Promise.all(routePromises);
+        const validRoutes = results.filter(Boolean);
+
+        console.log('GoogleMapsDashboard: Calculated', validRoutes.length, 'valid routes');
+        setAllDirections(validRoutes);
+
+        // Auto-fit map to show all routes
+        if (validRoutes.length > 0 && map) {
+            const bounds = new window.google.maps.LatLngBounds();
+            validRoutes.forEach(({ directions }) => {
+                if (directions.routes && directions.routes[0] && directions.routes[0].overview_path) {
+                    directions.routes[0].overview_path.forEach(point => {
+                        bounds.extend(point);
+                    });
+                }
+            });
+            map.fitBounds(bounds, { padding: 50 });
+        }
+    }, [mapsApiKey, activeShipments, map]);
+
+    // Get route color based on index
+    const getRouteColor = (index) => {
+        const colors = [
+            '#4CAF50', // Green
+            '#2196F3', // Blue  
+            '#FF9800', // Orange
+            '#9C27B0', // Purple
+            '#F44336', // Red
+            '#00BCD4', // Cyan
+            '#FFEB3B', // Yellow
+            '#795548', // Brown
+            '#607D8B', // Blue Grey
+            '#E91E63'  // Pink
+        ];
+        return colors[index % colors.length];
+    };
+
+    // Calculate routes when shipments change
+    useEffect(() => {
+        if (mapsApiKey && window.google?.maps?.geometry && activeShipments.length > 0) {
+            calculateAllRoutes();
+        }
+    }, [calculateAllRoutes]);
+
+    // Handle map load
+    const handleMapLoad = useCallback((mapInstance) => {
+        setMap(mapInstance);
+        console.log('GoogleMapsDashboard: Map loaded');
+    }, []);
+
+    // Handle marker click
+    const handleMarkerClick = useCallback((shipment, position) => {
+        setSelectedShipment(shipment);
+        setInfoWindowOpen(true);
+        if (onShipmentClick) {
+            onShipmentClick(shipment);
+        }
+    }, [onShipmentClick]);
+
+    const mapOptions = {
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: true,
+        fullscreenControl: true,
+        styles: [
+            {
+                featureType: 'water',
+                elementType: 'geometry',
+                stylers: [{ color: '#e3f2fd' }]
+            },
+            {
+                featureType: 'landscape',
+                elementType: 'geometry',
+                stylers: [{ color: '#f5f5f5' }]
+            },
+            {
+                featureType: 'road.highway',
+                elementType: 'geometry',
+                stylers: [{ color: '#ffffff' }]
+            },
+            {
+                featureType: 'road.arterial',
+                elementType: 'geometry',
+                stylers: [{ color: '#ffffff' }]
+            }
+        ]
+    };
+
+    if (!GoogleMap || !DirectionsRenderer || !Marker || !InfoWindow) {
+        return (
+            <Box sx={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#f5f5f5',
+                flexDirection: 'column',
+                gap: 2
+            }}>
+                <CircularProgress size={40} sx={{ color: '#4CAF50' }} />
+                <Typography variant="body2" sx={{ color: '#666' }}>
+                    Loading Maps Dashboard...
+                </Typography>
+            </Box>
+        );
+    }
+
+    return (
+        <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            center={mapCenter}
+            zoom={mapZoom}
+            onLoad={handleMapLoad}
+            options={mapOptions}
+        >
+            {/* Render all route directions */}
+            {allDirections.map(({ directions, color, shipment }, index) => (
+                <DirectionsRenderer
+                    key={`route-${shipment.shipmentId || index}`}
+                    directions={directions}
+                    options={{
+                        suppressMarkers: true, // We'll add custom markers
+                        preserveViewport: true,
+                        polylineOptions: {
+                            strokeColor: color,
+                            strokeWeight: 4,
+                            strokeOpacity: 0.8,
+                            geodesic: true
+                        }
+                    }}
+                />
+            ))}
+
+            {/* Render markers from actual route data */}
+            {allDirections.map(({ directions, color, shipment }, index) => {
+                if (!directions?.routes?.[0]?.legs?.[0]) return null;
+
+                const leg = directions.routes[0].legs[0];
+
+                return (
+                    <React.Fragment key={`markers-${shipment.shipmentId || index}`}>
+                        {/* Origin Marker (A) */}
+                        <Marker
+                            position={leg.start_location}
+                            onClick={() => handleMarkerClick(shipment, leg.start_location)}
+                            icon={{
+                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                                    <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+                                        <text x="12" y="16" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold">A</text>
+                                    </svg>
+                                `),
+                                scaledSize: new window.google.maps.Size(24, 36),
+                                anchor: new window.google.maps.Point(12, 36)
+                            }}
+                        />
+
+                        {/* Destination Marker (B) */}
+                        <Marker
+                            position={leg.end_location}
+                            onClick={() => handleMarkerClick(shipment, leg.end_location)}
+                            icon={{
+                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                                    <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#f44336" stroke="#ffffff" stroke-width="2"/>
+                                        <text x="12" y="16" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="bold">B</text>
+                                    </svg>
+                                `),
+                                scaledSize: new window.google.maps.Size(24, 36),
+                                anchor: new window.google.maps.Point(12, 36)
+                            }}
+                        />
+                    </React.Fragment>
+                );
+            })}
+
+            {/* Info Window for selected shipment */}
+            {selectedShipment && infoWindowOpen && (
+                <InfoWindow
+                    position={{ lat: 43.6532, lng: -79.3832 }} // You'd calculate this from shipment
+                    onCloseClick={() => setInfoWindowOpen(false)}
+                >
+                    <Box sx={{ p: 1, minWidth: 200 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                            {selectedShipment.shipmentId}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>Status:</strong> {selectedShipment.status}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>Customer:</strong> {selectedShipment.customer}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                            <strong>Carrier:</strong> {(() => {
+                                const carrier = selectedShipment.carrier;
+                                if (!carrier) return 'N/A';
+                                if (typeof carrier === 'string') return carrier;
+                                if (typeof carrier === 'object') {
+                                    return carrier.name || carrier.carrierName || carrier.id || 'Unknown Carrier';
+                                }
+                                return 'N/A';
+                            })()}
+                        </Typography>
+                        <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => onTrackingClick && onTrackingClick(selectedShipment.shipmentId)}
+                            sx={{ fontSize: '11px' }}
+                        >
+                            Track Shipment
+                        </Button>
+                    </Box>
+                </InfoWindow>
+            )}
+        </GoogleMap>
+    );
+};
+
 // Transition for the modal
 const Transition = forwardRef(function Transition(props, ref) {
     return <Slide direction="up" ref={ref} {...props} timeout={{ enter: 500, exit: 300 }} easing={{ enter: 'cubic-bezier(0.4, 0, 0.2, 1)', exit: 'cubic-bezier(0.4, 0, 1, 1)' }} />;
 });
 
-// Enhanced Globe Loading Screen Component
-const GlobeLoadingScreen = ({ phase = 'initializing' }) => {
+// Enhanced Maps Loading Screen Component
+const MapsLoadingScreen = ({ phase = 'initializing' }) => {
     const [progress, setProgress] = useState(0);
     const [currentPhase, setCurrentPhase] = useState(0);
 
     const loadingPhases = [
-        { text: 'Initializing SoluShipX Globe', description: 'Preparing 3D visualization engine' },
-        { text: 'Loading Earth Textures', description: 'Downloading satellite imagery' },
+        { text: 'Initializing SoluShipX Maps', description: 'Preparing route visualization engine' },
+        { text: 'Loading Google Maps', description: 'Connecting to mapping services' },
         { text: 'Fetching Shipment Data', description: 'Retrieving your logistics network' },
-        { text: 'Plotting Routes', description: 'Calculating optimal pathways' },
-        { text: 'Finalizing Experience', description: 'Almost ready to explore' }
+        { text: 'Calculating Routes', description: 'Computing optimal pathways' },
+        { text: 'Finalizing Dashboard', description: 'Almost ready to explore' }
     ];
 
     useEffect(() => {
@@ -375,6 +1898,7 @@ const Dashboard = () => {
     const [modalStack, setModalStack] = useState([]);
     const [shipmentsDeepLinkParams, setShipmentsDeepLinkParams] = useState(null);
     const [customersDeepLinkParams, setCustomersDeepLinkParams] = useState(null);
+    const [viewMode, setViewMode] = useState('command'); // 'maps' or 'command'
 
     const [isMinLoadingTimePassed, setIsMinLoadingTimePassed] = useState(false);
 
@@ -480,6 +2004,7 @@ const Dashboard = () => {
                 return {
                     id: doc.id,
                     shipmentId: data.shipmentID || data.shipmentId || doc.id,
+                    shipmentID: data.shipmentID, // Keep original shipmentID field for LogisticsCommandCenter
                     date: formatDate(data.createdAt),
                     createdAt: data.createdAt,
                     customer: customerData.name || data.shipTo?.company || 'Unknown Customer',
@@ -490,7 +2015,9 @@ const Dashboard = () => {
                     carrier: rateInfo.carrier,
                     shipmentType: data.shipmentInfo?.shipmentType || 'Standard',
                     status: data.status || 'pending',
-                    value: rateInfo.totalCharges || data.packages?.[0]?.declaredValue || 0
+                    value: rateInfo.totalCharges || data.packages?.[0]?.declaredValue || 0,
+                    // Include other original fields that LogisticsCommandCenter might need
+                    ...data
                 };
             }).filter(shipment => {
                 // Exclude draft shipments
@@ -506,7 +2033,7 @@ const Dashboard = () => {
         });
 
         return () => unsubscribe();
-    }, [companyIdForAddress, companyLoading, customers, thirtyDaysAgo]);
+    }, [companyIdForAddress, companyLoading, thirtyDaysAgo]);
 
     // Load user profile data
     useEffect(() => {
@@ -751,6 +2278,22 @@ const Dashboard = () => {
         setIsTrackingDrawerOpen(true);
     };
 
+    // Handler for route click from RouteViewBadge
+    const handleRouteClick = (shipment) => {
+        console.log('Route clicked for shipment:', shipment);
+
+        // Open Shipments modal directly to shipment detail
+        setShipmentsDeepLinkParams({
+            directToDetail: true,
+            selectedShipmentId: shipment.id
+        });
+
+        // Open Shipments modal after a brief delay
+        setTimeout(() => {
+            setIsShipmentsModalOpen(true);
+        }, 100);
+    };
+
     // Handler for opening QuickShip modal (from CreateShipmentX)
     const handleOpenQuickShipModal = () => {
         console.log('Opening QuickShip modal, closing CreateShipmentX modal');
@@ -787,6 +2330,20 @@ const Dashboard = () => {
         setTimeout(() => {
             setIsShipmentsModalOpen(true);
         }, 300);
+    };
+
+    // Handler for viewing shipment detail from LogisticsCommandCenter
+    const handleViewShipmentFromCommandCenter = (shipmentId) => {
+        console.log('Viewing shipment from LogisticsCommandCenter:', shipmentId);
+
+        // Open Shipments modal directly to shipment detail (bypassing the table)
+        setShipmentsDeepLinkParams({
+            directToDetail: true,
+            selectedShipmentId: shipmentId
+        });
+
+        // Open Shipments modal
+        setIsShipmentsModalOpen(true);
     };
 
     // Handler for clearing deep link parameters when navigating back from shipment detail
@@ -885,84 +2442,71 @@ const Dashboard = () => {
             position: 'relative',
             bgcolor: '#000'
         }}>
-            {/* Enhanced Responsive Header */}
+            {/* Fixed Top Right Profile and Settings */}
             <Box sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                p: { xs: 1, sm: 1.5, md: 2 },
-                zIndex: 10,
+                position: 'fixed',
+                top: 16,
+                right: 16,
+                zIndex: 1200,
                 display: 'flex',
-                justifyContent: 'space-between',
                 alignItems: 'center',
-                // Completely transparent header with no background
-                transition: 'all 0.3s ease'
+                gap: 1
             }}>
-                {/* Right Section - Profile and Settings */}
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    justifyContent: 'flex-end',
-                    width: '100%'
-                }}>
-                    {/* Profile Avatar */}
-                    <IconButton
-                        onClick={handleProfileMenuOpen}
+                {/* Profile Avatar */}
+                <IconButton
+                    onClick={handleProfileMenuOpen}
+                    sx={{
+                        p: 0.5,
+                        ml: 1,
+                        '&:hover': {
+                            transform: 'scale(1.05)'
+                        },
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    <Avatar
+                        src={userProfileData.photoURL}
                         sx={{
-                            p: 0.5,
-                            ml: 1,
+                            width: { xs: 32, sm: 36, md: 40 },
+                            height: { xs: 32, sm: 36, md: 40 },
+                            bgcolor: 'rgba(255, 255, 255, 0.1)',
+                            border: '2px solid rgba(255, 255, 255, 0.2)',
+                            color: 'white',
+                            fontSize: { xs: '1rem', sm: '1.1rem', md: '1.2rem' },
+                            fontWeight: 600,
+                            cursor: 'pointer',
                             '&:hover': {
-                                transform: 'scale(1.05)'
-                            },
-                            transition: 'all 0.2s ease'
+                                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                                borderColor: 'rgba(255, 255, 255, 0.4)'
+                            }
                         }}
                     >
-                        <Avatar
-                            src={userProfileData.photoURL}
-                            sx={{
-                                width: { xs: 32, sm: 36, md: 40 },
-                                height: { xs: 32, sm: 36, md: 40 },
-                                bgcolor: 'rgba(255, 255, 255, 0.1)',
-                                border: '2px solid rgba(255, 255, 255, 0.2)',
-                                color: 'white',
-                                fontSize: { xs: '1rem', sm: '1.1rem', md: '1.2rem' },
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                '&:hover': {
-                                    bgcolor: 'rgba(255, 255, 255, 0.15)',
-                                    borderColor: 'rgba(255, 255, 255, 0.4)'
-                                }
-                            }}
-                        >
-                            {!userProfileData.photoURL && (
-                                userProfileData.firstName && userProfileData.lastName
-                                    ? `${userProfileData.firstName[0]}${userProfileData.lastName[0]}`
-                                    : currentUser?.displayName?.[0] || currentUser?.email?.[0] || '?'
-                            )}
-                        </Avatar>
-                    </IconButton>
+                        {!userProfileData.photoURL && (
+                            userProfileData.firstName && userProfileData.lastName
+                                ? `${userProfileData.firstName[0]}${userProfileData.lastName[0]}`
+                                : currentUser?.displayName?.[0] || currentUser?.email?.[0] || '?'
+                        )}
+                    </Avatar>
+                </IconButton>
 
-                    {/* Settings Gear Icon */}
-                    <IconButton
-                        onClick={handleSettingsMenuOpen}
-                        sx={{
-                            color: '#666666',
-                            p: 0.5,
-                            ml: 0.5,
-                            '&:hover': {
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                transform: 'scale(1.05)'
-                            },
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <SettingsIcon sx={{
-                            fontSize: { xs: '1.5rem', sm: '1.6rem', md: '1.8rem' }
-                        }} />
-                    </IconButton>
-                </Box>
+                {/* Settings Gear Icon */}
+                <IconButton
+                    onClick={handleSettingsMenuOpen}
+                    sx={{
+                        color: '#666666',
+                        p: 0.5,
+                        ml: 0.5,
+                        '&:hover': {
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            transform: 'scale(1.05)'
+                        },
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    <SettingsIcon sx={{
+                        fontSize: { xs: '1.5rem', sm: '1.6rem', md: '1.8rem' }
+                    }} />
+                </IconButton>
             </Box>
 
             {/* Profile Menu Dropdown */}
@@ -1141,10 +2685,10 @@ const Dashboard = () => {
                     right: 0,
                     bottom: 0,
                     background: `
-                        radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
-                        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-                        radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
-                    `,
+                                radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
+                                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                                radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
+                            `,
                     animation: 'float 6s ease-in-out infinite'
                 }} />
 
@@ -1379,21 +2923,23 @@ const Dashboard = () => {
             </Box>
 
             {/* Enhanced Tracking Drawer (Right) */}
-            {isTrackingDrawerOpen && (
-                <Box
-                    onClick={() => setIsTrackingDrawerOpen(false)}
-                    sx={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        width: '100vw',
-                        height: '100vh',
-                        bgcolor: 'rgba(0,0,0,0.7)',
-                        zIndex: 1499,
-                        transition: 'opacity 0.3s',
-                    }}
-                />
-            )}
+            {
+                isTrackingDrawerOpen && (
+                    <Box
+                        onClick={() => setIsTrackingDrawerOpen(false)}
+                        sx={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            width: '100vw',
+                            height: '100vh',
+                            bgcolor: 'rgba(0,0,0,0.7)',
+                            zIndex: 1499,
+                            transition: 'opacity 0.3s',
+                        }}
+                    />
+                )
+            }
             <Drawer
                 anchor="right"
                 open={isTrackingDrawerOpen}
@@ -1952,21 +3498,25 @@ const Dashboard = () => {
                 </Box>
             </Dialog>
 
-            {/* AI Shipping Agent Overlay */}
-            {companyData?.id && (
-                <LazyComponentWrapper fallback={null}>
-                    <ShipmentAgent
-                        companyId={companyData.id}
-                        inModal={false}
-                        isPanelOpen={isChatOpen}
-                        setIsPanelOpen={setIsChatOpen}
-                        currentShipmentId={null}
-                        sx={{ zIndex: 1000 }}
-                    />
-                </LazyComponentWrapper>
-            )}
+            {/* AI Shipping Agent Overlay - HIDDEN FOR NOW */}
+            {
+                false && companyData?.id && (
+                    <LazyComponentWrapper fallback={null}>
+                        <ShipmentAgent
+                            companyId={companyData.id}
+                            inModal={false}
+                            isPanelOpen={isChatOpen}
+                            setIsPanelOpen={setIsChatOpen}
+                            currentShipmentId={null}
+                            sx={{ zIndex: 1000 }}
+                        />
+                    </LazyComponentWrapper>
+                )
+            }
 
-            {/* Globe - always rendered but opacity is controlled */}
+
+
+            {/* Logistics Command Center - Positioned to the right of sidebar */}
             <Box sx={{
                 position: 'absolute',
                 top: 0,
@@ -1983,14 +3533,22 @@ const Dashboard = () => {
                 transition: 'opacity 1s ease-in-out',
                 zIndex: 1,
             }}>
-                <LazyComponentWrapper fallback={null}>
-                    <ShipmentGlobe
-                        ref={globeRef}
-                        shipments={shipments.slice(0, 50)}
-                        width="100%"
-                        showOverlays={true}
-                        statusCounts={statusCounts}
-                        onOpenTrackingDrawer={handleOpenTrackingDrawerFromGlobe}
+                <LazyComponentWrapper fallback={
+                    <Box sx={{
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        bgcolor: '#000',
+                        color: 'white'
+                    }}>
+                        <CircularProgress color="inherit" />
+                    </Box>
+                }>
+                    <LogisticsCommandCenter
+                        shipments={shipments}
+                        onShipmentSelect={handleViewShipmentFromCommandCenter}
+                        onRouteClick={handleRouteClick}
                     />
                 </LazyComponentWrapper>
             </Box>
@@ -2012,9 +3570,12 @@ const Dashboard = () => {
                     zIndex: 2,
                     pointerEvents: 'none'
                 }}>
-                    <GlobeLoadingScreen />
+                    <MapsLoadingScreen />
                 </Box>
             </Fade>
+
+            {/* Dashboard Stats Overlay - Only show in maps mode */}
+            {viewMode === 'maps' && <DashboardStatsOverlay shipments={shipments} />}
         </Box>
     );
 };
