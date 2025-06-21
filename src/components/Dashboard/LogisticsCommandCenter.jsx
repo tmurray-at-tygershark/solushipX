@@ -84,6 +84,10 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
 
     // Filter shipments based on active filters and 10-day limit
     const filteredShipments = useMemo(() => {
+        console.log(`🔍 FILTERING PROCESS START`);
+        console.log(`🔍 Input shipments:`, shipments.length);
+        console.log(`🔍 Active filters:`, Array.from(activeFilters));
+
         // First filter by date - only show shipments from last 10 days
         const tenDaysAgo = new Date();
         tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
@@ -108,14 +112,20 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
             return shipmentDate >= tenDaysAgo;
         });
 
+        console.log(`🔍 Recent shipments (last 10 days):`, recentShipments.length);
+
         // If 'all' is selected, return all recent shipments
         if (activeFilters.has('all')) {
+            console.log(`🔍 Filter = 'all', returning all recent shipments:`, recentShipments.length);
             return recentShipments;
         }
 
         // Otherwise filter by status categories
-        return recentShipments.filter(shipment => {
-            if (activeFilters.size === 0) return true;
+        const statusFiltered = recentShipments.filter(shipment => {
+            if (activeFilters.size === 0) {
+                console.log(`🔍 No active filters, returning true for all`);
+                return true;
+            }
 
             // Map global shipment status to our categories
             const status = shipment.status?.toLowerCase() || '';
@@ -132,8 +142,20 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                 category = 'ready_to_ship';
             }
 
-            return activeFilters.has(category);
+            const matches = activeFilters.has(category);
+
+            // Debug specific shipments
+            if (activeFilters.has('delivered')) {
+                console.log(`🔍 DELIVERED FILTER: Shipment ${shipment.shipmentID}: status="${status}" → category="${category}" → matches=${matches}`);
+            }
+
+            return matches;
         });
+
+        console.log(`🔍 FILTERING RESULT: ${statusFiltered.length} shipments match the filter`);
+        console.log(`🔍 Filtered shipment IDs:`, statusFiltered.map(s => `${s.shipmentID}(${s.status})`).join(', '));
+
+        return statusFiltered;
     }, [shipments, activeFilters]);
 
     // Calculate status counts for scorecards (including 10-day filter)
