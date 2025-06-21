@@ -3,6 +3,34 @@ const { onCall } = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 
 /**
+ * Create a mock Firebase callable request for warmup purposes
+ * This prevents "Cannot read properties of undefined (reading 'on')" errors
+ */
+function createMockCallableRequest(data, authUid) {
+    return {
+        data: data,
+        auth: authUid ? { uid: authUid } : null,
+        rawRequest: {},
+        instanceIdToken: null,
+        appCheckToken: null,
+        // Add EventEmitter-like methods to prevent errors
+        on: () => {},
+        once: () => {},
+        emit: () => {},
+        removeListener: () => {},
+        removeAllListeners: () => {},
+        setMaxListeners: () => {},
+        getMaxListeners: () => 0,
+        listeners: () => [],
+        listenerCount: () => 0,
+        eventNames: () => [],
+        prependListener: () => {},
+        prependOnceListener: () => {},
+        off: () => {}
+    };
+}
+
+/**
  * Keep-Alive System for Carrier Cloud Functions
  * 
  * This system prevents cold starts by periodically pinging carrier functions
@@ -63,11 +91,11 @@ exports.keepAliveEShipPlus = onSchedule({
         // Import the function directly to avoid external HTTP calls
         const { getRatesEShipPlus } = require('./carrier-api/eshipplus/getRates');
         
+        // Create a proper mock request object to prevent "on" property errors
+        const mockRequest = createMockCallableRequest(warmupRequestData, 'keepalive-system');
+        
         // Call with warmup flag - function should recognize this and return quickly
-        const result = await getRatesEShipPlus({
-            data: warmupRequestData,
-            auth: { uid: 'keepalive-system' }
-        });
+        const result = await getRatesEShipPlus(mockRequest);
         
         logger.info('✅ eShipPlus function warmed successfully');
         return { success: true, function: 'eShipPlus', timestamp: new Date().toISOString() };
@@ -92,10 +120,10 @@ exports.keepAliveCanpar = onSchedule({
         
         const { getRatesCanpar } = require('./carrier-api/canpar/getRates');
         
-        const result = await getRatesCanpar({
-            data: warmupRequestData,
-            auth: { uid: 'keepalive-system' }
-        });
+        // Create a proper mock request object to prevent "on" property errors
+        const mockRequest = createMockCallableRequest(warmupRequestData, 'keepalive-system');
+        
+        const result = await getRatesCanpar(mockRequest);
         
         logger.info('✅ Canpar function warmed successfully');
         return { success: true, function: 'Canpar', timestamp: new Date().toISOString() };
@@ -119,10 +147,10 @@ exports.keepAlivePolaris = onSchedule({
         
         const { getRatesPolarisTransportation } = require('./carrier-api/polaristransportation/getRates');
         
-        const result = await getRatesPolarisTransportation({
-            data: warmupRequestData,
-            auth: { uid: 'keepalive-system' }
-        });
+        // Create a proper mock request object to prevent "on" property errors
+        const mockRequest = createMockCallableRequest(warmupRequestData, 'keepalive-system');
+        
+        const result = await getRatesPolarisTransportation(mockRequest);
         
         logger.info('✅ Polaris Transportation function warmed successfully');
         return { success: true, function: 'PolarisTransportation', timestamp: new Date().toISOString() };
@@ -203,10 +231,8 @@ exports.keepAliveQuickShip = onSchedule({
     // 1. Warm up bookQuickShipment
     try {
         const { bookQuickShipment } = require('./carrier-api/generic/bookQuickShipment');
-        await bookQuickShipment({
-            data: quickShipWarmupData,
-            auth: { uid: 'keepalive-system' }
-        });
+        const mockRequest = createMockCallableRequest(quickShipWarmupData, 'keepalive-system');
+        await bookQuickShipment(mockRequest);
         results.push({ function: 'bookQuickShipment', success: true });
         logger.info('✅ bookQuickShipment warmed successfully');
     } catch (error) {
@@ -287,10 +313,8 @@ exports.keepAliveAllCarriers = onSchedule({
         try {
             const { [carrier.func]: carrierFunction } = require(carrier.module);
             
-            await carrierFunction({
-                data: warmupRequestData,
-                auth: { uid: 'keepalive-system' }
-            });
+            const mockRequest = createMockCallableRequest(warmupRequestData, 'keepalive-system');
+            await carrierFunction(mockRequest);
             
             results.push({ carrier: carrier.name, success: true, type: 'carrier' });
             logger.info(`✅ ${carrier.name} warmed successfully`);
@@ -325,10 +349,8 @@ exports.keepAliveAllCarriers = onSchedule({
             const { [quickShipFunc.func]: funcToCall } = require(quickShipFunc.module);
             
             if (quickShipFunc.name === 'bookQuickShipment') {
-                await funcToCall({
-                    data: quickShipWarmupData,
-                    auth: { uid: 'keepalive-system' }
-                });
+                const mockRequest = createMockCallableRequest(quickShipWarmupData, 'keepalive-system');
+                await funcToCall(mockRequest);
             } else if (quickShipFunc.name === 'generateGenericBOL') {
                 await funcToCall('WARMUP-COMPREHENSIVE-001', 'warmup-doc-id');
             } else if (quickShipFunc.name === 'generateCarrierConfirmation') {
@@ -382,10 +404,8 @@ exports.warmupCarriersNow = onCall({
             const startTime = Date.now();
             const { [carrier.func]: carrierFunction } = require(carrier.module);
             
-            await carrierFunction({
-                data: warmupRequestData,
-                auth: { uid: request.auth?.uid || 'manual-warmup' }
-            });
+            const mockRequest = createMockCallableRequest(warmupRequestData, request.auth?.uid || 'manual-warmup');
+            await carrierFunction(mockRequest);
             
             const duration = Date.now() - startTime;
             results.push({ 
@@ -431,10 +451,8 @@ exports.warmupCarriersNow = onCall({
             const { [quickShipFunc.func]: funcToCall } = require(quickShipFunc.module);
             
             if (quickShipFunc.name === 'bookQuickShipment') {
-                await funcToCall({
-                    data: quickShipWarmupData,
-                    auth: { uid: request.auth?.uid || 'manual-warmup' }
-                });
+                const mockRequest = createMockCallableRequest(quickShipWarmupData, request.auth?.uid || 'manual-warmup');
+                await funcToCall(mockRequest);
             } else if (quickShipFunc.name === 'generateGenericBOL') {
                 await funcToCall('WARMUP-MANUAL-001', 'warmup-doc-id');
             } else if (quickShipFunc.name === 'generateCarrierConfirmation') {
@@ -494,10 +512,8 @@ exports.carrierHealthCheck = onCall({
         try {
             const { [carrier.func]: carrierFunction } = require(carrier.module);
             
-            await carrierFunction({
-                data: warmupRequestData,
-                auth: { uid: 'health-check' }
-            });
+            const mockRequest = createMockCallableRequest(warmupRequestData, 'health-check');
+            await carrierFunction(mockRequest);
             
             const duration = Date.now() - startTime;
             

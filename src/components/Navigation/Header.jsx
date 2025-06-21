@@ -278,7 +278,7 @@ const Navigation = () => {
                 }}>
                     <Link className="navbar-brand" to={isAuthenticated ? "/dashboard" : "/homepage"}>
                         <img
-                            src="/images/solushipx_logo_white.png"
+                            src="/images/integratedcarrriers_logo_white.png"
                             alt="SolushipX Logo"
                             style={{
                                 height: window.innerWidth >= 1200 ? '32px' :

@@ -118,7 +118,7 @@ const ModalHeader = ({
                     {/* SolushipX Logo - clickable to close modal */}
                     <Box
                         component="img"
-                        src="/images/SolushipX_black.png"
+                        src="/images/integratedcarrriers_logo_blk.png"
                         alt="SolushipX"
                         onClick={onClose}
                         sx={{

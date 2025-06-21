@@ -104,6 +104,12 @@ const { bookQuickShipment } = require('./src/carrier-api/generic/bookQuickShipme
 const { generateGenericBOL } = require('./src/carrier-api/generic/generateGenericBOL');
 const { generateCarrierConfirmation } = require('./src/carrier-api/generic/generateCarrierConfirmation');
 
+// Import CreateShipmentX notification functions
+const sendCreateShipmentXNotificationsModule = require('./src/functions/generic/sendCreateShipmentXNotifications');
+
+// Import manual status override function
+const { updateManualShipmentStatus } = require('./src/updateManualShipmentStatus');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -178,6 +184,12 @@ exports.carrierHealthCheck = carrierHealthCheck;
 exports.bookQuickShipment = bookQuickShipment;
 exports.generateGenericBOL = generateGenericBOL;
 exports.generateCarrierConfirmation = generateCarrierConfirmation;
+
+// Export CreateShipmentX notification functions
+exports.sendCreateShipmentXNotifications = sendCreateShipmentXNotificationsModule.sendCreateShipmentXNotifications;
+
+// Export manual status override function
+exports.updateManualShipmentStatus = updateManualShipmentStatus;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

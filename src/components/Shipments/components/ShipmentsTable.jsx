@@ -36,13 +36,14 @@ const ShipmentsTable = ({
     // Column configuration to match header widths
     const columnConfig = {
         checkbox: { width: 48 },
-        id: { width: 160 },
+        id: { width: 110 }, // Further reduced from 130 to 110
+        created: { width: 100 },
         date: { width: 100 },
         reference: { width: 120 },
         customer: { width: 140 },
         route: { width: 150 },
         carrier: { width: 220 },
-        type: { width: 70 },
+        type: { width: 120 }, // Increased from 100 to 120
         status: { width: 110 },
         actions: { width: 60 }
     };
@@ -54,7 +55,7 @@ const ShipmentsTable = ({
         }}>
             <Table sx={{
                 width: '100%',
-                minWidth: 1178,
+                minWidth: 1278, // Total: 48+110+100+100+120+140+150+220+120+110+60 = 1278
                 tableLayout: 'fixed',
                 '& .MuiTableCell-root': {
                     fontSize: '12px',
@@ -116,12 +117,20 @@ const ShipmentsTable = ({
                             />
                         </TableCell>
                         <TableCell sx={{
-                            width: 160,
-                            minWidth: 160,
-                            maxWidth: 160,
+                            width: 110,
+                            minWidth: 110,
+                            maxWidth: 110,
                             backgroundColor: '#f8fafc !important'
                         }}>
                             ID
+                        </TableCell>
+                        <TableCell sx={{
+                            width: 100,
+                            minWidth: 100,
+                            maxWidth: 100,
+                            backgroundColor: '#f8fafc !important'
+                        }}>
+                            CREATED
                         </TableCell>
                         <TableCell sx={{
                             width: 100,
@@ -164,9 +173,9 @@ const ShipmentsTable = ({
                             CARRIER
                         </TableCell>
                         <TableCell sx={{
-                            width: 70,
-                            minWidth: 70,
-                            maxWidth: 70,
+                            width: 120,
+                            minWidth: 120,
+                            maxWidth: 120,
                             backgroundColor: '#f8fafc !important'
                         }}>
                             TYPE
@@ -195,7 +204,7 @@ const ShipmentsTable = ({
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
+                            <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
                                 <CircularProgress />
                             </TableCell>
                         </TableRow>

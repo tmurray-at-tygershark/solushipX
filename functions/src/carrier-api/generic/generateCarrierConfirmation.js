@@ -556,7 +556,7 @@ function drawEnhancedHeader(doc, data) {
     // Logo section
     try {
         // Use the SolushipX logo from assets
-        const logoPath = path.join(__dirname, '../../assets/SolushipX_black.png');
+        const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
         if (fs.existsSync(logoPath)) {
             doc.image(logoPath, 35, 30, {
                 width: 150,

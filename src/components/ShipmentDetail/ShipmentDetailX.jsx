@@ -52,6 +52,20 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
     const { id } = useParams();
     const shipmentId = propShipmentId || id;
 
+    // CRITICAL CLEANUP: Clear any shipment session data when component unmounts
+    useEffect(() => {
+        return () => {
+            console.log('🧹 ShipmentDetailX unmounting - clearing session data for shipment:', shipmentId);
+            // Clear any window-stored shipment references
+            if (window.currentShipmentId) {
+                delete window.currentShipmentId;
+            }
+            if (window.lastViewedShipment) {
+                delete window.lastViewedShipment;
+            }
+        };
+    }, [shipmentId]);
+
     // Main hooks for data and actions
     const {
         shipment,
@@ -701,6 +715,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                         onRefreshStatus={handleRefreshStatus}
                         onShowSnackbar={showSnackbar}
                         onOpenTrackingDrawer={handleOpenTrackingDrawer}
+                        onStatusUpdated={refreshShipment}
                     />
 
                     {/* Documents Section - Hidden for now */}

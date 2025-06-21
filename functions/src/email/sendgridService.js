@@ -9,6 +9,9 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
+// Constants
+const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
+
 // Get SendGrid API key from environment variables or Firebase config
 const sendgridApiKey = process.env.SENDGRID_API_KEY;
 
@@ -28,7 +31,7 @@ const EMAIL_TEMPLATES = {
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">Shipment Successfully Created!</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment is now in the system and ready for pickup</p>
                 </div>
@@ -212,7 +215,7 @@ Need help? Contact us at support@integratedcarriers.com
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">Shipment Delivered!</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">Your package has been successfully delivered</p>
                 </div>
@@ -273,7 +276,7 @@ Thank you for choosing SolushipX!
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">Shipment Delay Notice</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment has encountered a delay</p>
                 </div>
@@ -334,7 +337,7 @@ Questions? Contact support@integratedcarriers.com
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">Shipment Status Update</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment status has been updated</p>
                 </div>
@@ -460,7 +463,7 @@ Questions? Contact support@integratedcarriers.com
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">New Customer Note Added</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">A new note has been added to customer ${data.customerName}</p>
                 </div>
@@ -579,7 +582,7 @@ Need help? Contact us at support@integratedcarriers.com
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">QuickShip Booking Confirmed!</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment has been booked with ${data.carrier}</p>
                 </div>
@@ -700,7 +703,7 @@ Questions? Contact support@integratedcarriers.com
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">New Carrier Confirmation</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">Order ${data.orderNumber} is ready for pickup</p>
                 </div>
@@ -846,7 +849,7 @@ Questions? Reply to this email or contact SolushipX.
         html: (data) => `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                    <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                     <h1 style="margin: 0; font-size: 24px;">QuickShip Booking Alert</h1>
                     <p style="margin: 10px 0 0 0; opacity: 0.9;">A new QuickShip order has been booked</p>
                 </div>
@@ -990,7 +993,7 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
             to: email,
             from: {
                 email: 'support@integratedcarriers.com',
-                name: 'SolushipX Notifications'
+                name: 'Integrated Carriers Notifications'
             },
             replyTo: {
                 email: 'support@integratedcarriers.com',
@@ -1916,12 +1919,12 @@ async function sendEmail(emailData) {
     } catch (error) {
         logger.error('Error sending email:', error);
         
-        // Log the full SendGrid error response
+        // Log the full SendGrid error response with detailed information
         if (error.response) {
             logger.error('SendGrid error response:', {
                 statusCode: error.code,
-                body: error.response.body,
-                errors: error.response.body?.errors
+                body: JSON.stringify(error.response.body, null, 2),
+                headers: error.response.headers
             });
             
             // Log the specific error messages
@@ -1930,10 +1933,17 @@ async function sendEmail(emailData) {
                     logger.error(`SendGrid error ${index + 1}:`, {
                         message: err.message,
                         field: err.field,
-                        help: err.help
+                        help: err.help,
+                        fullError: JSON.stringify(err, null, 2)
                     });
                 });
             }
+        } else {
+            logger.error('SendGrid error without response:', {
+                message: error.message,
+                code: error.code,
+                stack: error.stack
+            });
         }
         
         throw error;

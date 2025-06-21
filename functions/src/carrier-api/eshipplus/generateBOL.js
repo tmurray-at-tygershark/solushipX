@@ -572,7 +572,7 @@ function buildExactEShipPlusBOLDocument(doc, bolData) {
 function drawSolushipXHeader(doc, bolData) {
     // Add actual SolushipX logo image (like Polaris BOL)
     try {
-        const logoPath = path.join(__dirname, '../../assets/SolushipX_black.png');
+        const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
         if (fs.existsSync(logoPath)) {
             doc.image(logoPath, 20, 25, { width: 120, height: 30 }); // Compact logo size
         } else {

@@ -1164,28 +1164,41 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
     // Handle booking completion
     const handleBookingComplete = () => {
+        // Close the booking dialog first
         setShowBookingDialog(false);
 
-        // Navigate back to shipments
-        if (onReturnToShipments) {
-            onReturnToShipments();
-        } else if (onClose) {
+        // Close the QuickShip modal
+        if (onClose) {
             onClose();
         }
+
+        // Navigate back to shipments after a brief delay
+        setTimeout(() => {
+            if (onReturnToShipments) {
+                onReturnToShipments();
+            }
+        }, 300); // Small delay to ensure smooth transition
     };
 
     // Handle view shipment - open shipment detail modal directly
     const handleViewShipment = () => {
+        // Close the booking dialog first
         setShowBookingDialog(false);
 
-        if (finalShipmentId && onViewShipment) {
-            // Call the onViewShipment prop to open the shipment detail modal directly
-            onViewShipment(finalShipmentId);
-        } else if (onReturnToShipments) {
-            onReturnToShipments();
-        } else if (onClose) {
+        // Close the QuickShip modal entirely
+        if (onClose) {
             onClose();
         }
+
+        // Then navigate to view the shipment after a brief delay to allow modal to close
+        setTimeout(() => {
+            if (finalShipmentId && onViewShipment) {
+                // Call the onViewShipment prop to open the shipment detail modal directly
+                onViewShipment(finalShipmentId);
+            } else if (onReturnToShipments) {
+                onReturnToShipments();
+            }
+        }, 300); // Small delay to ensure smooth transition
     };
 
     // Load draft data when draftId is provided

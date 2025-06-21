@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, CircularProgress, Fade, Chip, Grid } from '@mui/material';
+import { Box, Typography, CircularProgress, Fade, Chip, Grid, LinearProgress } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -17,10 +17,8 @@ const CarrierLoadingDisplay = ({
 
     // Animated loading messages
     const loadingMessages = [
-        "Fetching real-time shipping options from top carriers...",
-        "Comparing rates across your network...",
-        "Finding the best deals for your shipment...",
-        "Analyzing carrier availability and pricing..."
+        "Fetching rates from carriers...",
+        "Searching configured carriers..."
     ];
 
     useEffect(() => {
@@ -57,13 +55,19 @@ const CarrierLoadingDisplay = ({
 
             for (const carrierName of loadingCarriers) {
                 try {
-                    // Convert carrier name to uppercase for database query
-                    const upperCaseCarrierID = carrierName.toUpperCase();
+                    // Map carrier names to their database carrierID
+                    const carrierNameToIdMap = {
+                        'eShipPlus': 'ESHIPPLUS',
+                        'Polaris Transportation': 'POLARISTRANSPORTATION',
+                        'Canpar': 'CANPAR'
+                    };
+
+                    const carrierID = carrierNameToIdMap[carrierName] || carrierName.toUpperCase().replace(/\s+/g, '');
 
                     // Query carriers collection by carrierID field
                     const carriersQuery = query(
                         collection(db, 'carriers'),
-                        where('carrierID', '==', upperCaseCarrierID),
+                        where('carrierID', '==', carrierID),
                         limit(1)
                     );
 
@@ -115,40 +119,46 @@ const CarrierLoadingDisplay = ({
     if (!isLoading && totalCarriers === 0) return null;
 
     return (
-        <Box sx={{ width: '100%', maxWidth: 600, mx: 'auto', pt: '100px' }}>
+        <Box sx={{
+            width: '100%',
+            maxWidth: 400,
+            mx: 'auto',
+            py: 3,
+            px: 2
+        }}>
             {/* Main Loading Message */}
-            <Box sx={{ textAlign: 'center', mb: 3 }}>
-                <Fade in={isLoading} timeout={1000}>
+            <Box sx={{ textAlign: 'center', mb: 2 }}>
+                <Fade in={isLoading} timeout={800}>
                     <Typography
                         variant="subtitle1"
                         sx={{
                             fontWeight: 600,
-                            color: 'text.primary',
+                            color: '#374151',
                             mb: 1,
-                            fontSize: '14px',
-                            minHeight: '1.5rem'
+                            fontSize: '12px',
+                            minHeight: '18px',
+                            lineHeight: '18px',
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis'
                         }}
                     >
                         {animationText || loadingMessages[0]}
                     </Typography>
                 </Fade>
 
-                {totalCarriers > 0 && (
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>
-                        Searching {totalCarriers} configured carrier{totalCarriers !== 1 ? 's' : ''} for your company
-                    </Typography>
-                )}
-
-                {/* Loading Spinner */}
+                {/* Compact Progress Bar */}
                 {isLoading && totalCarriers > 0 && (
-                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center' }}>
-                        <CircularProgress
-                            size={32}
-                            thickness={4}
+                    <Box sx={{ mb: 2 }}>
+                        <LinearProgress
+                            variant="indeterminate"
                             sx={{
-                                color: '#10B981',
-                                '& .MuiCircularProgress-circle': {
-                                    strokeLinecap: 'round'
+                                height: 2,
+                                borderRadius: 1,
+                                backgroundColor: '#e5e7eb',
+                                '& .MuiLinearProgress-bar': {
+                                    backgroundColor: '#3b82f6',
+                                    borderRadius: 1
                                 }
                             }}
                         />
@@ -156,129 +166,181 @@ const CarrierLoadingDisplay = ({
                 )}
             </Box>
 
-            {/* Carrier Grid */}
+            {/* Compact Carrier Display */}
             {totalCarriers > 0 && (
-                <Grid container spacing={1.5} justifyContent="center">
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: 3,
+                    flexWrap: 'wrap'
+                }}>
                     {loadingCarriers.map((carrierName, index) => {
                         const status = getCarrierStatus(carrierName);
                         const isCurrentlyFetching = isLoading && status === 'loading' && index === currentCarrierIndex;
 
                         return (
-                            <Grid item key={carrierName}>
-                                <Fade in={true} timeout={500 + index * 200}>
+                            <Fade key={carrierName} in={true} timeout={500 + index * 150}>
+                                <Box
+                                    sx={{
+                                        position: 'relative',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        p: 1.5,
+                                        borderRadius: '12px',
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        transform: isCurrentlyFetching ? 'scale(1.05)' : 'scale(1)',
+                                        minWidth: 80,
+                                        minHeight: 64,
+                                        backgroundColor: isCurrentlyFetching ? '#f8fafc' : '#ffffff',
+                                        border: `1px solid ${status === 'completed' ? '#10b981' :
+                                            status === 'failed' ? '#ef4444' :
+                                                isCurrentlyFetching ? '#3b82f6' : '#e5e7eb'
+                                            }`,
+                                        boxShadow: isCurrentlyFetching ?
+                                            '0 4px 12px rgba(59, 130, 246, 0.15)' :
+                                            '0 1px 3px rgba(0, 0, 0, 0.1)',
+                                        '&:hover': {
+                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+                                        }
+                                    }}
+                                >
+                                    {/* Carrier Logo */}
                                     <Box
+                                        component="img"
+                                        src={getCarrierLogo(carrierName)}
+                                        alt={carrierName}
                                         sx={{
-                                            position: 'relative',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            p: 1.5,
-                                            borderRadius: 2,
-                                            transition: 'all 0.3s ease',
-                                            transform: isCurrentlyFetching ? 'scale(1.02)' : 'scale(1)',
-                                            minWidth: 100,
-                                            minHeight: 80,
-                                            backgroundColor: 'transparent',
-                                            border: '1px solid #000',
-                                            '&:hover': {
-                                                backgroundColor: 'transparent'
-                                            }
+                                            width: 40,
+                                            height: 24,
+                                            objectFit: 'contain',
+                                            mb: 0.5,
+                                            opacity: status === 'failed' ? 0.4 : 1,
+                                            filter: isCurrentlyFetching ? 'brightness(1.1) saturate(1.1)' : 'none',
+                                            transition: 'all 0.3s ease'
+                                        }}
+                                    />
+
+                                    {/* Carrier Name */}
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            fontWeight: 500,
+                                            fontSize: '9px',
+                                            textAlign: 'center',
+                                            color: status === 'failed' ? '#6b7280' : '#374151',
+                                            lineHeight: 1.1,
+                                            maxWidth: '100%',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap'
                                         }}
                                     >
-                                        {/* Carrier Logo */}
-                                        <Box
-                                            component="img"
-                                            src={getCarrierLogo(carrierName)}
-                                            alt={carrierName}
-                                            sx={{
-                                                width: 50,
-                                                height: 32,
-                                                objectFit: 'contain',
-                                                mb: 0.5,
-                                                opacity: status === 'failed' ? 0.5 : 1,
-                                                filter: isCurrentlyFetching ? 'brightness(1.1)' : 'none',
-                                                transition: 'all 0.3s ease'
-                                            }}
-                                        />
+                                        {carrierName}
+                                    </Typography>
 
-                                        {/* Carrier Name */}
-                                        <Typography
-                                            variant="caption"
-                                            sx={{
-                                                fontWeight: 500,
-                                                fontSize: '10px',
-                                                textAlign: 'center',
-                                                color: status === 'failed' ? 'error.main' : '#000',
-                                                lineHeight: 1.2
-                                            }}
-                                        >
-                                            {carrierName}
-                                        </Typography>
-
-                                        {/* Status Indicator */}
-                                        <Box sx={{ position: 'absolute', top: 6, right: 6 }}>
-                                            {status === 'completed' && (
-                                                <CheckCircleIcon sx={{ color: 'success.main', fontSize: '1rem' }} />
-                                            )}
-                                            {status === 'failed' && (
-                                                <ErrorIcon sx={{ color: 'error.main', fontSize: '1rem' }} />
-                                            )}
-                                            {status === 'loading' && isCurrentlyFetching && (
-                                                <AccessTimeIcon
-                                                    sx={{
-                                                        color: 'primary.main',
-                                                        fontSize: '1rem',
-                                                        animation: 'pulse 1.5s infinite'
-                                                    }}
-                                                />
-                                            )}
-                                        </Box>
-
-                                        {/* Loading Animation Overlay */}
-                                        {isCurrentlyFetching && (
+                                    {/* Status Indicator */}
+                                    <Box sx={{
+                                        position: 'absolute',
+                                        top: 4,
+                                        right: 4,
+                                        zIndex: 1
+                                    }}>
+                                        {status === 'completed' && (
+                                            <CheckCircleIcon sx={{
+                                                color: '#10b981',
+                                                fontSize: '14px',
+                                                filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))'
+                                            }} />
+                                        )}
+                                        {status === 'failed' && (
+                                            <ErrorIcon sx={{
+                                                color: '#ef4444',
+                                                fontSize: '14px',
+                                                filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))'
+                                            }} />
+                                        )}
+                                        {status === 'loading' && isCurrentlyFetching && (
                                             <Box
                                                 sx={{
-                                                    position: 'absolute',
-                                                    top: 0,
-                                                    left: 0,
-                                                    right: 0,
-                                                    bottom: 0,
-                                                    borderRadius: 2,
-                                                    background: 'transparent',
-                                                    border: '2px solid #000',
-                                                    animation: 'pulse 1.5s infinite'
+                                                    width: 14,
+                                                    height: 14,
+                                                    borderRadius: '50%',
+                                                    border: '2px solid #e5e7eb',
+                                                    borderTop: '2px solid #3b82f6',
+                                                    animation: 'spin 1s linear infinite'
                                                 }}
                                             />
                                         )}
                                     </Box>
-                                </Fade>
-                            </Grid>
+
+                                    {/* Subtle Active Glow */}
+                                    {isCurrentlyFetching && (
+                                        <Box
+                                            sx={{
+                                                position: 'absolute',
+                                                top: -1,
+                                                left: -1,
+                                                right: -1,
+                                                bottom: -1,
+                                                borderRadius: '12px',
+                                                background: 'linear-gradient(45deg, transparent, rgba(59, 130, 246, 0.1), transparent)',
+                                                backgroundSize: '400% 400%',
+                                                animation: 'shimmer 2s ease-in-out infinite',
+                                                pointerEvents: 'none',
+                                                zIndex: 0
+                                            }}
+                                        />
+                                    )}
+                                </Box>
+                            </Fade>
                         );
                     })}
-                </Grid>
+                </Box>
             )}
 
-            {/* Results Summary */}
+            {/* Compact Results Summary */}
             {(completedCount > 0 || failedCount > 0) && (
-                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                <Box sx={{
+                    mt: 2,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: 1,
+                    flexWrap: 'wrap'
+                }}>
                     {completedCount > 0 && (
                         <Chip
-                            icon={<CheckCircleIcon sx={{ fontSize: '14px' }} />}
+                            icon={<CheckCircleIcon sx={{ fontSize: '12px' }} />}
                             label={`${completedCount} successful`}
-                            color="success"
-                            variant="outlined"
+                            sx={{
+                                fontSize: '10px',
+                                height: '20px',
+                                backgroundColor: '#dcfce7',
+                                color: '#166534',
+                                border: 'none',
+                                '& .MuiChip-icon': {
+                                    color: '#166534'
+                                }
+                            }}
                             size="small"
-                            sx={{ fontSize: '11px', height: '24px' }}
                         />
                     )}
                     {failedCount > 0 && (
                         <Chip
-                            icon={<ErrorIcon sx={{ fontSize: '14px' }} />}
+                            icon={<ErrorIcon sx={{ fontSize: '12px' }} />}
                             label={`${failedCount} failed`}
-                            color="error"
-                            variant="outlined"
+                            sx={{
+                                fontSize: '10px',
+                                height: '20px',
+                                backgroundColor: '#fee2e2',
+                                color: '#991b1b',
+                                border: 'none',
+                                '& .MuiChip-icon': {
+                                    color: '#991b1b'
+                                }
+                            }}
                             size="small"
-                            sx={{ fontSize: '11px', height: '24px' }}
                         />
                     )}
                 </Box>
@@ -286,14 +348,15 @@ const CarrierLoadingDisplay = ({
 
             {/* CSS Animations */}
             <style jsx>{`
-                @keyframes pulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.5; }
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
                 }
                 
                 @keyframes shimmer {
-                    0% { transform: translateX(-100%); }
-                    100% { transform: translateX(100%); }
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
                 }
             `}</style>
         </Box>

@@ -42,7 +42,8 @@ import {
     FileDownload as ExportIcon,
     Business as BusinessIcon,
     ContentCopy as ContentCopyIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Dashboard as DashboardIcon
 } from '@mui/icons-material';
 import './CompanyList.css';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
@@ -70,7 +71,7 @@ const CompaniesTableSkeleton = () => {
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connected Carriers</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carriers</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                 </TableRow>
             </TableHead>
@@ -597,7 +598,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connected Carriers</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carriers</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                                 </TableRow>
                             </TableHead>
@@ -690,12 +691,29 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                             </Typography>
                                         </TableCell>
                                         <TableCell>
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => handleActionMenuOpen(e, company)}
-                                            >
-                                                <MoreVertIcon sx={{ fontSize: '16px' }} />
-                                            </IconButton>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    startIcon={<DashboardIcon sx={{ fontSize: '14px' }} />}
+                                                    onClick={() => navigate('/dashboard')}
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        textTransform: 'none',
+                                                        minWidth: 'auto',
+                                                        px: 1,
+                                                        py: 0.5
+                                                    }}
+                                                >
+                                                    Dashboard
+                                                </Button>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => handleActionMenuOpen(e, company)}
+                                                >
+                                                    <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                            </Box>
                                         </TableCell>
                                     </TableRow>
                                 ))}

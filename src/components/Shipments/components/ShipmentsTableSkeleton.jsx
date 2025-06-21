@@ -15,7 +15,7 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
     return (
         <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none' }}>
             <TableContainer>
-                <Table sx={{ minWidth: 1178 }}>
+                <Table sx={{ minWidth: 1278 }}>
                     <TableHead>
                         <TableRow>
                             {/* Checkbox */}
@@ -26,7 +26,11 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
                             <TableCell sx={{ width: 160, minWidth: 160, maxWidth: 160 }}>
                                 <Skeleton variant="text" width={120} height={20} />
                             </TableCell>
-                            {/* Date */}
+                            {/* Created Date */}
+                            <TableCell sx={{ width: 100, minWidth: 100, maxWidth: 100 }}>
+                                <Skeleton variant="text" width={60} height={20} />
+                            </TableCell>
+                            {/* Ship Date */}
                             <TableCell sx={{ width: 100, minWidth: 100, maxWidth: 100 }}>
                                 <Skeleton variant="text" width={60} height={20} />
                             </TableCell>
@@ -74,7 +78,14 @@ const ShipmentsTableSkeleton = ({ rows = 10 }) => {
                                         <Skeleton variant="circular" width={16} height={16} />
                                     </Box>
                                 </TableCell>
-                                {/* Date */}
+                                {/* Created Date */}
+                                <TableCell sx={{ width: 100, minWidth: 100, maxWidth: 100 }}>
+                                    <Box>
+                                        <Skeleton variant="text" width={50} height={14} />
+                                        <Skeleton variant="text" width={40} height={12} />
+                                    </Box>
+                                </TableCell>
+                                {/* Ship Date */}
                                 <TableCell sx={{ width: 100, minWidth: 100, maxWidth: 100 }}>
                                     <Box>
                                         <Skeleton variant="text" width={50} height={14} />

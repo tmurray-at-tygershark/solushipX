@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { getRateDetailsByDocumentId, getRatesForShipment } from '../../../utils/rateUtils';
@@ -14,6 +14,7 @@ export const useShipmentData = (shipmentId) => {
     const [carrierData, setCarrierData] = useState(null);
     const [detailedRateInfo, setDetailedRateInfo] = useState(null);
     const [allShipmentRates, setAllShipmentRates] = useState([]);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     // Fetch main shipment data
     useEffect(() => {
@@ -79,7 +80,7 @@ export const useShipmentData = (shipmentId) => {
         };
 
         fetchShipment();
-    }, [shipmentId]);
+    }, [shipmentId, refreshTrigger]);
 
     // Listen to shipment events
     useEffect(() => {
@@ -256,9 +257,17 @@ export const useShipmentData = (shipmentId) => {
     };
 
     const setTrackingNumber = (shipmentData) => {
-        const isCanparShipment = shipmentData.selectedRate?.carrier?.toLowerCase().includes('canpar') ||
-            shipmentData.carrier?.toLowerCase().includes('canpar') ||
-            shipmentData.selectedRate?.CarrierName?.toLowerCase().includes('canpar');
+        // Helper function to safely get carrier name as string
+        const getCarrierString = (carrier) => {
+            if (!carrier) return '';
+            if (typeof carrier === 'string') return carrier;
+            if (typeof carrier === 'object' && carrier.name) return carrier.name;
+            return String(carrier);
+        };
+
+        const isCanparShipment = getCarrierString(shipmentData.selectedRate?.carrier).toLowerCase().includes('canpar') ||
+            getCarrierString(shipmentData.carrier).toLowerCase().includes('canpar') ||
+            (shipmentData.selectedRate?.CarrierName || '').toLowerCase().includes('canpar');
 
         if (isCanparShipment) {
             const canparTrackingNumber = shipmentData.selectedRate?.TrackingNumber ||
@@ -361,7 +370,7 @@ export const useShipmentData = (shipmentId) => {
         return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||
             getBestRateInfo?.sourceCarrierName === 'eShipPlus' ||
             getBestRateInfo?.sourceCarrier?.key === 'ESHIPPLUS' ||
-            carrierData?.name?.toLowerCase().includes('eshipplus') ||
+            (carrierData?.name && typeof carrierData.name === 'string' && carrierData.name.toLowerCase().includes('eshipplus')) ||
             carrierData?.carrierID === 'ESHIPPLUS';
     }, [getBestRateInfo, carrierData]);
 
@@ -384,7 +393,7 @@ export const useShipmentData = (shipmentId) => {
         ];
 
         // Add synthetic 'created' event if not present
-        const hasCreated = all.some(e => (e.eventType === 'created' || (e.status && e.status.toLowerCase().includes('created'))));
+        const hasCreated = all.some(e => (e.eventType === 'created' || (e.status && typeof e.status === 'string' && e.status.toLowerCase().includes('created'))));
         if (!hasCreated && shipment?.createdAt) {
             all.push({
                 id: 'created-' + (shipment.id || shipment.shipmentID),
@@ -407,11 +416,22 @@ export const useShipmentData = (shipmentId) => {
         return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }, [trackingRecords, shipmentEvents, shipment]);
 
-    const refreshShipment = () => {
-        // Trigger a refresh of the shipment data
+    const refreshShipment = useCallback(() => {
+        console.log('ShipmentDetail: Refreshing shipment data for:', shipmentId);
+        // Reset all state to trigger a fresh fetch
+        setShipment(null);
+        setError(null);
+        setTrackingRecords([]);
+        setShipmentEvents([]);
+        setCarrierData(null);
+        setDetailedRateInfo(null);
+        setAllShipmentRates([]);
         setLoading(true);
-        // The useEffect will handle the refresh
-    };
+        setHistoryLoading(true);
+        
+        // Force a fresh fetch by updating a dependency
+        setRefreshTrigger(prev => prev + 1);
+    }, [shipmentId]);
 
     return {
         shipment,
@@ -428,7 +448,8 @@ export const useShipmentData = (shipmentId) => {
 
 // Helper functions (moved from the original file)
 const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
+    const statusStr = status && typeof status === 'string' ? status : String(status || '');
+    switch (statusStr.toLowerCase()) {
         case 'draft': return '#64748b';
         case 'unknown': return '#6b7280';
         case 'pending':

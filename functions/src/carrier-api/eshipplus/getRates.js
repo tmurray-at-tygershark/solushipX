@@ -252,8 +252,21 @@ async function processRateRequest(data) {
 
     const transformedData = transformRestResponseToInternalFormat(response.data);
     
+    // Add detailed logging for debugging transformation issues
+    logger.info('eShipPlus API Raw Response Keys:', Object.keys(response.data || {}));
+    logger.info('eShipPlus Transformed Data:', transformedData ? 'Not null' : 'NULL');
+    logger.info('eShipPlus Available Rates:', transformedData?.availableRates ? `${transformedData.availableRates.length} rates` : 'No rates or null');
+    logger.info('eShipPlus Raw Response Sample:', JSON.stringify(response.data).substring(0, 500) + '...');
+    
     if (!transformedData || !transformedData.availableRates) {
-        logger.error('Failed to transform eShipPlus response or no rates available:', response.data);
+        logger.error('Failed to transform eShipPlus response or no rates available:', {
+            hasResponse: !!response.data,
+            responseKeys: Object.keys(response.data || {}),
+            transformedDataExists: !!transformedData,
+            availableRatesExists: !!transformedData?.availableRates,
+            availableRatesLength: transformedData?.availableRates?.length,
+            sampleResponse: JSON.stringify(response.data).substring(0, 1000)
+        });
         throw new functions.https.HttpsError('internal', 'Failed to process rates from eShipPlus API.');
     }
 

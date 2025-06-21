@@ -31,6 +31,7 @@ import { GoogleMap, Marker, DirectionsRenderer, StreetViewPanorama } from '@reac
 import { db } from '../../../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import StatusChip from '../../StatusChip/StatusChip';
+import ManualStatusOverride from './ManualStatusOverride';
 
 // CarrierDisplay component to show carrier logo and name
 const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', isIntegrationCarrier }) => {
@@ -69,7 +70,8 @@ const ShipmentInformation = ({
     smartUpdateLoading,
     onRefreshStatus,
     onShowSnackbar,
-    onOpenTrackingDrawer
+    onOpenTrackingDrawer,
+    onStatusUpdated // Add callback for status updates
 }) => {
     // Map state
     const [openMap, setOpenMap] = useState(null);
@@ -909,7 +911,12 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Current Status</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                                    <StatusChip status={shipment?.status} />
+                                    <ManualStatusOverride
+                                        shipment={shipment}
+                                        onStatusUpdated={onStatusUpdated}
+                                        onShowSnackbar={onShowSnackbar}
+                                        disabled={shipment?.status === 'draft'}
+                                    />
                                     <IconButton
                                         size="small"
                                         onClick={onRefreshStatus}
@@ -918,7 +925,7 @@ const ShipmentInformation = ({
                                             padding: '4px',
                                             '&:hover': { bgcolor: 'action.hover' }
                                         }}
-                                        title="Refresh status"
+                                        title="Refresh status from carrier"
                                     >
                                         {smartUpdateLoading || actionStates.refreshStatus.loading ?
                                             <CircularProgress size={14} /> :

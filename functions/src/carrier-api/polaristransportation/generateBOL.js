@@ -355,7 +355,7 @@ function drawExactHeader(doc, bolData) {
     // Company logo area (top-left) - REMOVED BOX around logo
     // Load and embed SolushipX logo image
     try {
-        const logoPath = path.join(__dirname, '../../assets/SolushipX_black.png');
+        const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
         if (fs.existsSync(logoPath)) {
             // Embed the actual logo image WITHOUT border box
             doc.image(logoPath, 35, 30, {

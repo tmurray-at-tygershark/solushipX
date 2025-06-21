@@ -6,13 +6,16 @@ import {
     Box,
     Typography,
     IconButton,
-    CircularProgress
+    CircularProgress,
+    Chip,
+    Tooltip
 } from '@mui/material';
 import {
     MoreVert as MoreVertIcon,
     ContentCopy as ContentCopyIcon,
     QrCode as QrCodeIcon,
-    KeyboardArrowDown as ArrowDownIcon
+    KeyboardArrowDown as ArrowDownIcon,
+    Edit as EditIcon
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import StatusChip from '../../StatusChip/StatusChip';
@@ -39,6 +42,11 @@ const ShipmentTableRow = ({
 
     // Get tracking number
     const getTrackingNumber = () => {
+        // For draft shipments, there won't be tracking numbers yet
+        if (shipment.status === 'draft') {
+            return '';
+        }
+
         const trackingNumber = shipment.trackingNumber ||
             shipment.carrierTrackingNumber || // Check top-level carrierTrackingNumber for QuickShip
             shipment.shipmentInfo?.carrierTrackingNumber || // Check inside shipmentInfo for QuickShip
@@ -64,10 +72,42 @@ const ShipmentTableRow = ({
 
     // Get carrier name with eShipPlus detection
     const getCarrierDisplay = () => {
-        const carrierName = carrierData[shipment.id]?.carrier ||
+        // For draft shipments, especially advanced drafts, carrier data may not exist yet
+        if (shipment.status === 'draft') {
+            // Check if there's a selected rate with carrier info
+            const selectedRateCarrier = shipment.selectedRate?.carrier ||
+                shipment.selectedRateRef?.carrier;
+
+            if (selectedRateCarrier) {
+                // Handle both string carrier names and carrier objects
+                const carrierName = typeof selectedRateCarrier === 'object' && selectedRateCarrier?.name
+                    ? selectedRateCarrier.name
+                    : selectedRateCarrier;
+
+                return {
+                    name: carrierName,
+                    isEShipPlus: shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                        shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS'
+                };
+            }
+
+            // For drafts without rate selection, return pending status
+            return {
+                name: 'Pending Rate Selection',
+                isEShipPlus: false
+            };
+        }
+
+        // Extract carrier name with proper object handling
+        let carrierName = carrierData[shipment.id]?.carrier ||
             shipment.selectedRateRef?.carrier ||
             shipment.selectedRate?.carrier ||
             shipment.carrier || 'N/A';
+
+        // Handle carrier objects (extract the name property)
+        if (typeof carrierName === 'object' && carrierName?.name) {
+            carrierName = carrierName.name;
+        }
 
         // For QuickShip drafts, respect the manually selected carrier
         // and don't apply eShip Plus logic unless explicitly detected
@@ -97,7 +137,7 @@ const ShipmentTableRow = ({
             shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
             carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
             carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
-            (carrierName && carrierName !== 'N/A' && (
+            (carrierName && carrierName !== 'N/A' && typeof carrierName === 'string' && (
                 carrierName.toLowerCase().includes('ward trucking') ||
                 carrierName.toLowerCase().includes('fedex freight') ||
                 carrierName.toLowerCase().includes('road runner') ||
@@ -247,7 +287,58 @@ const ShipmentTableRow = ({
                 </TableCell>
             )}
 
-            {/* Date */}
+            {/* Created Date */}
+            {visibleColumns.created !== false && (
+                <TableCell sx={{
+                    verticalAlign: 'top',
+                    textAlign: 'left',
+                    ...getColumnWidth('created'),
+                    padding: '8px 12px'
+                }}>
+                    {(() => {
+                        let dateTime = null;
+                        let createdDate = null;
+
+                        // Priority order for created date: createdAt (primary) > bookedAt (QuickShip fallback) > bookingTimestamp (fallback)
+                        if (shipment.createdAt) {
+                            // Primary creation date field
+                            createdDate = shipment.createdAt;
+                        } else if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
+                            // For QuickShip records, use bookedAt if createdAt is missing
+                            createdDate = shipment.bookedAt;
+                        } else if (shipment.bookingTimestamp) {
+                            // Fallback to bookingTimestamp for some QuickShip records
+                            createdDate = shipment.bookingTimestamp;
+                        }
+
+                        if (createdDate) {
+                            dateTime = formatDateTime(createdDate);
+                        }
+
+                        // If formatDateTime returns null (invalid timestamp) or no dateTime, show N/A
+                        if (!dateTime || !dateTime.date || !dateTime.time) {
+                            return (
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                    N/A
+                                </Typography>
+                            );
+                        }
+
+                        return (
+                            <Box>
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                    {dateTime.date}
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#64748b' }}>
+                                    {dateTime.time}
+                                </Typography>
+                            </Box>
+                        );
+                    })()}
+                </TableCell>
+            )}
+
+            {/* Ship Date */}
             {visibleColumns.date !== false && (
                 <TableCell sx={{
                     verticalAlign: 'top',
@@ -473,7 +564,7 @@ const ShipmentTableRow = ({
                                 wordBreak: 'break-word',
                                 lineHeight: 1.2
                             }}>
-                                {carrierData[shipment.id].service}
+                                {carrierData[shipment.id]?.service}
                             </Typography>
                         )}
                     </Box>
@@ -503,7 +594,33 @@ const ShipmentTableRow = ({
                     ...getColumnWidth('status'),
                     padding: '8px 12px'
                 }}>
-                    <StatusChip status={shipment.status} size="small" />
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <StatusChip status={shipment.status} size="small" />
+                        {/* Manual Override Indicator */}
+                        {shipment.statusOverride?.isManual && (
+                            <Tooltip title="Status manually overridden">
+                                <Chip
+                                    icon={<EditIcon sx={{ fontSize: '10px !important' }} />}
+                                    label="Manual"
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{
+                                        height: '16px',
+                                        fontSize: '9px',
+                                        color: 'orange',
+                                        borderColor: 'orange',
+                                        '& .MuiChip-icon': {
+                                            fontSize: '10px',
+                                            color: 'orange'
+                                        },
+                                        '& .MuiChip-label': {
+                                            px: 0.5
+                                        }
+                                    }}
+                                />
+                            </Tooltip>
+                        )}
+                    </Box>
                 </TableCell>
             )}
 

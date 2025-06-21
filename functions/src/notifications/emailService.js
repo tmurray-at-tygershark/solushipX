@@ -315,6 +315,17 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
         return;
     }
 
+    // SKIP redundant notifications for draft -> booked transitions
+    // These are already handled by booking-specific notification systems
+    // (QuickShip notifications, CreateShipmentX notifications, etc.)
+    if (oldStatus === 'draft' && newStatus === 'booked') {
+        logger.info(`Skipping redundant status change notification for draft -> booked transition`, {
+            shipmentId: event.params.shipmentId,
+            shipmentNumber: newData.shipmentID || newData.shipmentNumber
+        });
+        return;
+    }
+
     // Get company ID and shipment number first - check multiple possible fields (moved outside try block for error logging)
     const companyId = newData.companyID || newData.companyId || newData.userCompanyId;
     

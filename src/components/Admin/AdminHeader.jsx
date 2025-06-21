@@ -80,7 +80,7 @@ const AdminHeader = () => {
             <div className="container">
                 <Link className="navbar-brand" to="/admin">
                     <img
-                        src="/images/solushipx_logo_white.png"
+                        src="/images/integratedcarrriers_logo_white.png"
                         alt="SolushipX Logo"
                         style={{ height: '30px' }}
                     />
@@ -130,15 +130,6 @@ const AdminHeader = () => {
                                 onClick={handleMobileMenuClose}
                             >
                                 <span>Users</span>
-                            </Link>
-                        </li>
-                        <li className="nav-item">
-                            <Link
-                                className={`nav-link ${location.pathname.startsWith('/admin/shipments') ? 'active' : ''}`}
-                                to="/admin/shipments"
-                                onClick={handleMobileMenuClose}
-                            >
-                                <span>Shipments</span>
                             </Link>
                         </li>
                         <li className="nav-item">

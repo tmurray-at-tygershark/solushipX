@@ -759,7 +759,7 @@ function generateReportEmailHTML(data, recipient) {
     return `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                <img src="https://solushipx.web.app/images/solushipx_logo_white.png" alt="SolushipX" style="height: 40px; margin-bottom: 20px; display: block;" />
+                <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                 <h1 style="margin: 0; font-size: 24px;">Report Generated Successfully!</h1>
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">Your ${formatReportType(data.reportType)} report is ready</p>
             </div>

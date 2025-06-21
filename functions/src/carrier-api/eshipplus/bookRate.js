@@ -363,107 +363,116 @@ async function processBookingRequest(data) {
             logger.info('=== NORMALIZING RATE DATA FOR BOOKING ===');
             logger.info('Input rate data keys:', Object.keys(rateData));
             
+            // CRITICAL FIX: Handle nested rate data structure from CreateShipmentX
+            // If the data has a nested 'rateData' field, extract it
+            let actualRateData = rateData;
+            if (rateData.rateData && typeof rateData.rateData === 'object') {
+                logger.info('Found nested rateData structure, extracting...');
+                actualRateData = rateData.rateData;
+                logger.info('Extracted rate data keys:', Object.keys(actualRateData));
+            }
+            
             // Check if this is already in universal format
-            if (rateData.carrier && rateData.pricing && rateData.transit) {
+            if (actualRateData.carrier && actualRateData.pricing && actualRateData.transit) {
                 logger.info('Rate data is in universal format');
                 return {
                     // Map universal format to eShipPlus booking format
-                    carrierKey: rateData.carrier.key,
-                    carrierName: rateData.carrier.name,
-                    carrierScac: rateData.carrier.scac,
+                    carrierKey: actualRateData.carrier.key,
+                    carrierName: actualRateData.carrier.name,
+                    carrierScac: actualRateData.carrier.scac,
                     
-                    freightCharges: rateData.pricing.freight,
-                    fuelCharges: rateData.pricing.fuel,
-                    accessorialCharges: rateData.pricing.accessorial,
-                    serviceCharges: rateData.pricing.service,
-                    totalCharges: rateData.pricing.total,
+                    freightCharges: actualRateData.pricing.freight,
+                    fuelCharges: actualRateData.pricing.fuel,
+                    accessorialCharges: actualRateData.pricing.accessorial,
+                    serviceCharges: actualRateData.pricing.service,
+                    totalCharges: actualRateData.pricing.total,
                     
-                    transitTime: rateData.transit.days,
-                    transitDays: rateData.transit.days,
-                    estimatedDeliveryDate: rateData.transit.estimatedDelivery,
+                    transitTime: actualRateData.transit.days,
+                    transitDays: actualRateData.transit.days,
+                    estimatedDeliveryDate: actualRateData.transit.estimatedDelivery,
                     
-                    billedWeight: rateData.weight.billed,
-                    ratedWeight: rateData.weight.rated,
-                    ratedCubicFeet: rateData.dimensions.cubicFeet,
+                    billedWeight: actualRateData.weight.billed,
+                    ratedWeight: actualRateData.weight.rated,
+                    ratedCubicFeet: actualRateData.dimensions.cubicFeet,
                     
                     serviceMode: 0, // Always 0 for eShipPlus
-                    serviceType: rateData.service.type,
+                    serviceType: actualRateData.service.type,
                     
-                    rateId: rateData.rateId,
-                    quoteId: rateData.quoteId,
+                    rateId: actualRateData.rateId,
+                    quoteId: actualRateData.quoteId,
                     
-                    billingDetails: rateData.pricing.breakdown,
-                    guarOptions: rateData.transit.guaranteeOptions,
+                    billingDetails: actualRateData.pricing.breakdown,
+                    guarOptions: actualRateData.transit.guaranteeOptions,
                     selectedGuarOption: null,
                     mileage: 0,
                     mileageSourceKey: 0,
                     mileageSourceDescription: null,
                     
                     _isUniversalFormat: true,
-                    _originalData: rateData
+                    _originalData: actualRateData
                 };
             }
             
             // Check if this is in old eShipPlus format
-            if (rateData.carrierKey || rateData.carrierName || rateData.freightCharges) {
+            if (actualRateData.carrierKey || actualRateData.carrierName || actualRateData.freightCharges) {
                 logger.info('Rate data appears to be in old eShipPlus format, using as-is');
                 return {
-                    ...rateData,
+                    ...actualRateData,
                     _isOldFormat: true
                 };
             }
             
             // Check if this is in the standardized format from Rates.jsx
-            if (rateData.carrierCode || rateData.totalCharges || rateData.freightCharge) {
+            if (actualRateData.carrierCode || actualRateData.totalCharges || actualRateData.freightCharge) {
                 logger.info('Rate data appears to be in standardized format, converting to eShipPlus format');
                 return {
                     // Map standardized fields to eShipPlus format
-                    carrierKey: rateData.carrierKey || null,
-                    carrierName: rateData.carrierName || rateData.carrier || null,
-                    carrierScac: rateData.carrierScac || rateData.carrierCode || null,
+                    carrierKey: actualRateData.carrierKey || null,
+                    carrierName: actualRateData.carrierName || actualRateData.carrier || null,
+                    carrierScac: actualRateData.carrierScac || actualRateData.carrierCode || null,
                     
                     // Financial fields - handle both old and new naming
-                    freightCharges: rateData.freightCharges || rateData.freightCharge || 0,
-                    fuelCharges: rateData.fuelCharges || rateData.fuelCharge || 0,
-                    serviceCharges: rateData.serviceCharges || 0,
-                    accessorialCharges: rateData.accessorialCharges || 0,
-                    totalCharges: rateData.totalCharges || 0,
+                    freightCharges: actualRateData.freightCharges || actualRateData.freightCharge || 0,
+                    fuelCharges: actualRateData.fuelCharges || actualRateData.fuelCharge || 0,
+                    serviceCharges: actualRateData.serviceCharges || 0,
+                    accessorialCharges: actualRateData.accessorialCharges || 0,
+                    totalCharges: actualRateData.totalCharges || 0,
                     
                     // Transit and delivery
-                    transitTime: rateData.transitTime || rateData.transitDays || 0,
-                    transitDays: rateData.transitDays || rateData.transitTime || 0,
-                    estimatedDeliveryDate: rateData.estimatedDeliveryDate || null,
+                    transitTime: actualRateData.transitTime || actualRateData.transitDays || 0,
+                    transitDays: actualRateData.transitDays || actualRateData.transitTime || 0,
+                    estimatedDeliveryDate: actualRateData.estimatedDeliveryDate || null,
                     
                     // Weight and dimensions
-                    billedWeight: rateData.billedWeight || 0,
-                    ratedWeight: rateData.ratedWeight || 0,
-                    ratedCubicFeet: rateData.ratedCubicFeet || 0,
+                    billedWeight: actualRateData.billedWeight || 0,
+                    ratedWeight: actualRateData.ratedWeight || 0,
+                    ratedCubicFeet: actualRateData.ratedCubicFeet || 0,
                     
                     // Service details
                     serviceMode: 0, // Always 0 for eShipPlus
-                    serviceType: rateData.serviceType || rateData.serviceMode || '',
+                    serviceType: actualRateData.serviceType || actualRateData.serviceMode || '',
                     
                     // IDs and references
-                    rateId: rateData.rateId || rateData.quoteId || null,
-                    quoteId: rateData.quoteId || rateData.rateId || null,
+                    rateId: actualRateData.rateId || actualRateData.quoteId || null,
+                    quoteId: actualRateData.quoteId || actualRateData.rateId || null,
                     
                     // Additional fields
-                    billingDetails: rateData.billingDetails || [],
-                    guarOptions: rateData.guarOptions || [],
-                    selectedGuarOption: rateData.selectedGuarOption || null,
-                    mileage: rateData.mileage || 0,
-                    mileageSourceKey: rateData.mileageSourceKey || 0,
-                    mileageSourceDescription: rateData.mileageSourceDescription || null,
+                    billingDetails: actualRateData.billingDetails || [],
+                    guarOptions: actualRateData.guarOptions || [],
+                    selectedGuarOption: actualRateData.selectedGuarOption || null,
+                    mileage: actualRateData.mileage || 0,
+                    mileageSourceKey: actualRateData.mileageSourceKey || 0,
+                    mileageSourceDescription: actualRateData.mileageSourceDescription || null,
                     
                     _isStandardizedFormat: true,
-                    _originalData: rateData
+                    _originalData: actualRateData
                 };
             }
             
             // If we can't determine the format, log a warning and return as-is
-            logger.warn('Could not determine rate data format, using as-is:', Object.keys(rateData));
+            logger.warn('Could not determine rate data format, using as-is:', Object.keys(actualRateData));
             return {
-                ...rateData,
+                ...actualRateData,
                 _isUnknownFormat: true
             };
         };

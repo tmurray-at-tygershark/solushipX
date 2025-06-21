@@ -84,7 +84,7 @@ const Footer = () => {
                             <Box sx={{ mb: 4 }}>
                                 <Box
                                     component="img"
-                                    src="/images/solushipx_logo_white.png"
+                                    src="/images/integratedcarrriers_logo_white.png"
                                     alt="SolushipX Logo"
                                     sx={{
                                         height: '30px',

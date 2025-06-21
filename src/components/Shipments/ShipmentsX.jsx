@@ -93,7 +93,7 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
 
-const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null }) => {
+const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null }) => {
     console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment });
 
     // Auth and company context
@@ -214,6 +214,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 setSelectedTab(deepLinkParams.tab);
             }
         }
+
+        // CRITICAL SESSION CLEANUP: Clear auto-open state when deep link params change
+        return () => {
+            console.log('🧹 Deep link params changed - clearing auto-open state');
+            setHasAutoOpenedShipment(false);
+        };
     }, [deepLinkParams]);
 
     // Helper function to show snackbar
@@ -266,6 +272,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             return;
         }
 
+        // CRITICAL FIX: Clear auto-open state when popping back to table
+        console.log('🧹 Clearing auto-open state during popView');
+        setHasAutoOpenedShipment(false);
+
+        // CRITICAL FIX: Clear deep link parameters to prevent auto-navigation loop
+        if (onClearDeepLinkParams) {
+            console.log('🧹 Calling onClearDeepLinkParams to prevent auto-navigation loop');
+            onClearDeepLinkParams();
+        }
+
         // Set sliding state and direction
         setSlideDirection('backward');
         setSliding(true);
@@ -291,7 +307,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             setSliding(false);
             console.log('✅ popView complete');
         }, 300); // Match CSS transition duration
-    }, [navigationStack.length]);
+    }, [navigationStack.length, onClearDeepLinkParams]);
 
     // Add handler for viewing shipment detail - moved before useEffect that uses it
     const handleViewShipmentDetail = useCallback((shipmentId) => {
@@ -318,6 +334,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [hasAutoOpenedShipment, setHasAutoOpenedShipment] = useState(false);
 
     useEffect(() => {
+        // SAFETY CHECK: Only run if we're in table view (not already in detail view)
+        if (navigationStack.length > 1) {
+            console.log('🚫 Skipping auto-open - already in detail view');
+            return;
+        }
+
         // Handle direct-to-detail navigation from QuickShip "View Shipment"
         if (deepLinkParams && deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId && shipments.length > 0 && !hasAutoOpenedShipment) {
             console.log('Direct-to-detail navigation triggered for shipment:', deepLinkParams.selectedShipmentId);
@@ -331,6 +353,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 // Use the document ID to open the detail view directly
                 handleViewShipmentDetail(shipment.id);
                 setHasAutoOpenedShipment(true); // Prevent running again
+                console.log('✅ Auto-opened shipment detail and set flag to prevent re-opening');
+
+                // CRITICAL: Clear deep link parameters to prevent navigation loop
+                if (onClearDeepLinkParams) {
+                    onClearDeepLinkParams();
+                    console.log('🧹 Cleared deep link parameters after auto-opening shipment detail');
+                }
             } else {
                 console.warn('Shipment not found for direct-to-detail navigation:', deepLinkParams.selectedShipmentId);
             }
@@ -346,11 +375,18 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 // Use the document ID to open the detail view
                 handleViewShipmentDetail(shipment.id);
                 setHasAutoOpenedShipment(true); // Prevent running again
+                console.log('✅ Auto-opened shipment detail (legacy) and set flag to prevent re-opening');
+
+                // CRITICAL: Clear deep link parameters to prevent navigation loop
+                if (onClearDeepLinkParams) {
+                    onClearDeepLinkParams();
+                    console.log('🧹 Cleared deep link parameters after auto-opening shipment detail (legacy)');
+                }
             } else {
                 console.warn('Shipment not found for auto-detail open:', deepLinkParams.shipmentId);
             }
         }
-    }, [deepLinkParams, shipments, handleViewShipmentDetail, hasAutoOpenedShipment]); // Include shipments dependency to wait for data to load
+    }, [deepLinkParams, shipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack]); // Include navigationStack to check current view
 
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
@@ -977,6 +1013,18 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         window.scrollTo(0, 0);
     }, []);
 
+    // CRITICAL CLEANUP: Clear all session state when component unmounts
+    useEffect(() => {
+        return () => {
+            console.log('🧹 ShipmentsX unmounting - clearing all session state');
+            setHasAutoOpenedShipment(false);
+            // Clear any stored window references
+            if (window.shipmentsXReset) {
+                delete window.shipmentsXReset;
+            }
+        };
+    }, []);
+
     // Add a direct reset function for external calls
     const resetToDefaults = useCallback(() => {
         console.log('🔄 Resetting ShipmentsX to default state');
@@ -1003,8 +1051,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setFiltersOpen(false);
         setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
         setMountedViews(['table']);
-        // Reset auto-open state to prevent sticky navigation
+        // ENHANCED FIX: Reset auto-open state to prevent sticky navigation
         setHasAutoOpenedShipment(false);
+        console.log('🧹 Reset complete - all session state cleared');
     }, []);
 
     // Expose reset function via useEffect for external calls
@@ -1061,7 +1110,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         switch (view.component) {
             case 'table':
-                console.log('📊 Rendering table view');
+                console.log('📊 Rendering table view - v3.0 - All React Error #31 fixes applied');
                 return (
                     <Box sx={{
                         width: '100%',
@@ -1397,7 +1446,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         }}
                                                     >
                                                         <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
-                                                        {carrierOptions.map((group) => [
+                                                        {carrierOptions.flatMap((group) => [
                                                             <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
                                                             ...group.carriers.map((carrier) => (
                                                                 <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
@@ -1512,7 +1561,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     ))}
                                                     {filters.carrier !== 'all' && (
                                                         <Chip
-                                                            label={`Carrier: ${carrierOptions.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || filters.carrier}`}
+                                                            label={`Carrier: ${carrierOptions.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || String(filters.carrier)}`}
                                                             onDelete={() => setFilters(prev => ({ ...prev, carrier: 'all' }))}
                                                             size="small"
                                                             sx={{ bgcolor: '#f1f5f9' }}
@@ -1592,6 +1641,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         console.log('📚 Current navigation stack:', navigationStack.map(v => v.key));
         console.log('🎯 Navigation stack length:', navigationStack.length);
 
+        // CRITICAL FIX: Always clear auto-open state when using back button
+        console.log('🧹 Clearing auto-open state during back navigation');
+        setHasAutoOpenedShipment(false);
+
         if (navigationStack.length > 1) {
             console.log('✅ Calling popView()');
             popView();
@@ -1610,6 +1663,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     // Handle close button click specifically
     const handleCloseClick = () => {
         console.log('❌ Close button clicked - resetting state');
+
+        // CRITICAL FIX: Clear auto-open state when closing modal
+        console.log('🧹 Clearing auto-open state during modal close');
+        setHasAutoOpenedShipment(false);
 
         // Reset to defaults
         resetToDefaults();

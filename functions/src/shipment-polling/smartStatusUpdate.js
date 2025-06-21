@@ -143,7 +143,19 @@ exports.smartStatusUpdate = onCall(
  * Determine if we should perform a status update based on intelligent rules
  */
 async function shouldPerformStatusUpdate(shipment, force = false) {
-    // Always update if forced
+    // Check for manual status override - this takes precedence over everything except force
+    if (shipment.statusOverride?.isManual && shipment.statusOverride?.preventAutoUpdates) {
+        if (force) {
+            console.log(`⚠️  Manual override exists but force update requested for ${shipment.shipmentID}`);
+            return { proceed: true, reason: 'Force update overrides manual status lock' };
+        }
+        return { 
+            proceed: false, 
+            reason: 'Status is manually overridden - automatic updates disabled' 
+        };
+    }
+
+    // Always update if forced (and no manual override)
     if (force) {
         return { proceed: true, reason: 'Force update requested' };
     }
@@ -230,11 +242,18 @@ async function determineCarrierInfo(shipment) {
                          shipment.selectedRateRef?.sourceCarrier ||
                          shipment.sourceCarrier;
     
-    const carrierName = shipment.selectedRate?.carrier ||
+    let carrierName = shipment.selectedRate?.carrier ||
                        shipment.selectedRateRef?.carrier ||
                        shipment.carrier ||
                        shipment.selectedRate?.rawBookingAPIResponse?.BookedRate?.CarrierName ||
                        shipment.rawBookingAPIResponse?.BookedRate?.CarrierName;
+    
+    // Handle carrier objects (extract the name property)
+    if (typeof carrierName === 'object' && carrierName?.name) {
+        carrierName = carrierName.name;
+    } else if (typeof carrierName !== 'string') {
+        carrierName = String(carrierName || '');
+    }
 
     console.log(`🔍 Carrier detection for shipment ${shipment.shipmentID}:`, {
         displayCarrierScac,

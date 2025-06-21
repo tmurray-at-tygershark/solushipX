@@ -59,7 +59,8 @@ import {
     Calculate as CalculateIcon,
     ExpandLess,
     ExpandMore,
-    AccountBalanceWallet as AccountBalanceWalletIcon
+    AccountBalanceWallet as AccountBalanceWalletIcon,
+    AdminPanelSettings as AdminPanelSettingsIcon
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
@@ -81,8 +82,11 @@ const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
 // Lazy load the Shipments component for the modal
 const ShipmentsComponent = lazy(() => import('../Shipments/ShipmentsX'));
 
-// Lazy load the CreateShipment component for the modal
+// Lazy load the CreateShipment component for the modal (step-by-step process)
 const CreateShipmentComponent = lazy(() => import('../CreateShipment'));
+
+// Lazy load the CreateShipmentX component for the modal (advanced single-page)
+const CreateShipmentXComponent = lazy(() => import('../CreateShipment/CreateShipmentX'));
 
 // Lazy load the QuickShip component for the modal
 const QuickShipComponent = lazy(() => import('../CreateShipment/QuickShip'));
@@ -712,16 +716,16 @@ const Dashboard = () => {
             }
 
         } else {
-            console.log('🔧 Opening CreateShipment modal (advanced mode)');
+            console.log('🔧 Opening CreateShipmentX modal (advanced single-page mode)');
 
             // Set pre-populated data if provided
             setCreateShipmentPrePopulatedData(prePopulatedData);
 
             // Set draft ID for editing existing drafts
             if (draftId) {
-                console.log('📝 Opening CreateShipment modal to edit draft:', draftId);
+                console.log('📝 Opening CreateShipmentX modal to edit draft:', draftId);
                 // We can use the prePopulatedData state to also pass the draft ID
-                // The CreateShipment component will handle this appropriately
+                // The CreateShipmentX component will handle this appropriately
                 setCreateShipmentPrePopulatedData(prev => ({
                     ...prev,
                     editDraftId: draftId
@@ -747,10 +751,10 @@ const Dashboard = () => {
         setIsTrackingDrawerOpen(true);
     };
 
-    // Handler for opening QuickShip modal (from CreateShipment)
+    // Handler for opening QuickShip modal (from CreateShipmentX)
     const handleOpenQuickShipModal = () => {
-        console.log('Opening QuickShip modal, closing CreateShipment modal');
-        // Close CreateShipment modal first
+        console.log('Opening QuickShip modal, closing CreateShipmentX modal');
+        // Close CreateShipmentX modal first
         setIsCreateShipmentModalOpen(false);
         // Small delay to allow modal to close before opening new one
         setTimeout(() => {
@@ -758,7 +762,7 @@ const Dashboard = () => {
         }, 300);
     };
 
-    // Handler for returning to shipments from CreateShipment
+    // Handler for returning to shipments from CreateShipmentX
     const handleReturnToShipmentsFromCreateShipment = () => {
         setIsCreateShipmentModalOpen(false);
         setTimeout(() => {
@@ -766,12 +770,12 @@ const Dashboard = () => {
         }, 300);
     };
 
-    // Handler for viewing a specific shipment from QuickShip
+    // Handler for viewing shipment from CreateShipmentX
     const handleViewShipment = (shipmentId) => {
-        console.log('Viewing shipment from QuickShip:', shipmentId);
+        console.log('Viewing shipment from CreateShipmentX:', shipmentId);
 
-        // Close QuickShip modal
-        setIsQuickShipModalOpen(false);
+        // Close CreateShipmentX modal
+        setIsCreateShipmentModalOpen(false);
 
         // Open Shipments modal directly to shipment detail (bypassing the table)
         setShipmentsDeepLinkParams({
@@ -784,6 +788,12 @@ const Dashboard = () => {
             setIsShipmentsModalOpen(true);
         }, 300);
     };
+
+    // Handler for clearing deep link parameters when navigating back from shipment detail
+    const handleClearDeepLinkParams = useCallback(() => {
+        console.log('Clearing deep link parameters to prevent auto-navigation loop');
+        setShipmentsDeepLinkParams(null);
+    }, []);
 
     // Handler for navigating from Customers to Shipments with deep linking
     const handleNavigateToShipments = useCallback((deepLinkParams = {}) => {
@@ -849,7 +859,7 @@ const Dashboard = () => {
                 {
                     text: 'Real-Time Rates',
                     icon: <CalculateIcon />,
-                    description: 'Compare carrier rates',
+                    description: 'Advanced single-page rate comparison',
                     action: () => {
                         handleOpenCreateShipmentModal();
                         setNewShipmentExpanded(false);
@@ -1148,9 +1158,9 @@ const Dashboard = () => {
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                 }}>
                     <img
-                        src="/images/solushipx_logo_white.png"
+                        src="/images/integratedcarrriers_logo_white.png"
                         alt="SoluShipX"
-                        style={{ height: 28 }}
+                        style={{ height: 60 }}
                     />
                 </Box>
 
@@ -1333,7 +1343,38 @@ const Dashboard = () => {
                     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
                     pt: 2
                 }}>
-                    {/* Footer section is empty since items moved to profile/settings dropdowns */}
+                    {/* Admin Return Button - Only visible for admin users */}
+                    {(userRole === 'admin' || userRole === 'super_admin') && (
+                        <Button
+                            fullWidth
+                            variant="outlined"
+                            startIcon={<AdminPanelSettingsIcon />}
+                            onClick={() => navigate('/admin')}
+                            sx={{
+                                borderRadius: '12px',
+                                py: 1.5,
+                                borderColor: 'rgba(255, 255, 255, 0.2)',
+                                color: 'rgba(255, 255, 255, 0.9)',
+                                fontSize: { xs: '0.85rem', sm: '0.9rem' },
+                                fontWeight: 500,
+                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                backdropFilter: 'blur(10px)',
+                                '&:hover': {
+                                    borderColor: 'rgba(255, 255, 255, 0.4)',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    transform: 'translateY(-2px)',
+                                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
+                                },
+                                transition: 'all 0.3s ease',
+                                textTransform: 'none',
+                                '& .MuiButton-startIcon': {
+                                    color: 'rgba(255, 255, 255, 0.7)'
+                                }
+                            }}
+                        >
+                            Return to Admin
+                        </Button>
+                    )}
                 </Box>
             </Box>
 
@@ -1447,6 +1488,7 @@ const Dashboard = () => {
                             onModalBack={modalStack.length > 0 ? handleModalBack : null}
                             deepLinkParams={shipmentsDeepLinkParams}
                             onOpenCreateShipment={handleOpenCreateShipmentModal}
+                            onClearDeepLinkParams={handleClearDeepLinkParams}
                         />
                     </LazyComponentWrapper>
                 </Box>
@@ -1486,7 +1528,7 @@ const Dashboard = () => {
                             <CircularProgress />
                         </Box>
                     }>
-                        <CreateShipmentComponent
+                        <CreateShipmentXComponent
                             isModal={true}
                             onClose={() => {
                                 setIsCreateShipmentModalOpen(false);
@@ -1494,8 +1536,9 @@ const Dashboard = () => {
                                 setCreateShipmentPrePopulatedData(null);
                             }}
                             onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
-                            onOpenQuickShip={handleOpenQuickShipModal}
+                            onViewShipment={handleViewShipment}
                             showCloseButton={true}
+                            draftId={createShipmentPrePopulatedData?.editDraftId || null}
                             prePopulatedData={createShipmentPrePopulatedData}
                         />
                     </LazyComponentWrapper>

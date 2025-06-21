@@ -257,7 +257,7 @@ const EnhancedStatusFilter = ({
 
                 {/* Grouped Status Options */}
                 {showGroups ? (
-                    Object.entries(groupedStatuses).map(([groupKey, group]) => [
+                    Object.entries(groupedStatuses).flatMap(([groupKey, group]) => [
                         <ListSubheader key={`header-${groupKey}`} sx={{ bgcolor: 'background.default', fontSize: '12px' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Box
@@ -290,7 +290,7 @@ const EnhancedStatusFilter = ({
                                 />
                             </MenuItem>
                         ))
-                    ]).flat()
+                    ])
                 ) : (
                     // Flat list without groups
                     Object.entries(filteredStatuses).map(([id, status]) => (

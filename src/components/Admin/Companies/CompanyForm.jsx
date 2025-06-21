@@ -393,16 +393,26 @@ const CompanyForm = () => {
 
                     // Add notification subscriptions for new admins
                     for (const userId of usersToAddLink) {
+                        // Get user email for the subscription
+                        const userDoc = await getDoc(doc(db, 'users', userId));
+                        const userEmail = userDoc.exists() ? userDoc.data().email : null;
+
                         Object.entries(defaultAdminPreferences).forEach(([notificationType, enabled]) => {
                             const subscriptionId = `${userId}_${humanReadableCompanyID}_${notificationType}`;
                             const subscriptionData = {
                                 userId: userId,
+                                userEmail: userEmail, // CRITICAL: Add userEmail field required by notification system
                                 companyId: humanReadableCompanyID,
                                 notificationType: notificationType,
-                                enabled: enabled,
+                                subscribed: enabled, // CRITICAL: Use 'subscribed' field instead of 'enabled' to match query
                                 createdAt: serverTimestamp(),
                                 updatedAt: serverTimestamp()
                             };
+
+                            // Add subscribedAt timestamp for enabled subscriptions
+                            if (enabled) {
+                                subscriptionData.subscribedAt = serverTimestamp();
+                            }
 
                             notificationPromises.push(
                                 setDoc(doc(db, 'notificationSubscriptions', subscriptionId), subscriptionData)
@@ -412,14 +422,18 @@ const CompanyForm = () => {
 
                     // Remove notification subscriptions for removed admins
                     for (const userId of usersToRemoveLink) {
+                        // Get user email for the subscription
+                        const userDoc = await getDoc(doc(db, 'users', userId));
+                        const userEmail = userDoc.exists() ? userDoc.data().email : null;
+
                         Object.entries(disabledPreferences).forEach(([notificationType, enabled]) => {
                             const subscriptionId = `${userId}_${humanReadableCompanyID}_${notificationType}`;
                             const subscriptionData = {
                                 userId: userId,
+                                userEmail: userEmail, // CRITICAL: Add userEmail field required by notification system
                                 companyId: humanReadableCompanyID,
                                 notificationType: notificationType,
-                                enabled: enabled,
-                                createdAt: serverTimestamp(),
+                                subscribed: enabled, // CRITICAL: Use 'subscribed' field instead of 'enabled' to match query
                                 updatedAt: serverTimestamp()
                             };
 
