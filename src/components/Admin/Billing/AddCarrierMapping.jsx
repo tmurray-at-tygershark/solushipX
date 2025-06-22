@@ -41,7 +41,8 @@ import {
     CheckCircleOutline as CheckCircleIcon,
     ErrorOutline as ErrorOutlineIcon,
     NavigateNext as NavigateNextIcon,
-    NavigateBefore as NavigateBeforeIcon
+    NavigateBefore as NavigateBeforeIcon,
+    Edit as EditIcon
 } from '@mui/icons-material';
 import { collection, doc, getDoc, setDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db, functions } from '../../../firebase';
@@ -49,6 +50,7 @@ import Papa from 'papaparse';
 import { useSnackbar } from 'notistack';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 const STEPS = [
     { label: 'Carrier Details', path: 'details' },
@@ -451,59 +453,98 @@ const AddCarrierMapping = () => {
         return (
             <Grid container spacing={2}>
                 <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 3, height: '100%' }}>
-                        <Typography variant="h6" gutterBottom>
+                    <Paper elevation={0} sx={{
+                        p: 3,
+                        height: '100%',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                    }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Prompt Editor
                         </Typography>
                         <TextField
                             fullWidth
+                            size="small"
                             multiline
                             rows={12}
                             value={carrierPrompt}
                             onChange={(e) => setCarrierPrompt(e.target.value)}
                             error={!!validationErrors.prompt}
                             helperText={validationErrors.prompt}
-                            sx={{ mb: 2 }}
+                            sx={{
+                                mb: 2,
+                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                            }}
                         />
                         <Button
                             variant="contained"
+                            size="small"
                             color="primary"
                             onClick={handleTestPrompt}
                             disabled={isGeneratingMapping || loading}
-                            startIcon={(isGeneratingMapping || loading) ? <CircularProgress size={20} color="inherit" /> : <NavigateNextIcon />}
+                            startIcon={(isGeneratingMapping || loading) ? <CircularProgress size={16} color="inherit" /> : <NavigateNextIcon />}
+                            sx={{ fontSize: '12px' }}
                         >
                             Test Prompt
                         </Button>
                     </Paper>
                 </Grid>
                 <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 3, height: '100%' }}>
-                        <Typography variant="h6" gutterBottom>
+                    <Paper elevation={0} sx={{
+                        p: 3,
+                        height: '100%',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                    }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Test Results
                         </Typography>
                         {testResult?.fieldMappings?.length > 0 ? (
                             <TableContainer>
-                                <Table>
+                                <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell>CSV Header</TableCell>
-                                            <TableCell>JSON Path</TableCell>
-                                            <TableCell>Data Type</TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151'
+                                            }}>
+                                                CSV Header
+                                            </TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151'
+                                            }}>
+                                                JSON Path
+                                            </TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151'
+                                            }}>
+                                                Data Type
+                                            </TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
                                         {testResult.fieldMappings.map((mapping, index) => (
                                             <TableRow key={index}>
-                                                <TableCell>{mapping.csvHeader}</TableCell>
-                                                <TableCell>{mapping.jsonKeyPath}</TableCell>
-                                                <TableCell>{mapping.dataType}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{mapping.csvHeader}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{mapping.jsonKeyPath}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{mapping.dataType}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
                                 </Table>
                             </TableContainer>
                         ) : (
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
                                 Test results will appear here after running the prompt
                             </Typography>
                         )}
@@ -517,25 +558,36 @@ const AddCarrierMapping = () => {
         switch (step) {
             case 0:
                 return (
-                    <Paper sx={{ p: 3 }}>
-                        <Typography variant="h6" gutterBottom>
+                    <Paper elevation={0} sx={{
+                        p: 3,
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                    }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Carrier Details
                         </Typography>
                         <Grid container spacing={3}>
                             <Grid item xs={12}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Carrier Name"
                                     value={carrierName}
                                     onChange={(e) => setCarrierName(e.target.value)}
                                     error={!!validationErrors.carrierName}
                                     helperText={validationErrors.carrierName}
                                     required
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                 />
                             </Grid>
                             <Grid item xs={12}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Description"
                                     value={carrierDescription}
                                     onChange={(e) => setCarrierDescription(e.target.value)}
@@ -544,6 +596,11 @@ const AddCarrierMapping = () => {
                                     multiline
                                     rows={3}
                                     required
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                    }}
                                 />
                             </Grid>
                         </Grid>
@@ -551,27 +608,32 @@ const AddCarrierMapping = () => {
                 );
             case 1:
                 return (
-                    <Paper sx={{ p: 3 }}>
-                        <Typography variant="h6" gutterBottom>
+                    <Paper elevation={0} sx={{
+                        p: 3,
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                    }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Upload Sample CSV
                         </Typography>
                         {isUploading ? (
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 3, minHeight: 200 }}>
                                 <CircularProgress sx={{ mb: 2 }} />
-                                <Typography variant="body1">Processing file, please wait...</Typography>
+                                <Typography variant="body1" sx={{ fontSize: '12px' }}>Processing file, please wait...</Typography>
                             </Box>
                         ) : (
                             <Box
                                 sx={{
-                                    border: dragActive ? '2px solid #1976d2' : '2px dashed #ccc',
-                                    borderRadius: 2,
+                                    border: dragActive ? '2px solid #1976d2' : '2px dashed #e5e7eb',
+                                    borderRadius: '8px',
                                     p: 3,
                                     textAlign: 'center',
                                     cursor: 'pointer',
-                                    backgroundColor: dragActive ? 'rgba(25, 118, 210, 0.04)' : 'inherit',
+                                    backgroundColor: dragActive ? 'rgba(25, 118, 210, 0.04)' : '#f8fafc',
                                     transition: 'background 0.2s',
                                     '&:hover': {
-                                        borderColor: 'primary.main',
+                                        borderColor: '#1976d2',
+                                        backgroundColor: 'rgba(25, 118, 210, 0.02)'
                                     },
                                 }}
                                 onClick={() => !isUploading && document.getElementById('csv-upload').click()}
@@ -587,26 +649,30 @@ const AddCarrierMapping = () => {
                                     style={{ display: 'none' }}
                                     disabled={isUploading}
                                 />
-                                <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                                <Typography variant="h6" gutterBottom>
+                                <CloudUploadIcon sx={{ fontSize: 48, color: '#6b7280', mb: 2 }} />
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 500, color: '#374151', mb: 1 }}>
                                     {csvFile && !isUploading ? csvFile.name : dragActive ? 'Drop your CSV file here' : 'Click or drag CSV file to upload'}
                                 </Typography>
-                                <Typography variant="body2" color="text.secondary">
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
                                     Upload a sample CSV file with headers and a few rows of data
                                 </Typography>
                             </Box>
                         )}
-                        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-                        {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
+                        {error && <Alert severity="error" sx={{ mt: 2, '& .MuiAlert-message': { fontSize: '12px' } }}>{error}</Alert>}
+                        {success && <Alert severity="success" sx={{ mt: 2, '& .MuiAlert-message': { fontSize: '12px' } }}>{success}</Alert>}
                     </Paper>
                 );
             case 2:
                 return (
-                    <Paper sx={{ p: 3 }}>
-                        <Typography variant="h6" gutterBottom>
+                    <Paper elevation={0} sx={{
+                        p: 3,
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                    }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Accept Headers
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
                             Review the detected headers from your CSV file
                         </Typography>
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
@@ -616,6 +682,8 @@ const AddCarrierMapping = () => {
                                     label={header}
                                     color="primary"
                                     variant="outlined"
+                                    size="small"
+                                    sx={{ fontSize: '11px' }}
                                 />
                             ))}
                         </Box>
@@ -623,17 +691,20 @@ const AddCarrierMapping = () => {
                             <Button
                                 variant="contained"
                                 color="primary"
+                                size="small"
                                 onClick={() => {
                                     setHeadersAccepted(true);
                                     navigateToStep(3);
                                 }}
                                 disabled={!csvHeaders.length}
+                                sx={{ fontSize: '12px' }}
                             >
                                 Accept Headers
                             </Button>
                             <Button
                                 variant="outlined"
                                 color="error"
+                                size="small"
                                 onClick={() => {
                                     setCsvFile(null);
                                     setCsvHeaders([]);
@@ -641,6 +712,7 @@ const AddCarrierMapping = () => {
                                     setHeadersAccepted(false);
                                     navigateToStep(1);
                                 }}
+                                sx={{ fontSize: '12px' }}
                             >
                                 Reject & Upload Different File
                             </Button>
@@ -652,28 +724,61 @@ const AddCarrierMapping = () => {
             case 4:
                 console.log('Current mappings:', mappings);
                 return (
-                    <Paper sx={{ p: 3 }}>
-                        <Typography variant="h6" gutterBottom>
+                    <Paper elevation={0} sx={{
+                        p: 3,
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                    }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Review & Save
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
                             Review and edit the generated mapping before saving
                         </Typography>
                         {mappings && mappings.length > 0 ? (
                             <TableContainer>
-                                <Table>
+                                <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell>CSV Header</TableCell>
-                                            <TableCell>JSON Path</TableCell>
-                                            <TableCell>Data Type</TableCell>
-                                            <TableCell>Actions</TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151'
+                                            }}>
+                                                CSV Header
+                                            </TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151'
+                                            }}>
+                                                JSON Path
+                                            </TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151'
+                                            }}>
+                                                Data Type
+                                            </TableCell>
+                                            <TableCell sx={{
+                                                backgroundColor: '#f8fafc',
+                                                fontWeight: 600,
+                                                fontSize: '12px',
+                                                color: '#374151',
+                                                width: '100px'
+                                            }}>
+                                                Actions
+                                            </TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
                                         {mappings.map((mapping, index) => (
                                             <TableRow key={index}>
-                                                <TableCell>{mapping.csvHeader}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{mapping.csvHeader}</TableCell>
                                                 <TableCell>
                                                     {editingMapping === index ? (
                                                         <TextField
@@ -681,9 +786,12 @@ const AddCarrierMapping = () => {
                                                             value={mapping.jsonKeyPath}
                                                             onChange={(e) => handleMappingChange(index, 'jsonKeyPath', e.target.value)}
                                                             size="small"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' }
+                                                            }}
                                                         />
                                                     ) : (
-                                                        mapping.jsonKeyPath
+                                                        <Typography sx={{ fontSize: '12px' }}>{mapping.jsonKeyPath}</Typography>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
@@ -692,17 +800,21 @@ const AddCarrierMapping = () => {
                                                             <Select
                                                                 value={mapping.dataType}
                                                                 onChange={(e) => handleMappingChange(index, 'dataType', e.target.value)}
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
                                                             >
-                                                                <MenuItem value="string">String</MenuItem>
-                                                                <MenuItem value="number">Number</MenuItem>
-                                                                <MenuItem value="boolean">Boolean</MenuItem>
-                                                                <MenuItem value="date">Date</MenuItem>
-                                                                <MenuItem value="object">Object</MenuItem>
-                                                                <MenuItem value="array">Array</MenuItem>
+                                                                <MenuItem value="string" sx={{ fontSize: '12px' }}>String</MenuItem>
+                                                                <MenuItem value="number" sx={{ fontSize: '12px' }}>Number</MenuItem>
+                                                                <MenuItem value="boolean" sx={{ fontSize: '12px' }}>Boolean</MenuItem>
+                                                                <MenuItem value="date" sx={{ fontSize: '12px' }}>Date</MenuItem>
+                                                                <MenuItem value="object" sx={{ fontSize: '12px' }}>Object</MenuItem>
+                                                                <MenuItem value="array" sx={{ fontSize: '12px' }}>Array</MenuItem>
                                                             </Select>
                                                         </FormControl>
                                                     ) : (
-                                                        mapping.dataType
+                                                        <Typography sx={{ fontSize: '12px' }}>{mapping.dataType}</Typography>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
@@ -712,14 +824,14 @@ const AddCarrierMapping = () => {
                                                             onClick={() => handleSaveMapping(index)}
                                                             color="primary"
                                                         >
-                                                            <CheckCircleIcon />
+                                                            <CheckCircleIcon sx={{ fontSize: '18px' }} />
                                                         </IconButton>
                                                     ) : (
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => handleEditMapping(index)}
                                                         >
-                                                            <NavigateNextIcon />
+                                                            <EditIcon sx={{ fontSize: '18px' }} />
                                                         </IconButton>
                                                     )}
                                                 </TableCell>
@@ -729,7 +841,7 @@ const AddCarrierMapping = () => {
                                 </Table>
                             </TableContainer>
                         ) : (
-                            <Alert severity="info">
+                            <Alert severity="info" sx={{ '& .MuiAlert-message': { fontSize: '12px' } }}>
                                 No mappings available. Please go back to the Prompt Playground step and generate mappings first.
                             </Alert>
                         )}
@@ -741,89 +853,107 @@ const AddCarrierMapping = () => {
     };
 
     return (
-        <Box sx={{ p: 3 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-                <Box>
-                    <Typography variant="h4" gutterBottom>
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+        }}>
+            {/* Header Section */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827' }}>
                         {carrierId ? 'Edit Carrier Mapping' : 'Add New Carrier Mapping'}
                     </Typography>
-                    <Breadcrumbs>
-                        <Link color="inherit" href="/admin">
-                            Admin
-                        </Link>
-                        <Link color="inherit" href="/admin/billing">
-                            Billing
-                        </Link>
-                        <Link color="inherit" href="/admin/billing/edi-mapping">
-                            EDI Mapping
-                        </Link>
-                        <Typography color="text.primary">
-                            {carrierId ? 'Edit' : 'Add New'}
-                        </Typography>
-                    </Breadcrumbs>
-                </Box>
-            </Stack>
-
-            {error && (
-                <Alert severity="error" sx={{ mb: 3 }}>
-                    {error}
-                </Alert>
-            )}
-
-            {success && (
-                <Alert severity="success" sx={{ mb: 3 }}>
-                    {success}
-                </Alert>
-            )}
-
-            <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-                {STEPS.map((step, index) => (
-                    <Step key={step.path}>
-                        <StepLabel>{step.label}</StepLabel>
-                    </Step>
-                ))}
-            </Stepper>
-
-            {renderStepContent(activeStep)}
-
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
-                <Button
-                    onClick={() => navigate('/admin/billing/edi-mapping')}
-                    startIcon={<NavigateBeforeIcon />}
-                    disabled={loading}
-                >
-                    Cancel
-                </Button>
-                <Box>
-                    {activeStep > 0 && (
+                    <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button
-                            onClick={() => navigateToStep(activeStep - 1)}
+                            onClick={() => navigate('/admin/billing/edi-mapping')}
+                            variant="outlined"
+                            size="small"
                             startIcon={<NavigateBeforeIcon />}
                             disabled={loading}
-                            sx={{ mr: 1 }}
+                            sx={{ fontSize: '12px' }}
                         >
-                            Back
+                            Cancel
                         </Button>
+                        {activeStep === STEPS.length - 1 && (
+                            <Button
+                                onClick={handleSave}
+                                variant="contained"
+                                size="small"
+                                startIcon={<CheckCircleIcon />}
+                                disabled={loading || !mappings.length}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                {loading ? <CircularProgress size={16} /> : 'Save'}
+                            </Button>
+                        )}
+                    </Box>
+                </Box>
+                {/* Breadcrumb */}
+                <AdminBreadcrumb
+                    currentPage={carrierId ? 'Edit' : 'Add New'}
+                    parentPage="EDI Mapping"
+                />
+            </Box>
+
+            {/* Content Area */}
+            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                <Box sx={{ p: 3 }}>
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 3, '& .MuiAlert-message': { fontSize: '12px' } }}>
+                            {error}
+                        </Alert>
                     )}
-                    {activeStep < STEPS.length - 1 ? (
-                        <Button
-                            onClick={() => navigateToStep(activeStep + 1)}
-                            variant="contained"
-                            endIcon={<NavigateNextIcon />}
-                            disabled={loading || (activeStep === 0 && !carrierName) || (activeStep === 1 && !csvFile)}
-                        >
-                            Next
-                        </Button>
-                    ) : (
-                        <Button
-                            onClick={handleSave}
-                            variant="contained"
-                            startIcon={<CheckCircleIcon />}
-                            disabled={loading || !mappings.length}
-                        >
-                            {loading ? <CircularProgress size={24} /> : 'Save'}
-                        </Button>
+
+                    {success && (
+                        <Alert severity="success" sx={{ mb: 3, '& .MuiAlert-message': { fontSize: '12px' } }}>
+                            {success}
+                        </Alert>
                     )}
+
+                    <Stepper activeStep={activeStep} sx={{
+                        mb: 4,
+                        '& .MuiStepLabel-label': { fontSize: '12px' }
+                    }}>
+                        {STEPS.map((step, index) => (
+                            <Step key={step.path}>
+                                <StepLabel>{step.label}</StepLabel>
+                            </Step>
+                        ))}
+                    </Stepper>
+
+                    {renderStepContent(activeStep)}
+
+                    {/* Bottom Navigation */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
+                        <Box>
+                            {activeStep > 0 && (
+                                <Button
+                                    onClick={() => navigateToStep(activeStep - 1)}
+                                    startIcon={<NavigateBeforeIcon />}
+                                    disabled={loading}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Back
+                                </Button>
+                            )}
+                        </Box>
+                        <Box>
+                            {activeStep < STEPS.length - 1 && (
+                                <Button
+                                    onClick={() => navigateToStep(activeStep + 1)}
+                                    variant="contained"
+                                    size="small"
+                                    endIcon={<NavigateNextIcon />}
+                                    disabled={loading || (activeStep === 0 && !carrierName) || (activeStep === 1 && !csvFile)}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Next
+                                </Button>
+                            )}
+                        </Box>
+                    </Box>
                 </Box>
             </Box>
         </Box>

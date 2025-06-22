@@ -25,28 +25,10 @@ import {
     IconButton,
     Tooltip,
     Button,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    TextField,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem,
-    FormControlLabel,
     Switch,
-    Alert,
-    Snackbar,
     CircularProgress,
-    Menu,
-    ListItemButton,
-    Checkbox,
-    FormGroup,
-    Fab,
-    SpeedDial,
-    SpeedDialIcon,
-    SpeedDialAction
+    Snackbar,
+    Alert
 } from '@mui/material';
 import {
     CheckCircle as CheckIcon,
@@ -63,15 +45,8 @@ import {
     Route as RouteIcon,
     Info as InfoIcon,
     Edit as EditIcon,
-    Delete as DeleteIcon,
-    Add as AddIcon,
-    MoreVert as MoreVertIcon,
     Save as SaveIcon,
-    Close as CloseIcon,
-    GroupAdd as GroupAddIcon,
-    LockOpen as PermissionIcon,
-    Category as CategoryIcon,
-    Warning as WarningIcon
+    Close as CloseIcon
 } from '@mui/icons-material';
 import {
     collection,
@@ -79,9 +54,7 @@ import {
     where,
     getDocs,
     doc,
-    setDoc,
     updateDoc,
-    deleteDoc,
     onSnapshot,
     serverTimestamp,
     writeBatch
@@ -92,149 +65,33 @@ import { ROLES, PERMISSIONS, ROLE_PERMISSIONS, ROUTE_PERMISSIONS } from '../../.
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const RolePermissionsView = () => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const functions = getFunctions();
     const [users, setUsers] = useState([]);
-    const [roles, setRoles] = useState([]);
-    const [permissions, setPermissions] = useState([]);
-    const [permissionCategories, setPermissionCategories] = useState({});
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
     const [expandedCategories, setExpandedCategories] = useState(['all']);
-
-    // Dialog states
-    const [roleDialogOpen, setRoleDialogOpen] = useState(false);
-    const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
-    const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [userAssignmentOpen, setUserAssignmentOpen] = useState(false);
-
-    // Form states
-    const [editingRole, setEditingRole] = useState(null);
-    const [editingPermission, setEditingPermission] = useState(null);
-    const [editingCategory, setEditingCategory] = useState(null);
-    const [deleteTarget, setDeleteTarget] = useState(null);
-    const [selectedRole, setSelectedRole] = useState(null);
-    const [selectedUsers, setSelectedUsers] = useState([]);
-
-    // Snackbar
+    const [editMode, setEditMode] = useState(false);
+    const [pendingChanges, setPendingChanges] = useState({});
+    const [saving, setSaving] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-    // Menu states
-    const [anchorEl, setAnchorEl] = useState(null);
-    const [menuContext, setMenuContext] = useState(null);
-
-    // Initialize data from hardcoded values if database is empty
     useEffect(() => {
-        initializeData();
+        fetchUsers();
     }, []);
 
-    const initializeData = async () => {
+    const fetchUsers = async () => {
         try {
-            setLoading(true);
-
-            // Check if roles exist in database
-            const rolesSnapshot = await getDocs(collection(db, 'roles'));
-            if (rolesSnapshot.empty) {
-                // Initialize with hardcoded roles
-                const batch = writeBatch(db);
-
-                // Add system roles
-                Object.entries(ROLES).forEach(([key, value]) => {
-                    const roleRef = doc(collection(db, 'roles'));
-                    batch.set(roleRef, {
-                        id: value,
-                        name: getRoleDisplayName(value),
-                        description: getRoleDescription(value),
-                        color: getRoleColor(value),
-                        isSystem: true,
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
-                });
-
-                await batch.commit();
-            }
-
-            // Check if permissions exist in database
-            const permissionsSnapshot = await getDocs(collection(db, 'permissions'));
-            if (permissionsSnapshot.empty) {
-                // Initialize with hardcoded permissions
-                const batch = writeBatch(db);
-
-                Object.entries(PERMISSIONS).forEach(([key, value]) => {
-                    const permRef = doc(collection(db, 'permissions'));
-                    batch.set(permRef, {
-                        id: value,
-                        key: key,
-                        name: value.replace(/_/g, ' ').toLowerCase(),
-                        category: getPermissionCategory(key),
-                        isSystem: true,
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
-                });
-
-                await batch.commit();
-            }
-
-            // Set up real-time listeners
-            setupListeners();
-
-        } catch (error) {
-            console.error('Error initializing data:', error);
-            showSnackbar('Error initializing data', 'error');
-        }
-    };
-
-    const setupListeners = () => {
-        // Listen to roles
-        const unsubscribeRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
-            const rolesData = snapshot.docs.map(doc => ({
-                docId: doc.id,
-                ...doc.data()
-            }));
-            setRoles(rolesData);
-        });
-
-        // Listen to permissions
-        const unsubscribePermissions = onSnapshot(collection(db, 'permissions'), (snapshot) => {
-            const permsData = snapshot.docs.map(doc => ({
-                docId: doc.id,
-                ...doc.data()
-            }));
-            setPermissions(permsData);
-
-            // Group permissions by category
-            const categories = {};
-            permsData.forEach(perm => {
-                if (!categories[perm.category]) {
-                    categories[perm.category] = {
-                        icon: getCategoryIcon(perm.category),
-                        permissions: []
-                    };
-                }
-                categories[perm.category].permissions.push(perm.id);
-            });
-            setPermissionCategories(categories);
-        });
-
-        // Listen to users
-        const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-            const usersData = snapshot.docs.map(doc => ({
+            const usersSnapshot = await getDocs(collection(db, 'users'));
+            const usersData = usersSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
             setUsers(usersData);
             setLoading(false);
-        });
-
-        // Cleanup
-        return () => {
-            unsubscribeRoles();
-            unsubscribePermissions();
-            unsubscribeUsers();
-        };
+        } catch (error) {
+            console.error('Error fetching users:', error);
+            setLoading(false);
+        }
     };
 
     // Helper functions
@@ -305,171 +162,71 @@ const RolePermissionsView = () => {
             case 'Reports & Analytics': return <ReportsIcon />;
             case 'System Settings': return <SettingsIcon />;
             case 'Advanced Features': return <RouteIcon />;
-            default: return <CategoryIcon />;
+            default: return <BusinessIcon />;
         }
     };
 
-    const hasPermission = (roleId, permissionId) => {
-        // Check hardcoded permissions first (for system roles)
-        const role = roles.find(r => r.id === roleId);
-        if (role?.isSystem) {
-            if (ROLE_PERMISSIONS[roleId]?.['*']) return true;
-            return ROLE_PERMISSIONS[roleId]?.[permissionId] === true;
+    const hasPermission = (role, permission) => {
+        // Check pending changes first
+        const pendingKey = `${role}_${permission}`;
+        if (pendingChanges[pendingKey] !== undefined) {
+            return pendingChanges[pendingKey];
         }
 
-        // For custom roles, check database (to be implemented)
-        return false;
+        // Then check hardcoded permissions
+        if (ROLE_PERMISSIONS[role]?.['*']) return true;
+        return ROLE_PERMISSIONS[role]?.[permission] === true;
     };
 
-    // CRUD Operations
-    const handleAddRole = () => {
-        setEditingRole({
-            name: '',
-            description: '',
-            color: '#757575',
-            permissions: {}
-        });
-        setRoleDialogOpen(true);
-    };
-
-    const handleEditRole = (role) => {
-        if (role.id === 'superadmin') {
-            showSnackbar('Super Admin role cannot be edited', 'warning');
-            return;
-        }
-        setEditingRole(role);
-        setRoleDialogOpen(true);
-    };
-
-    const handleDeleteRole = (role) => {
-        if (role.isSystem) {
-            showSnackbar('System roles cannot be deleted', 'warning');
-            return;
-        }
-        setDeleteTarget({ type: 'role', item: role });
-        setDeleteDialogOpen(true);
-    };
-
-    const handleSaveRole = async () => {
-        try {
-            setSaving(true);
-
-            if (editingRole.docId) {
-                // Update existing role
-                const updateRole = httpsCallable(functions, 'adminUpdateRole');
-                await updateRole({
-                    roleId: editingRole.id,
-                    name: editingRole.name,
-                    description: editingRole.description,
-                    color: editingRole.color
-                });
-            } else {
-                // Create new role
-                const createRole = httpsCallable(functions, 'adminCreateRole');
-                await createRole({
-                    name: editingRole.name,
-                    description: editingRole.description,
-                    color: editingRole.color,
-                    permissions: editingRole.permissions || {}
-                });
-            }
-
-            setRoleDialogOpen(false);
-            setEditingRole(null);
-            showSnackbar('Role saved successfully', 'success');
-        } catch (error) {
-            console.error('Error saving role:', error);
-            showSnackbar(error.message || 'Error saving role', 'error');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleTogglePermission = async (roleId, permissionId) => {
-        if (roleId === 'superadmin') {
+    const handlePermissionToggle = (role, permission) => {
+        if (role === 'superadmin') {
             showSnackbar('Super Admin permissions cannot be modified', 'warning');
             return;
         }
 
+        const key = `${role}_${permission}`;
+        const currentValue = hasPermission(role, permission);
+
+        setPendingChanges(prev => ({
+            ...prev,
+            [key]: !currentValue
+        }));
+    };
+
+    const handleSaveChanges = async () => {
         try {
-            const role = roles.find(r => r.id === roleId);
-            if (role.isSystem && roleId !== 'admin' && roleId !== 'user') {
-                showSnackbar('System role permissions cannot be modified', 'info');
-                return;
-            }
+            setSaving(true);
 
-            // Get current permission state
-            const currentlyGranted = hasPermission(roleId, permissionId);
-
-            // Update permissions
-            const updateRolePermissions = httpsCallable(functions, 'adminUpdateRolePermissions');
-            await updateRolePermissions({
-                roleId,
-                permissions: {
-                    [permissionId]: !currentlyGranted
+            // Group changes by role
+            const changesByRole = {};
+            Object.entries(pendingChanges).forEach(([key, value]) => {
+                const [role, permission] = key.split('_');
+                if (!changesByRole[role]) {
+                    changesByRole[role] = {};
                 }
+                changesByRole[role][permission] = value;
             });
 
-            showSnackbar('Permission updated', 'success');
-
-            // Refresh data
-            await initializeData();
-        } catch (error) {
-            console.error('Error toggling permission:', error);
-            showSnackbar(error.message || 'Error updating permission', 'error');
-        }
-    };
-
-    const handleAssignUsers = () => {
-        setUserAssignmentOpen(true);
-    };
-
-    const handleSaveUserAssignments = async () => {
-        try {
-            setSaving(true);
-
-            const bulkAssignRole = httpsCallable(functions, 'adminBulkAssignRole');
-            await bulkAssignRole({
-                userIds: selectedUsers,
-                roleId: selectedRole
-            });
-
-            setUserAssignmentOpen(false);
-            setSelectedUsers([]);
-            showSnackbar('User roles updated successfully', 'success');
-        } catch (error) {
-            console.error('Error updating user roles:', error);
-            showSnackbar(error.message || 'Error updating user roles', 'error');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleDeleteConfirm = async () => {
-        try {
-            setSaving(true);
-
-            if (deleteTarget.type === 'role') {
-                const deleteRole = httpsCallable(functions, 'adminDeleteRole');
-                await deleteRole({ roleId: deleteTarget.item.id });
-                showSnackbar('Role deleted successfully', 'success');
-            } else if (deleteTarget.type === 'permission') {
-                // Permission deletion not implemented in cloud functions yet
-                showSnackbar('Permission deletion not yet implemented', 'info');
+            // Update each role's permissions
+            for (const [roleId, permissions] of Object.entries(changesByRole)) {
+                const updateRolePermissions = httpsCallable(functions, 'adminUpdateRolePermissions');
+                await updateRolePermissions({ roleId, permissions });
             }
 
-            setDeleteDialogOpen(false);
-            setDeleteTarget(null);
+            setPendingChanges({});
+            setEditMode(false);
+            showSnackbar('Permissions updated successfully', 'success');
         } catch (error) {
-            console.error('Error deleting:', error);
-            showSnackbar(error.message || 'Error deleting item', 'error');
+            console.error('Error saving permissions:', error);
+            showSnackbar(error.message || 'Error saving permissions', 'error');
         } finally {
             setSaving(false);
         }
     };
 
-    const showSnackbar = (message, severity = 'success') => {
-        setSnackbar({ open: true, message, severity });
+    const handleCancelEdit = () => {
+        setPendingChanges({});
+        setEditMode(false);
     };
 
     const handleCategoryToggle = (category) => {
@@ -492,6 +249,23 @@ const RolePermissionsView = () => {
         }
     };
 
+    const showSnackbar = (message, severity = 'success') => {
+        setSnackbar({ open: true, message, severity });
+    };
+
+    // Group permissions by category
+    const permissionCategories = {};
+    Object.entries(PERMISSIONS).forEach(([key, value]) => {
+        const category = getPermissionCategory(key);
+        if (!permissionCategories[category]) {
+            permissionCategories[category] = {
+                icon: getCategoryIcon(category),
+                permissions: []
+            };
+        }
+        permissionCategories[category].permissions.push({ key, value });
+    });
+
     // Group users by role
     const usersByRole = users.reduce((acc, user) => {
         const role = user.role || 'user';
@@ -500,7 +274,7 @@ const RolePermissionsView = () => {
         return acc;
     }, {});
 
-    const canManageRoles = currentUser?.role === 'superadmin';
+    const canEditPermissions = userRole === 'superadmin';
 
     if (loading) {
         return (
@@ -515,85 +289,83 @@ const RolePermissionsView = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                 <Box>
                     <Typography variant="h4" sx={{ fontSize: '24px', fontWeight: 600 }}>
-                        Role Permissions Management
+                        Role Permissions
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px' }}>
-                        Manage roles, permissions, and user assignments
+                        View and manage role-based access control
                     </Typography>
                 </Box>
 
-                {canManageRoles && (
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                            variant="contained"
-                            startIcon={<GroupAddIcon />}
-                            onClick={handleAddRole}
-                            size="small"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Add Role
-                        </Button>
-                        <Button
-                            variant="outlined"
-                            startIcon={<PermissionIcon />}
-                            onClick={() => setPermissionDialogOpen(true)}
-                            size="small"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Manage Permissions
-                        </Button>
-                        <Button
-                            variant="outlined"
-                            startIcon={<PeopleIcon />}
-                            onClick={handleAssignUsers}
-                            size="small"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Assign Users
-                        </Button>
+                {canEditPermissions && (
+                    <Box>
+                        {editMode ? (
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<CloseIcon />}
+                                    onClick={handleCancelEdit}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<SaveIcon />}
+                                    onClick={handleSaveChanges}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                    disabled={saving || Object.keys(pendingChanges).length === 0}
+                                >
+                                    Save Changes
+                                </Button>
+                            </Box>
+                        ) : (
+                            <Button
+                                variant="contained"
+                                startIcon={<EditIcon />}
+                                onClick={() => setEditMode(true)}
+                                size="small"
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Edit Permissions
+                            </Button>
+                        )}
                     </Box>
                 )}
             </Box>
 
             {/* Role Summary Cards */}
             <Grid container spacing={3} sx={{ mb: 4 }}>
-                {roles.map((role) => {
-                    const userCount = usersByRole[role.id]?.length || 0;
+                {Object.entries(ROLES).map(([key, roleId]) => {
+                    const userCount = usersByRole[roleId]?.length || 0;
+                    const keyPermissions = Object.entries(PERMISSIONS)
+                        .filter(([_, permId]) => hasPermission(roleId, permId))
+                        .slice(0, 5);
 
                     return (
-                        <Grid item xs={12} md={4} key={role.id}>
+                        <Grid item xs={12} md={4} key={roleId}>
                             <Card sx={{
                                 height: '100%',
-                                borderTop: `4px solid ${role.color}`,
+                                borderTop: `4px solid ${getRoleColor(roleId)}`,
                                 '&:hover': { boxShadow: 3 }
                             }}>
                                 <CardContent>
                                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Avatar sx={{ bgcolor: role.color, mr: 2 }}>
-                                            {getRoleIcon(role.id)}
+                                        <Avatar sx={{ bgcolor: getRoleColor(roleId), mr: 2 }}>
+                                            {getRoleIcon(roleId)}
                                         </Avatar>
                                         <Box sx={{ flexGrow: 1 }}>
                                             <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                                                {role.name}
+                                                {getRoleDisplayName(roleId)}
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px' }}>
                                                 {userCount} user{userCount !== 1 ? 's' : ''}
                                             </Typography>
                                         </Box>
-                                        {canManageRoles && (
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => {
-                                                    setAnchorEl(e.currentTarget);
-                                                    setMenuContext({ type: 'role', item: role });
-                                                }}
-                                            >
-                                                <MoreVertIcon fontSize="small" />
-                                            </IconButton>
-                                        )}
                                     </Box>
                                     <Typography variant="body2" sx={{ mb: 2, fontSize: '12px' }}>
-                                        {role.description}
+                                        {getRoleDescription(roleId)}
                                     </Typography>
 
                                     {/* Key Permissions */}
@@ -601,7 +373,7 @@ const RolePermissionsView = () => {
                                         <Typography variant="subtitle2" sx={{ mb: 1, fontSize: '12px', fontWeight: 600 }}>
                                             Key Permissions:
                                         </Typography>
-                                        {role.id === 'superadmin' ? (
+                                        {roleId === 'superadmin' ? (
                                             <Chip
                                                 label="All Permissions"
                                                 size="small"
@@ -610,21 +382,18 @@ const RolePermissionsView = () => {
                                             />
                                         ) : (
                                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                                {permissions
-                                                    .filter(p => hasPermission(role.id, p.id))
-                                                    .slice(0, 5)
-                                                    .map((permission) => (
-                                                        <Chip
-                                                            key={permission.id}
-                                                            label={permission.name}
-                                                            size="small"
-                                                            variant="outlined"
-                                                            sx={{ fontSize: '10px', textTransform: 'capitalize' }}
-                                                        />
-                                                    ))}
-                                                {permissions.filter(p => hasPermission(role.id, p.id)).length > 5 && (
+                                                {keyPermissions.map(([key, permId]) => (
                                                     <Chip
-                                                        label={`+${permissions.filter(p => hasPermission(role.id, p.id)).length - 5} more`}
+                                                        key={permId}
+                                                        label={permId.replace(/_/g, ' ').toLowerCase()}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{ fontSize: '10px', textTransform: 'capitalize' }}
+                                                    />
+                                                ))}
+                                                {Object.entries(PERMISSIONS).filter(([_, permId]) => hasPermission(roleId, permId)).length > 5 && (
+                                                    <Chip
+                                                        label={`+${Object.entries(PERMISSIONS).filter(([_, permId]) => hasPermission(roleId, permId)).length - 5} more`}
                                                         size="small"
                                                         sx={{ fontSize: '10px' }}
                                                     />
@@ -646,7 +415,7 @@ const RolePermissionsView = () => {
                         Permission Matrix
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px', mt: 0.5 }}>
-                        {canManageRoles ? 'Click on permissions to toggle them' : 'View permissions by role and category'}
+                        {editMode ? 'Click on permissions to toggle them' : 'View permissions by role and category'}
                     </Typography>
                 </Box>
 
@@ -661,7 +430,7 @@ const RolePermissionsView = () => {
                         />
                     </Box>
 
-                    {Object.entries(permissionCategories).map(([category, { icon, permissions: categoryPerms }]) => (
+                    {Object.entries(permissionCategories).map(([category, { icon, permissions }]) => (
                         <Accordion
                             key={category}
                             expanded={expandedCategories.includes('all') || expandedCategories.includes(category)}
@@ -675,7 +444,7 @@ const RolePermissionsView = () => {
                                         {category}
                                     </Typography>
                                     <Chip
-                                        label={categoryPerms.length}
+                                        label={permissions.length}
                                         size="small"
                                         sx={{ fontSize: '10px', height: '20px' }}
                                     />
@@ -689,54 +458,48 @@ const RolePermissionsView = () => {
                                                 <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>
                                                     Permission
                                                 </TableCell>
-                                                {roles.map(role => (
-                                                    <TableCell key={role.id} align="center" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                        {role.name}
+                                                {Object.values(ROLES).map(roleId => (
+                                                    <TableCell key={roleId} align="center" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                        {getRoleDisplayName(roleId)}
                                                     </TableCell>
                                                 ))}
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
-                                            {categoryPerms.map(permId => {
-                                                const permission = permissions.find(p => p.id === permId);
-                                                if (!permission) return null;
-
-                                                return (
-                                                    <TableRow key={permission.id}>
-                                                        <TableCell sx={{ fontSize: '12px' }}>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                {permission.name}
-                                                                <Tooltip title={`Permission: ${permission.id}`}>
-                                                                    <InfoIcon sx={{ fontSize: '14px', color: 'text.secondary' }} />
-                                                                </Tooltip>
-                                                            </Box>
-                                                        </TableCell>
-                                                        {roles.map(role => (
-                                                            <TableCell key={role.id} align="center">
-                                                                {canManageRoles && role.id !== 'superadmin' ? (
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={() => handleTogglePermission(role.id, permission.id)}
-                                                                        disabled={role.isSystem}
-                                                                    >
-                                                                        {hasPermission(role.id, permission.id) ? (
-                                                                            <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
-                                                                        ) : (
-                                                                            <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
-                                                                        )}
-                                                                    </IconButton>
-                                                                ) : (
-                                                                    hasPermission(role.id, permission.id) ? (
+                                            {permissions.map(({ key, value: permId }) => (
+                                                <TableRow key={permId}>
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            {permId.replace(/_/g, ' ').toLowerCase()}
+                                                            <Tooltip title={`Permission: ${permId}`}>
+                                                                <InfoIcon sx={{ fontSize: '14px', color: 'text.secondary' }} />
+                                                            </Tooltip>
+                                                        </Box>
+                                                    </TableCell>
+                                                    {Object.values(ROLES).map(roleId => (
+                                                        <TableCell key={roleId} align="center">
+                                                            {editMode && roleId !== 'superadmin' ? (
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => handlePermissionToggle(roleId, permId)}
+                                                                >
+                                                                    {hasPermission(roleId, permId) ? (
                                                                         <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
                                                                     ) : (
                                                                         <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
-                                                                    )
-                                                                )}
-                                                            </TableCell>
-                                                        ))}
-                                                    </TableRow>
-                                                );
-                                            })}
+                                                                    )}
+                                                                </IconButton>
+                                                            ) : (
+                                                                hasPermission(roleId, permId) ? (
+                                                                    <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
+                                                                ) : (
+                                                                    <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
+                                                                )
+                                                            )}
+                                                        </TableCell>
+                                                    ))}
+                                                </TableRow>
+                                            ))}
                                         </TableBody>
                                     </Table>
                                 </TableContainer>
@@ -746,220 +509,141 @@ const RolePermissionsView = () => {
                 </Box>
             </Paper>
 
-            {/* Context Menu */}
-            <Menu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={() => setAnchorEl(null)}
-            >
-                {menuContext?.type === 'role' && (
-                    <>
-                        <MenuItem onClick={() => {
-                            handleEditRole(menuContext.item);
-                            setAnchorEl(null);
-                        }}>
-                            <ListItemIcon>
-                                <EditIcon fontSize="small" />
-                            </ListItemIcon>
-                            <ListItemText primary="Edit Role" />
-                        </MenuItem>
-                        <MenuItem
-                            onClick={() => {
-                                handleDeleteRole(menuContext.item);
-                                setAnchorEl(null);
-                            }}
-                            disabled={menuContext.item.isSystem}
-                        >
-                            <ListItemIcon>
-                                <DeleteIcon fontSize="small" />
-                            </ListItemIcon>
-                            <ListItemText primary="Delete Role" />
-                        </MenuItem>
-                    </>
-                )}
-            </Menu>
+            {/* Route Access Control */}
+            <Paper sx={{ mb: 4 }}>
+                <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                        Route Access Control
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px', mt: 0.5 }}>
+                        Admin routes and required permissions
+                    </Typography>
+                </Box>
 
-            {/* Role Dialog */}
-            <Dialog
-                open={roleDialogOpen}
-                onClose={() => setRoleDialogOpen(false)}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: '16px' }}>
-                    {editingRole?.docId ? 'Edit Role' : 'Add New Role'}
-                </DialogTitle>
-                <DialogContent>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-                        <TextField
-                            label="Role Name"
-                            value={editingRole?.name || ''}
-                            onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })}
-                            fullWidth
-                            size="small"
-                            required
-                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                        />
-                        <TextField
-                            label="Description"
-                            value={editingRole?.description || ''}
-                            onChange={(e) => setEditingRole({ ...editingRole, description: e.target.value })}
-                            fullWidth
-                            size="small"
-                            multiline
-                            rows={2}
-                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                        />
-                        <TextField
-                            label="Color"
-                            type="color"
-                            value={editingRole?.color || '#757575'}
-                            onChange={(e) => setEditingRole({ ...editingRole, color: e.target.value })}
-                            fullWidth
-                            size="small"
-                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                        />
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setRoleDialogOpen(false)} size="small">
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleSaveRole}
-                        variant="contained"
-                        size="small"
-                        disabled={saving || !editingRole?.name}
-                    >
-                        {saving ? <CircularProgress size={20} /> : 'Save'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* User Assignment Dialog */}
-            <Dialog
-                open={userAssignmentOpen}
-                onClose={() => setUserAssignmentOpen(false)}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: '16px' }}>
-                    Assign Users to Roles
-                </DialogTitle>
-                <DialogContent>
-                    <Box sx={{ mt: 2 }}>
-                        <FormControl fullWidth size="small" sx={{ mb: 3 }}>
-                            <InputLabel sx={{ fontSize: '12px' }}>Select Role</InputLabel>
-                            <Select
-                                value={selectedRole || ''}
-                                onChange={(e) => setSelectedRole(e.target.value)}
-                                label="Select Role"
-                                sx={{ fontSize: '12px' }}
-                            >
-                                {roles.filter(r => r.id !== 'superadmin').map(role => (
-                                    <MenuItem key={role.id} value={role.id} sx={{ fontSize: '12px' }}>
-                                        {role.name}
-                                    </MenuItem>
+                <TableContainer>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Route</TableCell>
+                                <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Required Permissions</TableCell>
+                                {Object.values(ROLES).map(roleId => (
+                                    <TableCell key={roleId} align="center" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        {getRoleDisplayName(roleId)}
+                                    </TableCell>
                                 ))}
-                            </Select>
-                        </FormControl>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {Object.entries(ROUTE_PERMISSIONS)
+                                .filter(([route]) => route.startsWith('/admin'))
+                                .map(([route, permissions]) => {
+                                    const permArray = Array.isArray(permissions) ? permissions : [permissions];
 
-                        <Typography variant="subtitle2" sx={{ mb: 2, fontSize: '12px' }}>
-                            Select users to assign to this role:
-                        </Typography>
+                                    return (
+                                        <TableRow key={route}>
+                                            <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                                {route}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                    {permArray.map(perm => (
+                                                        <Chip
+                                                            key={perm}
+                                                            label={perm.replace(/_/g, ' ').toLowerCase()}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            sx={{ fontSize: '10px', textTransform: 'capitalize' }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                            </TableCell>
+                                            {Object.values(ROLES).map(roleId => {
+                                                const hasAccess = permArray.some(perm => hasPermission(roleId, perm));
+                                                return (
+                                                    <TableCell key={roleId} align="center">
+                                                        {hasAccess ? (
+                                                            <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
+                                                        ) : (
+                                                            <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
+                                                        )}
+                                                    </TableCell>
+                                                );
+                                            })}
+                                        </TableRow>
+                                    );
+                                })}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+            </Paper>
 
-                        <List sx={{ maxHeight: 400, overflow: 'auto' }}>
-                            {users.map(user => (
-                                <ListItem key={user.id} disablePadding>
-                                    <ListItemButton
-                                        onClick={() => {
-                                            setSelectedUsers(prev =>
-                                                prev.includes(user.id)
-                                                    ? prev.filter(id => id !== user.id)
-                                                    : [...prev, user.id]
-                                            );
-                                        }}
-                                        dense
-                                    >
-                                        <ListItemIcon>
-                                            <Checkbox
-                                                checked={selectedUsers.includes(user.id)}
-                                                tabIndex={-1}
-                                                disableRipple
-                                            />
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={`${user.firstName || ''} ${user.lastName || ''}`}
-                                            secondary={`${user.email} - Current role: ${getRoleDisplayName(user.role)}`}
-                                            primaryTypographyProps={{ fontSize: '12px' }}
-                                            secondaryTypographyProps={{ fontSize: '11px' }}
+            {/* Users by Role */}
+            <Paper>
+                <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                        Users by Role
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px', mt: 0.5 }}>
+                        Current user assignments
+                    </Typography>
+                </Box>
+
+                <Box sx={{ p: 2 }}>
+                    <Grid container spacing={3}>
+                        {Object.entries(ROLES).map(([key, roleId]) => (
+                            <Grid item xs={12} md={4} key={roleId}>
+                                <Box sx={{ mb: 2 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                        <Avatar sx={{ bgcolor: getRoleColor(roleId), width: 32, height: 32 }}>
+                                            {getRoleIcon(roleId)}
+                                        </Avatar>
+                                        <Typography variant="subtitle1" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                            {getRoleDisplayName(roleId)}
+                                        </Typography>
+                                        <Chip
+                                            label={usersByRole[roleId]?.length || 0}
+                                            size="small"
+                                            sx={{ fontSize: '10px' }}
                                         />
-                                    </ListItemButton>
-                                </ListItem>
-                            ))}
-                        </List>
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setUserAssignmentOpen(false)} size="small">
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleSaveUserAssignments}
-                        variant="contained"
-                        size="small"
-                        disabled={saving || !selectedRole || selectedUsers.length === 0}
-                    >
-                        {saving ? <CircularProgress size={20} /> : 'Assign Users'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Delete Confirmation Dialog */}
-            <Dialog
-                open={deleteDialogOpen}
-                onClose={() => setDeleteDialogOpen(false)}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: '16px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <WarningIcon color="error" />
-                    Confirm Delete
-                </DialogTitle>
-                <DialogContent>
-                    <Alert severity="warning" sx={{ mt: 2 }}>
-                        Are you sure you want to delete this {deleteTarget?.type}? This action cannot be undone.
-                    </Alert>
-                    {deleteTarget?.type === 'role' && (
-                        <Typography variant="body2" sx={{ mt: 2, fontSize: '12px' }}>
-                            Role: <strong>{deleteTarget.item.name}</strong>
-                            <br />
-                            Users with this role will need to be reassigned.
-                        </Typography>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteDialogOpen(false)} size="small">
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleDeleteConfirm}
-                        variant="contained"
-                        color="error"
-                        size="small"
-                        disabled={saving}
-                    >
-                        {saving ? <CircularProgress size={20} /> : 'Delete'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                                    </Box>
+                                    <List dense>
+                                        {usersByRole[roleId]?.map(user => (
+                                            <ListItem key={user.id} sx={{ px: 0 }}>
+                                                <ListItemIcon sx={{ minWidth: 36 }}>
+                                                    <Avatar sx={{ width: 28, height: 28, fontSize: '12px' }}>
+                                                        {user.firstName?.[0]}{user.lastName?.[0]}
+                                                    </Avatar>
+                                                </ListItemIcon>
+                                                <ListItemText
+                                                    primary={`${user.firstName || ''} ${user.lastName || ''}`}
+                                                    secondary={user.email}
+                                                    primaryTypographyProps={{ fontSize: '12px' }}
+                                                    secondaryTypographyProps={{ fontSize: '11px' }}
+                                                />
+                                            </ListItem>
+                                        ))}
+                                        {(!usersByRole[roleId] || usersByRole[roleId].length === 0) && (
+                                            <ListItem sx={{ px: 0 }}>
+                                                <ListItemText
+                                                    primary="No users assigned"
+                                                    primaryTypographyProps={{ fontSize: '12px', color: 'text.secondary' }}
+                                                />
+                                            </ListItem>
+                                        )}
+                                    </List>
+                                </Box>
+                            </Grid>
+                        ))}
+                    </Grid>
+                </Box>
+            </Paper>
 
             {/* Snackbar */}
             <Snackbar
                 open={snackbar.open}
                 autoHideDuration={6000}
                 onClose={() => setSnackbar({ ...snackbar, open: false })}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
             >
                 <Alert
                     onClose={() => setSnackbar({ ...snackbar, open: false })}

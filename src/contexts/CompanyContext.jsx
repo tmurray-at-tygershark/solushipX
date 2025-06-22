@@ -7,7 +7,7 @@ const CompanyContext = createContext(null);
 
 export const useCompany = () => useContext(CompanyContext);
 
-const ADMIN_ROLES = ['super_admin', 'admin', 'business_admin'];
+const ADMIN_ROLES = ['superadmin', 'admin'];
 
 export const CompanyProvider = ({ children }) => {
     const { currentUser, userRole } = useAuth();
