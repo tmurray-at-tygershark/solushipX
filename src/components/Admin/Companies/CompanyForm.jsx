@@ -43,6 +43,7 @@ import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion, arrayRemove, FieldValue } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 const CompanyForm = () => {
     const { id: companyFirestoreId } = useParams();
@@ -550,12 +551,14 @@ const CompanyForm = () => {
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
                             {isEditMode ? `Edit Company: ${formData.name || 'Loading...'}` : 'Add New Company'}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            {isEditMode ? 'Update company information and settings' : 'Create a new company profile'}
-                        </Typography>
+                        {/* Breadcrumb */}
+                        <AdminBreadcrumb
+                            entityName={isEditMode ? formData.name : null}
+                            showEntityName={isEditMode}
+                        />
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button

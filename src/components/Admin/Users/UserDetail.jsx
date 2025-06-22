@@ -274,275 +274,618 @@ const UserDetail = () => {
     const connectedCompanyIds = user.connectedCompanies?.companies || [];
 
     return (
-        <Box sx={{ p: { xs: 2, sm: 3 } }}>
-            {/* Title and Breadcrumbs */}
-            <Box sx={{ mb: 3 }}>
-                <Typography variant="h4" component="h1" gutterBottom>
-                    User Profile: {user ? `${user.firstName} ${user.lastName}` : 'Loading...'}
-                </Typography>
-                <Breadcrumbs aria-label="breadcrumb">
-                    <RouterLink to="/admin" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
-                        Admin
-                    </RouterLink>
-                    <RouterLink to="/admin/users" sx={{ textDecoration: 'none', color: 'inherit', '&:hover': { textDecoration: 'underline' } }}>
-                        Users
-                    </RouterLink>
-                    <Typography color="text.primary">
-                        {user ? `${user.firstName} ${user.lastName}` : 'Detail'}
-                    </Typography>
-                </Breadcrumbs>
+        <Box sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: '#f8fafc'
+        }}>
+            {/* Header Section */}
+            <Box sx={{
+                p: 3,
+                borderBottom: '1px solid #e5e7eb',
+                backgroundColor: 'white'
+            }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Box>
+                        <Typography variant="h5" sx={{
+                            fontWeight: 600,
+                            color: '#111827',
+                            fontSize: '20px',
+                            mb: 0.5
+                        }}>
+                            {user ? `${user.firstName} ${user.lastName}` : 'User Details'}
+                        </Typography>
+                        <Typography sx={{
+                            fontSize: '12px',
+                            color: '#6b7280',
+                            mb: 2
+                        }}>
+                            Manage user information, permissions, and settings
+                        </Typography>
+                        <Breadcrumbs aria-label="breadcrumb" sx={{ fontSize: '12px' }}>
+                            <RouterLink to="/admin" sx={{
+                                textDecoration: 'none',
+                                color: '#6b7280',
+                                fontSize: '12px',
+                                '&:hover': { textDecoration: 'underline' }
+                            }}>
+                                Admin
+                            </RouterLink>
+                            <RouterLink to="/admin/users" sx={{
+                                textDecoration: 'none',
+                                color: '#6b7280',
+                                fontSize: '12px',
+                                '&:hover': { textDecoration: 'underline' }
+                            }}>
+                                Users
+                            </RouterLink>
+                            <Typography sx={{ color: '#374151', fontSize: '12px' }}>
+                                {user ? `${user.firstName} ${user.lastName}` : 'Detail'}
+                            </Typography>
+                        </Breadcrumbs>
+                    </Box>
+
+                    {/* Action Buttons */}
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        {editMode ? (
+                            <>
+                                <Button
+                                    variant="contained"
+                                    onClick={handleSaveChanges}
+                                    startIcon={<SaveIcon />}
+                                    disabled={isSaving}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    {isSaving ? <CircularProgress size={16} color="inherit" /> : 'Save Changes'}
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    onClick={handleEditToggle}
+                                    startIcon={<CancelIcon />}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Cancel
+                                </Button>
+                            </>
+                        ) : (
+                            <Button
+                                variant="outlined"
+                                onClick={handleEditToggle}
+                                startIcon={<EditIcon />}
+                                size="small"
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Edit User
+                            </Button>
+                        )}
+                    </Box>
+                </Box>
             </Box>
 
-            <Paper elevation={2} sx={{ p: { xs: 2, sm: 3 } }}>
-                <Grid container spacing={3}>
-                    {/* Left Pane: Avatar and Core Info */}
-                    <Grid item xs={12} md={4}>
-                        <Box sx={{ textAlign: 'center', mb: 3 }}>
-                            <Avatar sx={{ width: 120, height: 120, margin: '0 auto 16px', fontSize: '3rem' }}>
-                                {user.firstName?.[0]?.toUpperCase()}{user.lastName?.[0]?.toUpperCase()}
-                            </Avatar>
-                            <Typography variant="h5" gutterBottom>
-                                {user.firstName || ''} {user.lastName || ''}
-                            </Typography>
-                            <Chip
-                                label={user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Unknown'}
-                                color={user.status === 'active' ? 'success' : user.status === 'inactive' ? 'default' : 'warning'}
-                                size="small"
-                            />
-                        </Box>
-                        <Stack spacing={1.5} divider={<Divider flexItem />}>
-                            <Box>
-                                <Typography variant="subtitle2" color="text.secondary">Email</Typography>
-                                <Typography variant="body1">{user.email || '—'}</Typography>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
-                                <Typography variant="body1">{editMode ?
-                                    <TextField size="small" name="phone" value={formData.phone} onChange={handleInputChange} fullWidth />
-                                    : (user.phone || '—')}
+            {/* Main Content Area */}
+            <Box sx={{
+                flex: 1,
+                overflow: 'auto',
+                p: 3
+            }}>
+                <Paper sx={{
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    overflow: 'hidden'
+                }}>
+                    <Grid container>
+                        {/* Left Pane: Avatar and Core Info */}
+                        <Grid item xs={12} md={4} sx={{
+                            borderRight: { md: '1px solid #e5e7eb' },
+                            p: 3
+                        }}>
+                            <Box sx={{ textAlign: 'center', mb: 3 }}>
+                                <Avatar sx={{
+                                    width: 100,
+                                    height: 100,
+                                    margin: '0 auto 16px',
+                                    fontSize: '2.5rem',
+                                    backgroundColor: '#1f2937'
+                                }}>
+                                    {user.firstName?.[0]?.toUpperCase()}{user.lastName?.[0]?.toUpperCase()}
+                                </Avatar>
+                                <Typography sx={{
+                                    fontSize: '18px',
+                                    fontWeight: 600,
+                                    color: '#111827',
+                                    mb: 1
+                                }}>
+                                    {user.firstName || ''} {user.lastName || ''}
                                 </Typography>
+                                <Chip
+                                    label={user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Unknown'}
+                                    color={user.status === 'active' ? 'success' : user.status === 'inactive' ? 'default' : 'warning'}
+                                    size="small"
+                                    sx={{ fontSize: '11px' }}
+                                />
                             </Box>
-                            <Box>
-                                <Typography variant="subtitle2" color="text.secondary">Role</Typography>
-                                {editMode ? (
-                                    <FormControl fullWidth size="small">
-                                        <Select name="role" value={formData.role} onChange={handleInputChange}>
-                                            <MenuItem value="super_admin">Super Admin</MenuItem>
-                                            <MenuItem value="admin">Admin</MenuItem>
-                                            <MenuItem value="business_admin">Business Admin</MenuItem>
-                                            <MenuItem value="user">User</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                ) : (
-                                    <Typography variant="body1">{user.role || '—'}</Typography>
-                                )}
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                                {editMode ? (
-                                    <FormControl fullWidth size="small">
-                                        <Select name="status" value={formData.status} onChange={handleInputChange}>
-                                            <MenuItem value="active">Active</MenuItem>
-                                            <MenuItem value="inactive">Inactive</MenuItem>
-                                            <MenuItem value="suspended">Suspended</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                ) : (
-                                    <Typography variant="body1">{user.status || '—'}</Typography>
-                                )}
-                            </Box>
-                        </Stack>
-                        <Box sx={{ mt: 3, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1 }}>
-                            {editMode ? (
-                                <>
-                                    <Button variant="contained" onClick={handleSaveChanges} startIcon={<SaveIcon />} disabled={isSaving}>
-                                        {isSaving ? <CircularProgress size={20} color="inherit" /> : 'Save Changes'}
-                                    </Button>
-                                    <Button variant="outlined" onClick={handleEditToggle} startIcon={<CancelIcon />}>Cancel</Button>
-                                </>
-                            ) : (
-                                <Button variant="outlined" onClick={handleEditToggle} startIcon={<EditIcon />}>Edit User</Button>
-                            )}
-                        </Box>
-                    </Grid>
 
-                    {/* Right Pane: Tabs for Details */}
-                    <Grid item xs={12} md={8}>
-                        <Paper variant="outlined" sx={{ height: '100%' }}>
-                            <Tabs value={activeTab} onChange={handleTabChange} aria-label="user details tabs" sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                                <Tab label="Details" icon={<PersonIcon />} iconPosition="start" />
-                                <Tab label="Companies" icon={<BusinessIcon />} iconPosition="start" />
-                                <Tab label="Security" icon={<AdminPanelSettingsIcon />} iconPosition="start" />
-                            </Tabs>
-
-                            {/* Tab Panel 1: Details (becomes edit form) */}
-                            {activeTab === 0 && (
-                                <Box sx={{ p: 3 }}>
-                                    <Typography variant="h6" gutterBottom>User Information</Typography>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={6}>
-                                            <TextField label="First Name" fullWidth name="firstName" value={editMode ? formData.firstName : user.firstName} onChange={handleInputChange} disabled={!editMode} error={!!formErrors.firstName} helperText={formErrors.firstName} />
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <TextField label="Last Name" fullWidth name="lastName" value={editMode ? formData.lastName : user.lastName} onChange={handleInputChange} disabled={!editMode} error={!!formErrors.lastName} helperText={formErrors.lastName} />
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <TextField label="Email" fullWidth value={user.email || '—'} disabled />
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <TextField label="Phone" fullWidth name="phone" value={editMode ? formData.phone : (user.phone || '—')} onChange={handleInputChange} disabled={!editMode} />
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="body2" color="textSecondary">Joined:</Typography>
-                                            <Typography variant="body1">{formatDate(user.createdAt)}</Typography>
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <Typography variant="body2" color="textSecondary">Last Updated:</Typography>
-                                            <Typography variant="body1">{formatDate(user.updatedAt)}</Typography>
-                                        </Grid>
-                                    </Grid>
+                            <Stack spacing={2}>
+                                <Box>
+                                    <Typography sx={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        mb: 0.5
+                                    }}>
+                                        Email
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                        {user.email || '—'}
+                                    </Typography>
                                 </Box>
-                            )}
 
-                            {/* Tab Panel 2: Connected Companies */}
-                            {activeTab === 1 && (
-                                <Box sx={{ p: 3 }}>
-                                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                                        <Typography variant="h6">Connected Companies</Typography>
-                                        <Button startIcon={<EditIcon />} onClick={handleManageCompanies} size="small">Manage</Button>
-                                    </Stack>
-                                    {connectedCompanyIds.length > 0 ? (
-                                        <List dense>
-                                            {connectedCompanyIds.map(companyId => (
-                                                <ListItem key={companyId} disableGutters>
-                                                    <ListItemIcon sx={{ minWidth: 32 }}><BusinessIcon fontSize="small" /></ListItemIcon>
-                                                    <ListItemText primary={companyMap[companyId] || companyId} />
-                                                </ListItem>
-                                            ))}
-                                        </List>
+                                <Box>
+                                    <Typography sx={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        mb: 0.5
+                                    }}>
+                                        Phone
+                                    </Typography>
+                                    {editMode ? (
+                                        <TextField
+                                            size="small"
+                                            name="phone"
+                                            value={formData.phone}
+                                            onChange={handleInputChange}
+                                            fullWidth
+                                            sx={{
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
+                                        />
                                     ) : (
-                                        <Typography color="text.secondary">No companies connected.</Typography>
+                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                            {user.phone || '—'}
+                                        </Typography>
                                     )}
                                 </Box>
-                            )}
-                            {/* Tab Panel 3: Account Security */}
-                            {activeTab === 2 && (
-                                <Box sx={{ p: 3 }}>
-                                    <Typography variant="h6" gutterBottom>Account Security</Typography>
-                                    <Stack spacing={2}>
-                                        <Box>
-                                            <Typography variant="body2" color="textSecondary">Last Login:</Typography>
-                                            <Typography variant="body1">{formatDate(user.lastLogin) || 'Never'}</Typography>
-                                        </Box>
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<LockResetIcon />}
-                                            onClick={() => setResetPasswordDialogOpen(true)}
-                                            sx={{ alignSelf: 'flex-start' }}
-                                        >
-                                            Reset User Password
-                                        </Button>
-                                    </Stack>
+
+                                <Box>
+                                    <Typography sx={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        mb: 0.5
+                                    }}>
+                                        Role
+                                    </Typography>
+                                    {editMode ? (
+                                        <FormControl fullWidth size="small">
+                                            <Select
+                                                name="role"
+                                                value={formData.role}
+                                                onChange={handleInputChange}
+                                                sx={{
+                                                    '& .MuiSelect-select': { fontSize: '12px' },
+                                                    '& .MuiMenuItem-root': { fontSize: '12px' }
+                                                }}
+                                            >
+                                                <MenuItem value="super_admin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
+                                                <MenuItem value="admin" sx={{ fontSize: '12px' }}>Admin</MenuItem>
+                                                <MenuItem value="business_admin" sx={{ fontSize: '12px' }}>Business Admin</MenuItem>
+                                                <MenuItem value="user" sx={{ fontSize: '12px' }}>User</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    ) : (
+                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                            {user.role || '—'}
+                                        </Typography>
+                                    )}
                                 </Box>
-                            )}
-                        </Paper>
-                    </Grid>
-                </Grid>
-            </Paper>
 
-            {/* Manage Connected Companies Dialog */}
-            <Dialog open={manageCompaniesOpen} onClose={() => setManageCompaniesOpen(false)} fullWidth maxWidth="md">
-                <DialogTitle>Manage Connected Companies</DialogTitle>
-                <DialogContent dividers>
-                    <Typography variant="subtitle1" gutterBottom>Currently Connected:</Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2, p: 1, border: '1px solid #eee', borderRadius: 1, minHeight: '40px' }}>
-                        {selectedCompaniesForManagement.length > 0 ? (
-                            selectedCompaniesForManagement.map((company) => (
-                                <Chip
-                                    key={company.id}
-                                    label={company.name}
-                                    onDelete={() => {
-                                        setSelectedCompaniesForManagement(prev => prev.filter(c => c.id !== company.id));
+                                <Box>
+                                    <Typography sx={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        mb: 0.5
+                                    }}>
+                                        Status
+                                    </Typography>
+                                    {editMode ? (
+                                        <FormControl fullWidth size="small">
+                                            <Select
+                                                name="status"
+                                                value={formData.status}
+                                                onChange={handleInputChange}
+                                                sx={{
+                                                    '& .MuiSelect-select': { fontSize: '12px' },
+                                                    '& .MuiMenuItem-root': { fontSize: '12px' }
+                                                }}
+                                            >
+                                                <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
+                                                <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
+                                                <MenuItem value="suspended" sx={{ fontSize: '12px' }}>Suspended</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    ) : (
+                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                            {user.status || '—'}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            </Stack>
+                        </Grid>
+
+                        {/* Right Pane: Tabs for Details */}
+                        <Grid item xs={12} md={8}>
+                            <Paper variant="outlined" sx={{ height: '100%' }}>
+                                <Tabs
+                                    value={activeTab}
+                                    onChange={handleTabChange}
+                                    aria-label="user details tabs"
+                                    sx={{
+                                        borderBottom: 1,
+                                        borderColor: 'divider',
+                                        '& .MuiTab-root': {
+                                            fontSize: '12px',
+                                            textTransform: 'none',
+                                            minHeight: '48px'
+                                        }
                                     }}
-                                    color="primary"
+                                >
+                                    <Tab label="Details" icon={<PersonIcon />} iconPosition="start" />
+                                    <Tab label="Companies" icon={<BusinessIcon />} iconPosition="start" />
+                                    <Tab label="Security" icon={<AdminPanelSettingsIcon />} iconPosition="start" />
+                                </Tabs>
+
+                                {/* Tab Panel 1: Details */}
+                                {activeTab === 0 && (
+                                    <Box sx={{ p: 3 }}>
+                                        <Typography sx={{
+                                            fontSize: '16px',
+                                            fontWeight: 600,
+                                            color: '#374151',
+                                            mb: 3
+                                        }}>
+                                            User Information
+                                        </Typography>
+                                        <Grid container spacing={2}>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    label="First Name"
+                                                    fullWidth
+                                                    name="firstName"
+                                                    value={editMode ? formData.firstName : user.firstName}
+                                                    onChange={handleInputChange}
+                                                    disabled={!editMode}
+                                                    error={!!formErrors.firstName}
+                                                    helperText={formErrors.firstName}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    label="Last Name"
+                                                    fullWidth
+                                                    name="lastName"
+                                                    value={editMode ? formData.lastName : user.lastName}
+                                                    onChange={handleInputChange}
+                                                    disabled={!editMode}
+                                                    error={!!formErrors.lastName}
+                                                    helperText={formErrors.lastName}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    label="Email"
+                                                    fullWidth
+                                                    value={user.email || '—'}
+                                                    disabled
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <TextField
+                                                    label="Phone"
+                                                    fullWidth
+                                                    name="phone"
+                                                    value={editMode ? formData.phone : (user.phone || '—')}
+                                                    onChange={handleInputChange}
+                                                    disabled={!editMode}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 0.5 }}>
+                                                    Joined:
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                    {formatDate(user.createdAt)}
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item xs={12} sm={6}>
+                                                <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 0.5 }}>
+                                                    Last Updated:
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                    {formatDate(user.updatedAt)}
+                                                </Typography>
+                                            </Grid>
+                                        </Grid>
+                                    </Box>
+                                )}
+
+                                {/* Tab Panel 2: Connected Companies */}
+                                {activeTab === 1 && (
+                                    <Box sx={{ p: 3 }}>
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+                                            <Typography sx={{
+                                                fontSize: '16px',
+                                                fontWeight: 600,
+                                                color: '#374151'
+                                            }}>
+                                                Connected Companies
+                                            </Typography>
+                                            <Button
+                                                startIcon={<EditIcon />}
+                                                onClick={handleManageCompanies}
+                                                size="small"
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                Manage
+                                            </Button>
+                                        </Stack>
+                                        {connectedCompanyIds.length > 0 ? (
+                                            <List dense>
+                                                {connectedCompanyIds.map(companyId => (
+                                                    <ListItem key={companyId} disableGutters>
+                                                        <ListItemIcon sx={{ minWidth: 32 }}>
+                                                            <BusinessIcon fontSize="small" />
+                                                        </ListItemIcon>
+                                                        <ListItemText
+                                                            primary={
+                                                                <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                                    {companyMap[companyId] || companyId}
+                                                                </Typography>
+                                                            }
+                                                        />
+                                                    </ListItem>
+                                                ))}
+                                            </List>
+                                        ) : (
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                No companies connected.
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                )}
+
+                                {/* Tab Panel 3: Account Security */}
+                                {activeTab === 2 && (
+                                    <Box sx={{ p: 3 }}>
+                                        <Typography sx={{
+                                            fontSize: '16px',
+                                            fontWeight: 600,
+                                            color: '#374151',
+                                            mb: 3
+                                        }}>
+                                            Account Security
+                                        </Typography>
+                                        <Stack spacing={3}>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 0.5 }}>
+                                                    Last Login:
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                    {formatDate(user.lastLogin) || 'Never'}
+                                                </Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                    Password Management:
+                                                </Typography>
+                                                <Button
+                                                    variant="outlined"
+                                                    startIcon={<LockResetIcon />}
+                                                    onClick={() => setResetPasswordDialogOpen(true)}
+                                                    size="small"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    Reset User Password
+                                                </Button>
+                                            </Box>
+                                        </Stack>
+                                    </Box>
+                                )}
+                            </Paper>
+                        </Grid>
+                    </Grid>
+                </Paper>
+
+                {/* Manage Connected Companies Dialog */}
+                <Dialog open={manageCompaniesOpen} onClose={() => setManageCompaniesOpen(false)} fullWidth maxWidth="md">
+                    <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                        Manage Connected Companies
+                    </DialogTitle>
+                    <DialogContent dividers>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                            Currently Connected:
+                        </Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{
+                            mb: 2,
+                            p: 1,
+                            border: '1px solid #e5e7eb',
+                            borderRadius: 1,
+                            minHeight: '40px',
+                            backgroundColor: '#f8fafc'
+                        }}>
+                            {selectedCompaniesForManagement.length > 0 ? (
+                                selectedCompaniesForManagement.map((company) => (
+                                    <Chip
+                                        key={company.id}
+                                        label={company.name}
+                                        onDelete={() => {
+                                            setSelectedCompaniesForManagement(prev => prev.filter(c => c.id !== company.id));
+                                        }}
+                                        color="primary"
+                                        size="small"
+                                        sx={{ fontSize: '11px' }}
+                                    />
+                                ))
+                            ) : (
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280', p: 1 }}>
+                                    No companies currently connected.
+                                </Typography>
+                            )}
+                        </Stack>
+
+                        <Autocomplete
+                            multiple
+                            id="add-companies-autocomplete"
+                            options={allCompanies.filter(opt =>
+                                !selectedCompaniesForManagement.find(sel => sel.id === opt.id)
+                            )}
+                            getOptionLabel={(option) => option.name}
+                            value={[]}
+                            onChange={(event, newValue) => {
+                                setSelectedCompaniesForManagement(prev => {
+                                    const newSelections = newValue.filter(nv => !prev.find(p => p.id === nv.id));
+                                    return [...prev, ...newSelections];
+                                });
+                            }}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    variant="outlined"
+                                    label="Add Companies"
+                                    placeholder="Search and select companies to add"
+                                    size="small"
+                                    sx={{
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
                                 />
-                            ))
-                        ) : (
-                            <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No companies currently connected.</Typography>
-                        )}
-                    </Stack>
+                            )}
+                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                            sx={{ mt: 2 }}
+                        />
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={() => setManageCompaniesOpen(false)}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSaveConnectedCompanies}
+                            variant="contained"
+                            disabled={isSaving}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {isSaving ? <CircularProgress size={16} color="inherit" /> : 'Save Changes'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
 
-                    <Autocomplete
-                        multiple
-                        id="add-companies-autocomplete"
-                        options={allCompanies.filter(opt =>
-                            !selectedCompaniesForManagement.find(sel => sel.id === opt.id)
-                        )} // Only show companies not already selected
-                        getOptionLabel={(option) => option.name}
-                        value={[]} // Controlled by the chips above, this is for selecting new ones
-                        onChange={(event, newValue) => {
-                            // newValue will be an array of the selected company objects to add
-                            // We need to ensure no duplicates if user manages to select one already in chips (though filter should prevent)
-                            setSelectedCompaniesForManagement(prev => {
-                                const newSelections = newValue.filter(nv => !prev.find(p => p.id === nv.id));
-                                return [...prev, ...newSelections];
-                            });
-                        }}
-                        renderInput={(params) => (
-                            <TextField
-                                {...params}
-                                variant="outlined"
-                                label="Add Companies"
-                                placeholder="Search and select companies to add"
-                            />
+                {/* Reset Password Dialog */}
+                <Dialog open={resetPasswordDialogOpen} onClose={() => setResetPasswordDialogOpen(false)} fullWidth maxWidth="xs">
+                    <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                        Reset User Password
+                    </DialogTitle>
+                    <DialogContent>
+                        <DialogContentText sx={{ mb: 2, fontSize: '12px', color: '#6b7280' }}>
+                            Enter a new password for {user.email}.
+                        </DialogContentText>
+                        {passwordResetError && (
+                            <Alert severity="error" sx={{ mb: 2, fontSize: '12px' }}>
+                                {passwordResetError}
+                            </Alert>
                         )}
-                        isOptionEqualToValue={(option, value) => option.id === value.id}
-                        sx={{ mt: 2 }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setManageCompaniesOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSaveConnectedCompanies} variant="contained" disabled={isSaving}>
-                        {isSaving ? <CircularProgress size={20} color="inherit" /> : 'Save Changes'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Reset Password Dialog */}
-            <Dialog open={resetPasswordDialogOpen} onClose={() => setResetPasswordDialogOpen(false)} fullWidth maxWidth="xs">
-                <DialogTitle>Reset User Password</DialogTitle>
-                <DialogContent>
-                    <DialogContentText sx={{ mb: 2 }}>
-                        Enter a new password for {user.email}.
-                    </DialogContentText>
-                    {passwordResetError && <Alert severity="error" sx={{ mb: 2 }}>{passwordResetError}</Alert>}
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        label="New Password"
-                        type="password"
-                        fullWidth
-                        variant="outlined"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                    <TextField
-                        margin="dense"
-                        label="Confirm New Password"
-                        type="password"
-                        fullWidth
-                        variant="outlined"
-                        value={confirmNewPassword}
-                        onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => { setResetPasswordDialogOpen(false); setPasswordResetError(''); }}>Cancel</Button>
-                    <Button onClick={handlePasswordResetRequest} variant="contained" disabled={isSaving}>
-                        {isSaving ? <CircularProgress size={20} color="inherit" /> : 'Reset Password'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                        <TextField
+                            autoFocus
+                            margin="dense"
+                            label="New Password"
+                            type="password"
+                            fullWidth
+                            variant="outlined"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            size="small"
+                            sx={{
+                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                            }}
+                        />
+                        <TextField
+                            margin="dense"
+                            label="Confirm New Password"
+                            type="password"
+                            fullWidth
+                            variant="outlined"
+                            value={confirmNewPassword}
+                            onChange={(e) => setConfirmNewPassword(e.target.value)}
+                            size="small"
+                            sx={{
+                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                            }}
+                        />
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={() => {
+                                setResetPasswordDialogOpen(false);
+                                setPasswordResetError('');
+                            }}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handlePasswordResetRequest}
+                            variant="contained"
+                            disabled={isSaving}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {isSaving ? <CircularProgress size={16} color="inherit" /> : 'Reset Password'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            </Box>
         </Box>
     );
 };

@@ -56,6 +56,7 @@ import { useCompany } from '../../../contexts/CompanyContext';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 // Skeleton component for loading state
 const CompaniesTableSkeleton = () => {
@@ -466,12 +467,13 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
                             Companies
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            Manage company profiles and relationships
-                        </Typography>
+                        {/* Breadcrumb */}
+                        {!isModal && (
+                            <AdminBreadcrumb />
+                        )}
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button

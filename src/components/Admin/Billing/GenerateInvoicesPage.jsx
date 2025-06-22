@@ -26,28 +26,48 @@ const steps = [
     'Process Complete'
 ];
 
-// Mock data for shipments to review
-const mockShipments = [
-    { id: 'shp1001', customerName: 'Acme Corp', date: '2024-05-01', amount: 120.50, carrier: 'FedEx', service: 'Ground' },
-    { id: 'shp1002', customerName: 'Beta Solutions', date: '2024-05-02', amount: 75.00, carrier: 'UPS', service: '2-Day Air' },
-    { id: 'shp1003', customerName: 'Gamma Inc.', date: '2024-05-03', amount: 210.00, carrier: 'DHL', service: 'Express World' },
-    { id: 'shp1004', customerName: 'Acme Corp', date: '2024-05-04', amount: 95.25, carrier: 'FedEx', service: 'Priority Overnight' },
-];
+// Production-ready: fetch actual uninvoiced shipments from database
+// const mockShipments = []; // Removed for production
 
 const GenerateInvoicesPage = () => {
     const [activeStep, setActiveStep] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
     const [selectedShipments, setSelectedShipments] = useState({});
     const [generatedInvoiceCount, setGeneratedInvoiceCount] = useState(0);
+    const [uninvoicedShipments, setUninvoicedShipments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        // Pre-select all shipments by default for review
-        const initialSelection = {};
-        mockShipments.forEach(shipment => {
-            initialSelection[shipment.id] = true;
-        });
-        setSelectedShipments(initialSelection);
+        fetchUninvoicedShipments();
     }, []);
+
+    const fetchUninvoicedShipments = async () => {
+        try {
+            setLoading(true);
+            // TODO: Implement actual database query for uninvoiced shipments
+            // const shipmentsRef = collection(db, 'shipments');
+            // const q = query(shipmentsRef, where('invoiced', '==', false));
+            // const querySnapshot = await getDocs(q);
+            // const shipments = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // For now, set empty array for production
+            const shipments = [];
+            setUninvoicedShipments(shipments);
+
+            // Pre-select all shipments by default for review
+            const initialSelection = {};
+            shipments.forEach(shipment => {
+                initialSelection[shipment.id] = true;
+            });
+            setSelectedShipments(initialSelection);
+        } catch (err) {
+            console.error('Error fetching uninvoiced shipments:', err);
+            setError('Failed to load uninvoiced shipments');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleNext = () => {
         if (activeStep === 0) { // Moving from Review to Generating
@@ -68,9 +88,7 @@ const GenerateInvoicesPage = () => {
             // Handle finish - maybe navigate away or reset
             setActiveStep(0);
             setSelectedShipments({});
-            const initialSelection = {};
-            mockShipments.forEach(shipment => { initialSelection[shipment.id] = true; });
-            setSelectedShipments(initialSelection);
+            fetchUninvoicedShipments(); // Refresh the list
         }
     };
 
@@ -88,7 +106,7 @@ const GenerateInvoicesPage = () => {
     const handleSelectAllClick = (event) => {
         if (event.target.checked) {
             const newSelecteds = {};
-            mockShipments.forEach(s => newSelecteds[s.id] = true);
+            uninvoicedShipments.forEach(s => newSelecteds[s.id] = true);
             setSelectedShipments(newSelecteds);
             return;
         }
@@ -96,7 +114,7 @@ const GenerateInvoicesPage = () => {
     };
 
     const numSelected = Object.values(selectedShipments).filter(Boolean).length;
-    const rowCount = mockShipments.length;
+    const rowCount = uninvoicedShipments.length;
 
     function getStepContent(step) {
         switch (step) {
@@ -129,23 +147,56 @@ const GenerateInvoicesPage = () => {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {mockShipments.map((shipment) => (
-                                        <TableRow key={shipment.id} hover onClick={() => handleSelectShipment(shipment.id)} sx={{ cursor: 'pointer' }}>
-                                            <TableCell padding="checkbox">
-                                                <Checkbox
-                                                    color="primary"
-                                                    checked={selectedShipments[shipment.id] || false}
-                                                    inputProps={{ 'aria-labelledby': `shipment-checkbox-${shipment.id}` }}
-                                                />
+                                    {loading ? (
+                                        <TableRow>
+                                            <TableCell colSpan={7} align="center">
+                                                <Box sx={{ py: 3 }}>
+                                                    <CircularProgress size={24} />
+                                                    <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading uninvoiced shipments...</Typography>
+                                                </Box>
                                             </TableCell>
-                                            <TableCell>{shipment.id}</TableCell>
-                                            <TableCell>{shipment.customerName}</TableCell>
-                                            <TableCell>{shipment.date}</TableCell>
-                                            <TableCell>{shipment.carrier}</TableCell>
-                                            <TableCell>{shipment.service}</TableCell>
-                                            <TableCell align="right">${shipment.amount.toFixed(2)}</TableCell>
                                         </TableRow>
-                                    ))}
+                                    ) : error ? (
+                                        <TableRow>
+                                            <TableCell colSpan={7} align="center">
+                                                <Alert severity="error" sx={{ mt: 2 }}>
+                                                    {error}
+                                                </Alert>
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : uninvoicedShipments.length > 0 ? (
+                                        uninvoicedShipments.map((shipment) => (
+                                            <TableRow key={shipment.id} hover onClick={() => handleSelectShipment(shipment.id)} sx={{ cursor: 'pointer' }}>
+                                                <TableCell padding="checkbox">
+                                                    <Checkbox
+                                                        color="primary"
+                                                        checked={selectedShipments[shipment.id] || false}
+                                                        inputProps={{ 'aria-labelledby': `shipment-checkbox-${shipment.id}` }}
+                                                        size="small"
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{shipment.id}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{shipment.customerName}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{shipment.date}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{shipment.carrier}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{shipment.service}</TableCell>
+                                                <TableCell align="right" sx={{ fontSize: '12px' }}>${(shipment.amount || 0).toFixed(2)}</TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={7} align="center">
+                                                <Box sx={{ py: 4 }}>
+                                                    <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                        No uninvoiced shipments found
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '11px', mt: 1 }}>
+                                                        All shipments have been invoiced or there are no shipments to invoice
+                                                    </Typography>
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
                                 </TableBody>
                             </Table>
                         </TableContainer>

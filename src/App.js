@@ -32,6 +32,7 @@ const Pricing = lazy(() => import('./components/Pricing/Pricing'));
 const Homepage = lazy(() => import('./components/Homepage/Homepage'));
 const Login = lazy(() => import('./components/Auth/Login'));
 const Signup = lazy(() => import('./components/Auth/Signup'));
+const SetPassword = lazy(() => import('./components/Auth/SetPassword'));
 const AddCustomer = lazy(() => import('./components/Customers/AddCustomer'));
 const EditCustomer = lazy(() => import('./components/Customers/EditCustomer'));
 const Profile = lazy(() => import('./components/Profile/Profile'));
@@ -132,6 +133,7 @@ function AppRoutes() {
                 <Route path="/" element={<Homepage />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
+                <Route path="/set-password" element={<SetPassword />} />
                 <Route path="/pricing" element={<Pricing />} />
 
                 {/* Protected Routes */}

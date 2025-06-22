@@ -565,9 +565,9 @@ ${data.attachments.map(attachment => {
     if (attachment.type === 'link') {
         return `🔗 Link: ${attachment.title || attachment.url}\n   URL: ${attachment.url}`;
     } else if (attachment.type === 'image') {
-        return `🖼️ Image: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   (View by opening the note in SolushipX)`;
+                                return `🖼️ Image: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   (View by opening the note in Integrated Carriers)`;
     } else {
-        return `📎 File: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   (Download by opening the note in SolushipX)`;
+                                return `📎 File: ${attachment.name}\n   Size: ${attachment.size ? (attachment.size / 1024 / 1024).toFixed(1) + 'MB' : 'Unknown'}\n   (Download by opening the note in Integrated Carriers)`;
     }
 }).join('\n\n')}` : ''}
 
@@ -794,7 +794,7 @@ Questions? Contact support@integratedcarriers.com
                     </div>
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                        <p style="margin: 0;">Questions about this pickup? Reply to this email or contact SolushipX</p>
+                        <p style="margin: 0;">Questions about this pickup? Reply to this email or contact Integrated Carriers</p>
                         <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
@@ -840,7 +840,7 @@ This is a QuickShip manual booking with pre-negotiated rates. All pricing has be
 
 ACTION REQUIRED: Please confirm receipt of this pickup assignment and provide expected pickup time within 2 hours.
 
-Questions? Reply to this email or contact SolushipX.
+                Questions? Reply to this email or contact Integrated Carriers.
         `
     },
 
@@ -997,7 +997,7 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
             },
             replyTo: {
                 email: 'support@integratedcarriers.com',
-                name: 'Tyler from SolushipX'
+                name: 'Tyler from Integrated Carriers'
             },
             subject,
             html,
@@ -1734,7 +1734,7 @@ const getEmailTemplate = (templateType, data = {}) => {
                         
                         <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 30px; text-align: center;">
                             <p style="color: #64748b; font-size: 12px; margin: 0;">
-                                This is an automated reminder from SolushipX Reports
+                                This is an automated reminder from Integrated Carriers Reports
                             </p>
                         </div>
                     </div>
@@ -1743,18 +1743,18 @@ const getEmailTemplate = (templateType, data = {}) => {
         },
 
         test_notification: {
-            subject: data.subject || 'Test Notification from SolushipX Reports',
+            subject: data.subject || 'Test Notification from Integrated Carriers Reports',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8fafc;">
                     <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <div style="text-align: center; margin-bottom: 30px;">
                             <h1 style="color: #1e293b; margin: 0; font-size: 24px;">🧪 Test Notification</h1>
-                            <p style="color: #64748b; margin: 10px 0 0 0;">This is a test email from SolushipX Reports</p>
+                            <p style="color: #64748b; margin: 10px 0 0 0;">This is a test email from Integrated Carriers Reports</p>
                         </div>
                         
                         <div style="background-color: #f1f5f9; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
                             <h3 style="color: #1e293b; margin: 0 0 15px 0; font-size: 16px;">Message</h3>
-                            <p style="color: #475569; margin: 0; line-height: 1.6;">${data.message || 'This is a test notification from the SolushipX Reports system.'}</p>
+                            <p style="color: #475569; margin: 0; line-height: 1.6;">${data.message || 'This is a test notification from the Integrated Carriers Reports system.'}</p>
                         </div>
                         
                         <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
@@ -1774,7 +1774,7 @@ const getEmailTemplate = (templateType, data = {}) => {
     };
 
     return templates[templateType] || {
-        subject: 'Notification from SolushipX',
+        subject: 'Notification from Integrated Carriers',
         html: `<p>${data.message || 'You have a new notification.'}</p>`
     };
 };

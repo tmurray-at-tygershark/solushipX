@@ -62,6 +62,7 @@ import { useSnackbar } from 'notistack';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 // Import modular carrier components
 import AddCarrier from './AddCarrier';
@@ -1018,12 +1019,13 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
                             Carriers
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            Manage carrier integrations and configurations
-                        </Typography>
+                        {/* Breadcrumb */}
+                        {!isModal && (
+                            <AdminBreadcrumb />
+                        )}
                     </Box>
                     <Button
                         variant="contained"

@@ -1,29 +1,29 @@
 .admin-breadcrumb {
-    margin-bottom: 24px;
-    padding: 16px 24px;
-    background-color: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    margin-bottom: 0;
+    padding: 0;
+    background: transparent;
 }
 
 .breadcrumb-link {
     display: flex;
     align-items: center;
-    color: #64748b;
+    color: #6b7280;
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: 12px;
     line-height: 1.43;
     transition: color 0.2s;
 }
 
 .breadcrumb-link:hover {
-    color: #0f172a;
+    color: #374151;
+    text-decoration: underline;
 }
 
 .breadcrumb-item {
-    font-size: 0.875rem;
+    font-size: 12px;
     line-height: 1.43;
-    color: #64748b;
+    color: #374151;
+    font-weight: 500;
 }
 
 .MuiBreadcrumbs-separator {
@@ -31,5 +31,5 @@
 }
 
 .MuiBreadcrumbs-separator .MuiSvgIcon-root {
-    font-size: 20px;
+    font-size: 16px;
 } 

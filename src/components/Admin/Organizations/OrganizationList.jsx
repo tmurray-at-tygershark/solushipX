@@ -54,6 +54,7 @@ import { useSnackbar } from 'notistack';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 // Skeleton component for loading state
 const OrganizationsTableSkeleton = () => {
@@ -494,12 +495,13 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
                             Organizations
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            Manage organization structures and company relationships
-                        </Typography>
+                        {/* Breadcrumb */}
+                        {!isModal && (
+                            <AdminBreadcrumb currentPage="Organizations" />
+                        )}
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button

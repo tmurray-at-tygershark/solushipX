@@ -1,146 +1,128 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
     Box,
-    Grid,
+    Paper,
+    Typography,
     TextField,
+    Button,
+    Grid,
     FormControl,
     InputLabel,
     Select,
     MenuItem,
     FormHelperText,
     Autocomplete,
-    Button,
-    Paper,
-    Typography,
-    Breadcrumbs,
-    CircularProgress
+    CircularProgress,
+    Alert,
+    Divider
 } from '@mui/material';
-import { collection, addDoc, updateDoc, doc, getDoc, getDocs, query, where, setDoc } from 'firebase/firestore';
+import {
+    Save as SaveIcon,
+    PersonAdd as PersonAddIcon,
+    ArrowBack as ArrowBackIcon
+} from '@mui/icons-material';
+import { collection, updateDoc, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db, auth, functions } from '../../../firebase';
-import { updateProfile } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
+import { useSnackbar } from 'notistack';
+import ModalHeader from '../../common/ModalHeader';
 
-const UserForm = () => {
+const UserForm = ({ isModal = false, onClose = null }) => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { enqueueSnackbar } = useSnackbar();
     const isEditMode = Boolean(id);
+
+    // State management
+    const [pageLoading, setPageLoading] = useState(isEditMode);
+    const [saveLoading, setSaveLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [successMessage, setSuccessMessage] = useState('');
 
     const [formData, setFormData] = useState({
         firstName: '',
         lastName: '',
         email: '',
-        password: '',
         role: 'user',
         status: 'active',
         phone: '',
         companies: [],
     });
+
     const [allCompanies, setAllCompanies] = useState([]);
     const [errors, setErrors] = useState({});
-    const [loading, setLoading] = useState(false);
-    const [pageLoading, setPageLoading] = useState(isEditMode);
-    const [formError, setFormError] = useState('');
-    const [successMessage, setSuccessMessage] = useState('');
+    const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
-    useEffect(() => {
-        const fetchCompanies = async () => {
-            try {
-                const companiesRef = collection(db, 'companies');
-                const q = query(companiesRef, where('status', '==', 'active'));
-                const querySnapshot = await getDocs(q);
-                const companiesData = querySnapshot.docs.map(doc => ({
-                    id: doc.data().companyID,
-                    name: doc.data().name,
-                    firestoreId: doc.id
-                }));
-                setAllCompanies(companiesData);
-            } catch (err) {
-                console.error('Error fetching companies:', err);
-                setFormError('Failed to load company list.');
-            }
-        };
-        fetchCompanies();
-    }, []);
+    // Fetch data function
+    const fetchData = useCallback(async () => {
+        setPageLoading(true);
+        setError(null);
 
-    useEffect(() => {
-        if (isEditMode) {
-            setPageLoading(true);
-            const fetchUser = async () => {
-                try {
-                    const userDocRef = doc(db, 'users', id);
-                    const userDoc = await getDoc(userDocRef);
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        setFormData({
-                            firstName: userData.firstName || '',
-                            lastName: userData.lastName || '',
-                            email: userData.email || '',
-                            role: userData.role || 'user',
-                            status: userData.status || 'active',
-                            phone: userData.phone || '',
-                            companies: userData.connectedCompanies?.companies || [],
-                            password: '',
-                        });
-                    } else {
-                        setFormError('User not found.');
-                    }
-                } catch (err) {
-                    console.error('Error fetching user:', err);
-                    setFormError('Failed to load user data.');
-                } finally {
-                    setPageLoading(false);
-                }
-            };
-            fetchUser();
-        }
-    }, [id, isEditMode]);
-
-    const validateForm = () => {
-        const newErrors = {};
-        if (!formData.firstName.trim()) newErrors.firstName = 'First Name is required';
-        if (!formData.lastName.trim()) newErrors.lastName = 'Last Name is required';
-
-        if (!formData.email.trim()) {
-            newErrors.email = 'Email is required';
-        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-            newErrors.email = 'Invalid email format';
-        }
-
-        if (!isEditMode) {
-            if (!formData.password) {
-                newErrors.password = 'Password is required';
-            } else if (formData.password.length < 6) {
-                newErrors.password = 'Password must be at least 6 characters';
-            }
-        }
-
-        if (!formData.role) newErrors.role = 'Role is required';
-        if (!formData.status) newErrors.status = 'Status is required';
-        // Phone can be optional, remove if not required, or add specific validation
-        // if (!formData.phone.trim()) newErrors.phone = 'Phone is required';
-
-        // Ensure company selection is not explicitly required by validateForm
-        // if (!formData.companies || formData.companies.length === 0) { 
-        //     newErrors.companies = 'At least one company is required';
-        // }
-
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-        if (errors[name]) {
-            setErrors(prev => ({
-                ...prev,
-                [name]: ''
+        try {
+            // Fetch companies
+            const companiesRef = collection(db, 'companies');
+            const companiesQuery = query(companiesRef, where('status', '==', 'active'));
+            const companiesSnapshot = await getDocs(companiesQuery);
+            const companiesData = companiesSnapshot.docs.map(doc => ({
+                id: doc.data().companyID,
+                name: doc.data().name,
+                firestoreId: doc.id
             }));
+            setAllCompanies(companiesData);
+
+            // Fetch user data if editing
+            if (isEditMode && id) {
+                const userDocRef = doc(db, 'users', id);
+                const userDoc = await getDoc(userDocRef);
+
+                if (!userDoc.exists()) {
+                    enqueueSnackbar('User not found', { variant: 'error' });
+                    if (isModal && onClose) {
+                        onClose();
+                    } else {
+                        navigate('/admin/users');
+                    }
+                    return;
+                }
+
+                const userData = userDoc.data();
+                setFormData({
+                    firstName: userData.firstName || '',
+                    lastName: userData.lastName || '',
+                    email: userData.email || '',
+                    role: userData.role || 'user',
+                    status: userData.status || 'active',
+                    phone: userData.phone || '',
+                    companies: userData.connectedCompanies?.companies || [],
+                });
+            }
+        } catch (err) {
+            console.error('Error loading data:', err);
+            setError(err.message);
+            enqueueSnackbar('Error loading data: ' + err.message, { variant: 'error' });
+        } finally {
+            setPageLoading(false);
+            setInitialLoadComplete(true);
         }
+    }, [id, isEditMode, navigate, enqueueSnackbar, isModal, onClose]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    // Form handlers
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+
+        // Clear field error when user starts typing
+        if (errors[name]) {
+            setErrors(prev => ({ ...prev, [name]: '' }));
+        }
+
+        // Clear general error
+        if (error) setError(null);
     };
 
     const handleCompaniesChange = (event, newValues) => {
@@ -148,287 +130,500 @@ const UserForm = () => {
             ...prev,
             companies: newValues.map(company => company.id)
         }));
+
+        if (errors.companies) {
+            setErrors(prev => ({ ...prev, companies: '' }));
+        }
     };
 
+    // Form validation
+    const validateForm = () => {
+        const newErrors = {};
+
+        // Required fields
+        if (!formData.firstName.trim()) {
+            newErrors.firstName = 'First name is required';
+        }
+        if (!formData.lastName.trim()) {
+            newErrors.lastName = 'Last name is required';
+        }
+        if (!formData.email.trim()) {
+            newErrors.email = 'Email is required';
+        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+            newErrors.email = 'Please enter a valid email address';
+        }
+
+        // No password validation needed - using email invites
+
+        // Role and status validation
+        if (!formData.role) {
+            newErrors.role = 'Role is required';
+        }
+        if (!formData.status) {
+            newErrors.status = 'Status is required';
+        }
+
+        // Phone validation (optional but format check if provided)
+        if (formData.phone && !/^[\d\s\-\+\(\)\.]+$/.test(formData.phone)) {
+            newErrors.phone = 'Please enter a valid phone number';
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    // Form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
+
         if (!validateForm()) {
-            setFormError("Please correct the validation errors.");
+            enqueueSnackbar('Please correct the validation errors', { variant: 'warning' });
             return;
         }
 
-        setLoading(true);
-        setFormError('');
+        setSaveLoading(true);
+        setError(null);
         setSuccessMessage('');
 
-        const { email, password, firstName, lastName, role, status, phone, companies } = formData;
-
-        // --- BEGIN AUTH CHECK --- 
-        const currentUser = auth.currentUser;
-        if (!currentUser) {
-            console.error("UserForm - handleSubmit: No currentUser found in auth.");
-            setFormError("Not authenticated. Please sign in.");
-            setLoading(false);
-            return;
-        }
-
-        let idToken;
         try {
-            // Force token refresh and get a fresh token
-            idToken = await currentUser.getIdToken(true);
-            console.log("UserForm - handleSubmit: Successfully refreshed auth token");
-            console.log("UserForm - handleSubmit: Current User UID:", currentUser.uid);
-        } catch (tokenError) {
-            console.error("UserForm - handleSubmit: Error refreshing ID token:", tokenError);
-            setFormError("Authentication error. Please try signing out and in again.");
-            setLoading(false);
-            return;
-        }
-        // --- END AUTH CHECK ---
+            // Check authentication
+            const currentUser = auth.currentUser;
+            if (!currentUser) {
+                throw new Error('Authentication required. Please sign in again.');
+            }
 
-        try {
+            // Get fresh auth token
+            await currentUser.getIdToken(true);
+
+            const { email, firstName, lastName, role, status, phone, companies } = formData;
+
             if (isEditMode) {
+                // Update existing user
                 const userDocRef = doc(db, 'users', id);
                 const dataToUpdate = {
-                    firstName,
-                    lastName,
+                    firstName: firstName.trim(),
+                    lastName: lastName.trim(),
                     role,
                     status,
-                    phone,
+                    phone: phone.trim(),
                     connectedCompanies: { companies },
                     updatedAt: new Date(),
                 };
-                await updateDoc(userDocRef, dataToUpdate);
-                setSuccessMessage('User updated successfully!');
-            } else {
-                // Initialize the function with explicit auth token
-                const adminCreateUserFn = httpsCallable(functions, 'adminCreateUser');
 
-                // Call the function with the data
-                const result = await adminCreateUserFn({
-                    email,
-                    password,
-                    firstName,
-                    lastName,
+                await updateDoc(userDocRef, dataToUpdate);
+                enqueueSnackbar('User updated successfully!', { variant: 'success' });
+
+                // Navigate after short delay
+                setTimeout(() => {
+                    if (isModal && onClose) {
+                        onClose();
+                    } else {
+                        navigate('/admin/users');
+                    }
+                }, 1500);
+
+            } else {
+                // Send user invitation via cloud function
+                const adminInviteUserFn = httpsCallable(functions, 'adminInviteUser');
+
+                const result = await adminInviteUserFn({
+                    email: email.trim(),
+                    firstName: firstName.trim(),
+                    lastName: lastName.trim(),
                     role,
                     status,
-                    phone,
+                    phone: phone.trim(),
                     companies
                 });
 
                 if (result.data.status === "success") {
-                    setSuccessMessage(result.data.message || 'User created successfully!');
+                    enqueueSnackbar('User invitation sent successfully! They will receive an email to set up their password.', { variant: 'success' });
+
+                    // Reset form for new entry
                     setFormData({
                         firstName: '',
                         lastName: '',
                         email: '',
-                        password: '',
                         role: 'user',
                         status: 'active',
                         phone: '',
                         companies: [],
                     });
+
+                    // Navigate after short delay
+                    setTimeout(() => {
+                        if (isModal && onClose) {
+                            onClose();
+                        } else {
+                            navigate('/admin/users');
+                        }
+                    }, 1500);
                 } else {
-                    throw new Error(result.data.message || 'Failed to create user via cloud function.');
+                    throw new Error(result.data.message || 'Failed to send user invitation');
                 }
             }
 
-            setTimeout(() => {
-                navigate('/admin/users');
-            }, 1500);
+        } catch (err) {
+            console.error('Error saving user:', err);
 
-        } catch (error) {
-            console.error('Error saving user:', error);
-            if (error.code && error.message) {
-                setFormError(error.message);
-                if (error.code === 'already-exists') {
-                    setErrors(prev => ({ ...prev, email: error.message }));
-                } else if (error.code === 'invalid-argument' && error.message.toLowerCase().includes('password')) {
-                    setErrors(prev => ({ ...prev, password: error.message }));
-                }
+            // Handle specific error types
+            if (err.code === 'functions/already-exists') {
+                setErrors(prev => ({ ...prev, email: 'This email address is already registered' }));
+                setError('A user with this email already exists');
+            } else if (err.code === 'functions/invalid-argument') {
+                setError(err.message);
             } else {
-                setFormError(error.message || 'Failed to save user. Please try again.');
+                setError(err.message || 'Failed to save user. Please try again.');
             }
+
+            enqueueSnackbar(err.message || 'Error saving user', { variant: 'error' });
         } finally {
-            setLoading(false);
+            setSaveLoading(false);
         }
     };
 
+    const handleCancel = () => {
+        if (isModal && onClose) {
+            onClose();
+        } else {
+            navigate('/admin/users');
+        }
+    };
+
+    // Loading state
     if (pageLoading) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-                <CircularProgress />
-                <Typography sx={{ ml: 2 }}>Loading user data...</Typography>
+            <Box sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: isModal ? '400px' : '60vh',
+                flexDirection: 'column',
+                gap: 2
+            }}>
+                <CircularProgress size={40} />
+                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                    Loading user data...
+                </Typography>
             </Box>
         );
     }
 
+    // Get selected company objects for Autocomplete
     const selectedCompanyObjects = formData.companies
         .map(companyId => allCompanies.find(c => c.id === companyId))
         .filter(company => company !== undefined);
 
+    // Modal header navigation
+    const navigation = {
+        title: isEditMode ? `Edit User: ${formData.firstName} ${formData.lastName}` : 'Create New User',
+        canGoBack: true,
+        backText: 'Users',
+        onBack: handleCancel
+    };
+
     return (
-        <Box className="user-form-container" sx={{ p: 3 }}>
-            <Paper sx={{ p: 3 }}>
-                <Box sx={{ mb: 2 }}>
-                    <Typography variant="h4" component="h1" gutterBottom>
-                        {isEditMode ? `Edit User: ${formData.firstName} ${formData.lastName}` : 'Create New User'}
-                    </Typography>
-                </Box>
+        <Box sx={{
+            backgroundColor: 'transparent',
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column'
+        }}>
+            {/* Modal Header */}
+            {isModal && (
+                <ModalHeader
+                    navigation={navigation}
+                    onClose={onClose}
+                    showCloseButton={true}
+                />
+            )}
 
-                <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 1 }}>
-                    <RouterLink component="button" variant="body2" onClick={() => navigate('/admin')} sx={{ textDecoration: 'none', color: 'inherit' }} >
-                        Admin
-                    </RouterLink>
-                    <RouterLink component="button" variant="body2" onClick={() => navigate('/admin/users')} sx={{ textDecoration: 'none', color: 'inherit' }} >
-                        Users
-                    </RouterLink>
-                    <Typography color="text.primary">{isEditMode ? 'Edit User' : 'Create New User'}</Typography>
-                </Breadcrumbs>
+            {/* Main Content */}
+            <Box sx={{
+                flex: 1,
+                overflow: 'auto',
+                p: 3
+            }}>
+                {/* Page Header */}
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    mb: 3,
+                    pb: 3,
+                    borderBottom: '1px solid #e5e7eb'
+                }}>
+                    <Box>
+                        <Typography
+                            variant="h5"
+                            sx={{
+                                fontWeight: 600,
+                                color: '#111827',
+                                fontSize: '20px',
+                                mb: 0.5
+                            }}
+                        >
+                            {isEditMode ? `Edit User: ${formData.firstName} ${formData.lastName}` : 'Create New User'}
+                        </Typography>
+                        <Typography
+                            sx={{
+                                fontSize: '12px',
+                                color: '#6b7280'
+                            }}
+                        >
+                            {isEditMode
+                                ? 'Update user information and permissions'
+                                : 'Send an invitation email to create a new user account'
+                            }
+                        </Typography>
+                    </Box>
 
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }} gutterBottom>
-                    {isEditMode ? 'Modify the details below to update the user profile.' : 'Fill in the details to add a new user to the system.'}
-                </Typography>
-
-                {formError && <Typography color="error" sx={{ mb: 2 }}>{formError}</Typography>}
-                {successMessage && <Typography color="success.main" sx={{ mb: 2 }}>{successMessage}</Typography>}
-
-                <Box component="form" onSubmit={handleSubmit} noValidate>
-                    <Grid container spacing={3}>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="First Name"
-                                name="firstName"
-                                value={formData.firstName}
-                                onChange={handleChange}
-                                error={!!errors.firstName}
-                                helperText={errors.firstName}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Last Name"
-                                name="lastName"
-                                value={formData.lastName}
-                                onChange={handleChange}
-                                error={!!errors.lastName}
-                                helperText={errors.lastName}
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Email"
-                                name="email"
-                                type="email"
-                                value={formData.email}
-                                onChange={handleChange}
-                                error={!!errors.email}
-                                helperText={errors.email}
-                                required
-                                disabled={isEditMode}
-                            />
-                        </Grid>
-                        {!isEditMode && (
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Password"
-                                    name="password"
-                                    type="password"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    error={!!errors.password}
-                                    helperText={errors.password}
-                                    required
-                                />
-                            </Grid>
-                        )}
-                        <Grid item xs={12} md={6}>
-                            <FormControl fullWidth error={!!errors.role}>
-                                <InputLabel>Role</InputLabel>
-                                <Select
-                                    name="role"
-                                    value={formData.role}
-                                    onChange={handleChange}
-                                    label="Role"
-                                >
-                                    <MenuItem value="super_admin">Super Admin</MenuItem>
-                                    <MenuItem value="admin">Admin</MenuItem>
-                                    <MenuItem value="business_admin">Business Admin</MenuItem>
-                                    <MenuItem value="user">User</MenuItem>
-                                </Select>
-                                {errors.role && (
-                                    <FormHelperText>{errors.role}</FormHelperText>
-                                )}
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <FormControl fullWidth error={!!errors.status}>
-                                <InputLabel>Status</InputLabel>
-                                <Select
-                                    name="status"
-                                    value={formData.status}
-                                    onChange={handleChange}
-                                    label="Status"
-                                >
-                                    <MenuItem value="active">Active</MenuItem>
-                                    <MenuItem value="inactive">Inactive</MenuItem>
-                                    <MenuItem value="suspended">Suspended</MenuItem>
-                                </Select>
-                                {errors.status && (
-                                    <FormHelperText>{errors.status}</FormHelperText>
-                                )}
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Phone"
-                                name="phone"
-                                value={formData.phone}
-                                onChange={handleChange}
-                                error={!!errors.phone}
-                                helperText={errors.phone}
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <Autocomplete
-                                multiple
-                                id="user-companies-autocomplete"
-                                options={allCompanies}
-                                getOptionLabel={(option) => option.name}
-                                value={selectedCompanyObjects}
-                                onChange={handleCompaniesChange}
-                                filterSelectedOptions
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        variant="outlined"
-                                        label="Connected Companies"
-                                        placeholder="Select companies"
-                                        error={!!errors.companies}
-                                        helperText={errors.companies}
-                                    />
-                                )}
-                                isOptionEqualToValue={(option, value) => option.id === value.id}
-                            />
-                        </Grid>
-                    </Grid>
-                    <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-                        <Button onClick={() => navigate('/admin/users')} sx={{ mr: 2 }}>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<ArrowBackIcon />}
+                            onClick={handleCancel}
+                            sx={{ fontSize: '12px' }}
+                        >
                             Cancel
                         </Button>
-                        <Button type="submit" variant="contained" disabled={loading}>
-                            {loading ? <CircularProgress size={24} /> : (isEditMode ? 'Save Changes' : 'Create User')}
+                        <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={isEditMode ? <SaveIcon /> : <PersonAddIcon />}
+                            onClick={handleSubmit}
+                            disabled={saveLoading}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {saveLoading ? (
+                                <CircularProgress size={16} color="inherit" />
+                            ) : (
+                                isEditMode ? 'Save Changes' : 'Send Invitation'
+                            )}
                         </Button>
                     </Box>
                 </Box>
-            </Paper>
+
+                {/* Error and Success Messages */}
+                {error && (
+                    <Alert severity="error" sx={{ mb: 3, fontSize: '12px' }}>
+                        {error}
+                    </Alert>
+                )}
+                {successMessage && (
+                    <Alert severity="success" sx={{ mb: 3, fontSize: '12px' }}>
+                        {successMessage}
+                    </Alert>
+                )}
+
+                {/* Form Content */}
+                <Paper sx={{
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    overflow: 'hidden'
+                }}>
+                    <Box component="form" onSubmit={handleSubmit} noValidate>
+                        {/* Personal Information Section */}
+                        <Box sx={{ p: 3 }}>
+                            <Typography
+                                sx={{
+                                    fontSize: '16px',
+                                    fontWeight: 600,
+                                    color: '#374151',
+                                    mb: 2
+                                }}
+                            >
+                                Personal Information
+                            </Typography>
+
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="First Name"
+                                        name="firstName"
+                                        value={formData.firstName}
+                                        onChange={handleInputChange}
+                                        error={!!errors.firstName}
+                                        helperText={errors.firstName}
+                                        required
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Last Name"
+                                        name="lastName"
+                                        value={formData.lastName}
+                                        onChange={handleInputChange}
+                                        error={!!errors.lastName}
+                                        helperText={errors.lastName}
+                                        required
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Email Address"
+                                        name="email"
+                                        type="email"
+                                        value={formData.email}
+                                        onChange={handleInputChange}
+                                        error={!!errors.email}
+                                        helperText={errors.email}
+                                        required
+                                        disabled={isEditMode}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Phone Number"
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleInputChange}
+                                        error={!!errors.phone}
+                                        helperText={errors.phone}
+                                        placeholder="(555) 123-4567"
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                {!isEditMode && (
+                                    <Grid item xs={12}>
+                                        <Alert severity="info" sx={{ fontSize: '12px' }}>
+                                            🎯 <strong>Email Invitation:</strong> The user will receive an email invitation to set up their password and activate their account.
+                                        </Alert>
+                                    </Grid>
+                                )}
+                            </Grid>
+                        </Box>
+
+                        <Divider />
+
+                        {/* Account Settings Section */}
+                        <Box sx={{ p: 3 }}>
+                            <Typography
+                                sx={{
+                                    fontSize: '16px',
+                                    fontWeight: 600,
+                                    color: '#374151',
+                                    mb: 2
+                                }}
+                            >
+                                Account Settings
+                            </Typography>
+
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl
+                                        fullWidth
+                                        size="small"
+                                        error={!!errors.role}
+                                    >
+                                        <InputLabel sx={{ fontSize: '12px' }}>Role</InputLabel>
+                                        <Select
+                                            name="role"
+                                            value={formData.role}
+                                            onChange={handleInputChange}
+                                            label="Role"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="user" sx={{ fontSize: '12px' }}>User</MenuItem>
+                                            <MenuItem value="business_admin" sx={{ fontSize: '12px' }}>Business Admin</MenuItem>
+                                            <MenuItem value="admin" sx={{ fontSize: '12px' }}>Admin</MenuItem>
+                                            <MenuItem value="super_admin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
+                                        </Select>
+                                        {errors.role && (
+                                            <FormHelperText sx={{ fontSize: '11px' }}>
+                                                {errors.role}
+                                            </FormHelperText>
+                                        )}
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl
+                                        fullWidth
+                                        size="small"
+                                        error={!!errors.status}
+                                    >
+                                        <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                                        <Select
+                                            name="status"
+                                            value={formData.status}
+                                            onChange={handleInputChange}
+                                            label="Status"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
+                                            <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
+                                            <MenuItem value="suspended" sx={{ fontSize: '12px' }}>Suspended</MenuItem>
+                                        </Select>
+                                        {errors.status && (
+                                            <FormHelperText sx={{ fontSize: '11px' }}>
+                                                {errors.status}
+                                            </FormHelperText>
+                                        )}
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Autocomplete
+                                        multiple
+                                        size="small"
+                                        options={allCompanies}
+                                        getOptionLabel={(option) => option.name}
+                                        value={selectedCompanyObjects}
+                                        onChange={handleCompaniesChange}
+                                        filterSelectedOptions
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                label="Connected Companies"
+                                                placeholder="Select companies this user can access"
+                                                error={!!errors.companies}
+                                                helperText={errors.companies || "Users can access shipments and data for selected companies"}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                }}
+                                            />
+                                        )}
+                                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                                        sx={{
+                                            '& .MuiChip-label': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
+                        </Box>
+                    </Box>
+                </Paper>
+            </Box>
         </Box>
     );
 };

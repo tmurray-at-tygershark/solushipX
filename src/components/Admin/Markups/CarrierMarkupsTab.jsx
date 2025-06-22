@@ -162,63 +162,86 @@ const CarrierMarkupsTab = () => {
 
     return (
         <Box>
-            <Typography variant="h5" gutterBottom>Carrier Markups</Typography>
+            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>Carrier Markups</Typography>
 
-            <Paper sx={{ p: 2, mb: 3 }} elevation={1} variant="outlined">
-                <Typography variant="h6" gutterBottom>Filters</Typography>
+            <Paper sx={{ p: 2, mb: 3, border: '1px solid #e5e7eb' }} elevation={0}>
+                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>Filters</Typography>
                 <Grid container spacing={2} alignItems="flex-end">
                     <Grid item xs={12} sm={6} md={3}>
                         <FormControl fullWidth size="small">
-                            <InputLabel>Carrier</InputLabel>
-                            <Select defaultValue="ANY" label="Carrier">
-                                <MenuItem value="ANY">Any</MenuItem>
-                                {carriers.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+                            <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
+                            <Select
+                                defaultValue="ANY"
+                                label="Carrier"
+                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                            >
+                                <MenuItem value="ANY" sx={{ fontSize: '12px' }}>Any</MenuItem>
+                                {carriers.map(c => <MenuItem key={c.id} value={c.id} sx={{ fontSize: '12px' }}>{c.name}</MenuItem>)}
                             </Select>
                         </FormControl>
                     </Grid>
                     <Grid item xs={12} sm={6} md={3}>
-                        <Button variant="contained" startIcon={<SearchIcon />} onClick={fetchMarkups}>Search</Button>
+                        <Button
+                            variant="contained"
+                            startIcon={<SearchIcon />}
+                            onClick={fetchMarkups}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Search
+                        </Button>
                     </Grid>
                 </Grid>
             </Paper>
 
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddMarkupOpen} sx={{ mb: 2 }}>
+            <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddMarkupOpen}
+                size="small"
+                sx={{ mb: 2, fontSize: '12px' }}
+            >
                 Add New Carrier Markup
             </Button>
 
-            {loadingMarkups ? <CircularProgress sx={{ display: 'block', margin: '20px auto' }} /> : (
-                <TableContainer component={Paper} elevation={1} variant="outlined">
+            {loadingMarkups ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+                    <CircularProgress />
+                    <Typography sx={{ ml: 2, fontSize: '12px' }}>Loading carrier markups...</Typography>
+                </Box>
+            ) : (
+                <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                     <Table size="small">
                         <TableHead>
                             <TableRow>
-                                <TableCell>Carrier</TableCell>
-                                <TableCell>Service</TableCell>
-                                <TableCell>Type</TableCell>
-                                <TableCell>Value</TableCell>
-                                <TableCell>Variable</TableCell>
-                                <TableCell>From Country</TableCell>
-                                <TableCell>To Country</TableCell>
-                                <TableCell>From Weight</TableCell>
-                                <TableCell>To Weight</TableCell>
-                                <TableCell>Effective Date</TableCell>
-                                <TableCell>Expiry Date</TableCell>
-                                <TableCell align="right">Actions</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Service</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Value</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Variable</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>From Country</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>To Country</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>From Weight</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>To Weight</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Effective Date</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Expiry Date</TableCell>
+                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {markups.map((markup) => (
                                 <TableRow key={markup.id} hover>
-                                    <TableCell>{markup.carrierName || carriers.find(c => c.id === markup.carrierId)?.name}</TableCell>
-                                    <TableCell>{markup.service}</TableCell>
-                                    <TableCell>{markup.type}</TableCell>
-                                    <TableCell>{markup.value}{markup.type === 'PERCENTAGE' ? '%' : ''}</TableCell>
-                                    <TableCell>{markup.variable}</TableCell>
-                                    <TableCell>{markup.fromCountry}</TableCell>
-                                    <TableCell>{markup.toCountry}</TableCell>
-                                    <TableCell>{markup.fromWeight}</TableCell>
-                                    <TableCell>{markup.toWeight}</TableCell>
-                                    <TableCell>{markup.effectiveDate ? dayjs(markup.effectiveDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
-                                    <TableCell>{markup.expiryDate ? dayjs(markup.expiryDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.carrierName || carriers.find(c => c.id === markup.carrierId)?.name}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.service}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.type}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.value}{markup.type === 'PERCENTAGE' ? '%' : ''}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.variable}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.fromCountry}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.toCountry}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.fromWeight}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.toWeight}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.effectiveDate ? dayjs(markup.effectiveDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>{markup.expiryDate ? dayjs(markup.expiryDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
                                     <TableCell align="right">
                                         <IconButton size="small" onClick={() => handleEditMarkupOpen(markup)} color="primary">
                                             <EditIcon fontSize="inherit" />
@@ -232,7 +255,7 @@ const CarrierMarkupsTab = () => {
                             {markups.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={12} align="center">
-                                        <Typography color="textSecondary" sx={{ p: 2 }}>No carrier markups found.</Typography>
+                                        <Typography color="textSecondary" sx={{ p: 2, fontSize: '12px' }}>No carrier markups found.</Typography>
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -250,15 +273,27 @@ const CarrierMarkupsTab = () => {
             />
 
             <Dialog open={!!deletingMarkupId} onClose={() => setDeletingMarkupId(null)}>
-                <DialogTitle>Confirm Delete</DialogTitle>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>Confirm Delete</DialogTitle>
                 <DialogContent>
-                    <DialogContentText>
+                    <DialogContentText sx={{ fontSize: '12px' }}>
                         Are you sure you want to delete this carrier markup rule?
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeletingMarkupId(null)}>Cancel</Button>
-                    <Button onClick={handleDeleteMarkupExecute} color="error" variant="contained">
+                    <Button
+                        onClick={() => setDeletingMarkupId(null)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteMarkupExecute}
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
                         Delete
                     </Button>
                 </DialogActions>

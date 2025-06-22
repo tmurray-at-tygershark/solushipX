@@ -724,10 +724,10 @@ async function sendReportNotifications(report, emailRecipients, type, reportId) 
         for (const email of emailRecipients) {
             const emailContent = {
                 to: email,
-                from: {
-                    email: 'noreply@integratedcarriers.com',
-                    name: 'SolushipX Reports'
-                },
+                            from: {
+                email: 'noreply@integratedcarriers.com',
+                name: 'Integrated Carriers Reports'
+            },
                 subject: `Report Ready: ${formatReportType(type)}`,
                 html: generateReportEmailHTML(emailData, email),
                 text: generateReportEmailText(emailData, email)

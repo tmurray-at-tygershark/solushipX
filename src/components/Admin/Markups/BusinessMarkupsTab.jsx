@@ -150,64 +150,82 @@ const BusinessMarkupsTab = () => {
         }
     };
 
-    if (loadingData) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}><CircularProgress /><Typography sx={{ ml: 2 }}>Loading data...</Typography></Box>;
-    if (error) return <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>;
+    if (loadingData) return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}><CircularProgress /><Typography sx={{ ml: 2, fontSize: '12px' }}>Loading data...</Typography></Box>;
+    if (error) return <Alert severity="error" sx={{ m: 2, fontSize: '12px' }}>{error}</Alert>;
 
     return (
         <Box>
-            <Typography variant="h5" gutterBottom>Business Markups</Typography>
+            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>Business Markups</Typography>
 
-            <Paper sx={{ p: 2, mb: 3 }} elevation={1} variant="outlined">
-                <Typography variant="h6" gutterBottom>Filters</Typography>
+            <Paper sx={{ p: 2, mb: 3, border: '1px solid #e5e7eb' }} elevation={0}>
+                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>Filters</Typography>
                 <Grid container spacing={2} alignItems="flex-end">
                     <Grid item xs={12} sm={6} md={3}>
                         <FormControl fullWidth size="small">
-                            <InputLabel>From Business</InputLabel>
-                            <Select defaultValue="ANY" label="From Business">
-                                <MenuItem value="ANY">Any</MenuItem>
-                                {companies.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+                            <InputLabel sx={{ fontSize: '12px' }}>From Business</InputLabel>
+                            <Select
+                                defaultValue="ANY"
+                                label="From Business"
+                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                            >
+                                <MenuItem value="ANY" sx={{ fontSize: '12px' }}>Any</MenuItem>
+                                {companies.map(c => <MenuItem key={c.id} value={c.id} sx={{ fontSize: '12px' }}>{c.name}</MenuItem>)}
                             </Select>
                         </FormControl>
                     </Grid>
                     {/* TODO: Add other filters: To Business, Customer, Carrier, Service */}
                     <Grid item xs={12} sm={6} md={3}>
-                        <Button variant="contained" startIcon={<SearchIcon />} onClick={fetchData}>Search</Button>
+                        <Button
+                            variant="contained"
+                            startIcon={<SearchIcon />}
+                            onClick={fetchData}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Search
+                        </Button>
                     </Grid>
                 </Grid>
             </Paper>
 
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddMarkupOpen} sx={{ mb: 2 }}>
+            <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddMarkupOpen}
+                size="small"
+                sx={{ mb: 2, fontSize: '12px' }}
+            >
                 Add New Business Markup
             </Button>
 
-            <TableContainer component={Paper} elevation={1} variant="outlined">
+            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>From Business</TableCell>
-                            <TableCell>To Business</TableCell>
-                            <TableCell>Customer</TableCell>
-                            <TableCell>Carrier</TableCell>
-                            <TableCell>Service</TableCell>
-                            <TableCell>Type</TableCell>
-                            <TableCell>Value</TableCell>
-                            <TableCell>Effective</TableCell>
-                            <TableCell>Expires</TableCell>
-                            <TableCell align="right">Actions</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>From Business</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>To Business</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Customer</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Service</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Value</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Effective</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Expires</TableCell>
+                            <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {markups.map((markup) => (
                             <TableRow key={markup.id} hover>
-                                <TableCell>{markup.fromBusinessName}</TableCell>
-                                <TableCell>{markup.toBusinessName}</TableCell>
-                                <TableCell>{markup.customerName}</TableCell>
-                                <TableCell>{markup.carrierName}</TableCell>
-                                <TableCell>{markup.service}</TableCell>
-                                <TableCell>{markup.type}</TableCell>
-                                <TableCell>{markup.value}{markup.type === 'PERCENTAGE' ? '%' : ''}</TableCell>
-                                <TableCell>{markup.effectiveDate ? new Date(markup.effectiveDate).toLocaleDateString() : 'N/A'}</TableCell>
-                                <TableCell>{markup.expiryDate ? new Date(markup.expiryDate).toLocaleDateString() : 'N/A'}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.fromBusinessName}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.toBusinessName}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.customerName}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.carrierName}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.service}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.type}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.value}{markup.type === 'PERCENTAGE' ? '%' : ''}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.effectiveDate ? new Date(markup.effectiveDate).toLocaleDateString() : 'N/A'}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{markup.expiryDate ? new Date(markup.expiryDate).toLocaleDateString() : 'N/A'}</TableCell>
                                 <TableCell align="right">
                                     <IconButton size="small" onClick={() => handleEditMarkupOpen(markup)} color="primary">
                                         <EditIcon fontSize="inherit" />
@@ -221,7 +239,7 @@ const BusinessMarkupsTab = () => {
                         {markups.length === 0 && (
                             <TableRow>
                                 <TableCell colSpan={10} align="center">
-                                    <Typography color="textSecondary" sx={{ p: 2 }}>No business markups found.</Typography>
+                                    <Typography color="textSecondary" sx={{ p: 2, fontSize: '12px' }}>No business markups found.</Typography>
                                 </TableCell>
                             </TableRow>
                         )}
@@ -240,15 +258,27 @@ const BusinessMarkupsTab = () => {
             />
 
             <Dialog open={!!deletingMarkupId} onClose={() => setDeletingMarkupId(null)}>
-                <DialogTitle>Confirm Delete</DialogTitle>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>Confirm Delete</DialogTitle>
                 <DialogContent>
-                    <DialogContentText>
+                    <DialogContentText sx={{ fontSize: '12px' }}>
                         Are you sure you want to delete this business markup rule?
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeletingMarkupId(null)}>Cancel</Button>
-                    <Button onClick={handleDeleteMarkupExecute} color="error" variant="contained">
+                    <Button
+                        onClick={() => setDeletingMarkupId(null)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteMarkupExecute}
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
                         Delete
                     </Button>
                 </DialogActions>

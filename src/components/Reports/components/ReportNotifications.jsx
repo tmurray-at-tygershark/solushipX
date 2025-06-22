@@ -88,7 +88,7 @@ const ReportNotifications = ({ onUpdate }) => {
     // Test email state
     const [testEmailRecipient, setTestEmailRecipient] = useState('');
     const [testEmailSubject, setTestEmailSubject] = useState('Test Report Notification');
-    const [testEmailMessage, setTestEmailMessage] = useState('This is a test notification from SolushipX Reports system.');
+    const [testEmailMessage, setTestEmailMessage] = useState('This is a test notification from Integrated Carriers Reports system.');
     const [sendingTestEmail, setSendingTestEmail] = useState(false);
 
     // Notification preferences
@@ -345,7 +345,7 @@ const ReportNotifications = ({ onUpdate }) => {
                 setTestEmailDialogOpen(false);
                 setTestEmailRecipient('');
                 setTestEmailSubject('Test Report Notification');
-                setTestEmailMessage('This is a test notification from SolushipX Reports system.');
+                setTestEmailMessage('This is a test notification from Integrated Carriers Reports system.');
             } else {
                 throw new Error('Failed to send test email');
             }

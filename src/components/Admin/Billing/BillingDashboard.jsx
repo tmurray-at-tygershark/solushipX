@@ -34,6 +34,7 @@ import {
     DialogContent,
     DialogActions,
     Divider,
+    Alert,
 } from '@mui/material';
 import {
     AttachMoney as MoneyIcon,
@@ -77,65 +78,10 @@ import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
 import EDIMapping from './EDIMapping';
 import PaymentTerms from './PaymentTerms';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useSnackbar } from 'notistack';
-
-const generateMockInvoices = () => {
-    const carriers = ['FedEx', 'UPS', 'DHL', 'USPS'];
-    const services = ['Express', 'Ground', 'Priority', '2-Day', 'Overnight'];
-    const statuses = ['Paid', 'Unpaid', 'Processing', 'Overdue'];
-    const companies = ['Acme Corp', 'Global Industries', 'Tech Solutions', 'Retail Giants', 'Logistics Pro'];
-
-    return Array.from({ length: 40 }, (_, index) => {
-        const id = index + 1;
-        const amount = (Math.random() * 5000 + 500).toFixed(2);
-        const cost = (amount * 0.7).toFixed(2);
-        const tax = (amount * 0.1).toFixed(2);
-        const date = new Date(2024, 2, Math.floor(Math.random() * 30) + 1);
-        const dueDate = new Date(date);
-        dueDate.setDate(date.getDate() + 30);
-
-        return {
-            id: `INV-2024-${id.toString().padStart(3, '0')}`,
-            number: `INV-${id.toString().padStart(6, '0')}`,
-            date: date.toISOString().split('T')[0],
-            dueDate: dueDate.toISOString().split('T')[0],
-            company: companies[Math.floor(Math.random() * companies.length)],
-            amount: parseFloat(amount),
-            cost: parseFloat(cost),
-            tax: parseFloat(tax),
-            status: statuses[Math.floor(Math.random() * statuses.length)],
-            currency: 'USD',
-            shipments: [
-                {
-                    id: `SHP-${id.toString().padStart(3, '0')}`,
-                    carrier: carriers[Math.floor(Math.random() * carriers.length)],
-                    service: services[Math.floor(Math.random() * services.length)],
-                    trackingNumber: `${carriers[Math.floor(Math.random() * carriers.length)]}${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
-                    from: {
-                        name: 'John Smith',
-                        company: 'SolushipX Inc.',
-                        address: '123 Business Ave, Suite 100',
-                        city: 'New York',
-                        state: 'NY',
-                        postalCode: '10001',
-                        country: 'US'
-                    },
-                    to: {
-                        name: 'Jane Doe',
-                        company: companies[Math.floor(Math.random() * companies.length)],
-                        address: '456 Enterprise Blvd',
-                        city: 'Los Angeles',
-                        state: 'CA',
-                        postalCode: '90001',
-                        country: 'US'
-                    }
-                }
-            ]
-        };
-    });
-};
 
 const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const navigate = useNavigate();
@@ -161,7 +107,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const [revenueTrends, setRevenueTrends] = useState([]);
     const [revenueByCompany, setRevenueByCompany] = useState([]);
     const [recentInvoices, setRecentInvoices] = useState([]);
-    const [invoices, setInvoices] = useState(generateMockInvoices());
+    const [invoices, setInvoices] = useState([]);
     const [anchorEl, setAnchorEl] = useState(null);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -195,7 +141,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     // Listen for path changes to update the active tab
     useEffect(() => {
         const path = location.pathname;
-        console.log('BillingDashboard path listener:', path);
+        // Remove console.log for production
+        // console.log('BillingDashboard path listener:', path);
 
         if (path.includes('/admin/billing/payment-terms')) {
             setActiveTab('payment-terms');
@@ -204,6 +151,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         } else if (path.includes('/admin/billing/edi')) {
             setActiveTab('edi');
         } else if (path.includes('/admin/billing/generate')) {
+            // Handle generate tab properly
+            setActiveTab('generate');
         } else if (path.includes('/admin/billing/business')) {
             setActiveTab('business');
         } else if (path.includes('/admin/billing/payments')) {
@@ -228,6 +177,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const fetchBillingData = async () => {
         try {
             setLoading(true);
+            setError(null);
             const invoicesRef = collection(db, 'invoices');
             const startDate = getStartDate(timeRange);
 
@@ -239,20 +189,24 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             );
 
             const querySnapshot = await getDocs(q);
-            const invoices = querySnapshot.docs.map(doc => ({
+            const invoicesData = querySnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
-            // Calculate metrics
-            const totalRevenue = invoices.reduce((sum, invoice) =>
-                sum + (invoice.status === 'paid' ? invoice.total : 0), 0);
+            // Update state with real data
+            setInvoices(invoicesData);
 
-            const outstandingBalance = invoices.reduce((sum, invoice) =>
-                sum + (invoice.status === 'pending' ? invoice.total : 0), 0);
+            // Calculate metrics from real data
+            const totalRevenue = invoicesData.reduce((sum, invoice) =>
+                sum + (invoice.status === 'paid' ? (invoice.total || invoice.amount || 0) : 0), 0);
 
-            const paidInvoices = invoices.filter(invoice => invoice.status === 'paid').length;
-            const pendingInvoices = invoices.filter(invoice => invoice.status === 'pending').length;
+            const outstandingBalance = invoicesData.reduce((sum, invoice) =>
+                sum + (invoice.status === 'pending' || invoice.status === 'unpaid' ? (invoice.total || invoice.amount || 0) : 0), 0);
+
+            const paidInvoices = invoicesData.filter(invoice => invoice.status === 'paid').length;
+            const pendingInvoices = invoicesData.filter(invoice =>
+                invoice.status === 'pending' || invoice.status === 'unpaid').length;
 
             setMetrics({
                 totalRevenue,
@@ -262,18 +216,20 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             });
 
             // Prepare revenue trends data
-            const trends = prepareRevenueTrends(invoices);
+            const trends = prepareRevenueTrends(invoicesData);
             setRevenueTrends(trends);
 
             // Prepare revenue by company data
-            const companyRevenue = prepareCompanyRevenue(invoices);
+            const companyRevenue = prepareCompanyRevenue(invoicesData);
             setRevenueByCompany(companyRevenue);
 
             // Set recent invoices
-            setRecentInvoices(invoices.slice(0, 5));
+            setRecentInvoices(invoicesData.slice(0, 5));
 
         } catch (err) {
-            setError('Error fetching billing data: ' + err.message);
+            console.error('Error fetching billing data:', err);
+            setError('Failed to load billing data. Please try again.');
+            enqueueSnackbar('Error loading billing data: ' + err.message, { variant: 'error' });
         } finally {
             setLoading(false);
         }
@@ -475,10 +431,14 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     };
 
     const prepareRevenueTrends = (invoices) => {
+        if (!invoices || invoices.length === 0) return [];
+
         const trends = {};
         invoices.forEach(invoice => {
-            const date = invoice.createdAt.toDate().toLocaleDateString();
-            trends[date] = (trends[date] || 0) + (invoice.status === 'paid' ? invoice.total : 0);
+            if (invoice.createdAt && invoice.createdAt.toDate) {
+                const date = invoice.createdAt.toDate().toLocaleDateString();
+                trends[date] = (trends[date] || 0) + (invoice.status === 'paid' ? (invoice.total || invoice.amount || 0) : 0);
+            }
         });
 
         return Object.entries(trends).map(([date, amount]) => ({
@@ -488,10 +448,13 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     };
 
     const prepareCompanyRevenue = (invoices) => {
+        if (!invoices || invoices.length === 0) return [];
+
         const revenue = {};
         invoices.forEach(invoice => {
             if (invoice.status === 'paid') {
-                revenue[invoice.companyName] = (revenue[invoice.companyName] || 0) + invoice.total;
+                const companyName = invoice.companyName || invoice.company || 'Unknown Company';
+                revenue[companyName] = (revenue[companyName] || 0) + (invoice.total || invoice.amount || 0);
             }
         });
 
@@ -517,8 +480,34 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     };
 
     const handleExport = () => {
-        // Implement export functionality
-        console.log('Exporting billing data...');
+        // Implement actual export functionality
+        try {
+            const dataToExport = invoices.map(invoice => ({
+                'Invoice Number': invoice.number || invoice.id,
+                'Company': invoice.company || invoice.companyName,
+                'Date': invoice.date,
+                'Due Date': invoice.dueDate,
+                'Amount': invoice.amount || invoice.total,
+                'Status': invoice.status
+            }));
+
+            const csvContent = "data:text/csv;charset=utf-8,"
+                + "Invoice Number,Company,Date,Due Date,Amount,Status\n"
+                + dataToExport.map(row => Object.values(row).join(",")).join("\n");
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `invoices_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            enqueueSnackbar('Invoice data exported successfully', { variant: 'success' });
+        } catch (error) {
+            console.error('Export error:', error);
+            enqueueSnackbar('Failed to export data', { variant: 'error' });
+        }
     };
 
     const handleTabChange = (event, newValue) => {
@@ -633,9 +622,9 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const filteredInvoices = invoices.filter(invoice => {
         const searchStr = searchTerm.toLowerCase();
         return (
-            invoice.number.toLowerCase().includes(searchStr) ||
-            invoice.company.toLowerCase().includes(searchStr) ||
-            invoice.status.toLowerCase().includes(searchStr)
+            (invoice.number || invoice.id || '').toLowerCase().includes(searchStr) ||
+            (invoice.company || invoice.companyName || '').toLowerCase().includes(searchStr) ||
+            (invoice.status || '').toLowerCase().includes(searchStr)
         );
     });
 
@@ -741,13 +730,18 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     return (
         <Box className="admin-billing-dashboard">
             <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" sx={{ mb: 1, fontWeight: 600 }}>
+                <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, fontSize: '22px' }}>
                     Billing Management
                 </Typography>
-                <Typography variant="body1" color="text.secondary">
-                    Manage invoices, EDI processing, and payment tracking
-                </Typography>
+                {/* Breadcrumb */}
+                <AdminBreadcrumb currentPage="Billing" />
             </Box>
+
+            {error && (
+                <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                    {error}
+                </Alert>
+            )}
 
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
                 <Tabs
@@ -759,7 +753,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         '& .MuiTab-root': {
                             textTransform: 'none',
                             minHeight: 48,
-                            fontWeight: 500
+                            fontWeight: 500,
+                            fontSize: '12px'
                         }
                     }}
                 >
@@ -775,54 +770,63 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             </Box>
 
             {activeTab === 'overview' && (
-                <Grid container spacing={3}>
-                    <Grid item xs={12} md={6} lg={3}>
-                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
-                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
-                                Total Revenue
-                            </Typography>
-                            <Typography component="p" variant="h4">
-                                ${metrics.totalRevenue.toLocaleString()}
-                            </Typography>
-                        </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6} lg={3}>
-                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
-                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
-                                Outstanding Balance
-                            </Typography>
-                            <Typography component="p" variant="h4">
-                                ${metrics.outstandingBalance.toLocaleString()}
-                            </Typography>
-                        </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6} lg={3}>
-                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
-                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
-                                Paid Invoices
-                            </Typography>
-                            <Typography component="p" variant="h4">
-                                {metrics.paidInvoices}
-                            </Typography>
-                        </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6} lg={3}>
-                        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140 }}>
-                            <Typography component="h2" variant="h6" color="primary" gutterBottom>
-                                Pending Invoices
-                            </Typography>
-                            <Typography component="p" variant="h4">
-                                {metrics.pendingInvoices}
-                            </Typography>
-                        </Paper>
-                    </Grid>
-                </Grid>
+                <>
+                    {loading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+                            <CircularProgress />
+                            <Typography sx={{ ml: 2, fontSize: '12px' }}>Loading billing overview...</Typography>
+                        </Box>
+                    ) : (
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={6} lg={3}>
+                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
+                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
+                                        Total Revenue
+                                    </Typography>
+                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
+                                        ${metrics.totalRevenue.toLocaleString()}
+                                    </Typography>
+                                </Paper>
+                            </Grid>
+                            <Grid item xs={12} md={6} lg={3}>
+                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
+                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
+                                        Outstanding Balance
+                                    </Typography>
+                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
+                                        ${metrics.outstandingBalance.toLocaleString()}
+                                    </Typography>
+                                </Paper>
+                            </Grid>
+                            <Grid item xs={12} md={6} lg={3}>
+                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
+                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
+                                        Paid Invoices
+                                    </Typography>
+                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
+                                        {metrics.paidInvoices}
+                                    </Typography>
+                                </Paper>
+                            </Grid>
+                            <Grid item xs={12} md={6} lg={3}>
+                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
+                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
+                                        Pending Invoices
+                                    </Typography>
+                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
+                                        {metrics.pendingInvoices}
+                                    </Typography>
+                                </Paper>
+                            </Grid>
+                        </Grid>
+                    )}
+                </>
             )}
 
             {activeTab === 'invoices' && (
                 <>
-                    <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #eee' }}>
-                        <Typography variant="h6" sx={{ mb: 2 }}>Search Invoices</Typography>
+                    <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
+                        <Typography variant="h6" sx={{ mb: 2, fontSize: '16px', fontWeight: 600 }}>Search Invoices</Typography>
                         <Grid container spacing={3}>
                             <Grid item xs={12} sm={6} md={3}>
                                 <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -830,7 +834,14 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                         label="From Date"
                                         value={fromDate}
                                         onChange={setFromDate}
-                                        renderInput={(params) => <TextField {...params} fullWidth />}
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                fullWidth
+                                                size="small"
+                                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                            />
+                                        )}
                                     />
                                 </LocalizationProvider>
                             </Grid>
@@ -840,19 +851,27 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                         label="To Date"
                                         value={toDate}
                                         onChange={setToDate}
-                                        renderInput={(params) => <TextField {...params} fullWidth />}
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                fullWidth
+                                                size="small"
+                                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                            />
+                                        )}
                                     />
                                 </LocalizationProvider>
                             </Grid>
                             <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Customer Name</InputLabel>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Customer Name</InputLabel>
                                     <Select
                                         value={customerName}
                                         onChange={(e) => setCustomerName(e.target.value)}
                                         label="Customer Name"
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                                     >
-                                        <MenuItem value="">All</MenuItem>
+                                        <MenuItem value="" sx={{ fontSize: '12px' }}>All</MenuItem>
                                         {/* Add customer options dynamically */}
                                     </Select>
                                 </FormControl>
@@ -860,49 +879,31 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             <Grid item xs={12} sm={6} md={3}>
                                 <TextField
                                     fullWidth
+                                    size="small"
                                     label="Invoice Number"
                                     value={invoiceNumber}
                                     onChange={(e) => setInvoiceNumber(e.target.value)}
+                                    sx={{
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
                                 />
                             </Grid>
                             <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Payment Status</InputLabel>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Payment Status</InputLabel>
                                     <Select
                                         value={paymentStatus}
                                         onChange={(e) => setPaymentStatus(e.target.value)}
                                         label="Payment Status"
+                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                                     >
-                                        <MenuItem value="">All</MenuItem>
-                                        <MenuItem value="paid">Paid</MenuItem>
-                                        <MenuItem value="pending">Pending</MenuItem>
-                                        <MenuItem value="overdue">Overdue</MenuItem>
+                                        <MenuItem value="" sx={{ fontSize: '12px' }}>All</MenuItem>
+                                        <MenuItem value="paid" sx={{ fontSize: '12px' }}>Paid</MenuItem>
+                                        <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
+                                        <MenuItem value="unpaid" sx={{ fontSize: '12px' }}>Unpaid</MenuItem>
+                                        <MenuItem value="overdue" sx={{ fontSize: '12px' }}>Overdue</MenuItem>
                                     </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Customer Notify</InputLabel>
-                                    <Select
-                                        value={customerNotify}
-                                        onChange={(e) => setCustomerNotify(e.target.value)}
-                                        label="Customer Notify"
-                                    >
-                                        <MenuItem value="">All</MenuItem>
-                                        <MenuItem value="notified">Notified</MenuItem>
-                                        <MenuItem value="not-notified">Not Notified</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3} sx={{ display: 'flex', alignItems: 'center' }}>
-                                <FormControl component="fieldset">
-                                    <Stack direction="row" spacing={1} alignItems="center">
-                                        <Typography>Display Cancelled</Typography>
-                                        <Switch
-                                            checked={displayCancelled}
-                                            onChange={(e) => setDisplayCancelled(e.target.checked)}
-                                        />
-                                    </Stack>
                                 </FormControl>
                             </Grid>
                             <Grid item xs={12} sm={6} md={3} sx={{ display: 'flex', alignItems: 'flex-end' }}>
@@ -911,12 +912,16 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                         variant="contained"
                                         onClick={handleSearch}
                                         startIcon={<SearchIcon />}
+                                        size="small"
+                                        sx={{ fontSize: '12px' }}
                                     >
                                         Search
                                     </Button>
                                     <Button
                                         variant="outlined"
                                         onClick={handleReset}
+                                        size="small"
+                                        sx={{ fontSize: '12px' }}
                                     >
                                         Reset
                                     </Button>
@@ -925,9 +930,9 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         </Grid>
                     </Paper>
 
-                    <Paper elevation={0} sx={{ border: '1px solid #eee' }}>
+                    <Paper elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                         <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="h6">Customer Invoice List</Typography>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>Customer Invoice List</Typography>
                             <Stack direction="row" spacing={2}>
                                 <TextField
                                     placeholder="Search invoices..."
@@ -935,19 +940,25 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                     value={searchTerm}
                                     onChange={handleSearchChange}
                                     InputProps={{
-                                        startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />,
+                                        startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: '16px' }} />,
                                         endAdornment: searchTerm && (
                                             <IconButton size="small" onClick={() => setSearchTerm('')}>
-                                                <CloseIcon />
+                                                <CloseIcon sx={{ fontSize: '16px' }} />
                                             </IconButton>
-                                        )
+                                        ),
+                                        sx: { fontSize: '12px' }
                                     }}
-                                    sx={{ width: 250 }}
+                                    sx={{
+                                        width: 250,
+                                        '& .MuiInputBase-input': { fontSize: '12px' }
+                                    }}
                                 />
                                 <Button
                                     variant="outlined"
                                     startIcon={<DownloadIcon />}
                                     onClick={handleExport}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
                                 >
                                     Export
                                 </Button>
@@ -957,69 +968,87 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             <Table>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>Invoice #</TableCell>
-                                        <TableCell>Company</TableCell>
-                                        <TableCell>Date</TableCell>
-                                        <TableCell>Due Date</TableCell>
-                                        <TableCell align="right">Amount</TableCell>
-                                        <TableCell align="right">Cost</TableCell>
-                                        <TableCell align="right">Tax</TableCell>
-                                        <TableCell>Status</TableCell>
-                                        <TableCell align="right">Actions</TableCell>
+                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Invoice #</TableCell>
+                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company</TableCell>
+                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Date</TableCell>
+                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Due Date</TableCell>
+                                        <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Amount</TableCell>
+                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                        <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {filteredInvoices
-                                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                        .map((invoice) => {
-                                            const statusColor = getStatusColor(invoice.status);
-                                            return (
-                                                <TableRow
-                                                    key={invoice.id}
-                                                    hover
-                                                    onClick={() => handleInvoiceClick(invoice)}
-                                                    sx={{ cursor: 'pointer' }}
-                                                >
-                                                    <TableCell>{invoice.number}</TableCell>
-                                                    <TableCell>{invoice.company}</TableCell>
-                                                    <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
-                                                    <TableCell>{new Date(invoice.dueDate).toLocaleDateString()}</TableCell>
-                                                    <TableCell align="right">${invoice.amount.toFixed(2)}</TableCell>
-                                                    <TableCell align="right">${invoice.cost.toFixed(2)}</TableCell>
-                                                    <TableCell align="right">${invoice.tax.toFixed(2)}</TableCell>
-                                                    <TableCell>
-                                                        <Chip
-                                                            label={invoice.status}
-                                                            size="small"
-                                                            sx={{
-                                                                color: statusColor.color,
-                                                                bgcolor: statusColor.bgcolor,
-                                                                fontWeight: 600,
-                                                                borderRadius: '6px',
-                                                            }}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell align="right">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleMenuOpen(e);
-                                                            }}
-                                                        >
-                                                            <MoreVertIcon />
-                                                        </IconButton>
-                                                    </TableCell>
-                                                </TableRow>
-                                            );
-                                        })}
-                                    {filteredInvoices.length === 0 && (
+                                    {loading ? (
                                         <TableRow>
-                                            <TableCell colSpan={9} align="center">
+                                            <TableCell colSpan={7} align="center">
                                                 <Box sx={{ py: 3 }}>
-                                                    <Typography variant="body1" color="text.secondary">
-                                                        No invoices found
+                                                    <CircularProgress size={24} />
+                                                    <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading invoices...</Typography>
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : filteredInvoices.length > 0 ? (
+                                        filteredInvoices
+                                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                            .map((invoice) => {
+                                                const statusColor = getStatusColor(invoice.status);
+                                                return (
+                                                    <TableRow
+                                                        key={invoice.id}
+                                                        hover
+                                                        onClick={() => handleInvoiceClick(invoice)}
+                                                        sx={{ cursor: 'pointer' }}
+                                                    >
+                                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.number || invoice.id}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.company || invoice.companyName}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>
+                                                            {invoice.date ? new Date(invoice.date).toLocaleDateString() : 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>
+                                                            {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell align="right" sx={{ fontSize: '12px' }}>
+                                                            ${(invoice.amount || invoice.total || 0).toFixed(2)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Chip
+                                                                label={invoice.status || 'Unknown'}
+                                                                size="small"
+                                                                sx={{
+                                                                    color: statusColor.color,
+                                                                    bgcolor: statusColor.bgcolor,
+                                                                    fontWeight: 600,
+                                                                    fontSize: '11px',
+                                                                    borderRadius: '6px',
+                                                                }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell align="right">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleMenuOpen(e);
+                                                                }}
+                                                            >
+                                                                <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                                            </IconButton>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={7} align="center">
+                                                <Box sx={{ py: 3 }}>
+                                                    <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                        {searchTerm ? 'No invoices match your search criteria' : 'No invoices found'}
                                                     </Typography>
+                                                    {!searchTerm && (
+                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '11px', mt: 1 }}>
+                                                            Invoices will appear here once they are created
+                                                        </Typography>
+                                                    )}
                                                 </Box>
                                             </TableCell>
                                         </TableRow>
@@ -1035,131 +1064,13 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             rowsPerPage={rowsPerPage}
                             onRowsPerPageChange={handleChangeRowsPerPage}
                             rowsPerPageOptions={[10, 25, 50, 100]}
+                            sx={{
+                                '& .MuiTablePagination-selectLabel': { fontSize: '12px' },
+                                '& .MuiTablePagination-displayedRows': { fontSize: '12px' },
+                                '& .MuiSelect-select': { fontSize: '12px' }
+                            }}
                         />
                     </Paper>
-
-                    <Dialog
-                        open={detailsOpen}
-                        onClose={handleCloseDetails}
-                        maxWidth="md"
-                        fullWidth
-                    >
-                        <DialogTitle>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Typography variant="h6">Invoice Details</Typography>
-                                <IconButton onClick={handleCloseDetails} size="small">
-                                    <CloseIcon />
-                                </IconButton>
-                            </Box>
-                        </DialogTitle>
-                        <DialogContent dividers>
-                            {selectedInvoice && (
-                                <Grid container spacing={3}>
-                                    <Grid item xs={12}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                            <Typography variant="h5">{selectedInvoice.number}</Typography>
-                                            <Chip
-                                                label={selectedInvoice.status}
-                                                size="small"
-                                                sx={{
-                                                    color: getStatusColor(selectedInvoice.status).color,
-                                                    bgcolor: getStatusColor(selectedInvoice.status).bgcolor,
-                                                    fontWeight: 600,
-                                                    borderRadius: '6px',
-                                                }}
-                                            />
-                                        </Box>
-                                        <Divider />
-                                    </Grid>
-                                    <Grid item xs={12} sm={6}>
-                                        <Typography variant="subtitle2" color="text.secondary">Company</Typography>
-                                        <Typography variant="body1">{selectedInvoice.company}</Typography>
-                                    </Grid>
-                                    <Grid item xs={12} sm={6}>
-                                        <Typography variant="subtitle2" color="text.secondary">Invoice Date</Typography>
-                                        <Typography variant="body1">
-                                            {new Date(selectedInvoice.date).toLocaleDateString()}
-                                        </Typography>
-                                    </Grid>
-                                    <Grid item xs={12} sm={6}>
-                                        <Typography variant="subtitle2" color="text.secondary">Due Date</Typography>
-                                        <Typography variant="body1">
-                                            {new Date(selectedInvoice.dueDate).toLocaleDateString()}
-                                        </Typography>
-                                    </Grid>
-                                    <Grid item xs={12} sm={6}>
-                                        <Typography variant="subtitle2" color="text.secondary">Amount</Typography>
-                                        <Typography variant="body1">${selectedInvoice.amount.toFixed(2)}</Typography>
-                                    </Grid>
-                                    <Grid item xs={12}>
-                                        <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>Shipment Details</Typography>
-                                        <Divider />
-                                        {selectedInvoice.shipments.map((shipment) => (
-                                            <Box key={shipment.id} sx={{ mt: 2 }}>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Typography variant="subtitle2" color="text.secondary">
-                                                            Tracking Number
-                                                        </Typography>
-                                                        <Typography variant="body1">{shipment.trackingNumber}</Typography>
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Typography variant="subtitle2" color="text.secondary">
-                                                            Carrier & Service
-                                                        </Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment.carrier} - {shipment.service}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Typography variant="subtitle2" color="text.secondary">From</Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment.from.name}<br />
-                                                            {shipment.from.company}<br />
-                                                            {shipment.from.address}<br />
-                                                            {shipment.from.city}, {shipment.from.state} {shipment.from.postalCode}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Typography variant="subtitle2" color="text.secondary">To</Typography>
-                                                        <Typography variant="body1">
-                                                            {shipment.to.name}<br />
-                                                            {shipment.to.company}<br />
-                                                            {shipment.to.address}<br />
-                                                            {shipment.to.city}, {shipment.to.state} {shipment.to.postalCode}
-                                                        </Typography>
-                                                    </Grid>
-                                                </Grid>
-                                            </Box>
-                                        ))}
-                                    </Grid>
-                                </Grid>
-                            )}
-                        </DialogContent>
-                        <DialogActions>
-                            <Button onClick={handleCloseDetails}>Close</Button>
-                            <Button
-                                variant="contained"
-                                startIcon={<DownloadIcon />}
-                                onClick={() => {/* Handle download */ }}
-                            >
-                                Download Invoice
-                            </Button>
-                        </DialogActions>
-                    </Dialog>
-
-                    <Menu
-                        anchorEl={anchorEl}
-                        open={Boolean(anchorEl)}
-                        onClose={handleMenuClose}
-                    >
-                        <MenuItem onClick={handleMenuClose}>View Details</MenuItem>
-                        <MenuItem onClick={handleMenuClose}>Edit Invoice</MenuItem>
-                        <MenuItem onClick={handleMenuClose}>Download PDF</MenuItem>
-                        <MenuItem onClick={handleMenuClose}>Send to Customer</MenuItem>
-                        <MenuItem onClick={handleMenuClose}>Mark as Paid</MenuItem>
-                        <MenuItem onClick={handleMenuClose}>Cancel Invoice</MenuItem>
-                    </Menu>
                 </>
             )}
 
@@ -1174,12 +1085,12 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         </Box>
                     ) : (
                         <>
-                            <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #eee' }}>
+                            <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
                                 <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
                                     <Grid item xs>
                                         <Box>
-                                            <Typography variant="h6">EDI Processing</Typography>
-                                            <Typography variant="body2" color="text.secondary">
+                                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>EDI Processing</Typography>
+                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
                                                 Upload and manage EDI files
                                             </Typography>
                                         </Box>
@@ -1192,7 +1103,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                             onClick={checkStuckEdis}
                                             disabled={ediLoading}
                                             startIcon={ediLoading ? <CircularProgress size={16} /> : <HealthAndSafetyIcon />}
-                                            sx={{ mr: 1 }}
+                                            sx={{ mr: 1, fontSize: '12px' }}
                                         >
                                             Check Stuck Uploads
                                         </Button>
@@ -1200,6 +1111,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                             variant="contained"
                                             color="primary"
                                             onClick={() => setEdiDialogOpen(true)}
+                                            size="small"
+                                            sx={{ fontSize: '12px' }}
                                         >
                                             Upload EDI File
                                         </Button>
@@ -1207,48 +1120,62 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                 </Grid>
                             </Paper>
 
-                            <Paper elevation={0} sx={{ p: 3, border: '1px solid #eee' }}>
+                            <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
                                 <TableContainer>
                                     <Table>
                                         <TableHead>
                                             <TableRow>
-                                                <TableCell>File Name</TableCell>
-                                                <TableCell>Carrier</TableCell>
-                                                <TableCell>Upload Date</TableCell>
-                                                <TableCell>Records</TableCell>
-                                                <TableCell>Status</TableCell>
-                                                <TableCell align="right">Actions</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>File Name</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Upload Date</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Records</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
-                                            {ediProcessedItems.map((item) => (
-                                                <TableRow key={item.id} hover>
-                                                    <TableCell>{item.fileName}</TableCell>
-                                                    <TableCell>{item.carrier || 'Not specified'}</TableCell>
-                                                    <TableCell>
-                                                        {item.formattedUploadDate}
-                                                    </TableCell>
-                                                    <TableCell>{item.recordCount || '0'}</TableCell>
-                                                    <TableCell>
-                                                        {getProcessingStatusChip(item.processingStatus)}
-                                                    </TableCell>
-                                                    <TableCell align="right">
-                                                        <Button
-                                                            size="small"
-                                                            onClick={() => handleViewEdiResults(item.uploadId)}
-                                                            disabled={item.processingStatus === 'queued'}
-                                                        >
-                                                            View Results
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                            {ediProcessedItems.length === 0 && (
+                                            {ediLoading ? (
                                                 <TableRow>
                                                     <TableCell colSpan={6} align="center">
                                                         <Box sx={{ py: 3 }}>
-                                                            <Typography variant="body1" color="text.secondary">
-                                                                No processed EDI files found
+                                                            <CircularProgress size={24} />
+                                                            <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading EDI history...</Typography>
+                                                        </Box>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : ediProcessedItems.length > 0 ? (
+                                                ediProcessedItems.map((item) => (
+                                                    <TableRow key={item.id} hover>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{item.fileName}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{item.carrier || 'Not specified'}</TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>
+                                                            {item.formattedUploadDate}
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontSize: '12px' }}>{item.recordCount || '0'}</TableCell>
+                                                        <TableCell>
+                                                            {getProcessingStatusChip(item.processingStatus)}
+                                                        </TableCell>
+                                                        <TableCell align="right">
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleViewEdiResults(item.uploadId)}
+                                                                disabled={item.processingStatus === 'queued'}
+                                                                sx={{ fontSize: '12px' }}
+                                                            >
+                                                                View Results
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            ) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={6} align="center">
+                                                        <Box sx={{ py: 3 }}>
+                                                            <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                                No EDI files processed yet
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '11px', mt: 1 }}>
+                                                                Upload your first EDI file to get started
                                                             </Typography>
                                                         </Box>
                                                     </TableCell>
@@ -1273,27 +1200,134 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 <PaymentTerms />
             )}
 
-            {/* EDI Upload Dialog */}
+            {activeTab === 'generate' && (
+                <Box sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>Generate Invoices</Typography>
+                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                            Invoice generation functionality will be available here.
+                        </Typography>
+                    </Paper>
+                </Box>
+            )}
+
+            {activeTab === 'business' && (
+                <Box sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>Business Invoicing</Typography>
+                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                            Business invoicing functionality will be available here.
+                        </Typography>
+                    </Paper>
+                </Box>
+            )}
+
+            {activeTab === 'payments' && (
+                <Box sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>Received Payments</Typography>
+                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                            Payment tracking functionality will be available here.
+                        </Typography>
+                    </Paper>
+                </Box>
+            )}
+
+            <Dialog
+                open={detailsOpen}
+                onClose={handleCloseDetails}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>Invoice Details</Typography>
+                        <IconButton onClick={handleCloseDetails} size="small">
+                            <CloseIcon />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent dividers>
+                    {selectedInvoice && (
+                        <Grid container spacing={3}>
+                            <Grid item xs={12}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                    <Typography variant="h5" sx={{ fontSize: '18px' }}>{selectedInvoice.number || selectedInvoice.id}</Typography>
+                                    <Chip
+                                        label={selectedInvoice.status}
+                                        size="small"
+                                        sx={{
+                                            color: getStatusColor(selectedInvoice.status).color,
+                                            bgcolor: getStatusColor(selectedInvoice.status).bgcolor,
+                                            fontWeight: 600,
+                                            fontSize: '11px',
+                                            borderRadius: '6px',
+                                        }}
+                                    />
+                                </Box>
+                                <Divider />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Company</Typography>
+                                <Typography variant="body1" sx={{ fontSize: '12px' }}>{selectedInvoice.company || selectedInvoice.companyName}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Invoice Date</Typography>
+                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                    {selectedInvoice.date ? new Date(selectedInvoice.date).toLocaleDateString() : 'N/A'}
+                                </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Due Date</Typography>
+                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                    {selectedInvoice.dueDate ? new Date(selectedInvoice.dueDate).toLocaleDateString() : 'N/A'}
+                                </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Amount</Typography>
+                                <Typography variant="body1" sx={{ fontSize: '12px' }}>${(selectedInvoice.amount || selectedInvoice.total || 0).toFixed(2)}</Typography>
+                            </Grid>
+                        </Grid>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseDetails} size="small" sx={{ fontSize: '12px' }}>Close</Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<DownloadIcon />}
+                        onClick={() => {/* Handle download */ }}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Download Invoice
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleMenuClose}
+            >
+                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>View Details</MenuItem>
+                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Edit Invoice</MenuItem>
+                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Download PDF</MenuItem>
+                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Send to Customer</MenuItem>
+                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Mark as Paid</MenuItem>
+                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Cancel Invoice</MenuItem>
+            </Menu>
+
             <Dialog
                 open={ediDialogOpen}
                 onClose={() => setEdiDialogOpen(false)}
                 maxWidth="md"
                 fullWidth
             >
-                <DialogTitle>
-                    <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Typography variant="h6">Upload EDI File</Typography>
-                        <IconButton onClick={() => setEdiDialogOpen(false)} size="small">
-                            <CloseIcon />
-                        </IconButton>
-                    </Box>
-                </DialogTitle>
-                <DialogContent dividers>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Upload EDI File</DialogTitle>
+                <DialogContent>
                     <EDIUploader
-                        onUploadComplete={(uploadId) => {
-                            handleEdiUploadComplete(uploadId);
-                            setEdiDialogOpen(false);
-                        }}
+                        onUploadComplete={handleEdiUploadComplete}
+                        onClose={() => setEdiDialogOpen(false)}
                     />
                 </DialogContent>
             </Dialog>

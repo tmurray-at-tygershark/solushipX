@@ -17,7 +17,8 @@ const AppLayout = ({ children }) => {
         '/billing',
         '/profile',
         '/carriers',
-        '/notifications'
+        '/notifications',
+        '/set-password'
     ];
 
     // Check if the current route or any of its sub-paths match the immersive routes

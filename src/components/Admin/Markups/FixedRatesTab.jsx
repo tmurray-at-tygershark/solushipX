@@ -146,66 +146,116 @@ const FixedRatesTab = () => {
         }
     };
 
-    if (loadingData) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}><CircularProgress /><Typography sx={{ ml: 2 }}>Loading fixed rates...</Typography></Box>;
-    if (error) return <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>;
+    if (loadingData) return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}><CircularProgress /><Typography sx={{ ml: 2, fontSize: '12px' }}>Loading fixed rates...</Typography></Box>;
+    if (error) return <Alert severity="error" sx={{ m: 2, fontSize: '12px' }}>{error}</Alert>;
 
     return (
         <Box>
-            <Typography variant="h5" gutterBottom>Fixed Rate Management</Typography>
+            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>Fixed Rate Management</Typography>
 
-            <Paper sx={{ p: 2, mb: 3 }} elevation={1} variant="outlined">
-                <Typography variant="h6" gutterBottom>Filters</Typography>
+            <Paper sx={{ p: 2, mb: 3, border: '1px solid #e5e7eb' }} elevation={0}>
+                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>Filters</Typography>
                 <Grid container spacing={2} alignItems="flex-end">
                     <Grid item xs={12} sm={4} md={2}>
-                        <TextField fullWidth label="From Country" name="fromCountry" value={filters.fromCountry} onChange={handleFilterChange} size="small" />
+                        <TextField
+                            fullWidth
+                            label="From Country"
+                            name="fromCountry"
+                            value={filters.fromCountry}
+                            onChange={handleFilterChange}
+                            size="small"
+                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                            InputProps={{ sx: { fontSize: '12px' } }}
+                        />
                     </Grid>
                     <Grid item xs={12} sm={4} md={2}>
-                        <TextField fullWidth label="From State/Prov" name="fromStateProv" value={filters.fromStateProv} onChange={handleFilterChange} size="small" />
+                        <TextField
+                            fullWidth
+                            label="From State/Prov"
+                            name="fromStateProv"
+                            value={filters.fromStateProv}
+                            onChange={handleFilterChange}
+                            size="small"
+                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                            InputProps={{ sx: { fontSize: '12px' } }}
+                        />
                     </Grid>
                     <Grid item xs={12} sm={4} md={2}>
-                        <TextField fullWidth label="To Country" name="toCountry" value={filters.toCountry} onChange={handleFilterChange} size="small" />
+                        <TextField
+                            fullWidth
+                            label="To Country"
+                            name="toCountry"
+                            value={filters.toCountry}
+                            onChange={handleFilterChange}
+                            size="small"
+                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                            InputProps={{ sx: { fontSize: '12px' } }}
+                        />
                     </Grid>
                     <Grid item xs={12} sm={4} md={2}>
-                        <TextField fullWidth label="To State/Prov" name="toStateProv" value={filters.toStateProv} onChange={handleFilterChange} size="small" />
+                        <TextField
+                            fullWidth
+                            label="To State/Prov"
+                            name="toStateProv"
+                            value={filters.toStateProv}
+                            onChange={handleFilterChange}
+                            size="small"
+                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                            InputProps={{ sx: { fontSize: '12px' } }}
+                        />
                     </Grid>
                     <Grid item xs={12} sm={6} md={3}>
-                        <Button variant="contained" startIcon={<SearchIcon />} onClick={fetchFixedRates}>Search Rates</Button>
+                        <Button
+                            variant="contained"
+                            startIcon={<SearchIcon />}
+                            onClick={fetchFixedRates}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Search Rates
+                        </Button>
                     </Grid>
                 </Grid>
             </Paper>
 
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddRateOpen} sx={{ mb: 2 }}>
+            <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddRateOpen}
+                size="small"
+                sx={{ mb: 2, fontSize: '12px' }}
+            >
                 Add New Fixed Rate
             </Button>
 
-            <TableContainer component={Paper} elevation={1} variant="outlined">
+            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Service</TableCell>
-                            <TableCell>Type</TableCell>
-                            <TableCell>Value</TableCell>
-                            <TableCell>Variable</TableCell>
-                            <TableCell>From</TableCell>
-                            <TableCell>To</TableCell>
-                            <TableCell>Weight Range</TableCell>
-                            <TableCell>Effective</TableCell>
-                            <TableCell>Expires</TableCell>
-                            <TableCell align="right">Actions</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Service</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Value</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Variable</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>From</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>To</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Weight Range</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Effective</TableCell>
+                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Expires</TableCell>
+                            <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {fixedRates.map((rate) => (
                             <TableRow key={rate.id} hover>
-                                <TableCell>{rate.service}</TableCell>
-                                <TableCell>{rate.type}</TableCell>
-                                <TableCell>{rate.value}{rate.type === 'PERCENTAGE' ? '%' : ''}</TableCell>
-                                <TableCell>{rate.variable}</TableCell>
-                                <TableCell>{`${rate.fromCity || 'Any'}, ${rate.fromStateProv || 'Any'}, ${rate.fromCountry || 'Any'}`}</TableCell>
-                                <TableCell>{`${rate.toCity || 'Any'}, ${rate.toStateProv || 'Any'}, ${rate.toCountry || 'Any'}`}</TableCell>
-                                <TableCell>{`${rate.fromWeight || 0} - ${rate.toWeight || 'Any'}`}</TableCell>
-                                <TableCell>{rate.effectiveDate ? dayjs(rate.effectiveDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
-                                <TableCell>{rate.expiryDate ? dayjs(rate.expiryDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{rate.service}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{rate.type}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{rate.value}{rate.type === 'PERCENTAGE' ? '%' : ''}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{rate.variable}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{`${rate.fromCity || 'Any'}, ${rate.fromStateProv || 'Any'}, ${rate.fromCountry || 'Any'}`}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{`${rate.toCity || 'Any'}, ${rate.toStateProv || 'Any'}, ${rate.toCountry || 'Any'}`}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{`${rate.fromWeight || 0} - ${rate.toWeight || 'Any'}`}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{rate.effectiveDate ? dayjs(rate.effectiveDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>{rate.expiryDate ? dayjs(rate.expiryDate).format('YYYY-MM-DD') : 'N/A'}</TableCell>
                                 <TableCell align="right">
                                     <IconButton size="small" onClick={() => handleEditRateOpen(rate)} color="primary">
                                         <EditIcon fontSize="inherit" />
@@ -219,7 +269,7 @@ const FixedRatesTab = () => {
                         {fixedRates.length === 0 && !loadingData && (
                             <TableRow>
                                 <TableCell colSpan={10} align="center">
-                                    <Typography color="textSecondary" sx={{ p: 2 }}>No fixed rates found.</Typography>
+                                    <Typography color="textSecondary" sx={{ p: 2, fontSize: '12px' }}>No fixed rates found.</Typography>
                                 </TableCell>
                             </TableRow>
                         )}
@@ -235,15 +285,27 @@ const FixedRatesTab = () => {
             />
 
             <Dialog open={!!deletingRateId} onClose={() => setDeletingRateId(null)}>
-                <DialogTitle>Confirm Delete</DialogTitle>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>Confirm Delete</DialogTitle>
                 <DialogContent>
-                    <DialogContentText>
+                    <DialogContentText sx={{ fontSize: '12px' }}>
                         Are you sure you want to delete this fixed rate rule?
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeletingRateId(null)}>Cancel</Button>
-                    <Button onClick={handleDeleteRateExecute} color="error" variant="contained">
+                    <Button
+                        onClick={() => setDeletingRateId(null)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteRateExecute}
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
                         Delete
                     </Button>
                 </DialogActions>

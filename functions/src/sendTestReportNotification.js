@@ -96,10 +96,10 @@ async function sendTestEmail(data) {
 
     const emailContent = {
         to: data.recipientEmail,
-        from: {
-            email: 'noreply@integratedcarriers.com',
-            name: 'SolushipX Reports'
-        },
+                    from: {
+                email: 'noreply@integratedcarriers.com',
+                name: 'Integrated Carriers Reports'
+            },
         subject: data.subject,
         html: generateTestEmailHTML(data),
         text: generateTestEmailText(data)
@@ -123,7 +123,7 @@ function generateTestEmailHTML(data) {
             <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                 <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
                 <h1 style="margin: 0; font-size: 24px;">Test Report Notification</h1>
-                <p style="margin: 10px 0 0 0; opacity: 0.9;">This is a test email from the SolushipX Reports system</p>
+                <p style="margin: 10px 0 0 0; opacity: 0.9;">This is a test email from the Integrated Carriers Reports system</p>
             </div>
             
             <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
@@ -181,7 +181,7 @@ function generateTestEmailText(data) {
     return `
 Test Report Notification
 
-This is a test email from the SolushipX Reports system.
+This is a test email from the Integrated Carriers Reports system.
 
 TEST MESSAGE:
 ${data.message}

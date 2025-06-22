@@ -381,4 +381,431 @@ exports.adminListAllUsers = onCall({
         }
         throw new HttpsError('internal', `An unexpected error occurred: ${error.message}`);
     }
+});
+
+/**
+ * Invites a new user by creating their account and sending an email invitation.
+ * The user will need to set their password using the invite link.
+ * Requires the calling user to have an 'admin' or 'super_admin' role.
+ */
+exports.adminInviteUser = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
+    console.log('adminInviteUser called. Auth:', request.auth, 'Data:', request.data);
+
+    if (!request.auth) {
+        console.error('adminInviteUser: Authentication failed. No auth context.');
+        throw new HttpsError('unauthenticated', 'The function must be called by an authenticated user.');
+    }
+
+    const callingUserUid = request.auth.uid;
+    const { email, firstName, lastName, role, status, phone, companies } = request.data;
+
+    // Validate required fields
+    if (!email || !firstName || !lastName) {
+        console.error('adminInviteUser: Missing required fields.');
+        throw new HttpsError('invalid-argument', 'Email, first name, and last name are required.');
+    }
+
+    try {
+        // Verify calling user's admin role
+        const adminUserDocRef = db.collection('users').doc(callingUserUid);
+        const adminUserDoc = await adminUserDocRef.get();
+        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+            console.error(`adminInviteUser: Caller ${callingUserUid} is not an admin.`);
+            throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
+        }
+
+        console.log(`Admin user ${callingUserUid} inviting user: ${email}`);
+
+        // Check if email already exists in Auth
+        try {
+            await admin.auth().getUserByEmail(email);
+            throw new HttpsError('already-exists', 'A user with this email address already exists.');
+        } catch (error) {
+            if (error.code !== 'auth/user-not-found') {
+                throw error;
+            }
+            // User not found is what we want - continue
+        }
+
+        // Generate a temporary password (user will be required to change it)
+        const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12);
+        
+        // Create the new user in Auth
+        const userRecord = await admin.auth().createUser({
+            email: email.trim(),
+            password: tempPassword,
+            displayName: `${firstName.trim()} ${lastName.trim()}`,
+            emailVerified: false
+        });
+        const newUserId = userRecord.uid;
+        console.log(`Created new user in Auth with UID: ${newUserId}`);
+
+        // Generate custom token for password reset link
+        const customToken = await admin.auth().createCustomToken(newUserId, {
+            invite: true,
+            email: email.trim()
+        });
+
+        // Create the user document in Firestore
+        const newUserFirestoreData = {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            email: email.trim(),
+            role: role || 'user',
+            status: status || 'active',
+            phone: phone?.trim() || '',
+            connectedCompanies: { companies: companies || [] },
+            authUID: newUserId,
+            isInvited: true,
+            invitedAt: admin.firestore.FieldValue.serverTimestamp(),
+            invitedBy: callingUserUid,
+            passwordSet: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastLogin: null,
+        };
+        
+        await db.collection("users").doc(newUserId).set(newUserFirestoreData);
+        console.log(`Created Firestore document for user: ${newUserId}`);
+
+        // Create invite link
+        const inviteLink = `https://solushipx.web.app/set-password?token=${customToken}&email=${encodeURIComponent(email.trim())}`;
+
+        // Send invite email
+        try {
+            const sgMail = require('@sendgrid/mail');
+            sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+            const adminUserData = adminUserDoc.data();
+            const inviterName = `${adminUserData.firstName || ''} ${adminUserData.lastName || ''}`.trim() || adminUserData.email;
+
+            const msg = {
+                to: email.trim(),
+                from: {
+                    email: 'noreply@integratedcarriers.com',
+                    name: 'Integrated Carriers'
+                },
+                subject: 'You\'ve been invited to SolushipX',
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                            <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                            <h1 style="margin: 0; font-size: 24px;">Welcome to SolushipX!</h1>
+                            <p style="margin: 10px 0 0 0; opacity: 0.9;">You've been invited to join our shipping platform</p>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                            <!-- Welcome Notice -->
+                            <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 0; margin-bottom: 20px;">
+                                <h3 style="color: #065f46; margin: 0 0 10px 0; font-size: 16px;">🎉 Account Invitation</h3>
+                                <p style="color: #047857; margin: 0; font-size: 14px;">Hello <strong>${firstName} ${lastName}</strong>, you've been invited to join SolushipX by ${inviterName}.</p>
+                            </div>
+
+                            <!-- Account Details -->
+                            <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Account Details</h2>
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Email:</strong></td><td style="padding: 8px 0; font-weight: bold;">${email}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666;"><strong>Role:</strong></td><td style="padding: 8px 0;">${role || 'User'}</td></tr>
+                                    ${companies && companies.length > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Company Access:</strong></td><td style="padding: 8px 0;">${companies.length} companies</td></tr>` : ''}
+                                    <tr><td style="padding: 8px 0; color: #666;"><strong>Invited By:</strong></td><td style="padding: 8px 0;">${inviterName}</td></tr>
+                                </table>
+                            </div>
+                            
+                            <!-- Call to Action -->
+                            <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
+                                <h3 style="color: #1c277d; margin: 0 0 10px 0;">Set Up Your Account</h3>
+                                <p style="margin: 0 0 15px 0; font-size: 14px; color: #666;">Click the button below to set your password and activate your account</p>
+                                <a href="${inviteLink}" 
+                                   style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
+                                   Set Up Your Password
+                                </a>
+                            </div>
+                            
+                            <!-- Security Warning -->
+                            <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 15px; border-radius: 0; margin-bottom: 20px;">
+                                <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">⚠️ Important Security Information</h3>
+                                <p style="margin: 0; color: #92400e; font-size: 14px;">
+                                    This invitation link will expire in 24 hours for security purposes. 
+                                    If you don't complete your account setup within this time, please contact your administrator for a new invitation.
+                                </p>
+                            </div>
+
+                            <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                                <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
+                                <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 Integrated Carriers. All rights reserved.</p>
+                            </div>
+                        </div>
+                    </div>
+                `
+            };
+
+            await sgMail.send(msg);
+            console.log(`Invite email sent successfully to: ${email}`);
+
+        } catch (emailError) {
+            console.error('Error sending invite email:', emailError);
+            // Don't fail the entire operation if email fails
+            console.log('User created successfully but email sending failed');
+        }
+
+        return {
+            status: "success",
+            uid: newUserId,
+            message: "User invitation sent successfully.",
+            inviteLink: inviteLink // Include for testing/admin purposes
+        };
+
+    } catch (error) {
+        console.error('Error in adminInviteUser:', error);
+        
+        // Clean up if user was created but something else failed
+        if (error.newUserId) {
+            try {
+                await admin.auth().deleteUser(error.newUserId);
+                await db.collection("users").doc(error.newUserId).delete();
+                console.log('Cleaned up partially created user');
+            } catch (cleanupError) {
+                console.error('Error cleaning up user:', cleanupError);
+            }
+        }
+        
+        throw error;
+    }
+});
+
+/**
+ * Resends an invitation email to a user who hasn't accepted their invite.
+ * Requires the calling user to have an 'admin' or 'super_admin' role.
+ */
+exports.adminResendInvite = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
+    console.log('adminResendInvite called. Auth:', request.auth, 'Data:', request.data);
+
+    if (!request.auth) {
+        console.error('adminResendInvite: Authentication failed. No auth context.');
+        throw new HttpsError('unauthenticated', 'The function must be called by an authenticated user.');
+    }
+
+    const callingUserUid = request.auth.uid;
+    const { uid: targetUserUid } = request.data;
+
+    if (!targetUserUid) {
+        console.error('adminResendInvite: Missing targetUserUid in data.');
+        throw new HttpsError('invalid-argument', 'User ID is required.');
+    }
+
+    try {
+        // Verify calling user's admin role
+        const adminUserDocRef = db.collection('users').doc(callingUserUid);
+        const adminUserDoc = await adminUserDocRef.get();
+        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+            console.error(`adminResendInvite: Caller ${callingUserUid} is not an admin.`);
+            throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
+        }
+
+        console.log(`Admin user ${callingUserUid} resending invite for user: ${targetUserUid}`);
+
+        // Get the target user's data
+        const targetUserDoc = await db.collection('users').doc(targetUserUid).get();
+        if (!targetUserDoc.exists) {
+            throw new HttpsError('not-found', 'User not found.');
+        }
+
+        const userData = targetUserDoc.data();
+        
+        // Check if user is in a state where resend makes sense
+        if (!userData.isInvited || userData.passwordSet) {
+            throw new HttpsError('failed-precondition', 'This user has already accepted their invitation or is not in an invited state.');
+        }
+
+        // Get user auth data to verify they exist in Auth
+        let authUser;
+        try {
+            authUser = await admin.auth().getUser(targetUserUid);
+        } catch (error) {
+            if (error.code === 'auth/user-not-found') {
+                throw new HttpsError('not-found', 'User not found in authentication system.');
+            }
+            throw error;
+        }
+
+        // Generate new custom token for password reset link
+        const customToken = await admin.auth().createCustomToken(targetUserUid, {
+            invite: true,
+            email: userData.email
+        });
+
+        // Create new invite link
+        const inviteLink = `https://solushipx.web.app/set-password?token=${customToken}&email=${encodeURIComponent(userData.email)}`;
+
+        // Send resend invite email
+        try {
+            const sgMail = require('@sendgrid/mail');
+            sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+            const adminUserData = adminUserDoc.data();
+            const inviterName = `${adminUserData.firstName || ''} ${adminUserData.lastName || ''}`.trim() || adminUserData.email;
+
+            const msg = {
+                to: userData.email,
+                from: {
+                    email: 'noreply@integratedcarriers.com',
+                    name: 'Integrated Carriers'
+                },
+                subject: 'Reminder: Complete Your SolushipX Account Setup',
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                            <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                            <h1 style="margin: 0; font-size: 24px;">Complete Your SolushipX Setup</h1>
+                            <p style="margin: 10px 0 0 0; opacity: 0.9;">Reminder to activate your account</p>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                            <!-- Reminder Notice -->
+                            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 0; margin-bottom: 20px;">
+                                <h3 style="color: #856404; margin: 0 0 10px 0; font-size: 16px;">⏰ Account Setup Reminder</h3>
+                                <p style="color: #856404; margin: 0; font-size: 14px;">Hello <strong>${userData.firstName} ${userData.lastName}</strong>, this is a reminder to complete your SolushipX account setup.</p>
+                            </div>
+
+                            <!-- Account Details -->
+                            <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Your Account Details</h2>
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Email:</strong></td><td style="padding: 8px 0; font-weight: bold;">${userData.email}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666;"><strong>Role:</strong></td><td style="padding: 8px 0;">${userData.role || 'User'}</td></tr>
+                                    ${userData.connectedCompanies?.companies?.length > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Company Access:</strong></td><td style="padding: 8px 0;">${userData.connectedCompanies.companies.length} companies</td></tr>` : ''}
+                                    <tr><td style="padding: 8px 0; color: #666;"><strong>Originally Invited By:</strong></td><td style="padding: 8px 0;">${inviterName}</td></tr>
+                                </table>
+                            </div>
+                            
+                            <!-- Call to Action -->
+                            <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
+                                <h3 style="color: #1c277d; margin: 0 0 10px 0;">Complete Your Account Setup</h3>
+                                <p style="margin: 0 0 15px 0; font-size: 14px; color: #666;">Click the button below to set your password and activate your account</p>
+                                <a href="${inviteLink}" 
+                                   style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
+                                   Set Up Your Password
+                                </a>
+                            </div>
+                            
+                            <!-- Security Warning -->
+                            <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 15px; border-radius: 0; margin-bottom: 20px;">
+                                <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">⚠️ Important Security Information</h3>
+                                <p style="margin: 0; color: #92400e; font-size: 14px;">
+                                    This new invitation link will expire in 24 hours for security purposes. 
+                                    If you don't complete your account setup within this time, please contact your administrator for assistance.
+                                </p>
+                            </div>
+
+                            <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                                <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
+                                <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 Integrated Carriers. All rights reserved.</p>
+                            </div>
+                        </div>
+                    </div>
+                `
+            };
+
+            await sgMail.send(msg);
+            console.log(`Resend invite email sent successfully to: ${userData.email}`);
+
+        } catch (emailError) {
+            console.error('Error sending resend invite email:', emailError);
+            throw new HttpsError('internal', 'Failed to send invitation email. Please try again.');
+        }
+
+        // Update the user document with resend information
+        await db.collection('users').doc(targetUserUid).update({
+            lastInviteResent: admin.firestore.FieldValue.serverTimestamp(),
+            resentBy: callingUserUid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        return {
+            status: "success",
+            message: "Invitation email resent successfully.",
+            email: userData.email
+        };
+
+    } catch (error) {
+        console.error('Error in adminResendInvite:', error);
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError('internal', `An unexpected error occurred: ${error.message}`);
+    }
+});
+
+/**
+ * Verifies an invite token and allows the user to set their password.
+ */
+exports.verifyInviteAndSetPassword = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
+    console.log('verifyInviteAndSetPassword called');
+
+    const { token, newPassword } = request.data;
+
+    if (!token || !newPassword) {
+        throw new HttpsError('invalid-argument', 'Token and new password are required.');
+    }
+
+    if (newPassword.length < 6) {
+        throw new HttpsError('invalid-argument', 'Password must be at least 6 characters long.');
+    }
+
+    try {
+        // Verify the custom token
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const uid = decodedToken.uid;
+
+        if (!decodedToken.invite) {
+            throw new HttpsError('invalid-argument', 'Invalid invite token.');
+        }
+
+        // Check if user exists and is in invited state
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists()) {
+            throw new HttpsError('not-found', 'User not found.');
+        }
+
+        const userData = userDoc.data();
+        if (!userData.isInvited || userData.passwordSet) {
+            throw new HttpsError('failed-precondition', 'This invitation has already been used or is invalid.');
+        }
+
+        // Update the user's password
+        await admin.auth().updateUser(uid, {
+            password: newPassword,
+            emailVerified: true
+        });
+
+        // Update user document
+        await db.collection('users').doc(uid).update({
+            passwordSet: true,
+            isInvited: false,
+            emailVerified: true,
+            passwordSetAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`Password set successfully for user: ${uid}`);
+
+        return {
+            status: "success",
+            message: "Password set successfully. You can now sign in."
+        };
+
+    } catch (error) {
+        console.error('Error in verifyInviteAndSetPassword:', error);
+        throw error;
+    }
 }); 

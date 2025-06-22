@@ -61,6 +61,7 @@ import { db } from '../../../firebase';
 import { ENHANCED_STATUSES, STATUS_GROUPS } from '../../../utils/enhancedStatusModel';
 import { getStatusColor } from '../../../utils/universalDataModel';
 import DateRangePickerWithQuickOptions from '../../common/DateRangePickerWithQuickOptions';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 import './Dashboard.css';
 
 ChartJS.register(
@@ -765,7 +766,10 @@ const AdminDashboard = () => {
                 <div className="dashboard-title-section">
                     <h1 className="dashboard-title">Dashboard</h1>
                     <div>
-                        <p className="dashboard-subtitle">Real-time shipment analytics and performance metrics</p>
+                        {/* Breadcrumb */}
+                        <Box sx={{ mb: 1 }}>
+                            <AdminBreadcrumb currentPage="Dashboard" />
+                        </Box>
                         {lastUpdated && (
                             <Typography
                                 variant="caption"

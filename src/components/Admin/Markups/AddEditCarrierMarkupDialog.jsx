@@ -102,21 +102,37 @@ const AddEditCarrierMarkupDialog = ({ open, onClose, onSave, initialData, carrie
     return (
         <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-                <DialogTitle>{dialogTitle}</DialogTitle>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>{dialogTitle}</DialogTitle>
                 <DialogContent>
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                         <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth required>
-                                <InputLabel>Carrier</InputLabel>
-                                <Select name="carrierId" value={formData.carrierId} label="Carrier" onChange={handleChange}>
+                            <FormControl fullWidth required size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
+                                <Select
+                                    name="carrierId"
+                                    value={formData.carrierId}
+                                    label="Carrier"
+                                    onChange={handleChange}
+                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                >
                                     {carriersList.map(carrier => (
-                                        <MenuItem key={carrier.id} value={carrier.id}>{carrier.name}</MenuItem>
+                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>{carrier.name}</MenuItem>
                                     ))}
                                 </Select>
                             </FormControl>
                         </Grid>
                         <Grid item xs={12} sm={6}>
-                            <TextField label="Service (e.g., GROUND, ANY)" name="service" value={formData.service} onChange={handleChange} fullWidth defaultValue="ANY" />
+                            <TextField
+                                label="Service (e.g., GROUND, ANY)"
+                                name="service"
+                                value={formData.service}
+                                onChange={handleChange}
+                                fullWidth
+                                defaultValue="ANY"
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
                         </Grid>
                         <Grid item xs={12} sm={6} md={4}>
                             <FormControl fullWidth required>
@@ -175,9 +191,22 @@ const AddEditCarrierMarkupDialog = ({ open, onClose, onSave, initialData, carrie
                     </Grid>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSave} variant="contained" color="primary" disabled={loading}>
-                        {loading ? <CircularProgress size={24} /> : (formData.id ? 'Save Changes' : 'Add Markup')}
+                    <Button
+                        onClick={onClose}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSave}
+                        variant="contained"
+                        color="primary"
+                        disabled={loading}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {loading ? <CircularProgress size={16} /> : (formData.id ? 'Save Changes' : 'Add Markup')}
                     </Button>
                 </DialogActions>
             </Dialog>

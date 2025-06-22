@@ -50,7 +50,8 @@ import {
     FilterList as FilterListIcon,
     FileDownload as ExportIcon,
     Close as CloseIcon,
-    ContentCopy as ContentCopyIcon
+    ContentCopy as ContentCopyIcon,
+    Email as EmailIcon
 } from '@mui/icons-material';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db, functions } from '../../../firebase';
@@ -65,6 +66,7 @@ import { Link as MuiLink } from '@mui/material';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 // Skeleton component for loading state
 const UsersTableSkeleton = () => {
@@ -239,6 +241,7 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [userToDelete, setUserToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isResendingInvite, setIsResendingInvite] = useState(false);
 
     const { userRole } = useAuth();
     const navigate = useNavigate();
@@ -322,6 +325,40 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
             showSnackbar(`${label} copied to clipboard`, 'success');
         } catch (error) {
             showSnackbar(`Failed to copy ${label}`, 'error');
+        }
+    };
+
+    // Resend invite handler
+    const handleResendInvite = async (user) => {
+        setIsResendingInvite(true);
+        handleActionMenuClose();
+
+        try {
+            const adminResendInviteFn = httpsCallable(functions, 'adminResendInvite');
+            const result = await adminResendInviteFn({ uid: user.id });
+
+            if (result.data.status === "success") {
+                enqueueSnackbar(
+                    `Invitation resent successfully to ${result.data.email}. They will receive a new email to complete their account setup.`,
+                    { variant: 'success' }
+                );
+            } else {
+                throw new Error(result.data.message || 'Failed to resend invitation');
+            }
+
+        } catch (err) {
+            console.error('Error resending invite:', err);
+
+            // Handle specific error types
+            if (err.code === 'functions/failed-precondition') {
+                enqueueSnackbar('This user has already accepted their invitation.', { variant: 'warning' });
+            } else if (err.code === 'functions/not-found') {
+                enqueueSnackbar('User not found or not in invited state.', { variant: 'error' });
+            } else {
+                enqueueSnackbar(`Failed to resend invitation: ${err.message}`, { variant: 'error' });
+            }
+        } finally {
+            setIsResendingInvite(false);
         }
     };
 
@@ -526,6 +563,11 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
         }
     };
 
+    // Check if user is in invited state (hasn't accepted invitation)
+    const isUserInvited = (user) => {
+        return user.isInvited && !user.passwordSet;
+    };
+
     // Render table view
     const renderTableView = () => (
         <Box sx={{
@@ -538,12 +580,13 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
                             Users
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            Manage user accounts and permissions
-                        </Typography>
+                        {/* Breadcrumb */}
+                        {!isModal && (
+                            <AdminBreadcrumb />
+                        )}
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button
@@ -711,22 +754,38 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                                         </Typography>
                                                     </Avatar>
                                                     <Box>
-                                                        <MuiLink
-                                                            component={RouterLink}
-                                                            to={`/admin/users/${user.id}`}
-                                                            sx={{
-                                                                textDecoration: 'none',
-                                                                color: '#1f2937',
-                                                                fontWeight: 500,
-                                                                fontSize: '12px',
-                                                                '&:hover': {
-                                                                    textDecoration: 'underline',
-                                                                    color: '#3b82f6'
-                                                                }
-                                                            }}
-                                                        >
-                                                            {user.firstName || ''} {user.lastName || ''}
-                                                        </MuiLink>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <MuiLink
+                                                                component={RouterLink}
+                                                                to={`/admin/users/${user.id}`}
+                                                                sx={{
+                                                                    textDecoration: 'none',
+                                                                    color: '#1f2937',
+                                                                    fontWeight: 500,
+                                                                    fontSize: '12px',
+                                                                    '&:hover': {
+                                                                        textDecoration: 'underline',
+                                                                        color: '#3b82f6'
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {user.firstName || ''} {user.lastName || ''}
+                                                            </MuiLink>
+                                                            {isUserInvited(user) && (
+                                                                <Tooltip title="User invitation pending - hasn't set password yet">
+                                                                    <Chip
+                                                                        label="Pending"
+                                                                        size="small"
+                                                                        color="warning"
+                                                                        sx={{
+                                                                            fontSize: '10px',
+                                                                            height: '18px',
+                                                                            '& .MuiChip-label': { px: 1 }
+                                                                        }}
+                                                                    />
+                                                                </Tooltip>
+                                                            )}
+                                                        </Box>
                                                     </Box>
                                                 </Box>
                                             </TableCell>
@@ -847,6 +906,25 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         <Typography sx={{ fontSize: '12px' }}>View Details</Typography>
                     </ListItemText>
                 </MenuItem>
+
+                {/* Show resend invite option only for users who haven't accepted their invitation */}
+                {selectedUser && isUserInvited(selectedUser) && (
+                    <MenuItem
+                        onClick={() => selectedUser && handleResendInvite(selectedUser)}
+                        disabled={isResendingInvite}
+                        sx={{ color: 'primary.main' }}
+                    >
+                        <ListItemIcon>
+                            <EmailIcon fontSize="small" color="primary" />
+                        </ListItemIcon>
+                        <ListItemText>
+                            <Typography sx={{ fontSize: '12px' }}>
+                                {isResendingInvite ? 'Sending...' : 'Resend Invitation'}
+                            </Typography>
+                        </ListItemText>
+                    </MenuItem>
+                )}
+
                 <MenuItem onClick={() => selectedUser && openDeleteDialog(selectedUser)} sx={{ color: 'error.main' }}>
                     <ListItemIcon>
                         <DeleteForeverIcon fontSize="small" color="error" />
