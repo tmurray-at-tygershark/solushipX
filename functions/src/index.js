@@ -40,6 +40,10 @@ console.log('LOG-MAIN-INDEX: adminUserManagementFunctions imported.');
 const adminCreateUserFunctions = require('./admin-create-user'); 
 console.log('LOG-MAIN-INDEX: adminCreateUserFunctions imported.');
 
+// Import role management functions
+const adminRoleManagementFunctions = require('./admin-role-management');
+console.log('LOG-MAIN-INDEX: adminRoleManagementFunctions imported.');
+
 // Import notification functions
 const notificationFunctions = require('./notifications/emailService');
 console.log('LOG-MAIN-INDEX: notificationFunctions imported.');
@@ -219,6 +223,56 @@ if (adminCreateUserFunctions && adminCreateUserFunctions.adminCreateUser) {
     console.log('LOG-MAIN-INDEX: exports.adminCreateUser defined.');
 } else {
     console.warn('LOG-MAIN-INDEX: adminCreateUser not found in adminCreateUserFunctions.');
+}
+
+// Functions from admin-role-management.js
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminCreateRole) {
+    exports.adminCreateRole = adminRoleManagementFunctions.adminCreateRole;
+    console.log('LOG-MAIN-INDEX: exports.adminCreateRole defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminCreateRole not found in adminRoleManagementFunctions.');
+}
+
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminUpdateRole) {
+    exports.adminUpdateRole = adminRoleManagementFunctions.adminUpdateRole;
+    console.log('LOG-MAIN-INDEX: exports.adminUpdateRole defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminUpdateRole not found in adminRoleManagementFunctions.');
+}
+
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminDeleteRole) {
+    exports.adminDeleteRole = adminRoleManagementFunctions.adminDeleteRole;
+    console.log('LOG-MAIN-INDEX: exports.adminDeleteRole defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminDeleteRole not found in adminRoleManagementFunctions.');
+}
+
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminUpdateRolePermissions) {
+    exports.adminUpdateRolePermissions = adminRoleManagementFunctions.adminUpdateRolePermissions;
+    console.log('LOG-MAIN-INDEX: exports.adminUpdateRolePermissions defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminUpdateRolePermissions not found in adminRoleManagementFunctions.');
+}
+
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminCreatePermission) {
+    exports.adminCreatePermission = adminRoleManagementFunctions.adminCreatePermission;
+    console.log('LOG-MAIN-INDEX: exports.adminCreatePermission defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminCreatePermission not found in adminRoleManagementFunctions.');
+}
+
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminBulkAssignRole) {
+    exports.adminBulkAssignRole = adminRoleManagementFunctions.adminBulkAssignRole;
+    console.log('LOG-MAIN-INDEX: exports.adminBulkAssignRole defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminBulkAssignRole not found in adminRoleManagementFunctions.');
+}
+
+if (adminRoleManagementFunctions && adminRoleManagementFunctions.adminGetRolePermissions) {
+    exports.adminGetRolePermissions = adminRoleManagementFunctions.adminGetRolePermissions;
+    console.log('LOG-MAIN-INDEX: exports.adminGetRolePermissions defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: adminGetRolePermissions not found in adminRoleManagementFunctions.');
 }
 
 // Functions from notifications/emailService.js

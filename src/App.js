@@ -45,7 +45,7 @@ const UserList = lazy(() => import('./components/Admin/Users/UserList'));
 const GlobalShipmentList = lazy(() => import('./components/Admin/Shipments/GlobalShipmentList'));
 const BillingDashboard = lazy(() => import('./components/Admin/Billing/BillingDashboard'));
 const InvoiceForm = lazy(() => import('./components/Admin/Billing/InvoiceForm'));
-const RoleManagement = lazy(() => import('./components/Admin/Roles/RoleManagement'));
+const RolePermissionsView = lazy(() => import('./components/Admin/Roles/RolePermissionsView'));
 const SystemSettings = lazy(() => import('./components/Admin/Settings/SystemSettings'));
 const CarrierKeys = lazy(() => import('./components/Admin/Carriers/CarrierKeys'));
 const EDIMapping = lazy(() => import('./components/Admin/Billing/EDIMapping'));
@@ -235,6 +235,7 @@ function AppRoutes() {
                     </AdminRoute>
                 }>
                     <Route index element={<AdminDashboard />} />
+                    <Route path="dashboard" element={<AdminDashboard />} />
                     <Route path="companies" element={<CompanyList />} />
                     <Route path="companies/new" element={<CompanyForm />} />
                     <Route path="companies/:id" element={<CompanyDetail />} />
@@ -262,7 +263,7 @@ function AppRoutes() {
                     <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
                     <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
                     <Route path="billing/payment-terms" element={<BillingDashboard initialTab="payment-terms" />} />
-                    <Route path="roles" element={<RoleManagement />} />
+                    <Route path="role-permissions" element={<RolePermissionsView />} />
                     <Route path="settings" element={<SystemSettings />} />
                     <Route path="carrier-keys" element={<CarrierKeys />} />
                     <Route path="edi-mapping" element={<EDIMapping />} />

@@ -152,11 +152,11 @@ const AdminHeader = () => {
                         </li>
                         <li className="nav-item">
                             <Link
-                                className={`nav-link ${location.pathname.startsWith('/admin/roles') ? 'active' : ''}`}
-                                to="/admin/roles"
+                                className={`nav-link ${location.pathname.includes('/admin/role-permissions') ? 'active' : ''}`}
+                                to="/admin/role-permissions"
                                 onClick={handleMobileMenuClose}
                             >
-                                <span>Roles</span>
+                                <span>Permissions</span>
                             </Link>
                         </li>
                         <li className="nav-item ms-2">

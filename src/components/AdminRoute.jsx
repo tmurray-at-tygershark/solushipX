@@ -2,8 +2,7 @@ import React, { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Box, CircularProgress } from '@mui/material';
-
-const ADMIN_ROLES = ['super_admin', 'admin', 'business_admin'];
+import { ROLES, hasPermission, PERMISSIONS } from '../utils/rolePermissions';
 
 export const AdminRoute = ({ children }) => {
     const { currentUser, userRole, loading, initialized } = useAuth();
@@ -14,7 +13,7 @@ export const AdminRoute = ({ children }) => {
             console.log('=== AdminRoute Auth State ===');
             console.log('Current User:', currentUser?.email);
             console.log('User Role:', userRole);
-            console.log('Is Role Valid:', ADMIN_ROLES.includes(userRole));
+            console.log('Has Admin Access:', hasPermission(userRole, PERMISSIONS.VIEW_ADMIN_DASHBOARD));
             console.log('=====================');
         }
     }, [currentUser, userRole, loading, initialized]);
@@ -38,11 +37,11 @@ export const AdminRoute = ({ children }) => {
         return <Navigate to="/login" replace />;
     }
 
-    // If authenticated but not an admin, redirect to dashboard
-    if (!ADMIN_ROLES.includes(userRole)) {
+    // If authenticated but doesn't have admin access, redirect to dashboard
+    if (!hasPermission(userRole, PERMISSIONS.VIEW_ADMIN_DASHBOARD)) {
         return <Navigate to="/dashboard" replace />;
     }
 
-    // If authenticated and is admin, show admin panel
+    // If authenticated and has admin access, show admin panel
     return children;
 }; 

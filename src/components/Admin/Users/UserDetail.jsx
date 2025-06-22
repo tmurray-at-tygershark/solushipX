@@ -477,10 +477,9 @@ const UserDetail = () => {
                                                     '& .MuiMenuItem-root': { fontSize: '12px' }
                                                 }}
                                             >
-                                                <MenuItem value="super_admin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
+                                                <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
                                                 <MenuItem value="admin" sx={{ fontSize: '12px' }}>Admin</MenuItem>
-                                                <MenuItem value="business_admin" sx={{ fontSize: '12px' }}>Business Admin</MenuItem>
-                                                <MenuItem value="user" sx={{ fontSize: '12px' }}>User</MenuItem>
+                                                <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Admin</MenuItem>
                                             </Select>
                                         </FormControl>
                                     ) : (

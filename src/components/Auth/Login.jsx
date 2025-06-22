@@ -46,7 +46,7 @@ const Login = () => {
             const userRole = user.role;
 
             // Check user role and redirect accordingly - only redirect admins to admin on initial login
-            const redirectPath = ['admin', 'super_admin'].includes(userRole)
+            const redirectPath = ['admin', 'superadmin'].includes(userRole)
                 ? '/admin'
                 : '/dashboard';
             console.log('Login successful, user role:', userRole, 'redirecting to:', redirectPath);
@@ -72,7 +72,7 @@ const Login = () => {
             const userRole = user.role;
 
             // Check user role and redirect accordingly - only redirect admins to admin on initial login
-            const redirectPath = ['admin', 'super_admin'].includes(userRole)
+            const redirectPath = ['admin', 'superadmin'].includes(userRole)
                 ? '/admin'
                 : '/dashboard';
             console.log('Google login successful, user role:', userRole, 'redirecting to:', redirectPath);

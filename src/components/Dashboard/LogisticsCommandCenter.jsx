@@ -26,7 +26,8 @@ import {
     CalendarToday as CalendarIcon,
     LocationOn as LocationIcon,
     Traffic as TrafficIcon,
-    Inventory as BoxIcon // Box icon for Ready to Ship
+    Inventory as BoxIcon, // Box icon for Ready to Ship
+    Satellite as SatelliteIcon // For satellite view toggle
 } from '@mui/icons-material';
 
 import { collection, getDocs, getFirestore } from 'firebase/firestore';
@@ -62,6 +63,7 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
     const [mapCenter, setMapCenter] = useState({ lat: 43.6532, lng: -79.3832 });
     const [mapZoom, setMapZoom] = useState(6);
     const [enabledLayers, setEnabledLayers] = useState(new Set(['weather'])); // Traffic off by default
+    const [isSatelliteView, setIsSatelliteView] = useState(false); // Satellite view state
 
     // User interaction tracking
     const [userInteracting, setUserInteracting] = useState(false);
@@ -557,6 +559,19 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
         });
     }, []);
 
+    // Handle satellite view toggle
+    const handleSatelliteToggle = useCallback(() => {
+        setIsSatelliteView(prev => !prev);
+    }, []);
+
+    // Memoize the filtered shipments array for the map to prevent unnecessary recalculations
+    const mapFilteredShipments = useMemo(() => {
+        if (filteredShipments.length > 0 && selectedShipment) {
+            return [selectedShipment];
+        }
+        return [];
+    }, [filteredShipments.length, selectedShipment]);
+
     return (
         <Box sx={{
             position: 'relative',
@@ -689,7 +704,7 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                 {mapsApiKey ? (
                     <AdvancedLogisticsMap
                         shipments={shipments}
-                        filteredShipments={filteredShipments.length > 0 && selectedShipment ? [selectedShipment] : []}
+                        filteredShipments={mapFilteredShipments}
                         selectedShipment={selectedShipment}
                         enabledLayers={enabledLayers}
                         isPlaying={isPlaying}
@@ -699,6 +714,7 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                         onMapReady={handleMapReady}
                         mapsApiKey={mapsApiKey}
                         userInteracting={userInteracting}
+                        isSatelliteView={isSatelliteView}
                     />
                 ) : (
                     <Box sx={{
@@ -744,28 +760,33 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                     </Box>
                 )}
 
-                {/* Traffic Layer Toggle - Bottom Right Corner */}
+                {/* Map Control Buttons - Bottom Right Corner */}
                 <Box sx={{
                     position: 'absolute',
                     bottom: 20,
                     right: 20,
-                    zIndex: 1100
+                    zIndex: 1100,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1,
+                    alignItems: 'flex-end'
                 }}>
+                    {/* Traffic Toggle */}
                     <Box
                         onClick={handleTrafficToggle}
                         sx={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 1,
+                            gap: 0.5,
                             bgcolor: enabledLayers.has('traffic')
                                 ? 'rgba(244, 67, 54, 0.9)'
                                 : 'rgba(0, 0, 0, 0.8)',
                             border: enabledLayers.has('traffic')
                                 ? '1px solid #F44336'
                                 : '1px solid rgba(255,255,255,0.2)',
-                            borderRadius: '25px',
-                            px: 2,
-                            py: 1,
+                            borderRadius: '20px',
+                            px: 1.5,
+                            py: 0.75,
                             cursor: 'pointer',
                             transition: 'all 0.3s ease',
                             backdropFilter: 'blur(10px)',
@@ -778,27 +799,68 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                         }}
                     >
                         <TrafficIcon sx={{
-                            fontSize: '1.2rem',
+                            fontSize: '1rem',
                             color: enabledLayers.has('traffic') ? 'white' : 'rgba(255,255,255,0.8)'
                         }} />
                         <Typography sx={{
                             color: enabledLayers.has('traffic') ? 'white' : 'rgba(255,255,255,0.8)',
-                            fontSize: '0.9rem',
+                            fontSize: '0.75rem',
                             fontWeight: 600,
                             userSelect: 'none'
                         }}>
                             Traffic
                         </Typography>
                     </Box>
+
+                    {/* Satellite View Toggle */}
+                    <Box
+                        onClick={handleSatelliteToggle}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            bgcolor: isSatelliteView
+                                ? 'rgba(33, 150, 243, 0.9)'
+                                : 'rgba(0, 0, 0, 0.8)',
+                            border: isSatelliteView
+                                ? '1px solid #2196F3'
+                                : '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '20px',
+                            px: 1.5,
+                            py: 0.75,
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease',
+                            backdropFilter: 'blur(10px)',
+                            '&:hover': {
+                                bgcolor: isSatelliteView
+                                    ? 'rgba(33, 150, 243, 1)'
+                                    : 'rgba(0, 0, 0, 0.9)',
+                                transform: 'scale(1.05)'
+                            }
+                        }}
+                    >
+                        <SatelliteIcon sx={{
+                            fontSize: '1rem',
+                            color: isSatelliteView ? 'white' : 'rgba(255,255,255,0.8)'
+                        }} />
+                        <Typography sx={{
+                            color: isSatelliteView ? 'white' : 'rgba(255,255,255,0.8)',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            userSelect: 'none'
+                        }}>
+                            Satellite
+                        </Typography>
+                    </Box>
                 </Box>
             </Box>
 
-            {/* Compact Special Shipment Display - MOVED TO LEFT SIDE */}
+            {/* Compact Special Shipment Display - Bottom Left */}
             {selectedShipment && (
                 <Box sx={{
                     position: 'absolute',
                     bottom: '20px',
-                    left: '20px', // Changed from center positioning to left
+                    left: '20px',
                     zIndex: 1000,
                     width: { xs: '85%', sm: '430px', md: '470px' } // Made 10% narrower (was 480px/520px)
                 }}>

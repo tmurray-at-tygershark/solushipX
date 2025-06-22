@@ -259,15 +259,15 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // Calculate stats
     const stats = useMemo(() => {
         const total = allUsers.length;
-        const superAdmins = allUsers.filter(u => u.role === 'super_admin').length;
+        const superAdmins = allUsers.filter(u => u.role === 'superadmin').length;
         const admins = allUsers.filter(u => u.role === 'admin').length;
-        const businessAdmins = allUsers.filter(u => u.role === 'business_admin').length;
+        const companyAdmins = allUsers.filter(u => u.role === 'user').length;
 
         return {
             total,
             superAdmins,
             admins,
-            businessAdmins
+            companyAdmins
         };
     }, [allUsers]);
 
@@ -473,13 +473,13 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
         if (selectedTab !== 'all') {
             switch (selectedTab) {
                 case 'super-admins':
-                    filtered = filtered.filter(u => u.role === 'super_admin');
+                    filtered = filtered.filter(u => u.role === 'superadmin');
                     break;
                 case 'admins':
                     filtered = filtered.filter(u => u.role === 'admin');
                     break;
-                case 'business-admins':
-                    filtered = filtered.filter(u => u.role === 'business_admin');
+                case 'company-admins':
+                    filtered = filtered.filter(u => u.role === 'user');
                     break;
             }
         }
@@ -538,11 +538,11 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // Get role color
     const getRoleColor = (role) => {
         switch (role) {
-            case 'super_admin':
+            case 'superadmin':
                 return 'error';
             case 'admin':
                 return 'primary';
-            case 'business_admin':
+            case 'user':
                 return 'success';
             default:
                 return 'default';
@@ -552,11 +552,11 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // Get role display name
     const getRoleDisplayName = (role) => {
         switch (role) {
-            case 'super_admin':
+            case 'superadmin':
                 return 'Super Admin';
             case 'admin':
                 return 'Admin';
-            case 'business_admin':
+            case 'user':
                 return 'Company Admin';
             default:
                 return role;
@@ -627,7 +627,7 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         <Tab label={`All (${stats.total})`} value="all" />
                         <Tab label="Super Admins" value="super-admins" />
                         <Tab label="Admins" value="admins" />
-                        <Tab label="Company Admins" value="business-admins" />
+                        <Tab label="Company Admins" value="company-admins" />
                     </Tabs>
 
                     <Button

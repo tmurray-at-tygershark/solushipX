@@ -39,12 +39,12 @@ export const AuthProvider = ({ children }) => {
                     const idTokenResult = await user.getIdTokenResult(true);
 
                     // Only log if claims or role changes
-                    if (idTokenResult.claims.admin === true) {
+                    if (idTokenResult.claims.superadmin === true) {
+                        setUserRole('superadmin');
+                    } else if (idTokenResult.claims.admin === true) {
                         setUserRole('admin');
-                    } else if (idTokenResult.claims.super_admin === true) {
-                        setUserRole('super_admin');
                     } else {
-                        // Fallback to Firestore role if no admin/super_admin claim
+                        // Fallback to Firestore role if no admin/superadmin claim
                         const userDocRef = doc(db, "users", user.uid);
                         const docSnap = await getDoc(userDocRef);
                         if (docSnap.exists()) {

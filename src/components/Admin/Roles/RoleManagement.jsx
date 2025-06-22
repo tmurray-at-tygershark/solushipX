@@ -35,40 +35,75 @@ import {
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../firebase';
+import { PERMISSIONS as ROLE_PERMISSIONS, ROLES, ROLE_PERMISSIONS as ROLE_PERMISSION_MATRIX } from '../../../utils/rolePermissions';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 import './Roles.css';
 
-const PERMISSIONS = {
-    // User Management
-    VIEW_USERS: 'View Users',
-    CREATE_USERS: 'Create Users',
-    EDIT_USERS: 'Edit Users',
-    DELETE_USERS: 'Delete Users',
-
-    // Company Management
-    VIEW_COMPANIES: 'View Companies',
-    CREATE_COMPANIES: 'Create Companies',
-    EDIT_COMPANIES: 'Edit Companies',
-    DELETE_COMPANIES: 'Delete Companies',
-
-    // Shipment Management
-    VIEW_SHIPMENTS: 'View Shipments',
-    CREATE_SHIPMENTS: 'Create Shipments',
-    EDIT_SHIPMENTS: 'Edit Shipments',
-    DELETE_SHIPMENTS: 'Delete Shipments',
-
-    // Billing Management
-    VIEW_BILLING: 'View Billing',
-    CREATE_INVOICES: 'Create Invoices',
-    EDIT_INVOICES: 'Edit Invoices',
-    DELETE_INVOICES: 'Delete Invoices',
-
-    // Analytics
-    VIEW_ANALYTICS: 'View Analytics',
-    EXPORT_DATA: 'Export Data',
-
-    // System Settings
-    MANAGE_ROLES: 'Manage Roles',
-    MANAGE_SETTINGS: 'Manage Settings',
+// Create a display mapping for permissions
+const PERMISSION_DISPLAY_NAMES = {
+    [ROLE_PERMISSIONS.VIEW_DASHBOARD]: 'View Dashboard',
+    [ROLE_PERMISSIONS.VIEW_ADMIN_DASHBOARD]: 'View Admin Dashboard',
+    [ROLE_PERMISSIONS.VIEW_USERS]: 'View Users',
+    [ROLE_PERMISSIONS.CREATE_USERS]: 'Create Users',
+    [ROLE_PERMISSIONS.EDIT_USERS]: 'Edit Users',
+    [ROLE_PERMISSIONS.DELETE_USERS]: 'Delete Users',
+    [ROLE_PERMISSIONS.MANAGE_USER_ROLES]: 'Manage User Roles',
+    [ROLE_PERMISSIONS.INVITE_USERS]: 'Invite Users',
+    [ROLE_PERMISSIONS.RESET_USER_PASSWORD]: 'Reset User Password',
+    [ROLE_PERMISSIONS.VIEW_COMPANIES]: 'View Companies',
+    [ROLE_PERMISSIONS.CREATE_COMPANIES]: 'Create Companies',
+    [ROLE_PERMISSIONS.EDIT_COMPANIES]: 'Edit Companies',
+    [ROLE_PERMISSIONS.DELETE_COMPANIES]: 'Delete Companies',
+    [ROLE_PERMISSIONS.VIEW_ALL_COMPANIES]: 'View All Companies',
+    [ROLE_PERMISSIONS.VIEW_ORGANIZATIONS]: 'View Organizations',
+    [ROLE_PERMISSIONS.CREATE_ORGANIZATIONS]: 'Create Organizations',
+    [ROLE_PERMISSIONS.EDIT_ORGANIZATIONS]: 'Edit Organizations',
+    [ROLE_PERMISSIONS.DELETE_ORGANIZATIONS]: 'Delete Organizations',
+    [ROLE_PERMISSIONS.VIEW_SHIPMENTS]: 'View Shipments',
+    [ROLE_PERMISSIONS.CREATE_SHIPMENTS]: 'Create Shipments',
+    [ROLE_PERMISSIONS.EDIT_SHIPMENTS]: 'Edit Shipments',
+    [ROLE_PERMISSIONS.DELETE_SHIPMENTS]: 'Delete Shipments',
+    [ROLE_PERMISSIONS.VIEW_ALL_SHIPMENTS]: 'View All Shipments',
+    [ROLE_PERMISSIONS.EXPORT_SHIPMENTS]: 'Export Shipments',
+    [ROLE_PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: 'Manage Draft Shipments',
+    [ROLE_PERMISSIONS.VIEW_CUSTOMERS]: 'View Customers',
+    [ROLE_PERMISSIONS.CREATE_CUSTOMERS]: 'Create Customers',
+    [ROLE_PERMISSIONS.EDIT_CUSTOMERS]: 'Edit Customers',
+    [ROLE_PERMISSIONS.DELETE_CUSTOMERS]: 'Delete Customers',
+    [ROLE_PERMISSIONS.VIEW_ALL_CUSTOMERS]: 'View All Customers',
+    [ROLE_PERMISSIONS.VIEW_BILLING]: 'View Billing',
+    [ROLE_PERMISSIONS.CREATE_INVOICES]: 'Create Invoices',
+    [ROLE_PERMISSIONS.EDIT_INVOICES]: 'Edit Invoices',
+    [ROLE_PERMISSIONS.DELETE_INVOICES]: 'Delete Invoices',
+    [ROLE_PERMISSIONS.VIEW_ALL_INVOICES]: 'View All Invoices',
+    [ROLE_PERMISSIONS.MANAGE_PAYMENT_TERMS]: 'Manage Payment Terms',
+    [ROLE_PERMISSIONS.GENERATE_INVOICES]: 'Generate Invoices',
+    [ROLE_PERMISSIONS.VIEW_CARRIERS]: 'View Carriers',
+    [ROLE_PERMISSIONS.CREATE_CARRIERS]: 'Create Carriers',
+    [ROLE_PERMISSIONS.EDIT_CARRIERS]: 'Edit Carriers',
+    [ROLE_PERMISSIONS.DELETE_CARRIERS]: 'Delete Carriers',
+    [ROLE_PERMISSIONS.MANAGE_CARRIER_KEYS]: 'Manage Carrier Keys',
+    [ROLE_PERMISSIONS.MANAGE_EDI_MAPPING]: 'Manage EDI Mapping',
+    [ROLE_PERMISSIONS.VIEW_REPORTS]: 'View Reports',
+    [ROLE_PERMISSIONS.CREATE_REPORTS]: 'Create Reports',
+    [ROLE_PERMISSIONS.SCHEDULE_REPORTS]: 'Schedule Reports',
+    [ROLE_PERMISSIONS.VIEW_ALL_REPORTS]: 'View All Reports',
+    [ROLE_PERMISSIONS.EXPORT_REPORTS]: 'Export Reports',
+    [ROLE_PERMISSIONS.VIEW_ANALYTICS]: 'View Analytics',
+    [ROLE_PERMISSIONS.VIEW_TRACKING]: 'View Tracking',
+    [ROLE_PERMISSIONS.UPDATE_TRACKING]: 'Update Tracking',
+    [ROLE_PERMISSIONS.VIEW_PROFILE]: 'View Profile',
+    [ROLE_PERMISSIONS.EDIT_PROFILE]: 'Edit Profile',
+    [ROLE_PERMISSIONS.VIEW_NOTIFICATIONS]: 'View Notifications',
+    [ROLE_PERMISSIONS.MANAGE_NOTIFICATIONS]: 'Manage Notifications',
+    [ROLE_PERMISSIONS.VIEW_SETTINGS]: 'View Settings',
+    [ROLE_PERMISSIONS.MANAGE_SETTINGS]: 'Manage Settings',
+    [ROLE_PERMISSIONS.MANAGE_ROLES]: 'Manage Roles',
+    [ROLE_PERMISSIONS.MANAGE_MARKUPS]: 'Manage Markups',
+    [ROLE_PERMISSIONS.USE_QUICKSHIP]: 'Use QuickShip',
+    [ROLE_PERMISSIONS.USE_AI_AGENT]: 'Use AI Agent',
+    [ROLE_PERMISSIONS.USE_ADVANCED_ROUTING]: 'Use Advanced Routing',
+    [ROLE_PERMISSIONS.MANAGE_INTEGRATIONS]: 'Manage Integrations',
 };
 
 const RoleManagement = () => {
@@ -208,7 +243,7 @@ const RoleManagement = () => {
             .map(([key, _]) => (
                 <Chip
                     key={key}
-                    label={PERMISSIONS[key]}
+                    label={PERMISSION_DISPLAY_NAMES[key] || key}
                     size="small"
                     className="permission-chip"
                 />
@@ -225,14 +260,23 @@ const RoleManagement = () => {
 
     return (
         <Box className="roles-container">
-            <Box className="roles-header">
-                <Typography variant="h4" className="roles-title">
+            <Box sx={{ mb: 4 }}>
+                <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, fontSize: '22px' }}>
                     Role Management
+                </Typography>
+                <AdminBreadcrumb currentPage="Roles" />
+            </Box>
+
+            <Box className="roles-header">
+                <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827' }}>
+                    System Roles
                 </Typography>
                 <Button
                     variant="contained"
                     startIcon={<AddIcon />}
                     onClick={() => handleOpenDialog()}
+                    size="small"
+                    sx={{ fontSize: '12px' }}
                 >
                     Create Role
                 </Button>
@@ -333,16 +377,18 @@ const RoleManagement = () => {
                                 </Typography>
                                 <Divider sx={{ mb: 2 }} />
                                 <Grid container spacing={2}>
-                                    {Object.entries(PERMISSIONS).map(([key, label]) => (
+                                    {Object.entries(PERMISSION_DISPLAY_NAMES).map(([key, label]) => (
                                         <Grid item xs={12} sm={6} md={4} key={key}>
                                             <FormControlLabel
                                                 control={
                                                     <Checkbox
                                                         checked={formData.permissions[key] || false}
                                                         onChange={() => handlePermissionChange(key)}
+                                                        size="small"
                                                     />
                                                 }
                                                 label={label}
+                                                sx={{ '& .MuiFormControlLabel-label': { fontSize: '12px' } }}
                                             />
                                         </Grid>
                                     ))}

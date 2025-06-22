@@ -117,7 +117,8 @@ const AdvancedLogisticsMap = ({
     onMarkerClick,
     onMapReady,
     mapsApiKey,
-    userInteracting = false
+    userInteracting = false,
+    isSatelliteView = false
 }) => {
     // Map state
     const [map, setMap] = useState(null);
@@ -381,7 +382,8 @@ const AdvancedLogisticsMap = ({
         mapTypeControl: false,
         fullscreenControl: false,
         gestureHandling: 'greedy',
-        styles: [
+        mapTypeId: isSatelliteView ? 'satellite' : 'roadmap',
+        styles: isSatelliteView ? [] : [
             {
                 featureType: 'all',
                 elementType: 'labels.text',
@@ -443,7 +445,7 @@ const AdvancedLogisticsMap = ({
                 stylers: [{ color: '#ffffff' }]
             }
         ]
-    }), []);
+    }), [isSatelliteView]);
 
     // Check for Google Maps API availability
     useEffect(() => {
@@ -857,6 +859,19 @@ const AdvancedLogisticsMap = ({
         }
     }, [onMapReady]);
 
+    // Update map type when satellite view changes
+    useEffect(() => {
+        if (map && window.google?.maps) {
+            try {
+                const mapTypeId = isSatelliteView ? 'satellite' : 'roadmap';
+                map.setMapTypeId(mapTypeId);
+                console.log('AdvancedLogisticsMap: Map type changed to', mapTypeId);
+            } catch (error) {
+                console.error('Error changing map type:', error);
+            }
+        }
+    }, [map, isSatelliteView]);
+
     // Create custom markers for shipments
     const createShipmentMarker = useCallback((shipment, position, type = 'current') => {
         if (!window.google?.maps) {
@@ -964,8 +979,6 @@ const AdvancedLogisticsMap = ({
 
     return (
         <Box sx={{ position: 'relative', height: '100%', width: '100%' }}>
-
-
             <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
                 center={mapCenter}
@@ -1056,8 +1069,6 @@ const AdvancedLogisticsMap = ({
                         </React.Fragment>
                     );
                 })}
-
-
             </GoogleMap>
         </Box>
     );

@@ -32,7 +32,7 @@ exports.checkUserCompanyOwnership = onCall({
         // First, verify the calling user is an admin to even allow this check
         const adminUserDocRef = db.collection('users').doc(callingUserUid);
         const adminUserDoc = await adminUserDocRef.get();
-        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+        if (!adminUserDoc.exists || !["admin", "superadmin"].includes(adminUserDoc.data().role)) {
             console.error(`checkUserCompanyOwnership: Caller ${callingUserUid} is not an admin.`);
             throw new HttpsError('permission-denied', 'You do not have privileges to perform this check.');
         }
@@ -98,7 +98,7 @@ exports.adminDeleteUser = onCall({
             throw new HttpsError('permission-denied', 'Your user profile was not found.');
         }
         const adminUserData = adminUserDoc.data();
-        const allowedAdminRoles = ["admin", "super_admin"];
+        const allowedAdminRoles = ["admin", "superadmin"];
         if (!allowedAdminRoles.includes(adminUserData.role)) {
             console.error(`adminDeleteUser: User ${callingUserUid} (role: ${adminUserData.role}) does not have admin privileges.`);
             throw new HttpsError('permission-denied', 'You do not have sufficient privileges to perform this action.');
@@ -183,7 +183,7 @@ exports.adminResetUserPassword = onCall({
         }
 
         const adminUserData = adminUserDoc.data();
-        const allowedAdminRoles = ["admin", "super_admin"];
+        const allowedAdminRoles = ["admin", "superadmin"];
         if (!allowedAdminRoles.includes(adminUserData.role)) {
             console.error(`adminResetUserPassword: User ${callingUserUid} (role: ${adminUserData.role}) does not have admin privileges.`);
             throw new HttpsError('permission-denied', 'You do not have sufficient privileges to perform this action.');
@@ -240,7 +240,7 @@ exports.adminGetUsersAuthData = onCall({
         // Verify calling user's admin role
         const adminUserDocRef = db.collection('users').doc(callingUserUid);
         const adminUserDoc = await adminUserDocRef.get();
-        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+        if (!adminUserDoc.exists || !["admin", "superadmin"].includes(adminUserDoc.data().role)) {
             console.error(`adminGetUsersAuthData: Caller ${callingUserUid} is not an admin.`);
             throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
         }
@@ -303,7 +303,7 @@ exports.adminListAllUsers = onCall({
         // Verify calling user's admin role
         const adminUserDocRef = db.collection('users').doc(callingUserUid);
         const adminUserDoc = await adminUserDocRef.get();
-        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+        if (!adminUserDoc.exists || !["admin", "superadmin"].includes(adminUserDoc.data().role)) {
             console.error(`adminListAllUsers: Caller ${callingUserUid} is not an admin.`);
             throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
         }
@@ -412,7 +412,7 @@ exports.adminInviteUser = onCall({
         // Verify calling user's admin role
         const adminUserDocRef = db.collection('users').doc(callingUserUid);
         const adminUserDoc = await adminUserDocRef.get();
-        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+        if (!adminUserDoc.exists || !["admin", "superadmin"].includes(adminUserDoc.data().role)) {
             console.error(`adminInviteUser: Caller ${callingUserUid} is not an admin.`);
             throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
         }
@@ -604,7 +604,7 @@ exports.adminResendInvite = onCall({
         // Verify calling user's admin role
         const adminUserDocRef = db.collection('users').doc(callingUserUid);
         const adminUserDoc = await adminUserDocRef.get();
-        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+        if (!adminUserDoc.exists || !["admin", "superadmin"].includes(adminUserDoc.data().role)) {
             console.error(`adminResendInvite: Caller ${callingUserUid} is not an admin.`);
             throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
         }

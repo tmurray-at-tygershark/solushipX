@@ -1474,12 +1474,31 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
 
     // Handle marker click
     const handleMarkerClick = useCallback((shipment, position) => {
-        setSelectedShipment(shipment);
+        // Store the clicked position with the shipment for InfoWindow
+        setSelectedShipment({
+            ...shipment,
+            clickedPosition: position
+        });
         setInfoWindowOpen(true);
+
+        // Zoom in to street level and center on the clicked marker
+        if (map && position) {
+            // Set zoom to street/building level (18-20)
+            map.setZoom(18);
+
+            // Center the map on the clicked position
+            map.panTo(position);
+
+            // Optional: Add a smooth animation
+            setTimeout(() => {
+                map.setZoom(19); // Zoom in a bit more for building level
+            }, 300);
+        }
+
         if (onShipmentClick) {
             onShipmentClick(shipment);
         }
-    }, [onShipmentClick]);
+    }, [map, onShipmentClick]);
 
     const mapOptions = {
         disableDefaultUI: false,
@@ -1602,7 +1621,7 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
             {/* Info Window for selected shipment */}
             {selectedShipment && infoWindowOpen && (
                 <InfoWindow
-                    position={{ lat: 43.6532, lng: -79.3832 }} // You'd calculate this from shipment
+                    position={selectedShipment.clickedPosition || { lat: 43.6532, lng: -79.3832 }}
                     onCloseClick={() => setInfoWindowOpen(false)}
                 >
                     <Box sx={{ p: 1, minWidth: 200 }}>
@@ -2668,7 +2687,7 @@ const Dashboard = () => {
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                width: { xs: '220px', sm: '240px', md: '260px' },
+                width: { xs: '187px', sm: '204px', md: '221px' }, // Reduced by 15% from 220px, 240px, 260px
                 height: '100vh',
                 color: 'white',
                 display: 'flex',
@@ -2694,7 +2713,7 @@ const Dashboard = () => {
 
                 {/* Header with Logo */}
                 <Box sx={{
-                    p: { xs: 1.5, sm: 2 },
+                    p: { xs: 1.3, sm: 1.7 }, // Reduced by 15% from 1.5, 2
                     display: 'flex',
                     justifyContent: 'flex-start',
                     position: 'relative',
@@ -2704,14 +2723,14 @@ const Dashboard = () => {
                     <img
                         src="/images/integratedcarrriers_logo_white.png"
                         alt="SoluShipX"
-                        style={{ height: 60 }}
+                        style={{ height: 51 }} // Reduced by 15% from 60px
                     />
                 </Box>
 
                 {/* Tracking Search Box */}
                 <Box sx={{
-                    px: { xs: 1.5, sm: 2 },
-                    py: 2,
+                    px: { xs: 1.3, sm: 1.7 }, // Reduced by 15% from 1.5, 2
+                    py: 1.7, // Reduced by 15% from 2
                     position: 'relative',
                     zIndex: 1
                 }}>
@@ -2729,13 +2748,13 @@ const Dashboard = () => {
                                 <InputAdornment position="start">
                                     <BarcodeIcon sx={{
                                         color: 'rgba(0, 0, 0, 0.6)',
-                                        fontSize: '20px'
+                                        fontSize: '17px' // Reduced by 15% from 20px
                                     }} />
                                 </InputAdornment>
                             ),
                             sx: {
                                 '& .MuiInputBase-input': {
-                                    fontSize: '12px',
+                                    fontSize: '10.2px', // Reduced by 15% from 12px
                                     color: '#000',
                                     '&::placeholder': {
                                         color: 'rgba(0, 0, 0, 0.5)',
@@ -2747,7 +2766,7 @@ const Dashboard = () => {
                         sx={{
                             '& .MuiOutlinedInput-root': {
                                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                borderRadius: '8px',
+                                borderRadius: '7px', // Reduced by 15% from 8px
                                 '& fieldset': {
                                     borderColor: 'rgba(255, 255, 255, 0.3)',
                                 },
@@ -2759,8 +2778,8 @@ const Dashboard = () => {
                                 },
                             },
                             '& .MuiInputBase-input': {
-                                fontSize: '12px',
-                                py: 1
+                                fontSize: '10.2px', // Reduced by 15% from 12px
+                                py: 0.85 // Reduced by 15% from 1
                             }
                         }}
                     />
@@ -2771,32 +2790,32 @@ const Dashboard = () => {
                     flexGrow: 1,
                     position: 'relative',
                     zIndex: 1,
-                    px: { xs: 0.5, sm: 1 },
+                    px: { xs: 0.4, sm: 0.85 }, // Reduced by 15% from 0.5, 1
                     py: 0
                 }}>
                     {menuItems.map((item, index) => (
                         <React.Fragment key={item.text}>
-                            <ListItem disablePadding sx={{ mb: 0.5 }}>
+                            <ListItem disablePadding sx={{ mb: 0.4 }}> {/* Reduced by 15% from 0.5 */}
                                 <ListItemButton
                                     onClick={item.action}
                                     sx={{
-                                        borderRadius: '12px',
-                                        py: { xs: 1.25, sm: 1.5 },
-                                        px: { xs: 1.5, sm: 2 },
+                                        borderRadius: '10px', // Reduced by 15% from 12px
+                                        py: { xs: 1.06, sm: 1.28 }, // Reduced by 15% from 1.25, 1.5
+                                        px: { xs: 1.28, sm: 1.7 }, // Reduced by 15% from 1.5, 2
                                         backgroundColor: item.expanded ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
                                         '&:hover': {
                                             backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            transform: 'translateX(4px)',
-                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                            transform: 'translateX(3.4px)', // Reduced by 15% from 4px
+                                            boxShadow: '0 3.4px 10.2px rgba(0, 0, 0, 0.2)' // Reduced by 15%
                                         },
                                         transition: 'all 0.3s ease'
                                     }}
                                 >
                                     <ListItemIcon sx={{
                                         color: 'rgba(255,255,255,0.8) !important',
-                                        minWidth: { xs: 36, sm: 40 },
+                                        minWidth: { xs: 31, sm: 34 }, // Reduced by 15% from 36, 40
                                         '& .MuiSvgIcon-root': {
-                                            fontSize: { xs: '1.2rem', sm: '1.3rem', md: '1.3rem' }
+                                            fontSize: { xs: '1.02rem', sm: '1.11rem', md: '1.11rem' } // Reduced by 15% from 1.2rem, 1.3rem
                                         }
                                     }}>
                                         {item.icon}
@@ -2804,16 +2823,16 @@ const Dashboard = () => {
                                     <ListItemText
                                         primary={item.text}
                                         primaryTypographyProps={{
-                                            fontSize: { xs: '0.85rem', sm: '0.9rem', md: '0.9rem' },
+                                            fontSize: { xs: '0.72rem', sm: '0.77rem', md: '0.77rem' }, // Reduced by 15% from 0.85rem, 0.9rem
                                             fontWeight: 500,
                                             color: 'white'
                                         }}
                                     />
                                     {item.expandable && (
                                         item.expanded ? (
-                                            <ExpandLess sx={{ color: 'rgba(255,255,255,0.6)' }} />
+                                            <ExpandLess sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem' }} />
                                         ) : (
-                                            <ExpandMore sx={{ color: 'rgba(255,255,255,0.6)' }} />
+                                            <ExpandMore sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem' }} />
                                         )
                                     )}
                                 </ListItemButton>
@@ -2824,19 +2843,19 @@ const Dashboard = () => {
                                 <Collapse in={item.expanded} timeout="auto" unmountOnExit>
                                     <List component="div" disablePadding>
                                         {item.subItems?.map((subItem) => (
-                                            <ListItem key={subItem.text} disablePadding sx={{ mb: 0.5 }}>
+                                            <ListItem key={subItem.text} disablePadding sx={{ mb: 0.4 }}> {/* Reduced by 15% */}
                                                 <ListItemButton
                                                     onClick={subItem.action}
                                                     sx={{
-                                                        borderRadius: '12px',
-                                                        py: { xs: 1.25, sm: 1.5 },
-                                                        px: { xs: 1.5, sm: 2 },
+                                                        borderRadius: '10px', // Reduced by 15% from 12px
+                                                        py: { xs: 1.06, sm: 1.28 }, // Reduced by 15% from 1.25, 1.5
+                                                        px: { xs: 1.28, sm: 1.7 }, // Reduced by 15% from 1.5, 2
                                                         backgroundColor: 'rgba(255, 255, 255, 0.03)',
                                                         border: '1px solid rgba(255, 255, 255, 0.08)',
                                                         '&:hover': {
                                                             backgroundColor: 'rgba(255, 255, 255, 0.08)',
                                                             borderColor: 'rgba(255, 255, 255, 0.15)',
-                                                            transform: 'translateX(4px)',
+                                                            transform: 'translateX(3.4px)', // Reduced by 15%
                                                             '& .subitem-icon': {
                                                                 transform: 'scale(1.1)',
                                                             }
@@ -2846,9 +2865,9 @@ const Dashboard = () => {
                                                 >
                                                     <ListItemIcon sx={{
                                                         color: 'rgba(255,255,255,0.7) !important',
-                                                        minWidth: { xs: 36, sm: 40 },
+                                                        minWidth: { xs: 31, sm: 34 }, // Reduced by 15% from 36, 40
                                                         '& .MuiSvgIcon-root': {
-                                                            fontSize: { xs: '1.2rem', sm: '1.3rem', md: '1.3rem' },
+                                                            fontSize: { xs: '1.02rem', sm: '1.11rem', md: '1.11rem' }, // Reduced by 15%
                                                             className: 'subitem-icon',
                                                             transition: 'transform 0.2s ease'
                                                         }
@@ -2859,12 +2878,12 @@ const Dashboard = () => {
                                                         primary={subItem.text}
                                                         secondary={subItem.description}
                                                         primaryTypographyProps={{
-                                                            fontSize: { xs: '0.85rem', sm: '0.9rem', md: '0.9rem' },
+                                                            fontSize: { xs: '0.72rem', sm: '0.77rem', md: '0.77rem' }, // Reduced by 15%
                                                             fontWeight: 500,
                                                             color: 'rgba(255,255,255,0.9)'
                                                         }}
                                                         secondaryTypographyProps={{
-                                                            fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                            fontSize: { xs: '0.6rem', sm: '0.64rem' }, // Reduced by 15% from 0.7rem, 0.75rem
                                                             color: 'rgba(255,255,255,0.5)'
                                                         }}
                                                     />
@@ -2880,38 +2899,38 @@ const Dashboard = () => {
 
                 {/* Footer Section */}
                 <Box sx={{
-                    px: { xs: 1.5, sm: 2 },
-                    pb: { xs: 1.5, sm: 2 },
+                    px: { xs: 1.3, sm: 1.7 }, // Reduced by 15% from 1.5, 2
+                    pb: { xs: 1.3, sm: 1.7 }, // Reduced by 15%
                     position: 'relative',
                     zIndex: 1,
                     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                    pt: 2
+                    pt: 1.7 // Reduced by 15% from 2
                 }}>
                     {/* Admin Return Button - Only visible for admin users */}
-                    {(userRole === 'admin' || userRole === 'super_admin') && (
+                    {(userRole === 'admin' || userRole === 'superadmin') && (
                         <Button
                             fullWidth
                             variant="outlined"
-                            startIcon={<AdminPanelSettingsIcon />}
+                            startIcon={<AdminPanelSettingsIcon sx={{ fontSize: '1.1rem' }} />}
                             onClick={() => {
                                 const returnPath = getAdminReturnPath();
                                 clearAdminReturnPath();
                                 navigate(returnPath);
                             }}
                             sx={{
-                                borderRadius: '12px',
-                                py: 1.5,
+                                borderRadius: '10px', // Reduced by 15% from 12px
+                                py: 1.28, // Reduced by 15% from 1.5
                                 borderColor: 'rgba(255, 255, 255, 0.2)',
                                 color: 'rgba(255, 255, 255, 0.9)',
-                                fontSize: { xs: '0.85rem', sm: '0.9rem' },
+                                fontSize: { xs: '0.72rem', sm: '0.77rem' }, // Reduced by 15% from 0.85rem, 0.9rem
                                 fontWeight: 500,
                                 backgroundColor: 'rgba(255, 255, 255, 0.05)',
                                 backdropFilter: 'blur(10px)',
                                 '&:hover': {
                                     borderColor: 'rgba(255, 255, 255, 0.4)',
                                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                    transform: 'translateY(-2px)',
-                                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
+                                    transform: 'translateY(-1.7px)', // Reduced by 15% from 2px
+                                    boxShadow: '0 6.8px 20.4px rgba(0, 0, 0, 0.3)' // Reduced by 15%
                                 },
                                 transition: 'all 0.3s ease',
                                 textTransform: 'none',
@@ -3524,13 +3543,13 @@ const Dashboard = () => {
             <Box sx={{
                 position: 'absolute',
                 top: 0,
-                left: { xs: '220px', sm: '240px', md: '260px' },
-                width: 'calc(100% - 220px)',
+                left: { xs: '187px', sm: '204px', md: '221px' }, // Reduced by 15%
+                width: 'calc(100% - 187px)', // Reduced by 15%
                 '@media (min-width: 600px)': {
-                    width: 'calc(100% - 240px)'
+                    width: 'calc(100% - 204px)' // Reduced by 15%
                 },
                 '@media (min-width: 960px)': {
-                    width: 'calc(100% - 260px)'
+                    width: 'calc(100% - 221px)' // Reduced by 15%
                 },
                 height: '100%',
                 opacity: showLoadingScreen ? 0 : 1,
@@ -3562,13 +3581,13 @@ const Dashboard = () => {
                 <Box sx={{
                     position: 'absolute',
                     top: 0,
-                    left: { xs: '220px', sm: '240px', md: '260px' },
-                    width: 'calc(100% - 220px)',
+                    left: { xs: '187px', sm: '204px', md: '221px' }, // Reduced by 15%
+                    width: 'calc(100% - 187px)', // Reduced by 15%
                     '@media (min-width: 600px)': {
-                        width: 'calc(100% - 240px)'
+                        width: 'calc(100% - 204px)' // Reduced by 15%
                     },
                     '@media (min-width: 960px)': {
-                        width: 'calc(100% - 260px)'
+                        width: 'calc(100% - 221px)' // Reduced by 15%
                     },
                     height: '100%',
                     zIndex: 2,
