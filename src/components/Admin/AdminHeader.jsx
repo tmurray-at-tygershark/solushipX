@@ -134,6 +134,15 @@ const AdminHeader = () => {
                         </li>
                         <li className="nav-item">
                             <Link
+                                className={`nav-link ${location.pathname.startsWith('/admin/shipments') ? 'active' : ''}`}
+                                to="/admin/shipments"
+                                onClick={handleMobileMenuClose}
+                            >
+                                <span>Shipments</span>
+                            </Link>
+                        </li>
+                        <li className="nav-item">
+                            <Link
                                 className={`nav-link ${location.pathname.startsWith('/admin/billing') ? 'active' : ''}`}
                                 to="/admin/billing"
                                 onClick={handleMobileMenuClose}

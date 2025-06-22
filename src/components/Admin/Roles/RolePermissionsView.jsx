@@ -100,6 +100,8 @@ const RolePermissionsView = () => {
             case 'superadmin': return 'Super Admin';
             case 'admin': return 'Admin';
             case 'user': return 'Company Admin';
+            case 'accounting': return 'Accounting';
+            case 'company_staff': return 'Company Staff';
             default: return role;
         }
     };
@@ -109,6 +111,8 @@ const RolePermissionsView = () => {
             case 'superadmin': return 'Full system access with no limitations';
             case 'admin': return 'Administrative access to manage the system';
             case 'user': return 'Company-level access for daily operations';
+            case 'accounting': return 'Access to billing, invoicing, and financial reports';
+            case 'company_staff': return 'Basic operational access for company staff';
             default: return '';
         }
     };
@@ -118,6 +122,8 @@ const RolePermissionsView = () => {
             case 'superadmin': return '#9c27b0';
             case 'admin': return '#2196f3';
             case 'user': return '#4caf50';
+            case 'accounting': return '#ff9800';
+            case 'company_staff': return '#00bcd4';
             default: return '#757575';
         }
     };
@@ -127,6 +133,8 @@ const RolePermissionsView = () => {
             case 'superadmin': return <SecurityIcon />;
             case 'admin': return <BusinessIcon />;
             case 'user': return <PersonIcon />;
+            case 'accounting': return <BillingIcon />;
+            case 'company_staff': return <PeopleIcon />;
             default: return <PersonIcon />;
         }
     };
@@ -197,25 +205,43 @@ const RolePermissionsView = () => {
         try {
             setSaving(true);
 
-            // Group changes by role
-            const changesByRole = {};
+            // Process pending changes and create a summary
+            const changedRoles = {};
             Object.entries(pendingChanges).forEach(([key, value]) => {
                 const [role, permission] = key.split('_');
-                if (!changesByRole[role]) {
-                    changesByRole[role] = {};
+                if (!changedRoles[role]) {
+                    changedRoles[role] = { added: [], removed: [] };
                 }
-                changesByRole[role][permission] = value;
+
+                const currentValue = ROLE_PERMISSIONS[role]?.[permission] === true;
+                if (value && !currentValue) {
+                    changedRoles[role].added.push(permission);
+                } else if (!value && currentValue) {
+                    changedRoles[role].removed.push(permission);
+                }
             });
 
-            // Update each role's permissions
-            for (const [roleId, permissions] of Object.entries(changesByRole)) {
-                const updateRolePermissions = httpsCallable(functions, 'adminUpdateRolePermissions');
-                await updateRolePermissions({ roleId, permissions });
-            }
+            // Create a detailed message about what needs to be updated
+            let message = 'To persist these changes, update the ROLE_PERMISSIONS object in src/utils/rolePermissions.js:\n\n';
+
+            Object.entries(changedRoles).forEach(([role, changes]) => {
+                if (changes.added.length > 0 || changes.removed.length > 0) {
+                    message += `Role: ${role}\n`;
+                    if (changes.added.length > 0) {
+                        message += `  Add permissions: ${changes.added.join(', ')}\n`;
+                    }
+                    if (changes.removed.length > 0) {
+                        message += `  Remove permissions: ${changes.removed.join(', ')}\n`;
+                    }
+                    message += '\n';
+                }
+            });
+
+            console.log(message);
 
             setPendingChanges({});
             setEditMode(false);
-            showSnackbar('Permissions updated successfully', 'success');
+            showSnackbar('Permission changes saved locally. Check console for instructions to persist changes.', 'info');
         } catch (error) {
             console.error('Error saving permissions:', error);
             showSnackbar(error.message || 'Error saving permissions', 'error');
@@ -460,7 +486,9 @@ const RolePermissionsView = () => {
                                                 </TableCell>
                                                 {Object.values(ROLES).map(roleId => (
                                                     <TableCell key={roleId} align="center" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                        {getRoleDisplayName(roleId)}
+                                                        <Box>
+                                                            {getRoleDisplayName(roleId)}
+                                                        </Box>
                                                     </TableCell>
                                                 ))}
                                             </TableRow>

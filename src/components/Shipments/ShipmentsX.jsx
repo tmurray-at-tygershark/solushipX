@@ -93,8 +93,8 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
 
-const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null }) => {
-    console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment });
+const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null, adminViewMode = null, adminCompanyIds = null }) => {
+    console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment, adminViewMode, adminCompanyIds });
 
     // Auth and company context
     const { user, loading: authLoading } = useAuth();
@@ -318,7 +318,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         pushView({
             key: `shipment-detail-${shipmentId}`,
             component: 'shipment-detail',
-            props: { shipmentId }
+            props: {
+                shipmentId,
+                isAdmin: adminViewMode !== null // Pass isAdmin flag when in admin view
+            }
         });
 
         // Update modal navigation for proper back button handling
@@ -328,7 +331,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             component: 'shipment-detail',
             data: { shipmentId }
         });
-    }, [shipments, pushView, modalNavigation]);
+    }, [shipments, pushView, modalNavigation, adminViewMode]);
 
     // Auto-open shipment detail if specified in deep link params
     const [hasAutoOpenedShipment, setHasAutoOpenedShipment] = useState(false);
@@ -699,7 +702,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Load shipments - optimized for performance
     const loadShipments = useCallback(async (currentTab = null) => {
-        if (!companyIdForAddress) {
+        // Check if we're in admin "all companies" mode
+        const isAdminAllView = adminViewMode === 'all';
+
+        if (!companyIdForAddress && !isAdminAllView) {
             setShipments([]);
             setAllShipments([]);
             setTotalCount(0);
@@ -708,16 +714,44 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         // Use provided tab or current selectedTab
         const activeTab = currentTab || selectedTab;
-        console.log(`🏷️ Loading shipments for tab: ${activeTab}`);
+        console.log(`🏷️ Loading shipments for tab: ${activeTab}, adminViewMode: ${adminViewMode}`);
 
         setLoading(true);
         try {
             const shipmentsRef = collection(db, 'shipments');
-            const q = query(
-                shipmentsRef,
-                where('companyID', '==', companyIdForAddress),
-                orderBy('createdAt', 'desc')
-            );
+            let q;
+
+            // Build query based on admin view mode
+            if (isAdminAllView) {
+                // Admin viewing all companies
+                if (adminCompanyIds === 'all') {
+                    // Super admin - load all shipments
+                    console.log('📊 Loading ALL shipments (super admin view)');
+                    q = query(shipmentsRef, orderBy('createdAt', 'desc'));
+                } else if (Array.isArray(adminCompanyIds) && adminCompanyIds.length > 0) {
+                    // Admin - load shipments from connected companies
+                    console.log(`📊 Loading shipments from ${adminCompanyIds.length} connected companies`);
+                    q = query(
+                        shipmentsRef,
+                        where('companyID', 'in', adminCompanyIds),
+                        orderBy('createdAt', 'desc')
+                    );
+                } else {
+                    // Fallback - no companies to load from
+                    console.warn('No company IDs available for admin view');
+                    setShipments([]);
+                    setAllShipments([]);
+                    setTotalCount(0);
+                    return;
+                }
+            } else {
+                // Single company view
+                q = query(
+                    shipmentsRef,
+                    where('companyID', '==', companyIdForAddress),
+                    orderBy('createdAt', 'desc')
+                );
+            }
 
             const querySnapshot = await getDocs(q);
             let shipmentsData = querySnapshot.docs.map(doc => ({
@@ -964,7 +998,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         } finally {
             setLoading(false);
         }
-    }, [companyIdForAddress, selectedTab, fetchCarrierData]); // Minimal dependencies with tab parameter approach
+    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds]); // Removed companyData to prevent loops
 
     // Create a stable reload function that can be called when needed
     const reloadShipments = useCallback(() => {
@@ -974,15 +1008,18 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             return;
         }
 
+        // Check if we're in admin "all companies" mode
+        const isAdminAllView = adminViewMode === 'all';
+
         // Skip if not ready
-        if (authLoading || companyCtxLoading || !companyIdForAddress) {
-            console.log('🚫 Skipping reload - not ready', { authLoading, companyCtxLoading, companyIdForAddress });
+        if (authLoading || companyCtxLoading || (!companyIdForAddress && !isAdminAllView)) {
+            console.log('🚫 Skipping reload - not ready', { authLoading, companyCtxLoading, companyIdForAddress, isAdminAllView });
             return;
         }
 
         console.log('🔄 Manual reload triggered');
         loadShipments();
-    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress]); // Removed navigationStack to prevent loops
+    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode]); // Removed companyData to prevent loops
 
     // Debounced version for search inputs
     const debounceTimeoutRef = useRef(null);
@@ -1070,8 +1107,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Load data when auth and company are ready
     useEffect(() => {
-        if (!authLoading && !companyCtxLoading && companyIdForAddress) {
-            console.log('🔄 Initial data load triggered');
+        // Check if we're in admin "all companies" mode
+        const isAdminAllView = adminViewMode === 'all';
+
+        if (!authLoading && !companyCtxLoading && (companyIdForAddress || isAdminAllView)) {
+            console.log('🔄 Initial data load triggered', { adminViewMode, isAdminAllView });
             // Load customers and shipments in parallel for faster initial load
             Promise.all([
                 fetchCustomers(),
@@ -1081,7 +1121,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 setLoading(false);
             });
         }
-    }, [authLoading, companyCtxLoading, companyIdForAddress, fetchCustomers, loadShipments]);
+    }, [authLoading, companyCtxLoading, companyIdForAddress, fetchCustomers, loadShipments, adminViewMode]); // Removed companyData to prevent loops
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -1617,6 +1657,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     highlightSearchTerm={highlightSearchTerm}
                                     showSnackbar={showSnackbar}
                                     onOpenTrackingDrawer={handleOpenTrackingDrawer}
+                                    adminViewMode={adminViewMode}
                                 />
                             )}
                         </Box>
@@ -1893,8 +1934,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         );
     }
 
-    // No company ID
-    if (!companyIdForAddress) {
+    // Check if we're in admin "all companies" mode
+    const isAdminAllView = adminViewMode === 'all';
+
+    // No company ID - but allow admin view mode
+    if (!companyIdForAddress && !isAdminAllView) {
         return (
             <Box sx={{
                 display: 'flex',

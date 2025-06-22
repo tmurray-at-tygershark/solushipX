@@ -25,13 +25,17 @@ const ShipmentsTable = ({
     showSnackbar,
     onOpenTrackingDrawer,
     onViewShipmentDetail,
-    onEditDraftShipment
+    onEditDraftShipment,
+    adminViewMode
 }) => {
     const safeShipments = shipments || [];
     const safeSelected = selected || [];
 
     const isAllSelected = safeShipments.length > 0 && safeSelected.length === safeShipments.length;
     const isIndeterminate = safeSelected.length > 0 && safeSelected.length < safeShipments.length;
+
+    // Check if we're in admin view mode
+    const isAdminView = adminViewMode === 'all' || adminViewMode === 'single';
 
     // Column configuration to match header widths
     const columnConfig = {
@@ -42,11 +46,15 @@ const ShipmentsTable = ({
         reference: { width: 120 },
         customer: { width: 140 },
         route: { width: 150 },
-        carrier: { width: 220 },
+        carrier: { width: isAdminView ? 180 : 220 }, // Reduced when charges column is shown
         type: { width: 120 }, // Increased from 100 to 120
+        charges: { width: 100 }, // New charges column
         status: { width: 110 },
         actions: { width: 60 }
     };
+
+    // Calculate total width
+    const totalWidth = isAdminView ? 1378 : 1278; // Add 100 for charges column
 
     return (
         <Box sx={{
@@ -55,7 +63,7 @@ const ShipmentsTable = ({
         }}>
             <Table sx={{
                 width: '100%',
-                minWidth: 1278, // Total: 48+110+100+100+120+140+150+220+120+110+60 = 1278
+                minWidth: totalWidth,
                 tableLayout: 'fixed',
                 '& .MuiTableCell-root': {
                     fontSize: '12px',
@@ -165,9 +173,9 @@ const ShipmentsTable = ({
                             ROUTE
                         </TableCell>
                         <TableCell sx={{
-                            width: 220,
-                            minWidth: 220,
-                            maxWidth: 220,
+                            width: columnConfig.carrier.width,
+                            minWidth: columnConfig.carrier.width,
+                            maxWidth: columnConfig.carrier.width,
                             backgroundColor: '#f8fafc !important'
                         }}>
                             CARRIER
@@ -180,6 +188,16 @@ const ShipmentsTable = ({
                         }}>
                             TYPE
                         </TableCell>
+                        {isAdminView && (
+                            <TableCell sx={{
+                                width: 100,
+                                minWidth: 100,
+                                maxWidth: 100,
+                                backgroundColor: '#f8fafc !important'
+                            }}>
+                                CHARGES
+                            </TableCell>
+                        )}
                         <TableCell sx={{
                             width: 110,
                             minWidth: 110,
@@ -204,13 +222,13 @@ const ShipmentsTable = ({
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
+                            <TableCell colSpan={isAdminView ? 12 : 11} align="center" sx={{ py: 4 }}>
                                 <CircularProgress />
                             </TableCell>
                         </TableRow>
                     ) : safeShipments.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={10} align="center" sx={{ py: 4, color: '#6b7280' }}>
+                            <TableCell colSpan={isAdminView ? 12 : 11} align="center" sx={{ py: 4, color: '#6b7280' }}>
                                 No shipments found
                             </TableCell>
                         </TableRow>
@@ -231,6 +249,7 @@ const ShipmentsTable = ({
                                 onViewShipmentDetail={onViewShipmentDetail}
                                 onEditDraftShipment={onEditDraftShipment}
                                 columnConfig={columnConfig}
+                                adminViewMode={adminViewMode}
                             />
                         ))
                     )}

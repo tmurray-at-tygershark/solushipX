@@ -4,7 +4,9 @@ import {
     Typography,
     Button,
     Chip,
-    CircularProgress
+    CircularProgress,
+    Breadcrumbs,
+    Link
 } from '@mui/material';
 import {
     Print as PrintIcon,
@@ -12,7 +14,8 @@ import {
     LocalShipping as LocalShippingIcon,
     ArrowBackIosNew as ArrowBackIosNewIcon,
     QrCode as QrCodeIcon,
-    ContentCopy as ContentCopyIcon
+    ContentCopy as ContentCopyIcon,
+    NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import StatusChip from '../../StatusChip/StatusChip';
@@ -31,7 +34,8 @@ const ShipmentHeader = ({
     fetchShipmentDocuments,
     onBackToTable,
     onCancelShipment,
-    onShowSnackbar
+    onShowSnackbar,
+    isAdmin = false
 }) => {
     const navigate = useNavigate();
     const isFreightShipment = shipment?.shipmentInfo?.shipmentType?.toLowerCase() === 'freight';
@@ -70,6 +74,34 @@ const ShipmentHeader = ({
 
     return (
         <Box sx={{ mb: 3 }}>
+            {/* Admin Breadcrumb - Show when in admin view */}
+            {isAdmin && onBackToTable && (
+                <Breadcrumbs
+                    separator={<NavigateNextIcon fontSize="small" />}
+                    sx={{ mb: 2 }}
+                >
+                    <Link
+                        component="button"
+                        variant="body2"
+                        onClick={handleBackClick}
+                        sx={{
+                            color: '#6b7280',
+                            textDecoration: 'none',
+                            fontSize: '12px',
+                            '&:hover': {
+                                textDecoration: 'underline',
+                                cursor: 'pointer'
+                            }
+                        }}
+                    >
+                        Shipments
+                    </Link>
+                    <Typography color="text.primary" sx={{ fontSize: '12px' }}>
+                        {shipment?.shipmentID || 'N/A'}
+                    </Typography>
+                </Breadcrumbs>
+            )}
+
             {/* Header Section - Compact Layout */}
             <Box sx={{
                 display: 'flex',

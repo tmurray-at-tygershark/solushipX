@@ -553,7 +553,9 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                                             label="Role"
                                             sx={{ fontSize: '12px' }}
                                         >
+                                            <MenuItem value="company_staff" sx={{ fontSize: '12px' }}>Company Staff</MenuItem>
                                             <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Admin</MenuItem>
+                                            <MenuItem value="accounting" sx={{ fontSize: '12px' }}>Accounting</MenuItem>
                                             <MenuItem value="admin" sx={{ fontSize: '12px' }}>Admin</MenuItem>
                                             <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
                                         </Select>

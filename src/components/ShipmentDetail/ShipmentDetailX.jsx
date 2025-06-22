@@ -22,6 +22,7 @@ import { useParams } from 'react-router-dom';
 import { db, functions } from '../../firebase';
 import { httpsCallable } from 'firebase/functions';
 import { collection, getDocs } from 'firebase/firestore';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Components
 import ShipmentHeader from './components/ShipmentHeader';
@@ -48,9 +49,13 @@ import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate';
 // Utils
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
+const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin }) => {
     const { id } = useParams();
     const shipmentId = propShipmentId || id;
+    const { user } = useAuth();
+
+    // Check if user is admin or super admin - use prop if provided, otherwise calculate
+    const isAdmin = propIsAdmin !== undefined ? propIsAdmin : (user?.role === 'admin' || user?.role === 'superadmin');
 
     // CRITICAL CLEANUP: Clear any shipment session data when component unmounts
     useEffect(() => {
@@ -697,9 +702,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                     onPrintShipment={handlePrintShipment}
                     fetchShipmentDocuments={fetchShipmentDocuments}
                     onBackToTable={onBackToTable}
-
                     onCancelShipment={() => setCancelModalOpen(true)}
                     onShowSnackbar={showSnackbar}
+                    isAdmin={isAdmin}
                 />
 
                 {/* Main Content Container */}
@@ -737,6 +742,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable }) => {
                             getBestRateInfo={getBestRateInfo}
                             carrierData={carrierData}
                             shipment={shipment}
+                            isAdmin={isAdmin}
                         />
 
                         {/* Package Details */}

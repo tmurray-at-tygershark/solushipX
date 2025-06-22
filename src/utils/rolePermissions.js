@@ -4,7 +4,9 @@
 export const ROLES = {
   SUPER_ADMIN: 'superadmin',
   ADMIN: 'admin', 
-  USER: 'user' // Company Admin
+  USER: 'user', // Company Admin
+  ACCOUNTING: 'accounting',
+  COMPANY_STAFF: 'company_staff'
 };
 
 // Define all available permissions in the system
@@ -293,6 +295,192 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
   },
+  
+  [ROLES.ACCOUNTING]: { // Accounting role - focused on billing and invoicing
+    // Dashboard & General Access
+    [PERMISSIONS.VIEW_DASHBOARD]: true,
+    [PERMISSIONS.VIEW_ADMIN_DASHBOARD]: true,
+    
+    // User Management - Limited
+    [PERMISSIONS.VIEW_USERS]: false,
+    [PERMISSIONS.CREATE_USERS]: false,
+    [PERMISSIONS.EDIT_USERS]: false,
+    [PERMISSIONS.DELETE_USERS]: false,
+    [PERMISSIONS.MANAGE_USER_ROLES]: false,
+    [PERMISSIONS.INVITE_USERS]: false,
+    [PERMISSIONS.RESET_USER_PASSWORD]: false,
+    
+    // Company Management - View only for context
+    [PERMISSIONS.VIEW_COMPANIES]: true,
+    [PERMISSIONS.CREATE_COMPANIES]: false,
+    [PERMISSIONS.EDIT_COMPANIES]: false,
+    [PERMISSIONS.DELETE_COMPANIES]: false,
+    [PERMISSIONS.VIEW_ALL_COMPANIES]: true,
+    
+    // Organization Management
+    [PERMISSIONS.VIEW_ORGANIZATIONS]: false,
+    [PERMISSIONS.CREATE_ORGANIZATIONS]: false,
+    [PERMISSIONS.EDIT_ORGANIZATIONS]: false,
+    [PERMISSIONS.DELETE_ORGANIZATIONS]: false,
+    
+    // Shipment Management - View only for billing context
+    [PERMISSIONS.VIEW_SHIPMENTS]: true,
+    [PERMISSIONS.CREATE_SHIPMENTS]: false,
+    [PERMISSIONS.EDIT_SHIPMENTS]: false,
+    [PERMISSIONS.DELETE_SHIPMENTS]: false,
+    [PERMISSIONS.VIEW_ALL_SHIPMENTS]: true,
+    [PERMISSIONS.EXPORT_SHIPMENTS]: true,
+    [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
+    
+    // Customer Management - View only for billing context
+    [PERMISSIONS.VIEW_CUSTOMERS]: true,
+    [PERMISSIONS.CREATE_CUSTOMERS]: false,
+    [PERMISSIONS.EDIT_CUSTOMERS]: false,
+    [PERMISSIONS.DELETE_CUSTOMERS]: false,
+    [PERMISSIONS.VIEW_ALL_CUSTOMERS]: true,
+    
+    // Billing & Invoicing - Full access
+    [PERMISSIONS.VIEW_BILLING]: true,
+    [PERMISSIONS.CREATE_INVOICES]: true,
+    [PERMISSIONS.EDIT_INVOICES]: true,
+    [PERMISSIONS.DELETE_INVOICES]: true,
+    [PERMISSIONS.VIEW_ALL_INVOICES]: true,
+    [PERMISSIONS.MANAGE_PAYMENT_TERMS]: true,
+    [PERMISSIONS.GENERATE_INVOICES]: true,
+    
+    // Carrier Management - View only
+    [PERMISSIONS.VIEW_CARRIERS]: true,
+    [PERMISSIONS.CREATE_CARRIERS]: false,
+    [PERMISSIONS.EDIT_CARRIERS]: false,
+    [PERMISSIONS.DELETE_CARRIERS]: false,
+    [PERMISSIONS.MANAGE_CARRIER_KEYS]: false,
+    [PERMISSIONS.MANAGE_EDI_MAPPING]: false,
+    
+    // Reports & Analytics - Financial reports
+    [PERMISSIONS.VIEW_REPORTS]: true,
+    [PERMISSIONS.CREATE_REPORTS]: true,
+    [PERMISSIONS.SCHEDULE_REPORTS]: true,
+    [PERMISSIONS.VIEW_ALL_REPORTS]: true,
+    [PERMISSIONS.EXPORT_REPORTS]: true,
+    [PERMISSIONS.VIEW_ANALYTICS]: true,
+    
+    // Tracking - View only
+    [PERMISSIONS.VIEW_TRACKING]: true,
+    [PERMISSIONS.UPDATE_TRACKING]: false,
+    
+    // Profile Management
+    [PERMISSIONS.VIEW_PROFILE]: true,
+    [PERMISSIONS.EDIT_PROFILE]: true,
+    
+    // Notification Management
+    [PERMISSIONS.VIEW_NOTIFICATIONS]: true,
+    [PERMISSIONS.MANAGE_NOTIFICATIONS]: true,
+    
+    // System Settings - Limited
+    [PERMISSIONS.VIEW_SETTINGS]: false,
+    [PERMISSIONS.MANAGE_SETTINGS]: false,
+    [PERMISSIONS.MANAGE_ROLES]: false,
+    [PERMISSIONS.MANAGE_MARKUPS]: true, // Can manage markups for billing
+    
+    // Advanced Features
+    [PERMISSIONS.USE_QUICKSHIP]: false,
+    [PERMISSIONS.USE_AI_AGENT]: false,
+    [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
+    [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+  },
+  
+  [ROLES.COMPANY_STAFF]: { // Company Staff - basic operational access
+    // Dashboard & General Access
+    [PERMISSIONS.VIEW_DASHBOARD]: true,
+    [PERMISSIONS.VIEW_ADMIN_DASHBOARD]: false,
+    
+    // User Management - No access
+    [PERMISSIONS.VIEW_USERS]: false,
+    [PERMISSIONS.CREATE_USERS]: false,
+    [PERMISSIONS.EDIT_USERS]: false,
+    [PERMISSIONS.DELETE_USERS]: false,
+    [PERMISSIONS.MANAGE_USER_ROLES]: false,
+    [PERMISSIONS.INVITE_USERS]: false,
+    [PERMISSIONS.RESET_USER_PASSWORD]: false,
+    
+    // Company Management - View only their company
+    [PERMISSIONS.VIEW_COMPANIES]: true, // Only their company
+    [PERMISSIONS.CREATE_COMPANIES]: false,
+    [PERMISSIONS.EDIT_COMPANIES]: false,
+    [PERMISSIONS.DELETE_COMPANIES]: false,
+    [PERMISSIONS.VIEW_ALL_COMPANIES]: false,
+    
+    // Organization Management
+    [PERMISSIONS.VIEW_ORGANIZATIONS]: false,
+    [PERMISSIONS.CREATE_ORGANIZATIONS]: false,
+    [PERMISSIONS.EDIT_ORGANIZATIONS]: false,
+    [PERMISSIONS.DELETE_ORGANIZATIONS]: false,
+    
+    // Shipment Management - Basic operations
+    [PERMISSIONS.VIEW_SHIPMENTS]: true,
+    [PERMISSIONS.CREATE_SHIPMENTS]: true,
+    [PERMISSIONS.EDIT_SHIPMENTS]: false, // Cannot edit existing shipments
+    [PERMISSIONS.DELETE_SHIPMENTS]: false,
+    [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false,
+    [PERMISSIONS.EXPORT_SHIPMENTS]: true,
+    [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
+    
+    // Customer Management - View and create only
+    [PERMISSIONS.VIEW_CUSTOMERS]: true,
+    [PERMISSIONS.CREATE_CUSTOMERS]: true,
+    [PERMISSIONS.EDIT_CUSTOMERS]: false,
+    [PERMISSIONS.DELETE_CUSTOMERS]: false,
+    [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    
+    // Billing & Invoicing - View only
+    [PERMISSIONS.VIEW_BILLING]: true,
+    [PERMISSIONS.CREATE_INVOICES]: false,
+    [PERMISSIONS.EDIT_INVOICES]: false,
+    [PERMISSIONS.DELETE_INVOICES]: false,
+    [PERMISSIONS.VIEW_ALL_INVOICES]: false,
+    [PERMISSIONS.MANAGE_PAYMENT_TERMS]: false,
+    [PERMISSIONS.GENERATE_INVOICES]: false,
+    
+    // Carrier Management - View only
+    [PERMISSIONS.VIEW_CARRIERS]: true,
+    [PERMISSIONS.CREATE_CARRIERS]: false,
+    [PERMISSIONS.EDIT_CARRIERS]: false,
+    [PERMISSIONS.DELETE_CARRIERS]: false,
+    [PERMISSIONS.MANAGE_CARRIER_KEYS]: false,
+    [PERMISSIONS.MANAGE_EDI_MAPPING]: false,
+    
+    // Reports & Analytics - Basic reports only
+    [PERMISSIONS.VIEW_REPORTS]: true,
+    [PERMISSIONS.CREATE_REPORTS]: false,
+    [PERMISSIONS.SCHEDULE_REPORTS]: false,
+    [PERMISSIONS.VIEW_ALL_REPORTS]: false,
+    [PERMISSIONS.EXPORT_REPORTS]: true,
+    [PERMISSIONS.VIEW_ANALYTICS]: false,
+    
+    // Tracking
+    [PERMISSIONS.VIEW_TRACKING]: true,
+    [PERMISSIONS.UPDATE_TRACKING]: false,
+    
+    // Profile Management
+    [PERMISSIONS.VIEW_PROFILE]: true,
+    [PERMISSIONS.EDIT_PROFILE]: true,
+    
+    // Notification Management
+    [PERMISSIONS.VIEW_NOTIFICATIONS]: true,
+    [PERMISSIONS.MANAGE_NOTIFICATIONS]: false,
+    
+    // System Settings
+    [PERMISSIONS.VIEW_SETTINGS]: false,
+    [PERMISSIONS.MANAGE_SETTINGS]: false,
+    [PERMISSIONS.MANAGE_ROLES]: false,
+    [PERMISSIONS.MANAGE_MARKUPS]: false,
+    
+    // Advanced Features
+    [PERMISSIONS.USE_QUICKSHIP]: true,
+    [PERMISSIONS.USE_AI_AGENT]: false,
+    [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
+    [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+  },
 };
 
 // Helper function to check if a user has a specific permission
@@ -368,6 +556,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/markups': [PERMISSIONS.MANAGE_MARKUPS],
   '/admin/carrier-keys': [PERMISSIONS.MANAGE_CARRIER_KEYS],
   '/admin/edi-mapping': [PERMISSIONS.MANAGE_EDI_MAPPING],
+  '/admin/shipments': [PERMISSIONS.VIEW_ALL_SHIPMENTS],
 };
 
 // Helper function to check if user can access a route

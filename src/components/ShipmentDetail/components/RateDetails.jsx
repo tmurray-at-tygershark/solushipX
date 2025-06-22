@@ -38,15 +38,30 @@ const CarrierDisplay = ({ carrierName, carrierData, size = "medium", isIntegrati
 const RateDetails = ({
     getBestRateInfo,
     carrierData,
-    shipment
+    shipment,
+    isAdmin = false
 }) => {
+    // Add debugging
+    console.log('RateDetails Debug:', {
+        isAdmin,
+        isQuickShip: shipment?.creationMethod === 'quickship',
+        shipment,
+        manualRates: shipment?.manualRates
+    });
+
     const safeNumber = (value) => {
         return isNaN(parseFloat(value)) ? 0 : parseFloat(value);
     };
 
     // Add thousands separator formatting for currency
-    const formatCurrency = (amount) => {
+    const formatCurrency = (amount, showCurrency = false, currency = 'USD') => {
         const num = safeNumber(amount);
+        if (showCurrency) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currency
+            }).format(num);
+        }
         return num.toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
@@ -186,9 +201,20 @@ const RateDetails = ({
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                         {charge.name}
                                                     </Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                        ${formatCurrency(charge.amount)}
-                                                    </Typography>
+                                                    {isAdmin ? (
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                                <span style={{ fontWeight: 500 }}>Cost:</span> ${formatCurrency(charge.amount)}
+                                                            </Typography>
+                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                                <span style={{ fontWeight: 500 }}>Charge:</span> ${formatCurrency(charge.amount)} {/* No markup yet */}
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                            ${formatCurrency(charge.amount)}
+                                                        </Typography>
+                                                    )}
                                                 </Box>
                                             ))}
                                         </Box>
@@ -211,9 +237,20 @@ const RateDetails = ({
                                                         <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                             {detail.name}
                                                         </Typography>
-                                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                            ${formatCurrency(detail.amount)}
-                                                        </Typography>
+                                                        {isAdmin ? (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                <Typography variant="body1" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                                    <span style={{ fontWeight: 500 }}>Cost:</span> ${formatCurrency(detail.amount)}
+                                                                </Typography>
+                                                                <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                                    <span style={{ fontWeight: 500 }}>Charge:</span> ${formatCurrency(detail.amount)} {/* No markup yet */}
+                                                                </Typography>
+                                                            </Box>
+                                                        ) : (
+                                                            <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                                ${formatCurrency(detail.amount)}
+                                                            </Typography>
+                                                        )}
                                                     </Box>
                                                 ))}
                                             </Box>
@@ -257,9 +294,20 @@ const RateDetails = ({
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                         {item.name}
                                                     </Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                        ${formatCurrency(item.amount)}
-                                                    </Typography>
+                                                    {isAdmin ? (
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                                <span style={{ fontWeight: 500 }}>Cost:</span> ${formatCurrency(item.amount)}
+                                                            </Typography>
+                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                                <span style={{ fontWeight: 500 }}>Charge:</span> ${formatCurrency(item.amount)} {/* No markup yet */}
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                            ${formatCurrency(item.amount)}
+                                                        </Typography>
+                                                    )}
                                                 </Box>
                                             ))}
                                         </Box>
@@ -272,30 +320,73 @@ const RateDetails = ({
                                             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                 Freight Charges
                                             </Typography>
-                                            <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                ${formatCurrency(getBestRateInfo?.pricing?.freight ||
-                                                    getBestRateInfo?.freightCharge ||
-                                                    getBestRateInfo?.freightCharges || 0)}
-                                            </Typography>
+                                            {isAdmin ? (
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                        <span style={{ fontWeight: 500 }}>Cost:</span> ${formatCurrency(getBestRateInfo?.pricing?.freight ||
+                                                            getBestRateInfo?.freightCharge ||
+                                                            getBestRateInfo?.freightCharges || 0)}
+                                                    </Typography>
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                        <span style={{ fontWeight: 500 }}>Charge:</span> ${formatCurrency(getBestRateInfo?.pricing?.freight ||
+                                                            getBestRateInfo?.freightCharge ||
+                                                            getBestRateInfo?.freightCharges || 0)} {/* No markup yet */}
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                    ${formatCurrency(getBestRateInfo?.pricing?.freight ||
+                                                        getBestRateInfo?.freightCharge ||
+                                                        getBestRateInfo?.freightCharges || 0)}
+                                                </Typography>
+                                            )}
                                         </Box>
                                         <Box>
                                             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                 Fuel Charges
                                             </Typography>
-                                            <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                ${formatCurrency(getBestRateInfo?.pricing?.fuel ||
-                                                    getBestRateInfo?.fuelCharge ||
-                                                    getBestRateInfo?.fuelCharges || 0)}
-                                            </Typography>
+                                            {isAdmin ? (
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                        <span style={{ fontWeight: 500 }}>Cost:</span> ${formatCurrency(getBestRateInfo?.pricing?.fuel ||
+                                                            getBestRateInfo?.fuelCharge ||
+                                                            getBestRateInfo?.fuelCharges || 0)}
+                                                    </Typography>
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                        <span style={{ fontWeight: 500 }}>Charge:</span> ${formatCurrency(getBestRateInfo?.pricing?.fuel ||
+                                                            getBestRateInfo?.fuelCharge ||
+                                                            getBestRateInfo?.fuelCharges || 0)} {/* No markup yet */}
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                    ${formatCurrency(getBestRateInfo?.pricing?.fuel ||
+                                                        getBestRateInfo?.fuelCharge ||
+                                                        getBestRateInfo?.fuelCharges || 0)}
+                                                </Typography>
+                                            )}
                                         </Box>
                                         <Box>
                                             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                 Service Charges
                                             </Typography>
-                                            <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                ${formatCurrency(getBestRateInfo?.pricing?.service ||
-                                                    getBestRateInfo?.serviceCharges || 0)}
-                                            </Typography>
+                                            {isAdmin ? (
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                        <span style={{ fontWeight: 500 }}>Cost:</span> ${formatCurrency(getBestRateInfo?.pricing?.service ||
+                                                            getBestRateInfo?.serviceCharges || 0)}
+                                                    </Typography>
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                        <span style={{ fontWeight: 500 }}>Charge:</span> ${formatCurrency(getBestRateInfo?.pricing?.service ||
+                                                            getBestRateInfo?.serviceCharges || 0)} {/* No markup yet */}
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                    ${formatCurrency(getBestRateInfo?.pricing?.service ||
+                                                        getBestRateInfo?.serviceCharges || 0)}
+                                                </Typography>
+                                            )}
                                         </Box>
                                     </Box>
                                 );
@@ -320,31 +411,96 @@ const RateDetails = ({
                                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
                                     Total Charges
                                 </Typography>
-                                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
-                                    ${(() => {
-                                        // For QuickShip, use the calculated total from manual rates
-                                        if (isQuickShip && quickShipData) {
-                                            return formatCurrency(quickShipData.total);
-                                        }
+                                {isAdmin ? (
+                                    <>
+                                        <Box sx={{ mb: 2 }}>
+                                            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '12px', mb: 0.5 }}>
+                                                Carrier Cost
+                                            </Typography>
+                                            <Typography variant="h5" sx={{ fontWeight: 700, color: '#374151', textAlign: 'center' }}>
+                                                ${(() => {
+                                                    // For QuickShip, use the calculated total from manual rates
+                                                    if (isQuickShip && quickShipData) {
+                                                        return formatCurrency(quickShipData.total);
+                                                    }
 
-                                        // Regular shipment logic
-                                        if (getBestRateInfo?.pricing?.total !== undefined) {
-                                            return formatCurrency(safeNumber(getBestRateInfo.pricing.total));
-                                        }
-                                        if (getBestRateInfo?.totalCharges !== undefined) {
-                                            return formatCurrency(safeNumber(getBestRateInfo.totalCharges));
-                                        }
-                                        if (getBestRateInfo?.total !== undefined) {
-                                            return formatCurrency(safeNumber(getBestRateInfo.total));
-                                        }
-                                        const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
-                                        const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
-                                        const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
-                                        const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
-                                        const guarantee = getBestRateInfo?.guaranteed ? safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge) : 0;
-                                        return formatCurrency(freight + fuel + service + accessorial + guarantee);
-                                    })()}
-                                </Typography>
+                                                    // Regular shipment logic
+                                                    if (getBestRateInfo?.pricing?.total !== undefined) {
+                                                        return formatCurrency(safeNumber(getBestRateInfo.pricing.total));
+                                                    }
+                                                    if (getBestRateInfo?.totalCharges !== undefined) {
+                                                        return formatCurrency(safeNumber(getBestRateInfo.totalCharges));
+                                                    }
+                                                    if (getBestRateInfo?.total !== undefined) {
+                                                        return formatCurrency(safeNumber(getBestRateInfo.total));
+                                                    }
+                                                    const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
+                                                    const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
+                                                    const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
+                                                    const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
+                                                    const guarantee = getBestRateInfo?.guaranteed ? safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge) : 0;
+                                                    return formatCurrency(freight + fuel + service + accessorial + guarantee);
+                                                })()}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '12px', mb: 0.5 }}>
+                                                Customer Charge
+                                            </Typography>
+                                            <Typography variant="h4" sx={{ fontWeight: 700, color: '#059669', textAlign: 'center' }}>
+                                                ${(() => {
+                                                    // For now, same as cost (no markup)
+                                                    if (isQuickShip && quickShipData) {
+                                                        return formatCurrency(quickShipData.total);
+                                                    }
+
+                                                    // Regular shipment logic
+                                                    if (getBestRateInfo?.pricing?.total !== undefined) {
+                                                        return formatCurrency(safeNumber(getBestRateInfo.pricing.total));
+                                                    }
+                                                    if (getBestRateInfo?.totalCharges !== undefined) {
+                                                        return formatCurrency(safeNumber(getBestRateInfo.totalCharges));
+                                                    }
+                                                    if (getBestRateInfo?.total !== undefined) {
+                                                        return formatCurrency(safeNumber(getBestRateInfo.total));
+                                                    }
+                                                    const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
+                                                    const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
+                                                    const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
+                                                    const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
+                                                    const guarantee = getBestRateInfo?.guaranteed ? safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge) : 0;
+                                                    return formatCurrency(freight + fuel + service + accessorial + guarantee);
+                                                })()}
+                                            </Typography>
+                                        </Box>
+                                    </>
+                                ) : (
+                                    <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
+                                        ${(() => {
+                                            // For QuickShip, use the calculated total from manual rates
+                                            if (isQuickShip && quickShipData) {
+                                                return formatCurrency(quickShipData.total);
+                                            }
+
+                                            // Regular shipment logic
+                                            if (getBestRateInfo?.pricing?.total !== undefined) {
+                                                return formatCurrency(safeNumber(getBestRateInfo.pricing.total));
+                                            }
+                                            if (getBestRateInfo?.totalCharges !== undefined) {
+                                                return formatCurrency(safeNumber(getBestRateInfo.totalCharges));
+                                            }
+                                            if (getBestRateInfo?.total !== undefined) {
+                                                return formatCurrency(safeNumber(getBestRateInfo.total));
+                                            }
+                                            const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
+                                            const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
+                                            const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
+                                            const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
+                                            const guarantee = getBestRateInfo?.guaranteed ? safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge) : 0;
+                                            return formatCurrency(freight + fuel + service + accessorial + guarantee);
+                                        })()}
+                                    </Typography>
+                                )}
                                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '12px' }}>
                                     {isQuickShip ? quickShipData?.currency || 'CAD' : getBestRateInfo?.currency || 'USD'}
                                 </Typography>

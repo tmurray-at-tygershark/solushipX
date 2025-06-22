@@ -36,9 +36,45 @@ const ShipmentTableRow = ({
     onViewShipmentDetail,
     onEditDraftShipment,
     visibleColumns = {},
-    columnConfig = {}
+    columnConfig = {},
+    adminViewMode
 }) => {
     const isSelected = selected.indexOf(shipment.id) !== -1;
+
+    // Check if we're in admin view mode
+    const isAdminView = adminViewMode === 'all' || adminViewMode === 'single';
+
+    // Calculate charges for admin view
+    const getCharges = () => {
+        // For now, show raw cost since no markups are applied yet
+        let cost = 0;
+
+        // Check various places where the cost might be stored
+        if (shipment.totalCost) {
+            cost = shipment.totalCost;
+        } else if (shipment.cost) {
+            cost = shipment.cost;
+        } else if (shipment.selectedRate?.totalCharges) {
+            cost = shipment.selectedRate.totalCharges;
+        } else if (shipment.selectedRate?.price) {
+            cost = shipment.selectedRate.price;
+        } else if (shipment.selectedRateRef?.totalCharges) {
+            cost = shipment.selectedRateRef.totalCharges;
+        } else if (shipment.selectedRateRef?.price) {
+            cost = shipment.selectedRateRef.price;
+        } else if (shipment.totalCharges) {
+            cost = shipment.totalCharges;
+        }
+
+        // For now, company charge = cost (no markup)
+        const companyCharge = cost;
+
+        return {
+            cost: parseFloat(cost) || 0,
+            companyCharge: parseFloat(companyCharge) || 0,
+            currency: shipment.currency || shipment.selectedRate?.currency || 'USD'
+        };
+    };
 
     // Get tracking number
     const getTrackingNumber = () => {
@@ -583,6 +619,37 @@ const ShipmentTableRow = ({
                     fontSize: '11px'
                 }}>
                     {capitalizeShipmentType(shipment.shipmentInfo?.shipmentType)}
+                </TableCell>
+            )}
+
+            {/* Charges - Admin View Only */}
+            {isAdminView && (
+                <TableCell sx={{
+                    verticalAlign: 'top',
+                    textAlign: 'left',
+                    ...getColumnWidth('charges'),
+                    padding: '8px 12px'
+                }}>
+                    {(() => {
+                        const charges = getCharges();
+                        const formatCurrency = (amount, currency) => {
+                            return new Intl.NumberFormat('en-US', {
+                                style: 'currency',
+                                currency: currency
+                            }).format(amount);
+                        };
+
+                        return (
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#374151' }}>
+                                    <span style={{ fontWeight: 500 }}>Cost:</span> {formatCurrency(charges.cost, charges.currency)}
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#059669' }}>
+                                    <span style={{ fontWeight: 500 }}>Charge:</span> {formatCurrency(charges.companyCharge, charges.currency)}
+                                </Typography>
+                            </Box>
+                        );
+                    })()}
                 </TableCell>
             )}
 
