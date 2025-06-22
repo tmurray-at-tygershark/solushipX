@@ -139,15 +139,18 @@ const SignUp = () => {
                 shipFromAddresses: []
             });
 
-            // Update user record with company ID
+            // Update user record with complete profile data
             await updateDoc(doc(db, 'users', user.uid), {
+                firstName: formData.firstName,
+                lastName: formData.lastName,
+                phone: formData.phoneNumber,
                 companyId: companyRef.id,
-                companyName: formData.companyName
+                companyName: formData.companyName,
+                updatedAt: new Date()
             });
 
-            // Save additional user data
-            await saveCustomerData({
-                userId: user.uid,
+            // Save additional user data to customers collection
+            await saveCustomerData(user.uid, {
                 companyId: companyRef.id,
                 ...formData
             });

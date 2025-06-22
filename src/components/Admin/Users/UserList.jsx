@@ -371,40 +371,43 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const fetchUsersAndAuthData = useCallback(async () => {
         setLoading(true);
         try {
-            const usersRef = collection(db, 'users');
-            const q = query(usersRef, orderBy('lastName'));
-            const querySnapshot = await getDocs(q);
-            const usersDataFromFirestore = querySnapshot.docs.map(doc => {
-                const data = doc.data();
-                const companyIds = (data.connectedCompanies && Array.isArray(data.connectedCompanies.companies))
-                    ? data.connectedCompanies.companies
+            // Use the new cloud function that fetches all users from Firebase Auth
+            // and merges them with Firestore data
+            const adminListAllUsers = httpsCallable(functions, 'adminListAllUsers');
+            const result = await adminListAllUsers({});
+
+            const mergedUsers = result.data.users.map(user => {
+                const companyIds = (user.connectedCompanies && Array.isArray(user.connectedCompanies.companies))
+                    ? user.connectedCompanies.companies
                     : [];
                 return {
-                    id: doc.id,
-                    ...data,
+                    ...user,
                     companiesForDisplay: companyIds
                 };
             });
 
-            setAllUsers(usersDataFromFirestore);
-            setTotalCount(usersDataFromFirestore.length);
+            setAllUsers(mergedUsers);
+            setTotalCount(mergedUsers.length);
 
-            if (usersDataFromFirestore.length > 0) {
-                const uidsToFetch = usersDataFromFirestore.map(u => u.id);
-                try {
-                    const getUsersAuthData = httpsCallable(functions, 'adminGetUsersAuthData');
-                    const result = await getUsersAuthData({ uids: uidsToFetch });
-                    setUserAuthData(result.data.usersAuthMap || {});
-                } catch (authError) {
-                    console.error("Error fetching user auth data:", authError);
-                    enqueueSnackbar(`Could not load all user emails/logins: ${authError.message}`, { variant: 'warning' });
-                    setUserAuthData(prev => prev || {});
-                }
-            }
+            // Create userAuthData from the merged data for compatibility with existing code
+            const authDataMap = {};
+            mergedUsers.forEach(user => {
+                authDataMap[user.id] = {
+                    email: user.email,
+                    emailVerified: user.emailVerified,
+                    displayName: user.displayName,
+                    photoURL: user.photoURL,
+                    disabled: user.disabled,
+                    lastLogin: user.lastSignInTime,
+                    creationTime: user.creationTime
+                };
+            });
+            setUserAuthData(authDataMap);
 
         } catch (err) {
-            console.error("Error fetching users from Firestore:", err);
+            console.error("Error fetching users:", err);
             showSnackbar('Error fetching users: ' + err.message, 'error');
+            enqueueSnackbar(`Could not load users: ${err.message}`, { variant: 'error' });
         } finally {
             setLoading(false);
         }

@@ -9,7 +9,10 @@ const db = admin.firestore();
 /**
  * Checks if a given user ID is listed as an ownerID in any company.
  */
-exports.checkUserCompanyOwnership = onCall(async (request) => {
+exports.checkUserCompanyOwnership = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
     console.log('checkUserCompanyOwnership called. Auth:', request.auth, 'Data:', request.data);
 
     if (!request.auth) {
@@ -61,7 +64,10 @@ exports.checkUserCompanyOwnership = onCall(async (request) => {
  * Requires the calling user to have an 'admin' or 'super_admin' role.
  * IMPORTANT: This function should ideally be called AFTER checkUserCompanyOwnership confirms the user is not an owner.
  */
-exports.adminDeleteUser = onCall(async (request) => {
+exports.adminDeleteUser = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
     console.log('adminDeleteUser called. Auth:', request.auth, 'Data:', request.data);
 
     if (!request.auth) {
@@ -142,7 +148,10 @@ exports.adminDeleteUser = onCall(async (request) => {
  * Resets a user's password by an admin.
  * Requires the calling user to have an 'admin' or 'super_admin' role.
  */
-exports.adminResetUserPassword = onCall(async (request) => {
+exports.adminResetUserPassword = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
     console.log('adminResetUserPassword called. Auth:', request.auth, 'Data:', request.data);
 
     if (!request.auth) {
@@ -204,7 +213,10 @@ exports.adminResetUserPassword = onCall(async (request) => {
  * Retrieves Firebase Authentication data (email, lastLogin) for a list of UIDs.
  * Requires the calling user to have an 'admin' or 'super_admin' role.
  */
-exports.adminGetUsersAuthData = onCall(async (request) => {
+exports.adminGetUsersAuthData = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
     console.log('adminGetUsersAuthData called. Auth:', request.auth, 'Data:', request.data);
 
     if (!request.auth) {
@@ -261,6 +273,109 @@ exports.adminGetUsersAuthData = onCall(async (request) => {
 
     } catch (error) {
         console.error(`Error in adminGetUsersAuthData for UIDs by admin ${callingUserUid}:`, error);
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError('internal', `An unexpected error occurred: ${error.message}`);
+    }
+});
+
+/**
+ * Lists all users from Firebase Auth and merges with Firestore user data.
+ * This ensures we see all users, even those without Firestore documents.
+ * Requires the calling user to have an 'admin' or 'super_admin' role.
+ */
+exports.adminListAllUsers = onCall({
+    cors: true,
+    timeoutSeconds: 60,
+}, async (request) => {
+    console.log('adminListAllUsers called. Auth:', request.auth, 'Data:', request.data);
+
+    if (!request.auth) {
+        console.error('adminListAllUsers: Authentication failed. No auth context.');
+        throw new HttpsError('unauthenticated', 'The function must be called by an authenticated user.');
+    }
+
+    const callingUserUid = request.auth.uid;
+    const { maxResults = 1000, pageToken } = request.data || {};
+
+    try {
+        // Verify calling user's admin role
+        const adminUserDocRef = db.collection('users').doc(callingUserUid);
+        const adminUserDoc = await adminUserDocRef.get();
+        if (!adminUserDoc.exists || !["admin", "super_admin"].includes(adminUserDoc.data().role)) {
+            console.error(`adminListAllUsers: Caller ${callingUserUid} is not an admin.`);
+            throw new HttpsError('permission-denied', 'You do not have privileges to perform this action.');
+        }
+
+        console.log(`Admin user ${callingUserUid} listing all users`);
+
+        // Get all users from Firebase Auth
+        const listUsersResult = await admin.auth().listUsers(maxResults, pageToken);
+        
+        // Get all user documents from Firestore
+        const usersSnapshot = await db.collection('users').get();
+        const firestoreUsers = {};
+        usersSnapshot.forEach(doc => {
+            firestoreUsers[doc.id] = doc.data();
+        });
+
+        // Merge Auth and Firestore data
+        const mergedUsers = listUsersResult.users.map(authUser => {
+            const firestoreData = firestoreUsers[authUser.uid] || {};
+            
+            return {
+                id: authUser.uid,
+                // Auth data
+                email: authUser.email,
+                emailVerified: authUser.emailVerified,
+                displayName: authUser.displayName,
+                photoURL: authUser.photoURL,
+                disabled: authUser.disabled,
+                lastSignInTime: authUser.metadata.lastSignInTime,
+                creationTime: authUser.metadata.creationTime,
+                
+                // Firestore data (with defaults if not present)
+                firstName: firestoreData.firstName || '',
+                lastName: firestoreData.lastName || '',
+                role: firestoreData.role || 'user',
+                status: firestoreData.status || 'active',
+                phone: firestoreData.phone || '',
+                connectedCompanies: firestoreData.connectedCompanies || { companies: [] },
+                
+                // Metadata
+                hasFirestoreDocument: !!firestoreData.firstName,
+                createdAt: firestoreData.createdAt,
+                updatedAt: firestoreData.updatedAt,
+                lastLogin: firestoreData.lastLogin
+            };
+        });
+
+        // Sort by last name, then first name, then email
+        mergedUsers.sort((a, b) => {
+            const aLastName = a.lastName || '';
+            const bLastName = b.lastName || '';
+            if (aLastName !== bLastName) {
+                return aLastName.localeCompare(bLastName);
+            }
+            
+            const aFirstName = a.firstName || '';
+            const bFirstName = b.firstName || '';
+            if (aFirstName !== bFirstName) {
+                return aFirstName.localeCompare(bFirstName);
+            }
+            
+            return (a.email || '').localeCompare(b.email || '');
+        });
+
+        return {
+            users: mergedUsers,
+            pageToken: listUsersResult.pageToken,
+            totalCount: mergedUsers.length
+        };
+
+    } catch (error) {
+        console.error(`Error in adminListAllUsers by admin ${callingUserUid}:`, error);
         if (error instanceof HttpsError) {
             throw error;
         }
