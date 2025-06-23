@@ -40,6 +40,7 @@ const AdminBreadcrumb = ({
             'carriers': 'Carriers',
             'organizations': 'Organizations',
             'roles': 'Roles',
+            'role-permissions': 'Role Permissions',
             'settings': 'Settings',
             'markups': 'Markups',
             'carrier-keys': 'Carrier Keys',

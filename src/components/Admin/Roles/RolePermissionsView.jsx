@@ -63,6 +63,7 @@ import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { ROLES, PERMISSIONS, ROLE_PERMISSIONS, ROUTE_PERMISSIONS } from '../../../utils/rolePermissions';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
 const RolePermissionsView = () => {
     const { currentUser, userRole } = useAuth();
@@ -312,14 +313,12 @@ const RolePermissionsView = () => {
 
     return (
         <Box sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Box>
-                    <Typography variant="h4" sx={{ fontSize: '24px', fontWeight: 600 }}>
+                    <Typography variant="h4" sx={{ fontSize: '24px', fontWeight: 600, mb: 1 }}>
                         Role Permissions
                     </Typography>
-                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px' }}>
-                        View and manage role-based access control
-                    </Typography>
+                    <AdminBreadcrumb currentPage="Role Permissions" />
                 </Box>
 
                 {canEditPermissions && (
@@ -354,7 +353,7 @@ const RolePermissionsView = () => {
                                 size="small"
                                 sx={{ fontSize: '12px' }}
                             >
-                                Edit Permissions
+                                Edit
                             </Button>
                         )}
                     </Box>
