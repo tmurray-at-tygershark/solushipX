@@ -103,20 +103,107 @@ const usStates = [
 ];
 
 const WeightRangeComponent = ({ weightRanges, onUpdate, errors }) => {
-    const handleAddWeightRange = () => {
-        const newRanges = [...weightRanges, { minWeight: 0, maxWeight: 100, unit: 'kg' }];
-        onUpdate(newRanges);
+    // Handle legacy weight ranges - convert to new structure if needed
+    const weightRestrictions = weightRanges?.weightRestrictions || {
+        totalWeight: weightRanges || [],
+        cubicWeight: [],
+        weightPerSkid: []
     };
 
-    const handleRemoveWeightRange = (index) => {
-        const newRanges = weightRanges.filter((_, i) => i !== index);
-        onUpdate(newRanges);
+    const handleUpdateWeightRestrictions = (newRestrictions) => {
+        onUpdate({ weightRestrictions: newRestrictions });
     };
 
-    const handleWeightRangeChange = (index, field, value) => {
-        const newRanges = [...weightRanges];
-        newRanges[index] = { ...newRanges[index], [field]: value };
-        onUpdate(newRanges);
+    // Total Weight Range handlers
+    const handleAddTotalWeightRange = () => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            totalWeight: [...weightRestrictions.totalWeight, { minWeight: 0, maxWeight: 100, unit: 'kg' }]
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    const handleRemoveTotalWeightRange = (index) => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            totalWeight: weightRestrictions.totalWeight.filter((_, i) => i !== index)
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    const handleTotalWeightRangeChange = (index, field, value) => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            totalWeight: weightRestrictions.totalWeight.map((range, i) =>
+                i === index ? { ...range, [field]: value } : range
+            )
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    // Cubic Weight handlers
+    const handleAddCubicWeightRange = () => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            cubicWeight: [...weightRestrictions.cubicWeight, {
+                minCubicWeight: 0,
+                maxCubicWeight: 1000,
+                unit: 'kg',
+                densityThreshold: 6.0,
+                description: ''
+            }]
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    const handleRemoveCubicWeightRange = (index) => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            cubicWeight: weightRestrictions.cubicWeight.filter((_, i) => i !== index)
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    const handleCubicWeightRangeChange = (index, field, value) => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            cubicWeight: weightRestrictions.cubicWeight.map((range, i) =>
+                i === index ? { ...range, [field]: value } : range
+            )
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    // Weight Per Skid handlers
+    const handleAddWeightPerSkidRange = () => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            weightPerSkid: [...weightRestrictions.weightPerSkid, {
+                minWeightPerSkid: 0,
+                maxWeightPerSkid: 2000,
+                unit: 'kg',
+                description: ''
+            }]
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    const handleRemoveWeightPerSkidRange = (index) => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            weightPerSkid: weightRestrictions.weightPerSkid.filter((_, i) => i !== index)
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
+    };
+
+    const handleWeightPerSkidRangeChange = (index, field, value) => {
+        const newRestrictions = {
+            ...weightRestrictions,
+            weightPerSkid: weightRestrictions.weightPerSkid.map((range, i) =>
+                i === index ? { ...range, [field]: value } : range
+            )
+        };
+        handleUpdateWeightRestrictions(newRestrictions);
     };
 
     return (
@@ -125,75 +212,361 @@ const WeightRangeComponent = ({ weightRanges, onUpdate, errors }) => {
                 Weight Restrictions
             </Typography>
             <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                Define weight ranges this carrier can handle. Leave empty if no weight restrictions apply.
+                Define various weight-related restrictions this carrier can handle. Configure any or all types as needed.
             </Typography>
 
-            {weightRanges.map((range, index) => (
-                <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                        <TextField
+            {/* Total Weight Restrictions */}
+            <Accordion sx={{ mb: 2, border: '1px solid #e5e7eb', borderRadius: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: '#f8fafc' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <Typography sx={{ fontSize: '18px' }}>⚖️</Typography>
+                        <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                Total Weight Restrictions
+                            </Typography>
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Basic total weight ranges for shipments
+                            </Typography>
+                        </Box>
+                        <Chip
+                            label={weightRestrictions.totalWeight?.length || 0}
                             size="small"
-                            label="Min Weight"
-                            type="number"
-                            value={range.minWeight}
-                            onChange={(e) => handleWeightRangeChange(index, 'minWeight', parseFloat(e.target.value) || 0)}
-                            sx={{
-                                width: 120,
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                            }}
+                            sx={{ fontSize: '10px', height: '18px' }}
+                            color="default"
                         />
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>to</Typography>
-                        <TextField
-                            size="small"
-                            label="Max Weight"
-                            type="number"
-                            value={range.maxWeight}
-                            onChange={(e) => handleWeightRangeChange(index, 'maxWeight', parseFloat(e.target.value) || 0)}
-                            sx={{
-                                width: 120,
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                            }}
-                        />
-                        <FormControl size="small" sx={{ minWidth: 80 }}>
-                            <TextField
-                                select
-                                size="small"
-                                value={range.unit}
-                                onChange={(e) => handleWeightRangeChange(index, 'unit', e.target.value)}
-                                SelectProps={{ native: true }}
-                                sx={{
-                                    '& .MuiInputBase-input': { fontSize: '12px' }
-                                }}
-                            >
-                                <option value="kg">kg</option>
-                                <option value="lb">lb</option>
-                            </TextField>
-                        </FormControl>
-                        <IconButton
-                            size="small"
-                            onClick={() => handleRemoveWeightRange(index)}
-                            sx={{ color: '#d32f2f' }}
-                        >
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
                     </Box>
-                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                        Range {index + 1}: {range.minWeight} {range.unit} - {range.maxWeight} {range.unit}
-                    </Typography>
-                </Paper>
-            ))}
+                </AccordionSummary>
+                <AccordionDetails>
+                    {weightRestrictions.totalWeight?.map((range, index) => (
+                        <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                                <TextField
+                                    size="small"
+                                    label="Min Weight"
+                                    type="number"
+                                    value={range.minWeight}
+                                    onChange={(e) => handleTotalWeightRangeChange(index, 'minWeight', parseFloat(e.target.value) || 0)}
+                                    sx={{
+                                        width: 120,
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
+                                />
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>to</Typography>
+                                <TextField
+                                    size="small"
+                                    label="Max Weight"
+                                    type="number"
+                                    value={range.maxWeight}
+                                    onChange={(e) => handleTotalWeightRangeChange(index, 'maxWeight', parseFloat(e.target.value) || 0)}
+                                    sx={{
+                                        width: 120,
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
+                                />
+                                <FormControl size="small" sx={{ minWidth: 80 }}>
+                                    <TextField
+                                        select
+                                        size="small"
+                                        value={range.unit}
+                                        onChange={(e) => handleTotalWeightRangeChange(index, 'unit', e.target.value)}
+                                        SelectProps={{ native: true }}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    >
+                                        <option value="kg">kg</option>
+                                        <option value="lb">lb</option>
+                                    </TextField>
+                                </FormControl>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => handleRemoveTotalWeightRange(index)}
+                                    sx={{ color: '#d32f2f' }}
+                                >
+                                    <DeleteIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Range {index + 1}: {range.minWeight} {range.unit} - {range.maxWeight} {range.unit}
+                            </Typography>
+                        </Paper>
+                    ))}
 
-            <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={handleAddWeightRange}
-                variant="outlined"
-                sx={{ fontSize: '11px', mb: 2 }}
-            >
-                Add Weight Range
-            </Button>
+                    <Button
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddTotalWeightRange}
+                        variant="outlined"
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Add Total Weight Range
+                    </Button>
+                </AccordionDetails>
+            </Accordion>
+
+            {/* Cubic Weight Restrictions */}
+            <Accordion sx={{ mb: 2, border: '1px solid #e5e7eb', borderRadius: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: '#fef3ff' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <Typography sx={{ fontSize: '18px' }}>📦</Typography>
+                        <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#7c3aed' }}>
+                                Cubic Weight Restrictions
+                            </Typography>
+                            <Typography sx={{ fontSize: '10px', color: '#7c3aed' }}>
+                                Volume-based weight restrictions for LTL shipments (dimensional weight)
+                            </Typography>
+                        </Box>
+                        <Chip
+                            label={weightRestrictions.cubicWeight?.length || 0}
+                            size="small"
+                            sx={{ fontSize: '10px', height: '18px' }}
+                            color="secondary"
+                        />
+                    </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                    <Alert severity="info" sx={{ fontSize: '11px', mb: 2 }}>
+                        <Typography sx={{ fontSize: '11px', fontWeight: 500, mb: 1 }}>
+                            Cubic Weight (Dimensional Weight) Rules
+                        </Typography>
+                        <Typography sx={{ fontSize: '10px' }}>
+                            Used when shipments take up significant space but are light. Carriers apply minimum charges
+                            based on calculated cubic weight rather than actual weight for low-density freight.
+                        </Typography>
+                    </Alert>
+
+                    {weightRestrictions.cubicWeight?.map((range, index) => (
+                        <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#fef3ff', border: '1px solid #d8b4fe' }}>
+                            <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={12} sm={3}>
+                                    <TextField
+                                        size="small"
+                                        label="Min Cubic Weight"
+                                        type="number"
+                                        value={range.minCubicWeight}
+                                        onChange={(e) => handleCubicWeightRangeChange(index, 'minCubicWeight', parseFloat(e.target.value) || 0)}
+                                        fullWidth
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={3}>
+                                    <TextField
+                                        size="small"
+                                        label="Max Cubic Weight"
+                                        type="number"
+                                        value={range.maxCubicWeight}
+                                        onChange={(e) => handleCubicWeightRangeChange(index, 'maxCubicWeight', parseFloat(e.target.value) || 0)}
+                                        fullWidth
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={2}>
+                                    <TextField
+                                        select
+                                        size="small"
+                                        label="Unit"
+                                        value={range.unit}
+                                        onChange={(e) => handleCubicWeightRangeChange(index, 'unit', e.target.value)}
+                                        fullWidth
+                                        SelectProps={{ native: true }}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    >
+                                        <option value="kg">kg</option>
+                                        <option value="lb">lb</option>
+                                    </TextField>
+                                </Grid>
+                                <Grid item xs={12} sm={3}>
+                                    <TextField
+                                        size="small"
+                                        label="Density Threshold"
+                                        type="number"
+                                        value={range.densityThreshold}
+                                        onChange={(e) => handleCubicWeightRangeChange(index, 'densityThreshold', parseFloat(e.target.value) || 0)}
+                                        fullWidth
+                                        placeholder="e.g., 6.0"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={1}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleRemoveCubicWeightRange(index)}
+                                        sx={{ color: '#d32f2f' }}
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        size="small"
+                                        label="Description (Optional)"
+                                        value={range.description || ''}
+                                        onChange={(e) => handleCubicWeightRangeChange(index, 'description', e.target.value)}
+                                        fullWidth
+                                        placeholder="e.g., Applied to shipments with density < 6 lbs per cubic foot"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
+                            <Typography sx={{ fontSize: '10px', color: '#7c3aed', mt: 1 }}>
+                                Cubic Weight Range {index + 1}: {range.minCubicWeight} - {range.maxCubicWeight} {range.unit}
+                                {range.densityThreshold && ` (Density threshold: ${range.densityThreshold})`}
+                            </Typography>
+                        </Paper>
+                    ))}
+
+                    <Button
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddCubicWeightRange}
+                        variant="outlined"
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Add Cubic Weight Rule
+                    </Button>
+                </AccordionDetails>
+            </Accordion>
+
+            {/* Weight Per Skid Restrictions */}
+            <Accordion sx={{ mb: 2, border: '1px solid #e5e7eb', borderRadius: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: '#fff7ed' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <Typography sx={{ fontSize: '18px' }}>🏗️</Typography>
+                        <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#c2410c' }}>
+                                Weight Per Skid Restrictions
+                            </Typography>
+                            <Typography sx={{ fontSize: '10px', color: '#c2410c' }}>
+                                Maximum weight limits per individual skid/pallet for freight shipments
+                            </Typography>
+                        </Box>
+                        <Chip
+                            label={weightRestrictions.weightPerSkid?.length || 0}
+                            size="small"
+                            sx={{ fontSize: '10px', height: '18px' }}
+                            color="warning"
+                        />
+                    </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                    <Alert severity="warning" sx={{ fontSize: '11px', mb: 2 }}>
+                        <Typography sx={{ fontSize: '11px', fontWeight: 500, mb: 1 }}>
+                            Weight Per Skid/Pallet Limits
+                        </Typography>
+                        <Typography sx={{ fontSize: '10px' }}>
+                            Defines the maximum weight allowed per individual skid or pallet. This is important for
+                            freight handling equipment limitations and dock safety requirements.
+                        </Typography>
+                    </Alert>
+
+                    {weightRestrictions.weightPerSkid?.map((range, index) => (
+                        <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#fff7ed', border: '1px solid #fed7aa' }}>
+                            <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={12} sm={4}>
+                                    <TextField
+                                        size="small"
+                                        label="Min Weight Per Skid"
+                                        type="number"
+                                        value={range.minWeightPerSkid}
+                                        onChange={(e) => handleWeightPerSkidRangeChange(index, 'minWeightPerSkid', parseFloat(e.target.value) || 0)}
+                                        fullWidth
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={4}>
+                                    <TextField
+                                        size="small"
+                                        label="Max Weight Per Skid"
+                                        type="number"
+                                        value={range.maxWeightPerSkid}
+                                        onChange={(e) => handleWeightPerSkidRangeChange(index, 'maxWeightPerSkid', parseFloat(e.target.value) || 0)}
+                                        fullWidth
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={3}>
+                                    <TextField
+                                        select
+                                        size="small"
+                                        label="Unit"
+                                        value={range.unit}
+                                        onChange={(e) => handleWeightPerSkidRangeChange(index, 'unit', e.target.value)}
+                                        fullWidth
+                                        SelectProps={{ native: true }}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    >
+                                        <option value="kg">kg</option>
+                                        <option value="lb">lb</option>
+                                    </TextField>
+                                </Grid>
+                                <Grid item xs={12} sm={1}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleRemoveWeightPerSkidRange(index)}
+                                        sx={{ color: '#d32f2f' }}
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        size="small"
+                                        label="Description (Optional)"
+                                        value={range.description || ''}
+                                        onChange={(e) => handleWeightPerSkidRangeChange(index, 'description', e.target.value)}
+                                        fullWidth
+                                        placeholder="e.g., Standard dock equipment limitation"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
+                            <Typography sx={{ fontSize: '10px', color: '#c2410c', mt: 1 }}>
+                                Weight Per Skid {index + 1}: {range.minWeightPerSkid} - {range.maxWeightPerSkid} {range.unit} per skid/pallet
+                            </Typography>
+                        </Paper>
+                    ))}
+
+                    <Button
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddWeightPerSkidRange}
+                        variant="outlined"
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Add Weight Per Skid Rule
+                    </Button>
+                </AccordionDetails>
+            </Accordion>
 
             {errors?.weightRanges && (
                 <Alert severity="error" sx={{ fontSize: '12px', mt: 1 }}>
